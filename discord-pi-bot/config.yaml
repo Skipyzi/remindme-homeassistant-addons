@@ -1,5 +1,5 @@
 name: RemindMe Discord Bot
-version: "1.0.0"
+version: "1.0.1"
 slug: remindme_discord_bot
 description: Discord bot with reminders, pi-agent bridge, and local LLM support
 arch:
@@ -12,7 +12,7 @@ options:
   owner_id: ""
   pi_agent_webhook_url: ""
   local_llm_enabled: true
-  local_llm_url: http://local-llama-cpp:8080/v1/chat/completions
+  local_llm_url: http://homeassistant:8080/v1/chat/completions
   local_llm_model: qwen3-1.7b
 schema:
   discord_token: password
