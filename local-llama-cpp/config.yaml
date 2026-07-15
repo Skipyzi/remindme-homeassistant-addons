@@ -1,5 +1,5 @@
 name: Local llama.cpp
-version: "1.1.0"
+version: "1.2.0"
 slug: local_llama_cpp
 description: Local OpenAI-compatible llama.cpp server with Hugging Face model downloads
 arch:
@@ -16,8 +16,8 @@ map:
     read_only: false
     path: /data
 options:
-  hf_repo: Qwen/Qwen3-1.7B-GGUF:Q4_K_M
-  hf_file: ""
+  hf_repo: Qwen/Qwen3-1.7B-GGUF
+  hf_file: Qwen3-1.7B-Q8_0.gguf
   hf_token: ""
   model_path: ""
   context_size: 4096

@@ -15,6 +15,12 @@ HF_REPO="$(get_option hf_repo)"
 HF_FILE="$(get_option hf_file)"
 HF_TOKEN="$(get_option hf_token)"
 MODEL_PATH="$(get_option model_path)"
+
+# Home Assistant may preserve empty YAML strings as the literal text "".
+[ "$HF_REPO" = '""' ] && HF_REPO=""
+[ "$HF_FILE" = '""' ] && HF_FILE=""
+[ "$HF_TOKEN" = '""' ] && HF_TOKEN=""
+[ "$MODEL_PATH" = '""' ] && MODEL_PATH=""
 CONTEXT_SIZE="$(get_option context_size)"
 THREADS="$(get_option threads)"
 
