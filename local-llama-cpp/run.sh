@@ -23,12 +23,24 @@ MODEL_PATH="$(get_option model_path)"
 [ "$MODEL_PATH" = '""' ] && MODEL_PATH=""
 CONTEXT_SIZE="$(get_option context_size)"
 THREADS="$(get_option threads)"
+THREADS_BATCH="$(get_option threads_batch)"
+BATCH_SIZE="$(get_option batch_size)"
+UBATCH_SIZE="$(get_option ubatch_size)"
+CACHE_REUSE="$(get_option cache_reuse)"
 
 # llama.cpp stores Hugging Face downloads beneath HOME. Keep them persistent.
 export HOME=/data
 mkdir -p /data/.cache /data/models
 
-set -- --host 0.0.0.0 --port 8080 --ctx-size "$CONTEXT_SIZE" --threads "$THREADS" --parallel 1
+set -- --host 0.0.0.0 --port 8080 \
+	--ctx-size "$CONTEXT_SIZE" \
+	--threads "$THREADS" \
+	--threads-batch "$THREADS_BATCH" \
+	--batch-size "$BATCH_SIZE" \
+	--ubatch-size "$UBATCH_SIZE" \
+	--cache-prompt \
+	--cache-reuse "$CACHE_REUSE" \
+	--parallel 1
 
 if [ -n "$HF_REPO" ]; then
 	set -- "$@" --hf-repo "$HF_REPO"
