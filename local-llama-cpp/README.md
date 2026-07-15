@@ -26,3 +26,9 @@ For a manually supplied model, clear `hf_repo` and set `model_path`, for example
 ```
 
 The API listens on port 8080 and exposes `/v1/chat/completions`.
+
+## Home Assistant sidebar
+
+The add-on enables Home Assistant ingress and adds a `Local LLM` sidebar item with the `mdi:robot` icon. Open it from the Home Assistant sidebar to use the llama.cpp web interface without exposing the service publicly.
+
+The current add-on provides the model API and web interface. Home Assistant Assist integration requires a separate custom conversation integration because the built-in OpenAI integration only supports the official OpenAI endpoint.
