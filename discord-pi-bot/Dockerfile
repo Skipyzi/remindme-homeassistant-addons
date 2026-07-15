@@ -6,7 +6,7 @@ RUN corepack enable && pnpm install --frozen-lockfile --prod=false --ignore-scri
 COPY src ./src
 RUN pnpm build
 
-COPY homeassistant-addons/discord-pi-bot/run.sh /run.sh
+COPY run.sh /run.sh
 RUN chmod +x /run.sh
 
 ENTRYPOINT ["/run.sh"]

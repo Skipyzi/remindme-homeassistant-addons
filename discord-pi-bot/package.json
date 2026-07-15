@@ -1,0 +1,28 @@
+{
+  "name": "remindme",
+  "version": "1.0.0",
+  "description": "Discord bot with pi agent bridge and reminders",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "pre:start": "npm run build",
+    "start": "node dist/index.js",
+    "bridge": "tsx src/pi-bridge-server.mts",
+    "dev": "ts-node src/index.ts",
+    "lint": "biome check src/",
+    "format": "biome format --write src/"
+  },
+  "dependencies": {
+    "@earendil-works/pi-coding-agent": "^0.80.6",
+    "dayjs": "^1.11.21",
+    "discord.js": "^14.26.5",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/node": "^26.1.1",
+    "tsx": "^4.23.0",
+    "typescript": "^7.0.2"
+  }
+}
