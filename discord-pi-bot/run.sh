@@ -1,0 +1,17 @@
+#!/bin/sh
+set -eu
+
+OPTIONS=/data/options.json
+get_option() {
+	node -e "const o=JSON.parse(require('fs').readFileSync('$OPTIONS','utf8')); process.stdout.write(String(o['$1'] ?? ''))"
+}
+
+export DISCORD_BOT_TOKEN="$(get_option discord_token)"
+export OWNER_ID="$(get_option owner_id)"
+export PI_AGENT_WEBHOOK_URL="$(get_option pi_agent_webhook_url)"
+export LOCAL_LLM_ENABLED="$(get_option local_llm_enabled)"
+export LOCAL_LLM_URL="$(get_option local_llm_url)"
+export LOCAL_LLM_MODEL="$(get_option local_llm_model)"
+export REMINDER_DATA_PATH=/data/reminders.json
+
+exec node /app/dist/index.js

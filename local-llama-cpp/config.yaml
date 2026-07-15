@@ -1,0 +1,25 @@
+name: Local llama.cpp
+version: "1.0.0"
+slug: local_llama_cpp
+description: Local OpenAI-compatible llama.cpp server for RemindMe
+arch:
+  - aarch64
+startup: services
+boot: auto
+init: false
+ports:
+  8080/tcp: 8080
+ports_description:
+  8080/tcp: OpenAI-compatible API
+map:
+  - type: data
+    read_only: false
+    path: /data
+options:
+  model_path: /data/models/qwen3-1.7b-q4_k_m.gguf
+  context_size: 4096
+  threads: 4
+schema:
+  model_path: str
+  context_size: int
+  threads: int
