@@ -120,7 +120,10 @@
 				}),
 				(entry) => ({
 					...entry,
-					text: `${entry.text || ""}${data.text || ""}`.replace(/<\/?think>/gi, ""),
+					text: `${entry.text || ""}${data.text || ""}`.replace(
+						/<\/?think>/gi,
+						"",
+					),
 				}),
 			);
 		}
@@ -135,7 +138,7 @@
 					(entry) =>
 						!(
 							entry.phaseId === phaseId &&
-							entry.kind === "thinking" &&
+							(entry.kind === "thinking" || entry.kind === "answer") &&
 							!String(entry.text || "").trim()
 						),
 				)

@@ -31,6 +31,7 @@ import {
 	recommendHardwareProfile,
 	validateLocalModelUrl,
 } from "./harness/settings";
+import { allowedToolNames, toolCallKey } from "./harness/intentRouting";
 import {
 	userContent,
 	validateAttachments,
@@ -358,11 +359,14 @@ async function runAgent(
 	requestId: string,
 	attachments: ImageAttachment[],
 ): Promise<void> {
+	const allowedNames = allowedToolNames(prompt);
+	const requestTools = tools.filter((tool) => allowedNames.has(tool.function.name));
+	const seenToolCalls = new Set<string>();
 	const messages: Array<Record<string, unknown>> = [
 		{
 			role: "system",
 			content:
-				"You are a Home Assistant assistant. Use tools for current state and web search. Explain actions clearly.",
+				"You are a concise Home Assistant assistant. Call a tool only when the user explicitly asks for current home state, a home action, reminders, or current web information. Never call tools for greetings or ordinary conversation. Explain actions clearly.",
 		},
 		{ role: "user", content: userContent(prompt, attachments) },
 	];
@@ -377,7 +381,7 @@ async function runAgent(
 		const result = await streamModel(
 			messages,
 			thinkingMode,
-			tools,
+			requestTools,
 			send,
 			phaseId,
 			iteration,
@@ -419,7 +423,11 @@ async function runAgent(
 				arguments: args,
 				metrics: result.metrics,
 			});
-			const value = await executeTool(call.function.name, args);
+			const callKey = toolCallKey(call.function.name, call.function.arguments || "{}");
+			const value = seenToolCalls.has(callKey)
+				? { error: "Duplicate tool call suppressed" }
+				: await executeTool(call.function.name, args);
+			seenToolCalls.add(callKey);
 			send("tool", {
 				name: call.function.name,
 				state: "complete",
@@ -462,24 +470,29 @@ async function streamModel(
 	iteration: number,
 ) {
 	const started = Date.now();
-	const response = await fetch(getLocalLlmUrl(), {
-		method: "POST",
-		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify({
-			model: config.localLlmModel,
-			messages,
-			tools: requestTools,
-			tool_choice: "auto",
-			stream: true,
+	const requestBody: Record<string, unknown> = {
+		model: config.localLlmModel,
+		messages,
+		stream: true,
 			max_tokens:
 				thinkingMode === "deep"
 					? 1024
 					: thinkingMode === "balanced"
 						? 512
 						: 256,
-			chat_template_kwargs: { enable_thinking: thinkingMode !== "fast" },
-			reasoning_format: thinkingMode === "fast" ? "none" : "deepseek",
-		}),
+		chat_template_kwargs: { enable_thinking: thinkingMode !== "fast" },
+		reasoning_format: thinkingMode === "fast" ? "none" : "deepseek",
+		reasoning: thinkingMode === "fast" ? "off" : "on",
+		reasoning_budget: thinkingMode === "fast" ? 0 : -1,
+	};
+	if (requestTools.length) {
+		requestBody.tools = requestTools;
+		requestBody.tool_choice = "auto";
+	}
+	const response = await fetch(getLocalLlmUrl(), {
+		method: "POST",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify(requestBody),
 	});
 	if (!response.ok)
 		throw new Error(
@@ -546,7 +559,7 @@ async function streamModel(
 					text: routed.answer,
 				});
 			}
-			if (routed.reasoning) {
+			if (routed.reasoning && thinkingMode !== "fast") {
 				firstTokenAt ??= Date.now();
 				thinking += routed.reasoning;
 				send("thinking", { text: routed.reasoning });

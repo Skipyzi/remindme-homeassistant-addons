@@ -1052,17 +1052,53 @@ summary:focus-visible {
 	}
 }
 /* Terminal-tight density pass. */
-.chat { gap:6px; padding-block:8px; }
-.message { padding:5px 9px; line-height:1.4; }
-.message.user { padding:6px 10px; }
-.message.tool,.message.thinking { padding:5px 8px; }
-.message summary { line-height:1.35; }
-.message pre { margin:5px 0 0; padding-top:6px; }
-.tool-ledger { gap:6px; margin-top:6px; padding-top:6px; }
-.tool-row { padding:2px 0; }
-.metric-chips span { padding:2px 4px; }
-.response-metrics { margin-top:5px; padding-top:4px; }
-.entity-stack { gap:6px; margin-top:7px; }
-.entity-card { padding:9px 10px; }
-.entity-controls { margin-top:7px; }
-.composer { padding-block:7px; }
+.chat {
+	gap: 6px;
+	padding-block: 8px;
+}
+.message {
+	padding: 5px 9px;
+	line-height: 1.4;
+}
+.message.user {
+	padding: 6px 10px;
+}
+.message.tool,
+.message.thinking {
+	padding: 5px 8px;
+}
+.message summary {
+	line-height: 1.35;
+}
+.message pre {
+	margin: 5px 0 0;
+	padding-top: 6px;
+}
+.tool-ledger {
+	gap: 6px;
+	margin-top: 6px;
+	padding-top: 6px;
+}
+.tool-row {
+	padding: 2px 0;
+}
+.metric-chips span {
+	padding: 2px 4px;
+}
+.response-metrics {
+	margin-top: 5px;
+	padding-top: 4px;
+}
+.entity-stack {
+	gap: 6px;
+	margin-top: 7px;
+}
+.entity-card {
+	padding: 9px 10px;
+}
+.entity-controls {
+	margin-top: 7px;
+}
+.composer {
+	padding-block: 7px;
+}
