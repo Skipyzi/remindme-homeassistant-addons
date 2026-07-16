@@ -54,6 +54,7 @@ function harness() {
 			notifyTarget: "",
 			hardwareProfile: null,
 		},
+		...window.RemindMeModelCookbook.state(),
 		modelBadge: "LOCAL • QWEN",
 		sessionLabel: "ready // private network",
 		hardware: "raspberry pi profile",
@@ -87,6 +88,16 @@ function harness() {
 					)
 				: 0;
 		},
+		get modelOperationBusy() {
+			return [
+				"preflight",
+				"downloading",
+				"verifying",
+				"activating",
+				"probing",
+				"rollback",
+			].includes(this.modelOperation?.phase);
+		},
 		get contextLevel() {
 			return this.contextPercent >= 90
 				? "danger"
@@ -107,7 +118,7 @@ function harness() {
 			fetch("./api/status")
 				.then((r) => r.json())
 				.then((d) => {
-					this.modelBadge = "LOCAL • " + d.model;
+					this.modelBadge = "LOCAL • " + (d.modelName || d.model);
 					this.visionEnabled = Boolean(d.vision);
 					if (Array.isArray(d.profiles) && d.profiles.length) {
 						this.thinkingProfiles = d.profiles;
@@ -132,6 +143,9 @@ function harness() {
 						? `notify.${d.notifyTarget.replace(/^notify\./, "")}`
 						: "";
 					this.settings.hardwareProfile = d.hardwareProfile;
+					this.modelManagerEnabled = Boolean(d.modelManagerEnabled);
+					if (this.modelManagerEnabled)
+						window.RemindMeModelCookbook.load(this);
 				})
 				.catch(() => {});
 		},
@@ -372,16 +386,48 @@ function harness() {
 			);
 			this.persist();
 		},
+		async reloadModels() {
+			return window.RemindMeModelCookbook.load(this);
+		},
+		async installModel(id) {
+			return window.RemindMeModelCookbook.install(this, id);
+		},
+		async activateModel(id) {
+			return window.RemindMeModelCookbook.activate(this, id);
+		},
+		async cancelModelOperation() {
+			return window.RemindMeModelCookbook.cancel(this);
+		},
+		async removeModel(id) {
+			return window.RemindMeModelCookbook.remove(this, id);
+		},
+		async saveModelToken() {
+			return window.RemindMeModelCookbook.saveToken(this);
+		},
+		async saveCustomModel() {
+			return window.RemindMeModelCookbook.saveCustom(this);
+		},
+		formatModelBytes(bytes) {
+			return window.RemindMeModelCookbook.formatBytes(bytes);
+		},
+		modelProgressPercent() {
+			return window.RemindMeModelCookbook.progressPercent(this.modelOperation);
+		},
 		async saveSettings() {
 			this.settingsMessage = "Saving…";
-			const r = await fetch("./api/settings", {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify(this.settings),
-			});
-			this.settingsMessage = r.ok
-				? "Saved. Restart the add-on to apply connection changes."
-				: "Save failed.";
+			try {
+				const r = await fetch("./api/settings", {
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify(this.settings),
+				});
+				const payload = await r.json().catch(() => ({}));
+				this.settingsMessage = r.ok
+					? "Saved. Restart the add-on to apply connection changes."
+					: `Save failed: ${payload.error || `HTTP ${r.status}`}`;
+			} catch (error) {
+				this.settingsMessage = `Save failed: ${error.message}`;
+			}
 		},
 	};
 }

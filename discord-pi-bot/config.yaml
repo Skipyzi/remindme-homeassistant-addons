@@ -1,5 +1,5 @@
 name: RemindMe Discord Bot
-version: "2.1.2"
+version: "2.2.1"
 slug: remindme_discord_bot
 description: Discord bot with reminders, pi-agent bridge, and local LLM support
 arch:
@@ -8,6 +8,7 @@ startup: application
 boot: auto
 init: false
 homeassistant_api: true
+hassio_api: true
 ingress: true
 ingress_port: 8090
 panel_icon: mdi:robot-outline
@@ -22,6 +23,8 @@ options:
   local_llm_model: qwen3-1.7b
   local_llm_context_size: 8192
   local_llm_vision: false
+  model_manager_enabled: true
+  model_manager_url: http://homeassistant:8080/manager/v1
   exa_api_key: ""
   ha_notify_target: ""
 schema:
@@ -33,6 +36,8 @@ schema:
   local_llm_model: str
   local_llm_context_size: int(1024,32768)
   local_llm_vision: bool
+  model_manager_enabled: bool
+  model_manager_url: str
   exa_api_key: password
   ha_notify_target: str
 map:
