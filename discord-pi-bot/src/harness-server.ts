@@ -14,6 +14,7 @@ import {
 	normalizePhaseMetrics,
 	reasoningText,
 	routeThinkTags,
+	stripReasoningTags,
 	type PhaseMetrics,
 	type ToolCall,
 } from "./harness/modelPhases";
@@ -529,7 +530,10 @@ async function streamModel(
 			if (!delta) continue;
 			const explicitReasoning = reasoningText(delta);
 			const routed = explicitReasoning
-				? { reasoning: explicitReasoning, answer: delta.content || "" }
+				? {
+						reasoning: explicitReasoning,
+						answer: stripReasoningTags(delta.content || ""),
+					}
 				: routeThinkTags(delta.content || "", thinkState);
 			if (routed.answer) {
 				firstTokenAt ??= Date.now();

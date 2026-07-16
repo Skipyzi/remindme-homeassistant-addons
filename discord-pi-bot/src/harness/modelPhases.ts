@@ -27,6 +27,10 @@ export function reasoningText(delta: {
 	return delta.reasoning_content || delta.reasoning || "";
 }
 
+export function stripReasoningTags(content: string): string {
+	return content.replace(/<\/?think>/gi, "");
+}
+
 export function routeThinkTags(
 	content: string,
 	state: ThinkState,

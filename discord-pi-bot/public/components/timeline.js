@@ -115,10 +115,13 @@
 					phaseId,
 					kind: "answer",
 					state: "active",
-					text: data.text || "",
+					text: String(data.text || "").replace(/<\/?think>/gi, ""),
 					expanded: true,
 				}),
-				(entry) => ({ ...entry, text: (entry.text || "") + (data.text || "") }),
+				(entry) => ({
+					...entry,
+					text: `${entry.text || ""}${data.text || ""}`.replace(/<\/?think>/gi, ""),
+				}),
 			);
 		}
 		if (event === "phase_metrics") {
