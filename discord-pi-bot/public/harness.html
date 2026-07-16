@@ -277,8 +277,7 @@
                 x-ref="composerInput"
                 x-model="draft"
                 @input="resizeComposer($event)"
-                @keydown.enter.exact.prevent="send()"
-                @keydown.ctrl.enter.stop
+                @keydown="handleComposerKeydown($event)"
                 rows="1"
                 placeholder="Ask the console anything…"
                 aria-label="Message"

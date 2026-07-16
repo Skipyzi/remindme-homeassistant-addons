@@ -1103,21 +1103,38 @@ summary:focus-visible {
 	padding-block: 7px;
 }
 /* Multiline command composer and final transcript height correction. */
-.compose-line { align-items:flex-end; }
-textarea {
-  min-height:36px;
-  height:36px;
-  max-height:160px;
-  padding:7px 10px;
-  line-height:1.4;
-  overflow-y:hidden;
-  field-sizing:content;
-  scrollbar-width:thin;
-  scrollbar-color:var(--oxidized-brass) rgba(9,11,13,.3);
+.compose-line {
+	align-items: flex-end;
 }
-textarea::-webkit-scrollbar { width:6px; }
-textarea::-webkit-scrollbar-thumb { background:var(--oxidized-brass); }
-.send { min-height:36px; height:36px; align-self:flex-end; }
-.message { min-height:0; align-self:flex-start; }
-.message.user { align-self:flex-end; }
-.message.answer { height:auto; }
+textarea {
+	min-height: 36px;
+	height: 36px;
+	max-height: 160px;
+	padding: 7px 10px;
+	line-height: 1.4;
+	overflow-y: hidden;
+	field-sizing: content;
+	scrollbar-width: thin;
+	scrollbar-color: var(--oxidized-brass) rgba(9, 11, 13, 0.3);
+}
+textarea::-webkit-scrollbar {
+	width: 6px;
+}
+textarea::-webkit-scrollbar-thumb {
+	background: var(--oxidized-brass);
+}
+.send {
+	min-height: 36px;
+	height: 36px;
+	align-self: flex-end;
+}
+.message {
+	min-height: 0;
+	align-self: flex-start;
+}
+.message.user {
+	align-self: flex-end;
+}
+.message.answer {
+	height: auto;
+}

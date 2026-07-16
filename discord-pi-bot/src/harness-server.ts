@@ -368,7 +368,7 @@ async function runAgent(
 		{
 			role: "system",
 			content:
-				"You are a concise Home Assistant assistant. Call a tool only when the user explicitly asks for current home state, a home action, reminders, or current web information. Never call tools for greetings or ordinary conversation. Explain actions clearly.",
+				"You are a concise Home Assistant assistant. You have access to every tool listed in this request and must never claim that a listed tool is unavailable. Call a tool only when the user explicitly asks for current home state, a home action, reminders, or current web information. If asked whether you can search the web without a search topic, answer yes and ask what to search for. Never call tools for greetings or ordinary conversation. Explain actions clearly.",
 		},
 		{ role: "user", content: userContent(prompt, attachments) },
 	];
