@@ -35,9 +35,7 @@ test("model manager routes proxy safely", async (context) => {
 		if (url === "http://supervisor/addons") {
 			return Response.json({
 				data: {
-					addons: [
-						{ slug: "local_local_llama_cpp", name: "Local llama.cpp" },
-					],
+					addons: [{ slug: "local_local_llama_cpp", name: "Local llama.cpp" }],
 				},
 			});
 		}
@@ -50,8 +48,7 @@ test("model manager routes proxy safely", async (context) => {
 			return Response.json(managerCatalog);
 		}
 		if (
-			url ===
-			"http://homeassistant:8080/manager/v1/credentials/huggingface"
+			url === "http://homeassistant:8080/manager/v1/credentials/huggingface"
 		) {
 			credentialBody = String(init?.body || "");
 			return Response.json({ configured: true });
@@ -98,14 +95,11 @@ test("model manager routes proxy safely", async (context) => {
 		"credential route never echoes the Hugging Face token",
 		async () => {
 			const token = "hf_test_value_that_is_not_a_real_token";
-			const response = await nativeFetch(
-				`${baseUrl}/api/models/credentials`,
-				{
-					method: "PUT",
-					headers: { "content-type": "application/json" },
-					body: JSON.stringify({ token }),
-				},
-			);
+			const response = await nativeFetch(`${baseUrl}/api/models/credentials`, {
+				method: "PUT",
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify({ token }),
+			});
 			assert.equal(response.status, 200);
 			const responseText = await response.text();
 			let parsedResponse: unknown;

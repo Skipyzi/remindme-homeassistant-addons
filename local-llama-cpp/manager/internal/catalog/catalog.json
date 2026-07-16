@@ -68,7 +68,7 @@
       "nativeContext": 40960,
       "recommendedContext": 8192,
       "capabilities": ["chat", "tools", "reasoning"],
-      "tier": "recommended",
+      "tier": "compatible",
       "source": "official",
       "runtime": {"batch": 256, "ubatch": 128, "threads": 4, "reasoningFormat": "deepseek", "reasoningMode": "auto"}
     },
