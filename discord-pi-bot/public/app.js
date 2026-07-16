@@ -192,6 +192,14 @@ function harness() {
 				});
 			this.persist();
 		},
+		resizeComposer(event) {
+			const textarea = event?.target;
+			if (!textarea) return;
+			textarea.style.height = "auto";
+			const nextHeight = Math.min(textarea.scrollHeight, 160);
+			textarea.style.height = `${nextHeight}px`;
+			textarea.style.overflowY = textarea.scrollHeight > 160 ? "auto" : "hidden";
+		},
 		async addAttachments(files) {
 			this.attachmentError = "";
 			await window.RemindMeAttachments.addFiles(this, files || []);
@@ -200,6 +208,7 @@ function harness() {
 			const text = this.draft.trim();
 			if (!text || this.busy) return;
 			this.draft = "";
+			this.$nextTick(() => this.resizeComposer({ target: this.$refs.composerInput }));
 			this.add("user", text);
 			this.busy = true;
 			try {

@@ -360,7 +360,9 @@ async function runAgent(
 	attachments: ImageAttachment[],
 ): Promise<void> {
 	const allowedNames = allowedToolNames(prompt);
-	const requestTools = tools.filter((tool) => allowedNames.has(tool.function.name));
+	const requestTools = tools.filter((tool) =>
+		allowedNames.has(tool.function.name),
+	);
 	const seenToolCalls = new Set<string>();
 	const messages: Array<Record<string, unknown>> = [
 		{
@@ -423,7 +425,10 @@ async function runAgent(
 				arguments: args,
 				metrics: result.metrics,
 			});
-			const callKey = toolCallKey(call.function.name, call.function.arguments || "{}");
+			const callKey = toolCallKey(
+				call.function.name,
+				call.function.arguments || "{}",
+			);
 			const value = seenToolCalls.has(callKey)
 				? { error: "Duplicate tool call suppressed" }
 				: await executeTool(call.function.name, args);
@@ -474,12 +479,8 @@ async function streamModel(
 		model: config.localLlmModel,
 		messages,
 		stream: true,
-			max_tokens:
-				thinkingMode === "deep"
-					? 1024
-					: thinkingMode === "balanced"
-						? 512
-						: 256,
+		max_tokens:
+			thinkingMode === "deep" ? 1024 : thinkingMode === "balanced" ? 512 : 256,
 		chat_template_kwargs: { enable_thinking: thinkingMode !== "fast" },
 		reasoning_format: thinkingMode === "fast" ? "none" : "deepseek",
 		reasoning: thinkingMode === "fast" ? "off" : "on",

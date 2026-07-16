@@ -146,6 +146,10 @@
 					entry.phaseId === phaseId
 						? {
 								...entry,
+								text:
+									entry.kind === "answer"
+										? String(entry.text || "").trim()
+										: entry.text,
 								state: "complete",
 								metrics: data.metrics || entry.metrics,
 								completedAt: Date.now(),
