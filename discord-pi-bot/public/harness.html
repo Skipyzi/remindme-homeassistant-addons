@@ -117,17 +117,71 @@
                 </details>
               </template>
               <template x-if="message.kind==='tool'">
-                <details :open="message.expanded" @toggle="message.expanded=$event.target.open">
-                  <summary x-text="message.state==='active' ? '◈ '+toolLabel(message) : completedToolLabel(message)"></summary>
+                <details
+                  :open="message.expanded"
+                  @toggle="message.expanded=$event.target.open"
+                >
+                  <summary
+                    x-text="message.state==='active' ? '◈ '+toolLabel(message) : completedToolLabel(message)"
+                  ></summary>
                   <div class="tool-ledger">
-                    <section x-show="message.arguments && Object.keys(message.arguments).length"><b>Request</b><template x-for="(value,key) in message.arguments" :key="message.key+key"><div class="tool-row"><span x-text="key.replaceAll('_',' ')"></span><code x-text="formatValue(value)"></code></div></template></section>
-                    <section x-show="message.metrics"><b>Inference</b><div class="metric-chips"><span x-text="`${message.metrics?.inputTokens || 0} in`"></span><span x-text="`${message.metrics?.outputTokens || 0} out`"></span><span x-text="`${formatSpeed(message.metrics?.encodeTokensPerSecond)} encode`"></span><span x-text="`${formatSpeed(message.metrics?.decodeTokensPerSecond)} decode`"></span></div></section>
-                    <section x-show="message.result !== undefined && !message.items"><b>Result</b><pre x-text="formatValue(message.result)"></pre></section>
+                    <section
+                      x-show="message.arguments && Object.keys(message.arguments).length"
+                    >
+                      <b>Request</b
+                      ><template
+                        x-for="(value,key) in message.arguments"
+                        :key="message.key+key"
+                        ><div class="tool-row">
+                          <span x-text="key.replaceAll('_',' ')"></span
+                          ><code x-text="formatValue(value)"></code></div
+                      ></template>
+                    </section>
+                    <section x-show="message.metrics">
+                      <b>Inference</b>
+                      <div class="metric-chips">
+                        <span
+                          x-text="`${message.metrics?.inputTokens || 0} in`"
+                        ></span
+                        ><span
+                          x-text="`${message.metrics?.outputTokens || 0} out`"
+                        ></span
+                        ><span
+                          x-text="`${formatSpeed(message.metrics?.encodeTokensPerSecond)} encode`"
+                        ></span
+                        ><span
+                          x-text="`${formatSpeed(message.metrics?.decodeTokensPerSecond)} decode`"
+                        ></span>
+                      </div>
+                    </section>
+                    <section
+                      x-show="message.result !== undefined && !message.items"
+                    >
+                      <b>Result</b>
+                      <pre x-text="formatValue(message.result)"></pre>
+                    </section>
                   </div>
                 </details>
               </template>
-              <span x-show="!message.kind || message.kind==='answer'" x-text="message.text"></span>
-              <footer class="response-metrics" x-show="message.kind==='answer' && message.metrics"><span x-text="`${message.metrics?.outputTokens || 0} tokens`"></span><span x-text="`${formatSpeed(message.metrics?.decodeTokensPerSecond)} decode`"></span><span x-text="`${message.metrics?.firstTokenMs || 0} ms first token`"></span><span x-text="formatDuration(message.metrics?.totalMs)"></span></footer>
+              <span
+                x-show="!message.kind || message.kind==='answer'"
+                x-text="message.text"
+              ></span>
+              <footer
+                class="response-metrics"
+                x-show="message.kind==='answer' && message.metrics"
+              >
+                <span
+                  x-text="`${message.metrics?.outputTokens || 0} tokens`"
+                ></span
+                ><span
+                  x-text="`${formatSpeed(message.metrics?.decodeTokensPerSecond)} decode`"
+                ></span
+                ><span
+                  x-text="`${message.metrics?.firstTokenMs || 0} ms first token`"
+                ></span
+                ><span x-text="formatDuration(message.metrics?.totalMs)"></span>
+              </footer>
               <template x-if="message.items"
                 ><div class="entity-stack">
                   <template

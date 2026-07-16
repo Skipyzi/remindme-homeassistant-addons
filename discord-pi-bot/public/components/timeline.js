@@ -18,6 +18,7 @@
 	function applyHarnessEvent(entries, event, data) {
 		const phaseId = data.phaseId || `legacy-${Date.now()}`;
 		if (event === "phase_start") {
+			if (data.kind !== "thinking") return entries;
 			return upsert(
 				entries,
 				`${phaseId}:thinking`,
@@ -129,7 +130,11 @@
 			return entries
 				.filter(
 					(entry) =>
-						!(entry.phaseId === phaseId && entry.kind === "thinking" && !String(entry.text || "").trim()),
+						!(
+							entry.phaseId === phaseId &&
+							entry.kind === "thinking" &&
+							!String(entry.text || "").trim()
+						),
 				)
 				.map((entry) =>
 					entry.phaseId === phaseId

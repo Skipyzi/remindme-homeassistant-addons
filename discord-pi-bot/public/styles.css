@@ -74,7 +74,11 @@ button {
 }
 .deck {
 	display: grid;
-	grid-template-columns: clamp(190px, 17vw, 270px) minmax(0, 1fr) clamp(210px, 16vw, 260px);
+	grid-template-columns: clamp(190px, 17vw, 270px) minmax(0, 1fr) clamp(
+			210px,
+			16vw,
+			260px
+		);
 	width: 100%;
 	height: 100vh;
 	height: 100dvh;
@@ -892,37 +896,173 @@ summary:focus-visible {
 	height: 20px;
 }
 /* Compact transcript and structured relay ledger. */
-.message.tool,.message.thinking { padding:8px 10px; width:min(64ch,92%); }
-.message.settled summary::before { content:"◆"; width:auto; height:auto; border:0; border-radius:0; background:none; color:var(--oxidized-brass); animation:none; box-shadow:none; }
-.tool-ledger { display:grid; gap:9px; margin-top:9px; border-top:1px solid var(--line); padding-top:9px; }
-.tool-ledger section { display:grid; gap:5px; }
-.tool-ledger b { color:var(--oxidized-brass); font:500 9px/1.2 ui-monospace,Consolas,monospace; letter-spacing:.12em; text-transform:uppercase; }
-.tool-row { display:flex; align-items:start; justify-content:space-between; gap:14px; padding:4px 0; border-bottom:1px solid rgba(176,138,72,.14); }
-.tool-row span { color:var(--muted); text-transform:capitalize; }
-.tool-row code { color:var(--text); text-align:right; white-space:pre-wrap; overflow-wrap:anywhere; }
-.metric-chips,.response-metrics { display:flex; flex-wrap:wrap; gap:5px 10px; color:var(--muted); font:9px/1.4 ui-monospace,Consolas,monospace; }
-.metric-chips span { border:1px solid rgba(176,138,72,.2); padding:3px 5px; }
-.response-metrics { margin-top:8px; padding-top:6px; border-top:1px solid rgba(176,138,72,.18); opacity:.72; }
-.tool-ledger pre { margin:0; padding:7px; max-height:220px; background:rgba(9,11,13,.42); border:0; }
-@media (max-width:1200px) {
-  .deck { grid-template-columns:clamp(180px,21vw,235px) minmax(0,1fr); }
-  #house-board { display:none; }
-  .topbar .mobile-toggle[aria-controls="house-board"] { display:inline-flex; }
-  #house-board.open { display:block; position:fixed; z-index:29; right:0; top:72px; bottom:0; width:min(320px,88vw); }
+.message.tool,
+.message.thinking {
+	padding: 8px 10px;
+	width: min(64ch, 92%);
 }
-@media (max-width:850px) {
-  .deck { grid-template-columns:minmax(0,1fr); }
-  #conversation-library { position:fixed; inset:0 auto 0 0; z-index:30; width:min(320px,88vw); transform:translateX(-105%); transition:transform .2s ease; }
-  #conversation-library.open { transform:none; }
-  .mobile-toggle { display:inline-flex; }
-  .message { max-width:96%; }
+.message.settled summary::before {
+	content: "◆";
+	width: auto;
+	height: auto;
+	border: 0;
+	border-radius: 0;
+	background: none;
+	color: var(--oxidized-brass);
+	animation: none;
+	box-shadow: none;
 }
-@media (max-width:520px) {
-  .topbar { height:58px; padding:0 9px; }
-  .top-title small,.badge { display:none; }
-  .chat { padding:9px 7px; gap:7px; }
-  .message,.message.tool,.message.thinking { max-width:98%; padding:7px 9px; }
-  .composer { padding:8px 7px; }
-  .controls { gap:7px; flex-wrap:wrap; }
-  .send { min-width:72px; padding:0 12px; }
+.tool-ledger {
+	display: grid;
+	gap: 9px;
+	margin-top: 9px;
+	border-top: 1px solid var(--line);
+	padding-top: 9px;
 }
+.tool-ledger section {
+	display: grid;
+	gap: 5px;
+}
+.tool-ledger b {
+	color: var(--oxidized-brass);
+	font:
+		500 9px / 1.2 ui-monospace,
+		Consolas,
+		monospace;
+	letter-spacing: 0.12em;
+	text-transform: uppercase;
+}
+.tool-row {
+	display: flex;
+	align-items: start;
+	justify-content: space-between;
+	gap: 14px;
+	padding: 4px 0;
+	border-bottom: 1px solid rgba(176, 138, 72, 0.14);
+}
+.tool-row span {
+	color: var(--muted);
+	text-transform: capitalize;
+}
+.tool-row code {
+	color: var(--text);
+	text-align: right;
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+}
+.metric-chips,
+.response-metrics {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 5px 10px;
+	color: var(--muted);
+	font:
+		9px / 1.4 ui-monospace,
+		Consolas,
+		monospace;
+}
+.metric-chips span {
+	border: 1px solid rgba(176, 138, 72, 0.2);
+	padding: 3px 5px;
+}
+.response-metrics {
+	margin-top: 8px;
+	padding-top: 6px;
+	border-top: 1px solid rgba(176, 138, 72, 0.18);
+	opacity: 0.72;
+}
+.tool-ledger pre {
+	margin: 0;
+	padding: 7px;
+	max-height: 220px;
+	background: rgba(9, 11, 13, 0.42);
+	border: 0;
+}
+@media (max-width: 1200px) {
+	.deck {
+		grid-template-columns: clamp(180px, 21vw, 235px) minmax(0, 1fr);
+	}
+	#house-board {
+		display: none;
+	}
+	.topbar .mobile-toggle[aria-controls="house-board"] {
+		display: inline-flex;
+	}
+	#house-board.open {
+		display: block;
+		position: fixed;
+		z-index: 29;
+		right: 0;
+		top: 72px;
+		bottom: 0;
+		width: min(320px, 88vw);
+	}
+}
+@media (max-width: 850px) {
+	.deck {
+		grid-template-columns: minmax(0, 1fr);
+	}
+	#conversation-library {
+		position: fixed;
+		inset: 0 auto 0 0;
+		z-index: 30;
+		width: min(320px, 88vw);
+		transform: translateX(-105%);
+		transition: transform 0.2s ease;
+	}
+	#conversation-library.open {
+		transform: none;
+	}
+	.mobile-toggle {
+		display: inline-flex;
+	}
+	.message {
+		max-width: 96%;
+	}
+}
+@media (max-width: 520px) {
+	.topbar {
+		height: 58px;
+		padding: 0 9px;
+	}
+	.top-title small,
+	.badge {
+		display: none;
+	}
+	.chat {
+		padding: 9px 7px;
+		gap: 7px;
+	}
+	.message,
+	.message.tool,
+	.message.thinking {
+		max-width: 98%;
+		padding: 7px 9px;
+	}
+	.composer {
+		padding: 8px 7px;
+	}
+	.controls {
+		gap: 7px;
+		flex-wrap: wrap;
+	}
+	.send {
+		min-width: 72px;
+		padding: 0 12px;
+	}
+}
+/* Terminal-tight density pass. */
+.chat { gap:6px; padding-block:8px; }
+.message { padding:5px 9px; line-height:1.4; }
+.message.user { padding:6px 10px; }
+.message.tool,.message.thinking { padding:5px 8px; }
+.message summary { line-height:1.35; }
+.message pre { margin:5px 0 0; padding-top:6px; }
+.tool-ledger { gap:6px; margin-top:6px; padding-top:6px; }
+.tool-row { padding:2px 0; }
+.metric-chips span { padding:2px 4px; }
+.response-metrics { margin-top:5px; padding-top:4px; }
+.entity-stack { gap:6px; margin-top:7px; }
+.entity-card { padding:9px 10px; }
+.entity-controls { margin-top:7px; }
+.composer { padding-block:7px; }

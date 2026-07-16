@@ -94,12 +94,10 @@ app.post("/api/tokenize", async (request, response) => {
 		);
 		response.json(usage);
 	} catch (error) {
-		response
-			.status(503)
-			.json({
-				exact: false,
-				error: error instanceof Error ? error.message : "Tokenizer unavailable",
-			});
+		response.status(503).json({
+			exact: false,
+			error: error instanceof Error ? error.message : "Tokenizer unavailable",
+		});
 	}
 });
 app.get("/api/settings", (_request, response) => {
@@ -115,12 +113,9 @@ app.post("/api/settings", async (request, response) => {
 		if (typeof values.localLlmUrl === "string")
 			options.local_llm_url = validateLocalModelUrl(values.localLlmUrl);
 	} catch (error) {
-		response
-			.status(400)
-			.json({
-				error:
-					error instanceof Error ? error.message : "Invalid model endpoint",
-			});
+		response.status(400).json({
+			error: error instanceof Error ? error.message : "Invalid model endpoint",
+		});
 		return;
 	}
 	if (typeof values.model === "string") options.local_llm_model = values.model;
@@ -190,11 +185,9 @@ app.post("/api/entities/action", async (request, response) => {
 				: refreshed,
 		);
 	} catch (error) {
-		response
-			.status(400)
-			.json({
-				error: error instanceof Error ? error.message : "Invalid entity action",
-			});
+		response.status(400).json({
+			error: error instanceof Error ? error.message : "Invalid entity action",
+		});
 	}
 });
 app.get("/api/reminders", (_request, response) => {
@@ -377,7 +370,7 @@ async function runAgent(
 		send("phase_start", {
 			phaseId,
 			iteration,
-			kind: "thinking",
+			kind: thinkingMode === "fast" ? "answer" : "thinking",
 			state: "active",
 		});
 		const result = await streamModel(
@@ -542,13 +535,23 @@ async function streamModel(
 				firstTokenAt ??= Date.now();
 				text += routed.answer;
 				send("token", { text: routed.answer });
-				send("answer_delta", { phaseId, iteration, kind: "answer", text: routed.answer });
+				send("answer_delta", {
+					phaseId,
+					iteration,
+					kind: "answer",
+					text: routed.answer,
+				});
 			}
 			if (routed.reasoning) {
 				firstTokenAt ??= Date.now();
 				thinking += routed.reasoning;
 				send("thinking", { text: routed.reasoning });
-				send("thinking_delta", { phaseId, iteration, kind: "thinking", text: routed.reasoning });
+				send("thinking_delta", {
+					phaseId,
+					iteration,
+					kind: "thinking",
+					text: routed.reasoning,
+				});
 			}
 			for (const call of delta.tool_calls || []) {
 				const index = call.index || 0;
