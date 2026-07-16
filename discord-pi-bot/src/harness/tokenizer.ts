@@ -9,7 +9,10 @@ export interface TokenUsage {
 export function tokenizerUrl(completionsUrl: URL): URL {
 	try {
 		const result = new URL(completionsUrl.toString());
-		result.pathname = result.pathname.replace(/\/v1\/chat\/completions\/?$/, "/tokenize");
+		result.pathname = result.pathname.replace(
+			/\/v1\/chat\/completions\/?$/,
+			"/tokenize",
+		);
 		return result;
 	} catch (error) {
 		const detail = error instanceof Error ? error.message : String(error);
@@ -24,9 +27,11 @@ export async function tokenizeText(url: URL, content: string): Promise<number> {
 		body: JSON.stringify({ content, add_special: false }),
 		signal: AbortSignal.timeout(5_000),
 	});
-	if (!response.ok) throw new Error(`Tokenizer returned HTTP ${response.status}`);
+	if (!response.ok)
+		throw new Error(`Tokenizer returned HTTP ${response.status}`);
 	const payload = (await response.json()) as { tokens?: unknown[] };
-	if (!Array.isArray(payload.tokens)) throw new Error("Tokenizer returned no tokens");
+	if (!Array.isArray(payload.tokens))
+		throw new Error("Tokenizer returned no tokens");
 	return payload.tokens.length;
 }
 
@@ -36,7 +41,9 @@ export async function measureTokenUsage(
 	messages: Array<{ role?: string; content?: string }>,
 	contextCapacity: number,
 ): Promise<TokenUsage> {
-	const contextText = messages.map((message) => `${message.role || "user"}: ${message.content || ""}`).join("\n");
+	const contextText = messages
+		.map((message) => `${message.role || "user"}: ${message.content || ""}`)
+		.join("\n");
 	const [promptTokens, contextTokens] = await Promise.all([
 		tokenizeText(url, prompt),
 		tokenizeText(url, contextText),
@@ -45,7 +52,10 @@ export async function measureTokenUsage(
 		promptTokens,
 		contextTokens,
 		contextCapacity,
-		remainingTokens: Math.max(0, contextCapacity - contextTokens - promptTokens),
+		remainingTokens: Math.max(
+			0,
+			contextCapacity - contextTokens - promptTokens,
+		),
 		exact: true,
 	};
 }

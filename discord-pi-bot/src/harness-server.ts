@@ -18,10 +18,21 @@ import {
 import { createSseSender } from "./harness/sse";
 import { measureTokenUsage, tokenizerUrl } from "./harness/tokenizer";
 import { normalizeEntity, type HassEntity } from "./harness/entities";
-import { validateEntityAction, type EntityAction } from "./harness/entityActions";
+import {
+	validateEntityAction,
+	type EntityAction,
+} from "./harness/entityActions";
 import { ConversationStore } from "./harness/conversations";
-import { publicSettings, recommendHardwareProfile, validateLocalModelUrl } from "./harness/settings";
-import { userContent, validateAttachments, type ImageAttachment } from "./harness/attachments";
+import {
+	publicSettings,
+	recommendHardwareProfile,
+	validateLocalModelUrl,
+} from "./harness/settings";
+import {
+	userContent,
+	validateAttachments,
+	type ImageAttachment,
+} from "./harness/attachments";
 
 const app = express();
 const port = Number(process.env.HARNESS_PORT || 8090);
@@ -44,22 +55,34 @@ type Send = (event: string, data: unknown) => void;
 
 app.use(express.json({ limit: "64kb" }));
 app.get("/api/conversations", (request, response) => {
-	response.json(conversations.list(typeof request.query.search === "string" ? request.query.search : ""));
+	response.json(
+		conversations.list(
+			typeof request.query.search === "string" ? request.query.search : "",
+		),
+	);
 });
 app.post("/api/conversations", async (_request, response) => {
 	response.status(201).json(await conversations.create());
 });
 app.patch("/api/conversations/:id", async (request, response) => {
-	const updated = await conversations.update(request.params.id, request.body || {});
-	response.status(updated ? 200 : 404).json(updated || { error: "Conversation not found" });
+	const updated = await conversations.update(
+		request.params.id,
+		request.body || {},
+	);
+	response
+		.status(updated ? 200 : 404)
+		.json(updated || { error: "Conversation not found" });
 });
 app.delete("/api/conversations/:id", async (request, response) => {
 	const deleted = await conversations.delete(request.params.id);
 	response.status(deleted ? 204 : 404).end();
 });
 app.post("/api/tokenize", async (request, response) => {
-	const prompt = typeof request.body?.prompt === "string" ? request.body.prompt : "";
-	const messages = Array.isArray(request.body?.messages) ? request.body.messages.slice(-100) : [];
+	const prompt =
+		typeof request.body?.prompt === "string" ? request.body.prompt : "";
+	const messages = Array.isArray(request.body?.messages)
+		? request.body.messages.slice(-100)
+		: [];
 	try {
 		const usage = await measureTokenUsage(
 			tokenizerUrl(getLocalLlmUrl()),
@@ -69,25 +92,40 @@ app.post("/api/tokenize", async (request, response) => {
 		);
 		response.json(usage);
 	} catch (error) {
-		response.status(503).json({ exact: false, error: error instanceof Error ? error.message : "Tokenizer unavailable" });
+		response
+			.status(503)
+			.json({
+				exact: false,
+				error: error instanceof Error ? error.message : "Tokenizer unavailable",
+			});
 	}
 });
 app.get("/api/settings", (_request, response) => {
-	response.json({ ...publicSettings(process.env), hardwareProfile: recommendHardwareProfile(os.totalmem(), os.cpus().length) });
+	response.json({
+		...publicSettings(process.env),
+		hardwareProfile: recommendHardwareProfile(os.totalmem(), os.cpus().length),
+	});
 });
 app.post("/api/settings", async (request, response) => {
 	const values = request.body || {};
 	const options: Record<string, unknown> = {};
 	try {
-		if (typeof values.localLlmUrl === "string") options.local_llm_url = validateLocalModelUrl(values.localLlmUrl);
+		if (typeof values.localLlmUrl === "string")
+			options.local_llm_url = validateLocalModelUrl(values.localLlmUrl);
 	} catch (error) {
-		response.status(400).json({ error: error instanceof Error ? error.message : "Invalid model endpoint" });
+		response
+			.status(400)
+			.json({
+				error:
+					error instanceof Error ? error.message : "Invalid model endpoint",
+			});
 		return;
 	}
 	if (typeof values.model === "string") options.local_llm_model = values.model;
 	if (typeof values.exaApiKey === "string" && values.exaApiKey)
 		options.exa_api_key = values.exaApiKey;
-	if (typeof values.notifyTarget === "string") options.ha_notify_target = values.notifyTarget.replace(/^notify\./, "");
+	if (typeof values.notifyTarget === "string")
+		options.ha_notify_target = values.notifyTarget.replace(/^notify\./, "");
 	if (!Object.keys(options).length) {
 		response.status(400).json({ error: "No settings supplied" });
 		return;
@@ -104,7 +142,9 @@ app.post("/api/settings", async (request, response) => {
 	}
 });
 app.get("/api/entities/:id", async (request, response) => {
-	const result = await hassRequest(`/states/${encodeURIComponent(request.params.id)}`);
+	const result = await hassRequest(
+		`/states/${encodeURIComponent(request.params.id)}`,
+	);
 	if (!result || typeof result !== "object" || !("entity_id" in result)) {
 		response.status(502).json(result);
 		return;
@@ -112,23 +152,47 @@ app.get("/api/entities/:id", async (request, response) => {
 	response.json(normalizeEntity(result as HassEntity));
 });
 app.post("/api/entities/action", async (request, response) => {
-	const entityId = typeof request.body?.entityId === "string" ? request.body.entityId : "";
+	const entityId =
+		typeof request.body?.entityId === "string" ? request.body.entityId : "";
 	const action = request.body?.action as EntityAction;
 	try {
 		const state = await hassRequest(`/states/${encodeURIComponent(entityId)}`);
-		if (!state || typeof state !== "object" || !("entity_id" in state)) throw new Error("Entity state unavailable");
-		const validated = validateEntityAction(normalizeEntity(state as HassEntity), action, request.body?.value);
+		if (!state || typeof state !== "object" || !("entity_id" in state))
+			throw new Error("Entity state unavailable");
+		const validated = validateEntityAction(
+			normalizeEntity(state as HassEntity),
+			action,
+			request.body?.value,
+		);
 		if (validated.requiresConfirmation) {
 			const token = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 			pendingActions.set(token, validated);
-			response.json({ confirmation_required: true, token, message: `Confirm ${validated.service} for ${validated.entityId}` });
+			response.json({
+				confirmation_required: true,
+				token,
+				message: `Confirm ${validated.service} for ${validated.entityId}`,
+			});
 			return;
 		}
-		await hassRequest(`/services/${validated.domain}/${validated.service}`, "POST", { ...validated.serviceData, entity_id: validated.entityId });
-		const refreshed = await hassRequest(`/states/${encodeURIComponent(validated.entityId)}`);
-		response.json(refreshed && typeof refreshed === "object" && "entity_id" in refreshed ? normalizeEntity(refreshed as HassEntity) : refreshed);
+		await hassRequest(
+			`/services/${validated.domain}/${validated.service}`,
+			"POST",
+			{ ...validated.serviceData, entity_id: validated.entityId },
+		);
+		const refreshed = await hassRequest(
+			`/states/${encodeURIComponent(validated.entityId)}`,
+		);
+		response.json(
+			refreshed && typeof refreshed === "object" && "entity_id" in refreshed
+				? normalizeEntity(refreshed as HassEntity)
+				: refreshed,
+		);
 	} catch (error) {
-		response.status(400).json({ error: error instanceof Error ? error.message : "Invalid entity action" });
+		response
+			.status(400)
+			.json({
+				error: error instanceof Error ? error.message : "Invalid entity action",
+			});
 	}
 });
 app.get("/api/reminders", (_request, response) => {
@@ -204,8 +268,17 @@ app.post("/api/chat", async (request, response) => {
 	});
 	const send = createSseSender(response);
 	try {
-		const attachments = validateAttachments(request.body?.attachments, process.env.LOCAL_LLM_VISION === "true");
-		await runAgent(prompt, thinkingMode, send, `request-${Date.now()}`, attachments);
+		const attachments = validateAttachments(
+			request.body?.attachments,
+			process.env.LOCAL_LLM_VISION === "true",
+		);
+		await runAgent(
+			prompt,
+			thinkingMode,
+			send,
+			`request-${Date.now()}`,
+			attachments,
+		);
 		send("complete", {});
 	} catch (error) {
 		console.error("Harness request failed:", error);
@@ -299,11 +372,29 @@ async function runAgent(
 	];
 	for (let iteration = 0; iteration < 5; iteration += 1) {
 		const phaseId = createPhaseId(requestId, iteration);
-		send("phase_start", { phaseId, iteration, kind: "thinking", state: "active" });
-		const result = await streamModel(messages, thinkingMode, tools, send, phaseId, iteration);
+		send("phase_start", {
+			phaseId,
+			iteration,
+			kind: "thinking",
+			state: "active",
+		});
+		const result = await streamModel(
+			messages,
+			thinkingMode,
+			tools,
+			send,
+			phaseId,
+			iteration,
+		);
 		if (!result.toolCalls.length) {
 			send("answer", { text: result.text });
-			send("phase_complete", { phaseId, iteration, kind: "answer", state: "complete", metrics: result.metrics });
+			send("phase_complete", {
+				phaseId,
+				iteration,
+				kind: "answer",
+				state: "complete",
+				metrics: result.metrics,
+			});
 			return;
 		}
 		messages.push({
@@ -323,21 +414,43 @@ async function runAgent(
 				state: "running",
 				arguments: args,
 			});
-			send("tool_start", { phaseId, iteration, kind: "tool", state: "active", name: call.function.name, arguments: args, metrics: result.metrics });
+			send("tool_start", {
+				phaseId,
+				iteration,
+				kind: "tool",
+				state: "active",
+				name: call.function.name,
+				arguments: args,
+				metrics: result.metrics,
+			});
 			const value = await executeTool(call.function.name, args);
 			send("tool", {
 				name: call.function.name,
 				state: "complete",
 				result: value,
 			});
-			send("tool_complete", { phaseId, iteration, kind: "tool", state: "complete", name: call.function.name, result: value, metrics: result.metrics });
+			send("tool_complete", {
+				phaseId,
+				iteration,
+				kind: "tool",
+				state: "complete",
+				name: call.function.name,
+				result: value,
+				metrics: result.metrics,
+			});
 			messages.push({
 				role: "tool",
 				tool_call_id: call.id,
 				content: JSON.stringify(value),
 			});
 		}
-		send("phase_complete", { phaseId, iteration, kind: "tool", state: "complete", metrics: result.metrics });
+		send("phase_complete", {
+			phaseId,
+			iteration,
+			kind: "tool",
+			state: "complete",
+			metrics: result.metrics,
+		});
 	}
 	send("answer", {
 		text: "I reached the tool-call limit before completing the request.",
@@ -420,13 +533,23 @@ async function streamModel(
 				firstTokenAt ??= Date.now();
 				text += delta.content;
 				send("token", { text: delta.content });
-				send("answer_delta", { phaseId, iteration, kind: "answer", text: delta.content });
+				send("answer_delta", {
+					phaseId,
+					iteration,
+					kind: "answer",
+					text: delta.content,
+				});
 			}
 			if (delta.reasoning_content) {
 				firstTokenAt ??= Date.now();
 				thinking += delta.reasoning_content;
 				send("thinking", { text: delta.reasoning_content });
-				send("thinking_delta", { phaseId, iteration, kind: "thinking", text: delta.reasoning_content });
+				send("thinking_delta", {
+					phaseId,
+					iteration,
+					kind: "thinking",
+					text: delta.reasoning_content,
+				});
 			}
 			for (const call of delta.tool_calls || []) {
 				const index = call.index || 0;
@@ -456,7 +579,12 @@ async function streamModel(
 		totalMs: metrics.totalMs,
 		thinkingTokens: metrics.thinkingTokens,
 	});
-	send("phase_metrics", { phaseId, iteration, kind: toolCalls.length ? "tool" : "answer", metrics });
+	send("phase_metrics", {
+		phaseId,
+		iteration,
+		kind: toolCalls.length ? "tool" : "answer",
+		metrics,
+	});
 	return { text, toolCalls: toolCalls.filter(Boolean), metrics };
 }
 

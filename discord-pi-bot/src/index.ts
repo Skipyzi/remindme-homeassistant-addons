@@ -48,19 +48,49 @@ async function main() {
 		if (client.user) {
 			console.log(`Logged in as ${client.user.tag}`);
 			await loadReminders(async (reminder) => {
-				const callHomeAssistant = async (service: string, data: Record<string, unknown>) => {
+				const callHomeAssistant = async (
+					service: string,
+					data: Record<string, unknown>,
+				) => {
 					const token = process.env.SUPERVISOR_TOKEN;
 					if (!token) throw new Error("Home Assistant API token unavailable");
-					const response = await fetch(`http://supervisor/core/api/services/${service}`, { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify(data) });
-					if (!response.ok) throw new Error(`Home Assistant notification failed: ${response.status}`);
+					const response = await fetch(
+						`http://supervisor/core/api/services/${service}`,
+						{
+							method: "POST",
+							headers: {
+								Authorization: `Bearer ${token}`,
+								"Content-Type": "application/json",
+							},
+							body: JSON.stringify(data),
+						},
+					);
+					if (!response.ok)
+						throw new Error(
+							`Home Assistant notification failed: ${response.status}`,
+						);
 				};
 				return deliverReminder(reminder, process.env.OWNER_ID || "", {
-					homeAssistant: () => callHomeAssistant("persistent_notification/create", { title: "RemindMe", message: reminder.message, notification_id: reminder.id }),
-					mobile: process.env.HA_NOTIFY_TARGET ? () => callHomeAssistant(`notify/${process.env.HA_NOTIFY_TARGET?.replace(/^notify\./, "")}`, { title: "RemindMe", message: reminder.message }) : undefined,
+					homeAssistant: () =>
+						callHomeAssistant("persistent_notification/create", {
+							title: "RemindMe",
+							message: reminder.message,
+							notification_id: reminder.id,
+						}),
+					mobile: process.env.HA_NOTIFY_TARGET
+						? () =>
+								callHomeAssistant(
+									`notify/${process.env.HA_NOTIFY_TARGET?.replace(/^notify\./, "")}`,
+									{ title: "RemindMe", message: reminder.message },
+								)
+						: undefined,
 					discord: async () => {
 						const channel = await client.channels.fetch(reminder.channelId);
-						if (!channel?.isSendable()) throw new Error("Discord reminder channel unavailable");
-						await channel.send(`⏰ <@${reminder.userId}>, reminder: **${reminder.message}**`);
+						if (!channel?.isSendable())
+							throw new Error("Discord reminder channel unavailable");
+						await channel.send(
+							`⏰ <@${reminder.userId}>, reminder: **${reminder.message}**`,
+						);
 					},
 				});
 			});

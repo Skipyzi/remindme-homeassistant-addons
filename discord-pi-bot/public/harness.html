@@ -22,7 +22,11 @@
       x-data="harness()"
       x-init="init()"
     >
-      <aside class="rail" id="conversation-library" :class="{open: historyOpen}">
+      <aside
+        class="rail"
+        id="conversation-library"
+        :class="{open: historyOpen}"
+      >
         <div>
           <div class="kicker">Local command deck / 01</div>
           <div class="brand">◉ <b>RemindMe</b><br />AI</div>
@@ -32,8 +36,23 @@
         </p>
         <nav class="nav" aria-label="Conversation controls">
           <button @click="newChat()">＋ New chat</button>
-          <label class="history-search">Search<input x-model="conversationSearch" type="search"></label>
-          <div class="history-list"><template x-for="conversation in filteredConversations" :key="conversation.id"><button :class="{active:conversation.id===currentConversationId}" @click="selectConversation(conversation)"><span x-text="conversation.title"></span><small x-text="new Date(conversation.updatedAt).toLocaleDateString()"></small></button></template></div>
+          <label class="history-search"
+            >Search<input x-model="conversationSearch" type="search"
+          /></label>
+          <div class="history-list">
+            <template
+              x-for="conversation in filteredConversations"
+              :key="conversation.id"
+              ><button
+                :class="{active:conversation.id===currentConversationId}"
+                @click="selectConversation(conversation)"
+              >
+                <span x-text="conversation.title"></span
+                ><small
+                  x-text="new Date(conversation.updatedAt).toLocaleDateString()"
+                ></small></button
+            ></template>
+          </div>
           <button @click="clearChat()">Clear conversation</button>
           <button @click="settingsOpen=true">Settings</button>
         </nav>
@@ -48,12 +67,24 @@
       </aside>
       <main class="main">
         <header class="topbar">
-          <button class="mobile-toggle" aria-controls="conversation-library" @click="historyOpen=!historyOpen">☰ Chats</button>
+          <button
+            class="mobile-toggle"
+            aria-controls="conversation-library"
+            @click="historyOpen=!historyOpen"
+          >
+            ☰ Chats
+          </button>
           <div class="top-title">
             Home console<small x-text="sessionLabel"></small>
           </div>
           <div class="badge" x-text="modelBadge"></div>
-          <button class="mobile-toggle" aria-controls="house-board" @click="boardOpen=!boardOpen">House board</button>
+          <button
+            class="mobile-toggle"
+            aria-controls="house-board"
+            @click="boardOpen=!boardOpen"
+          >
+            House board
+          </button>
         </header>
         <section class="chat" id="timeline" aria-live="polite">
           <div class="empty" x-show="messages.length===0">
@@ -64,34 +95,111 @@
               wait for your confirmation.
             </p>
           </div>
-          <template x-for="message in messages" :key="message.id">
-            <article class="message" :class="[message.type || message.kind, {settled: message.state==='complete' && (message.kind==='thinking' || message.kind==='tool')}]">
+          <template x-for="message in messages" :key="message.id || message.key">
+            <article
+              class="message"
+              :class="[message.type || message.kind, {settled: message.state==='complete' && (message.kind==='thinking' || message.kind==='tool')}]"
+            >
               <template x-if="message.kind==='thinking'">
-                <details :open="message.expanded" @toggle="message.expanded=$event.target.open">
-                  <summary x-text="message.state==='active' ? '◌ Consulting the house…\n'+recentTrace(message) : thoughtLabel(message)"></summary>
-                  <pre x-text="message.text || 'No reasoning trace returned.'"></pre>
+                <details
+                  :open="message.expanded"
+                  @toggle="message.expanded=$event.target.open"
+                >
+                  <summary
+                    x-text="message.state==='active' ? '◌ Consulting the house…\n'+recentTrace(message) : thoughtLabel(message)"
+                  ></summary>
+                  <pre
+                    x-text="message.text || 'No reasoning trace returned.'"
+                  ></pre>
                 </details>
               </template>
               <template x-if="message.kind==='tool'">
-                <details :open="message.expanded" @toggle="message.expanded=$event.target.open">
-                  <summary x-text="message.state==='active' ? '◈ '+toolLabel(message) : message.name+' · complete'"></summary>
-                  <pre x-text="json({arguments:message.arguments,result:message.result,metrics:message.metrics})"></pre>
+                <details
+                  :open="message.expanded"
+                  @toggle="message.expanded=$event.target.open"
+                >
+                  <summary
+                    x-text="message.state==='active' ? '◈ '+toolLabel(message) : message.name+' · complete'"
+                  ></summary>
+                  <pre
+                    x-text="json({arguments:message.arguments,result:message.result,metrics:message.metrics})"
+                  ></pre>
                 </details>
               </template>
-              <span x-show="!message.kind || message.kind==='answer'" x-text="message.text"></span>
-              <template x-if="message.items"><div class="entity-stack">
-                <template x-for="item in message.items" :key="item.id || item.entityId"><section class="entity-card" :class="{pending:item.pending,applied:item.applied}">
-                  <header><div><b x-text="item.message ? item.message : item.name"></b><small x-text="item.message ? formatTime(item.time) : item.entityId"></small></div><span class="entity-state" x-text="item.message ? 'SCHEDULED' : item.state"></span></header>
-                  <template x-if="item.domain==='light'"><div class="entity-controls">
-                    <button class="action" @click="entityAction(item,item.state==='on'?'turn_off':'turn_on')" x-text="item.state==='on'?'Turn off':'Turn on'"></button>
-                    <label x-show="item.capabilities?.brightness">Intensity <input type="range" min="0" max="255" :value="item.brightness || 0" @change="entityAction(item,'brightness',Number($event.target.value))"></label>
-                    <label x-show="item.capabilities?.colorTemperature">Warmth <input type="range" min="1000" max="12000" :value="item.colorTemperature || 2700" @change="entityAction(item,'color_temperature',Number($event.target.value))"></label>
-                    <label x-show="item.capabilities?.color">Color <input type="color" :value="rgbHex(item.rgbColor)" @change="entityAction(item,'rgb_color',hexRgb($event.target.value))"></label>
-                  </div></template>
-                  <button x-show="item.message" class="action" @click="deleteReminder(item.id)">Delete reminder</button>
-                  <p class="entity-error" x-show="item.error" x-text="item.error"></p>
-                </section></template>
-              </div></template>
+              <span
+                x-show="!message.kind || message.kind==='answer'"
+                x-text="message.text"
+              ></span>
+              <template x-if="message.items"
+                ><div class="entity-stack">
+                  <template
+                    x-for="item in message.items"
+                    :key="item.id || item.entityId"
+                    ><section
+                      class="entity-card"
+                      :class="{pending:item.pending,applied:item.applied}"
+                    >
+                      <header>
+                        <div>
+                          <b
+                            x-text="item.message ? item.message : item.name"
+                          ></b
+                          ><small
+                            x-text="item.message ? formatTime(item.time) : item.entityId"
+                          ></small>
+                        </div>
+                        <span
+                          class="entity-state"
+                          x-text="item.message ? 'SCHEDULED' : item.state"
+                        ></span>
+                      </header>
+                      <template x-if="item.domain==='light'"
+                        ><div class="entity-controls">
+                          <button
+                            class="action"
+                            @click="entityAction(item,item.state==='on'?'turn_off':'turn_on')"
+                            x-text="item.state==='on'?'Turn off':'Turn on'"
+                          ></button>
+                          <label x-show="item.capabilities?.brightness"
+                            >Intensity
+                            <input
+                              type="range"
+                              min="0"
+                              max="255"
+                              :value="item.brightness || 0"
+                              @change="entityAction(item,'brightness',Number($event.target.value))"
+                          /></label>
+                          <label x-show="item.capabilities?.colorTemperature"
+                            >Warmth
+                            <input
+                              type="range"
+                              min="1000"
+                              max="12000"
+                              :value="item.colorTemperature || 2700"
+                              @change="entityAction(item,'color_temperature',Number($event.target.value))"
+                          /></label>
+                          <label x-show="item.capabilities?.color"
+                            >Color
+                            <input
+                              type="color"
+                              :value="rgbHex(item.rgbColor)"
+                              @change="entityAction(item,'rgb_color',hexRgb($event.target.value))"
+                          /></label></div
+                      ></template>
+                      <button
+                        x-show="item.message"
+                        class="action"
+                        @click="deleteReminder(item.id)"
+                      >
+                        Delete reminder
+                      </button>
+                      <p
+                        class="entity-error"
+                        x-show="item.error"
+                        x-text="item.error"
+                      ></p></section
+                  ></template></div
+              ></template>
               <template x-if="message.confirm"
                 ><div class="controls">
                   <button class="action" @click="confirmAction(message)">
@@ -104,7 +212,13 @@
             </article>
           </template>
         </section>
-        <footer class="composer" id="composer" @dragover.prevent @drop.prevent="addAttachments($event.dataTransfer.files)" @paste.window="addAttachments($event.clipboardData.files)">
+        <footer
+          class="composer"
+          id="composer"
+          @dragover.prevent
+          @drop.prevent="addAttachments($event.dataTransfer.files)"
+          @paste.window="addAttachments($event.clipboardData.files)"
+        >
           <form @submit.prevent="send()">
             <div class="compose-line">
               <textarea
@@ -120,10 +234,33 @@
                 x-text="busy ? 'Working…' : 'Send ↑'"
               ></button>
             </div>
-            <div class="attachment-strip" x-show="attachments.length"><template x-for="(attachment,index) in attachments" :key="attachment.name+index"><span><img :src="attachment.dataUrl" :alt="attachment.name"><button type="button" @click="attachments.splice(index,1)">×</button></span></template></div>
-            <p class="entity-error" x-show="attachmentError" x-text="attachmentError"></p>
+            <div class="attachment-strip" x-show="attachments.length">
+              <template
+                x-for="(attachment,index) in attachments"
+                :key="attachment.name+index"
+                ><span
+                  ><img
+                    :src="attachment.dataUrl"
+                    :alt="attachment.name"
+                  /><button type="button" @click="attachments.splice(index,1)">
+                    ×
+                  </button></span
+                ></template
+              >
+            </div>
+            <p
+              class="entity-error"
+              x-show="attachmentError"
+              x-text="attachmentError"
+            ></p>
             <div class="controls">
-              <label class="attach-button">Attach image<input type="file" accept="image/jpeg,image/png,image/webp" multiple @change="addAttachments($event.target.files)"></label>
+              <label class="attach-button"
+                >Attach image<input
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  multiple
+                  @change="addAttachments($event.target.files)"
+              /></label>
               <label
                 >Thinking
                 <select x-model="thinking">
@@ -131,10 +268,17 @@
                   <option value="balanced">Balanced</option>
                   <option value="deep">Deep</option>
                 </select></label
-              ><span x-show="tokenUsage.exact" x-text="`Prompt ${tokenUsage.promptTokens} tokens · Context ${tokenUsage.contextTokens + tokenUsage.promptTokens} / ${tokenUsage.contextCapacity}`"></span>
-              <span x-show="!tokenUsage.exact">Exact token count unavailable</span>
+              ><span
+                x-show="tokenUsage.exact"
+                x-text="`Prompt ${tokenUsage.promptTokens} tokens · Context ${tokenUsage.contextTokens + tokenUsage.promptTokens} / ${tokenUsage.contextCapacity}`"
+              ></span>
+              <span x-show="!tokenUsage.exact"
+                >Exact token count unavailable</span
+              >
             </div>
-            <div class="context-track" :class="contextLevel"><i :style="`width:${contextPercent}%`"></i></div>
+            <div class="context-track" :class="contextLevel">
+              <i :style="`width:${contextPercent}%`"></i>
+            </div>
           </form>
         </footer>
       </main>
@@ -197,7 +341,11 @@
                 x-model="settings.exaApiKey"
                 type="password"
                 placeholder="Leave unchanged" /></label
-            ><label>Home Assistant mobile notification target<input x-model="settings.notifyTarget" type="text" placeholder="notify.mobile_app_phone" /></label
+            ><label
+              >Home Assistant mobile notification target<input
+                x-model="settings.notifyTarget"
+                type="text"
+                placeholder="notify.mobile_app_phone" /></label
             ><label
               >Glow intensity<input
                 type="range"
@@ -210,7 +358,13 @@
               ><input type="checkbox" x-model="scanlines"
             /></label>
           </div>
-          <section class="cookbook" x-show="settings.hardwareProfile"><div class="kicker">Hardware cookbook</div><h3 x-text="settings.hardwareProfile?.name"></h3><p x-text="settings.hardwareProfile ? `Context ${settings.hardwareProfile.contextSize} · Batch ${settings.hardwareProfile.batchSize} · Threads ${settings.hardwareProfile.threads} · Flash attention ${settings.hardwareProfile.flashAttention ? 'on' : 'off'}` : ''"></p></section>
+          <section class="cookbook" x-show="settings.hardwareProfile">
+            <div class="kicker">Hardware cookbook</div>
+            <h3 x-text="settings.hardwareProfile?.name"></h3>
+            <p
+              x-text="settings.hardwareProfile ? `Context ${settings.hardwareProfile.contextSize} · Batch ${settings.hardwareProfile.batchSize} · Threads ${settings.hardwareProfile.threads} · Flash attention ${settings.hardwareProfile.flashAttention ? 'on' : 'off'}` : ''"
+            ></p>
+          </section>
           <div class="settings-actions">
             <button class="ghost" @click="settingsOpen=false">Close</button
             ><button class="send" @click="saveSettings()">Save changes</button>
@@ -219,6 +373,5 @@
         </section>
       </div>
     </div>
-    
   </body>
 </html>
