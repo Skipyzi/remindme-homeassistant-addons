@@ -51,6 +51,7 @@ export function publicSettings(environment: NodeJS.ProcessEnv) {
 			environment.LOCAL_LLM_URL ||
 			"http://homeassistant:8080/v1/chat/completions",
 		model: environment.LOCAL_LLM_MODEL || "qwen3-1.7b",
+		modelManagerEnabled: environment.MODEL_MANAGER_ENABLED === "true",
 		exaConfigured: Boolean(environment.EXA_API_KEY),
 		notifyTarget: environment.HA_NOTIFY_TARGET || "",
 	};

@@ -1,5 +1,5 @@
 import "dotenv/config";
-import express, { type Express } from "express";
+import express, { type Express, type Response } from "express";
 import os from "node:os";
 import { resolve } from "node:path";
 import { config } from "./config";
@@ -42,6 +42,13 @@ import {
 	validateAttachments,
 	type ImageAttachment,
 } from "./harness/attachments";
+import {
+	ModelManagerClient,
+	ModelManagerError,
+	deriveManagerUrl,
+	ensureModelManagerPairing,
+	readManagerToken,
+} from "./harness/modelManager";
 
 const app = express();
 const port = Number(process.env.HARNESS_PORT || 8090);
@@ -112,6 +119,71 @@ app.get("/api/settings", (_request, response) => {
 		...publicSettings(process.env),
 		hardwareProfile: recommendHardwareProfile(os.totalmem(), os.cpus().length),
 	});
+});
+app.get("/api/models", async (_request, response) => {
+	await proxyModelManager(response, "/catalog");
+});
+app.get("/api/models/status", async (_request, response) => {
+	await proxyModelManager(response, "/status");
+});
+app.post("/api/models/preflight", async (request, response) => {
+	const body = modelSelectionBody(request.body);
+	if (!body) return response.status(400).json(safeModelError("invalid_model", "Model selection is invalid."));
+	await proxyModelManager(response, "/preflight", "POST", body);
+});
+app.post("/api/models/install", async (request, response) => {
+	const body = modelSelectionBody(request.body);
+	if (!body) return response.status(400).json(safeModelError("invalid_model", "Model selection is invalid."));
+	await proxyModelManager(response, "/install", "POST", body);
+});
+app.post("/api/models/activate", async (request, response) => {
+	const body = modelSelectionBody(request.body);
+	if (!body) return response.status(400).json(safeModelError("invalid_model", "Model selection is invalid."));
+	await proxyModelManager(response, "/activate", "POST", body);
+});
+app.post("/api/models/cancel", async (_request, response) => {
+	await proxyModelManager(response, "/cancel", "POST", {});
+});
+app.delete("/api/models/:id", async (request, response) => {
+	if (!/^[a-z0-9][a-z0-9.-]{0,127}$/.test(request.params.id))
+		return response.status(400).json(safeModelError("invalid_model", "Model identifier is invalid."));
+	await proxyModelManager(response, `/models/${encodeURIComponent(request.params.id)}`, "DELETE");
+});
+app.post("/api/models/custom", async (request, response) => {
+	const repo = typeof request.body?.repo === "string" ? request.body.repo.trim() : "";
+	const file = typeof request.body?.file === "string" ? request.body.file.trim() : "";
+	if (!/^[A-Za-z0-9][A-Za-z0-9_.-]*\/[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(repo) || !/^[A-Za-z0-9][A-Za-z0-9_.-]*\.gguf$/.test(file))
+		return response.status(400).json(safeModelError("invalid_custom_model", "Enter one Hugging Face repository and GGUF filename."));
+	await proxyModelManager(response, "/catalog/custom", "POST", { repo, file });
+});
+app.put("/api/models/credentials", async (request, response) => {
+	const token = typeof request.body?.token === "string" ? request.body.token.trim() : "";
+	if (!/^hf_[A-Za-z0-9_]{20,}$/.test(token))
+		return response.status(400).json(safeModelError("invalid_token", "Enter a valid Hugging Face access token."));
+	await proxyModelManager(response, "/credentials/huggingface", "PUT", { token });
+});
+app.get("/api/models/events", async (request, response) => {
+	const controller = new AbortController();
+	request.on("close", () => controller.abort());
+	try {
+		const upstream = await (await getModelManagerClient()).openEvents(controller.signal);
+		response.status(200).set({
+			"Content-Type": "text/event-stream",
+			"Cache-Control": "no-store",
+			"X-Accel-Buffering": "no",
+		});
+		response.flushHeaders();
+		const reader = upstream.body?.getReader();
+		while (reader) {
+			const { done, value } = await reader.read();
+			if (done) break;
+			response.write(Buffer.from(value));
+		}
+	} catch (error) {
+		if (!response.headersSent) sendModelManagerError(response, error);
+	} finally {
+		if (!response.writableEnded) response.end();
+	}
 });
 app.post("/api/settings", async (request, response) => {
 	const values = request.body || {};
@@ -689,6 +761,111 @@ async function executeTool(
 		}));
 	if (name === "web_search") return exaSearch(String(args.query));
 	return { error: `Unknown tool: ${name}` };
+}
+
+let modelManagerClientPromise: Promise<ModelManagerClient> | undefined;
+
+type ModelSelectionBody = {
+	id: string;
+	context?: number;
+	override?: boolean;
+};
+
+function modelSelectionBody(value: unknown): ModelSelectionBody | undefined {
+	if (!value || typeof value !== "object") return undefined;
+	const input = value as Record<string, unknown>;
+	const id = typeof input.id === "string" ? input.id.trim() : "";
+	if (!/^[a-z0-9][a-z0-9.-]{0,127}$/.test(id)) return undefined;
+	const result: ModelSelectionBody = { id };
+	if (input.context !== undefined) {
+		const context = Number(input.context);
+		if (!Number.isInteger(context) || context < 1024 || context > 131072)
+			return undefined;
+		result.context = context;
+	}
+	if (input.override !== undefined) result.override = input.override === true;
+	return result;
+}
+
+function safeModelError(code: string, message: string, retryable = false) {
+	return { code, message, retryable };
+}
+
+async function getModelManagerClient(): Promise<ModelManagerClient> {
+	if (process.env.MODEL_MANAGER_ENABLED !== "true")
+		throw new ModelManagerError(
+			"manager_disabled",
+			"Local model management is disabled.",
+			503,
+		);
+	if (!modelManagerClientPromise) {
+		modelManagerClientPromise = (async () => {
+			const secretPath =
+				process.env.MODEL_MANAGER_TOKEN_PATH || "/data/model-manager-token";
+			await ensureModelManagerPairing({
+				secretPath,
+				listAddons: async () => {
+					const payload = (await supervisorRequest("/addons")) as {
+						data?: { addons?: Array<{ slug: string; name?: string }> };
+						addons?: Array<{ slug: string; name?: string }>;
+					};
+					return payload.data?.addons || payload.addons || [];
+				},
+				updateOptions: async (slug, options) => {
+					await supervisorRequest(
+						`/addons/${encodeURIComponent(slug)}/options`,
+						"POST",
+						{ options },
+					);
+				},
+			});
+			const managerUrl =
+				process.env.MODEL_MANAGER_URL || deriveManagerUrl(getLocalLlmUrl().toString());
+			return new ModelManagerClient(managerUrl, () => readManagerToken(secretPath));
+		})();
+		modelManagerClientPromise.catch(() => {
+			modelManagerClientPromise = undefined;
+		});
+	}
+	return modelManagerClientPromise;
+}
+
+async function proxyModelManager(
+	response: Response,
+	path: string,
+	method = "GET",
+	body?: unknown,
+) {
+	try {
+		const result = await (
+			await getModelManagerClient()
+		).request<unknown>(path, {
+			method,
+			body: body === undefined ? undefined : JSON.stringify(body),
+		});
+		if (method === "DELETE") response.status(204).end();
+		else response.json(result);
+	} catch (error) {
+		sendModelManagerError(response, error);
+	}
+}
+
+function sendModelManagerError(response: Response, error: unknown) {
+	if (error instanceof ModelManagerError) {
+		response
+			.status(error.status)
+			.json(safeModelError(error.code, error.message, error.retryable));
+		return;
+	}
+	response
+		.status(503)
+		.json(
+			safeModelError(
+				"manager_unavailable",
+				"Local model manager is unavailable.",
+				true,
+			),
+		);
 }
 
 async function supervisorRequest(path: string, method = "GET", body?: unknown) {
