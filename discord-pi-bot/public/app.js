@@ -118,7 +118,7 @@ function harness() {
 			fetch("./api/status")
 				.then((r) => r.json())
 				.then((d) => {
-					this.modelBadge = "LOCAL • " + d.model;
+					this.modelBadge = "LOCAL • " + (d.modelName || d.model);
 					this.visionEnabled = Boolean(d.vision);
 					if (Array.isArray(d.profiles) && d.profiles.length) {
 						this.thinkingProfiles = d.profiles;

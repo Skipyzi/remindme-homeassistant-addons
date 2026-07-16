@@ -173,6 +173,10 @@
                 x-show="message.kind==='answer' && message.metrics"
               >
                 <span
+                  x-show="message.metrics?.modelName || message.metrics?.modelId"
+                  x-text="message.metrics?.modelName || message.metrics?.modelId"
+                ></span
+                ><span
                   x-text="`${message.metrics?.outputTokens || 0} tokens`"
                 ></span
                 ><span

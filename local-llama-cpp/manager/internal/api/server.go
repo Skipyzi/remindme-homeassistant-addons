@@ -148,11 +148,17 @@ func (server *Server) auth(next http.Handler) http.Handler {
 
 func (server *Server) status(response http.ResponseWriter, _ *http.Request) {
 	current := server.dependencies.Supervisor.State()
+	activeID := server.dependencies.Supervisor.ActiveID()
+	var activeModel any
+	if variant, ok := server.findVariant(activeID); ok {
+		activeModel = variant.Public()
+	}
 	writeJSON(response, http.StatusOK, map[string]any{
 		"state":                current,
 		"credentialConfigured": server.credentialConfigured(),
 		"operation":            server.events.current(),
-		"activeModelId":        server.dependencies.Supervisor.ActiveID(),
+		"activeModelId":        activeID,
+		"activeModel":          activeModel,
 	})
 }
 

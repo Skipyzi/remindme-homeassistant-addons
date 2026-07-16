@@ -4,6 +4,11 @@ export interface ToolCall {
 	function: { name: string; arguments: string };
 }
 
+export interface ActiveModelMetadata {
+	modelId?: string;
+	modelName?: string;
+}
+
 export interface PhaseMetrics {
 	inputTokens: number;
 	outputTokens: number;
@@ -12,6 +17,8 @@ export interface PhaseMetrics {
 	firstTokenMs: number;
 	totalMs: number;
 	thinkingTokens: number;
+	modelId?: string;
+	modelName?: string;
 }
 
 export type PhaseKind = "thinking" | "tool" | "answer";
@@ -96,6 +103,7 @@ export function normalizePhaseMetrics(
 	firstTokenMs: number,
 	totalMs: number,
 	thinkingTokens: number,
+	model: ActiveModelMetadata = {},
 ): PhaseMetrics {
 	return {
 		inputTokens: usage.prompt_tokens || timings.prompt_n || 0,
@@ -105,5 +113,7 @@ export function normalizePhaseMetrics(
 		firstTokenMs,
 		totalMs,
 		thinkingTokens,
+		modelId: model.modelId,
+		modelName: model.modelName,
 	};
 }

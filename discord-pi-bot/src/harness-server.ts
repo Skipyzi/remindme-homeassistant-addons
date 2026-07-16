@@ -15,6 +15,7 @@ import {
 	reasoningText,
 	routeThinkTags,
 	stripReasoningTags,
+	type ActiveModelMetadata,
 	type PhaseMetrics,
 	type ToolCall,
 } from "./harness/modelPhases";
@@ -128,17 +129,26 @@ app.get("/api/models/status", async (_request, response) => {
 });
 app.post("/api/models/preflight", async (request, response) => {
 	const body = modelSelectionBody(request.body);
-	if (!body) return response.status(400).json(safeModelError("invalid_model", "Model selection is invalid."));
+	if (!body)
+		return response
+			.status(400)
+			.json(safeModelError("invalid_model", "Model selection is invalid."));
 	await proxyModelManager(response, "/preflight", "POST", body);
 });
 app.post("/api/models/install", async (request, response) => {
 	const body = modelSelectionBody(request.body);
-	if (!body) return response.status(400).json(safeModelError("invalid_model", "Model selection is invalid."));
+	if (!body)
+		return response
+			.status(400)
+			.json(safeModelError("invalid_model", "Model selection is invalid."));
 	await proxyModelManager(response, "/install", "POST", body);
 });
 app.post("/api/models/activate", async (request, response) => {
 	const body = modelSelectionBody(request.body);
-	if (!body) return response.status(400).json(safeModelError("invalid_model", "Model selection is invalid."));
+	if (!body)
+		return response
+			.status(400)
+			.json(safeModelError("invalid_model", "Model selection is invalid."));
 	await proxyModelManager(response, "/activate", "POST", body);
 });
 app.post("/api/models/cancel", async (_request, response) => {
@@ -146,27 +156,57 @@ app.post("/api/models/cancel", async (_request, response) => {
 });
 app.delete("/api/models/:id", async (request, response) => {
 	if (!/^[a-z0-9][a-z0-9.-]{0,127}$/.test(request.params.id))
-		return response.status(400).json(safeModelError("invalid_model", "Model identifier is invalid."));
-	await proxyModelManager(response, `/models/${encodeURIComponent(request.params.id)}`, "DELETE");
+		return response
+			.status(400)
+			.json(safeModelError("invalid_model", "Model identifier is invalid."));
+	await proxyModelManager(
+		response,
+		`/models/${encodeURIComponent(request.params.id)}`,
+		"DELETE",
+	);
 });
 app.post("/api/models/custom", async (request, response) => {
-	const repo = typeof request.body?.repo === "string" ? request.body.repo.trim() : "";
-	const file = typeof request.body?.file === "string" ? request.body.file.trim() : "";
-	if (!/^[A-Za-z0-9][A-Za-z0-9_.-]*\/[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(repo) || !/^[A-Za-z0-9][A-Za-z0-9_.-]*\.gguf$/.test(file))
-		return response.status(400).json(safeModelError("invalid_custom_model", "Enter one Hugging Face repository and GGUF filename."));
+	const repo =
+		typeof request.body?.repo === "string" ? request.body.repo.trim() : "";
+	const file =
+		typeof request.body?.file === "string" ? request.body.file.trim() : "";
+	if (
+		!/^[A-Za-z0-9][A-Za-z0-9_.-]*\/[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(repo) ||
+		!/^[A-Za-z0-9][A-Za-z0-9_.-]*\.gguf$/.test(file)
+	)
+		return response
+			.status(400)
+			.json(
+				safeModelError(
+					"invalid_custom_model",
+					"Enter one Hugging Face repository and GGUF filename.",
+				),
+			);
 	await proxyModelManager(response, "/catalog/custom", "POST", { repo, file });
 });
 app.put("/api/models/credentials", async (request, response) => {
-	const token = typeof request.body?.token === "string" ? request.body.token.trim() : "";
+	const token =
+		typeof request.body?.token === "string" ? request.body.token.trim() : "";
 	if (!/^hf_[A-Za-z0-9_]{20,}$/.test(token))
-		return response.status(400).json(safeModelError("invalid_token", "Enter a valid Hugging Face access token."));
-	await proxyModelManager(response, "/credentials/huggingface", "PUT", { token });
+		return response
+			.status(400)
+			.json(
+				safeModelError(
+					"invalid_token",
+					"Enter a valid Hugging Face access token.",
+				),
+			);
+	await proxyModelManager(response, "/credentials/huggingface", "PUT", {
+		token,
+	});
 });
 app.get("/api/models/events", async (request, response) => {
 	const controller = new AbortController();
 	request.on("close", () => controller.abort());
 	try {
-		const upstream = await (await getModelManagerClient()).openEvents(controller.signal);
+		const upstream = await (await getModelManagerClient()).openEvents(
+			controller.signal,
+		);
 		response.status(200).set({
 			"Content-Type": "text/event-stream",
 			"Cache-Control": "no-store",
@@ -285,17 +325,24 @@ app.delete("/api/reminders/:id", (_request, response) => {
 	);
 	response.status(deleted ? 204 : 404).end();
 });
-app.get("/api/status", (_request, response) => {
+app.get("/api/status", async (_request, response) => {
+	const managed = await managedActiveModel();
+	const contextSize =
+		managed?.recommendedContext ||
+		Number(process.env.LOCAL_LLM_CONTEXT_SIZE || 8192);
 	response.json({
-		model: config.localLlmModel,
+		model: managed?.id || config.localLlmModel,
+		modelName: managed
+			? `${managed.family} ${managed.quantization}`.trim()
+			: config.localLlmModel,
+		capabilities: managed?.capabilities || ["chat"],
 		llmUrl:
 			process.env.LOCAL_LLM_URL ||
 			"http://homeassistant:8080/v1/chat/completions",
-		vision: process.env.LOCAL_LLM_VISION === "true",
-		profiles: thinkingProfilesForHardware(
-			os.totalmem(),
-			Number(process.env.LOCAL_LLM_CONTEXT_SIZE || 8192),
-		),
+		vision:
+			process.env.LOCAL_LLM_VISION === "true" &&
+			Boolean(managed?.capabilities.includes("vision")),
+		profiles: thinkingProfilesForHardware(os.totalmem(), contextSize),
 		hardware: {
 			architecture: process.arch,
 			cpuCores: os.cpus().length,
@@ -441,6 +488,7 @@ async function runAgent(
 	requestId: string,
 	attachments: ImageAttachment[],
 ): Promise<void> {
+	const activeModel = await activeModelMetadata();
 	const allowedNames = allowedToolNames(prompt);
 	const requestTools = tools.filter((tool) =>
 		allowedNames.has(tool.function.name),
@@ -469,6 +517,7 @@ async function runAgent(
 			send,
 			phaseId,
 			iteration,
+			activeModel,
 		);
 		if (!result.toolCalls.length) {
 			send("answer", { text: result.text });
@@ -555,6 +604,7 @@ async function streamModel(
 	send: Send,
 	phaseId: string,
 	iteration: number,
+	activeModel: ActiveModelMetadata,
 ) {
 	const started = Date.now();
 	const thinkingProfile = getThinkingProfile(
@@ -674,6 +724,7 @@ async function streamModel(
 		firstTokenAt ? firstTokenAt - started : elapsed,
 		elapsed,
 		thinking.length,
+		activeModel,
 	);
 	if (!metrics.outputTokens) metrics.outputTokens = text.length;
 	send("metrics", {
@@ -763,6 +814,43 @@ async function executeTool(
 	return { error: `Unknown tool: ${name}` };
 }
 
+type ManagedActiveModel = {
+	id: string;
+	family: string;
+	file: string;
+	quantization: string;
+	recommendedContext: number;
+	capabilities: string[];
+};
+
+async function managedActiveModel(): Promise<ManagedActiveModel | undefined> {
+	if (process.env.MODEL_MANAGER_ENABLED !== "true") return undefined;
+	try {
+		const status = await (
+			await getModelManagerClient()
+		).request<{ activeModel?: ManagedActiveModel }>("/status", {
+			signal: AbortSignal.timeout(2_000),
+		});
+		return status.activeModel;
+	} catch {
+		return undefined;
+	}
+}
+
+async function activeModelMetadata(): Promise<ActiveModelMetadata> {
+	const fallback = {
+		modelId: process.env.LOCAL_LLM_MODEL || config.localLlmModel,
+		modelName: process.env.LOCAL_LLM_MODEL || config.localLlmModel,
+	};
+	const active = await managedActiveModel();
+	return active
+		? {
+				modelId: active.id,
+				modelName: `${active.family} ${active.quantization}`.trim(),
+			}
+		: fallback;
+}
+
 let modelManagerClientPromise: Promise<ModelManagerClient> | undefined;
 
 type ModelSelectionBody = {
@@ -820,8 +908,11 @@ async function getModelManagerClient(): Promise<ModelManagerClient> {
 				},
 			});
 			const managerUrl =
-				process.env.MODEL_MANAGER_URL || deriveManagerUrl(getLocalLlmUrl().toString());
-			return new ModelManagerClient(managerUrl, () => readManagerToken(secretPath));
+				process.env.MODEL_MANAGER_URL ||
+				deriveManagerUrl(getLocalLlmUrl().toString());
+			return new ModelManagerClient(managerUrl, () =>
+				readManagerToken(secretPath),
+			);
 		})();
 		modelManagerClientPromise.catch(() => {
 			modelManagerClientPromise = undefined;
@@ -837,12 +928,13 @@ async function proxyModelManager(
 	body?: unknown,
 ) {
 	try {
-		const result = await (
-			await getModelManagerClient()
-		).request<unknown>(path, {
-			method,
-			body: body === undefined ? undefined : JSON.stringify(body),
-		});
+		const result = await (await getModelManagerClient()).request<unknown>(
+			path,
+			{
+				method,
+				body: body === undefined ? undefined : JSON.stringify(body),
+			},
+		);
 		if (method === "DELETE") response.status(204).end();
 		else response.json(result);
 	} catch (error) {
