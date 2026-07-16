@@ -70,13 +70,58 @@
         background: var(--panel);
         color: #fff;
       }
-      .settings-panel { padding: 24px 30px; background: #161d28; border-bottom: 1px solid var(--line); display: grid; gap: 12px; }
-      .settings-panel[hidden] { display: none; }
-      .settings-panel h2 { margin: 0; color: var(--mint); font: 600 18px 'Space Grotesk', sans-serif; }
-      .settings-panel label { display: flex; gap: 12px; align-items: center; color: var(--muted); }
-      .settings-panel select { background: var(--panel); color: #fff; border: 1px solid var(--line); padding: 6px; border-radius: 6px; }
-      .settings-note { color: var(--muted); font-size: 12px; margin: 0; }
-      body.scanlines::after { content: ''; position: fixed; inset: 0; pointer-events: none; opacity: .12; background: repeating-linear-gradient(0deg, transparent 0 3px, #7cffb2 4px); mix-blend-mode: overlay; }
+      .settings-panel {
+        padding: 24px 30px;
+        background: #161d28;
+        border-bottom: 1px solid var(--line);
+        display: grid;
+        gap: 12px;
+      }
+      .settings-panel[hidden] {
+        display: none;
+      }
+      .settings-panel h2 {
+        margin: 0;
+        color: var(--mint);
+        font:
+          600 18px "Space Grotesk",
+          sans-serif;
+      }
+      .settings-panel label {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        color: var(--muted);
+      }
+      .settings-panel select,
+      .settings-panel input[type="url"],
+      .settings-panel input[type="text"],
+      .settings-panel input[type="password"] {
+        background: var(--panel);
+        color: #fff;
+        border: 1px solid var(--line);
+        padding: 6px;
+        border-radius: 6px;
+        flex: 1;
+      }
+      .settings-note {
+        color: var(--muted);
+        font-size: 12px;
+        margin: 0;
+      }
+      body.scanlines::after {
+        content: "";
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        opacity: 0.12;
+        background: repeating-linear-gradient(
+          0deg,
+          transparent 0 3px,
+          #7cffb2 4px
+        );
+        mix-blend-mode: overlay;
+      }
       .status {
         position: fixed;
         bottom: 18px;
@@ -224,10 +269,29 @@
       <section>
         <div id="settings-panel" class="settings-panel" hidden>
           <h2>Terminal settings</h2>
-          <label>Performance profile <select id="profile"><option>Fast</option><option selected>Balanced</option><option>Deep</option></select></label>
-          <label>CRT scanlines <input id="scanlines" type="checkbox"></label>
-          <label>Glow intensity <input id="glow" type="range" min="0" max="100" value="55"></label>
-          <p class="settings-note">Profiles tune context and reasoning for the Raspberry Pi 5. Connection keys remain in add-on settings.</p>
+          <label
+            >Performance profile
+            <select id="profile">
+              <option>Fast</option>
+              <option selected>Balanced</option>
+              <option>Deep</option>
+            </select></label
+          >
+          <label>CRT scanlines <input id="scanlines" type="checkbox" /></label>
+          <label
+            >Glow intensity
+            <input id="glow" type="range" min="0" max="100" value="55"
+          /></label>
+          <p class="settings-note">
+            Profiles tune context and reasoning for the Raspberry Pi 5.
+            Connection keys remain in add-on settings.
+          </p>
+          <div id="cookbook" class="settings-note">Reading hardware profile…</div>
+          <label>Model endpoint <input id="llm-url" type="url" value="http://homeassistant:8080/v1/chat/completions" /></label>
+          <label>Model name <input id="llm-model" type="text" value="qwen3-1.7b" /></label>
+          <label>Exa API key <input id="exa-key" type="password" placeholder="Leave unchanged to keep existing key" /></label>
+          <button id="save-settings" class="send">Save connections</button>
+          <div id="settings-result" class="settings-note"></div>
         </div>
         <header class="top">
           <strong>Home console</strong
@@ -326,6 +390,29 @@
                 tool.className = "bubble tool";
                 tool.textContent = `⌁ ${data.name} · ${data.state}`;
                 chat.insertBefore(tool, answer);
+                if (
+                  data.state === "complete" &&
+                  data.result?.confirmation_required
+                ) {
+                  const card = document.createElement("div");
+                  card.className = "bubble tool";
+                  card.textContent = data.result.message;
+                  const confirm = document.createElement("button");
+                  confirm.textContent = "CONFIRM ACTION";
+                  confirm.className = "send";
+                  confirm.onclick = async () => {
+                    confirm.disabled = true;
+                    confirm.textContent = "APPLYING…";
+                    const result = await fetch("./api/confirm", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ token: data.result.token }),
+                    });
+                    confirm.textContent = result.ok ? "APPLIED" : "FAILED";
+                  };
+                  card.append(document.createElement("br"), confirm);
+                  chat.insertBefore(card, answer);
+                }
                 if (data.state === "complete" && Array.isArray(data.result)) {
                   const card = document.createElement("div");
                   card.className = "bubble assistant";
@@ -335,7 +422,8 @@
                   for (const entity of data.result.slice(0, 20)) {
                     const row = document.createElement("div");
                     row.textContent = `${entity.attributes?.friendly_name || entity.entity_id}: ${entity.state}`;
-                    row.style.cssText = "padding:8px 0;border-bottom:1px solid var(--line);color:var(--mint)";
+                    row.style.cssText =
+                      "padding:8px 0;border-bottom:1px solid var(--line);color:var(--mint)";
                     card.append(row);
                   }
                   chat.insertBefore(card, answer);
@@ -343,7 +431,7 @@
               } else if (eventName === "metrics") {
                 const metrics = document.createElement("div");
                 metrics.className = "bubble tool";
-                metrics.textContent = `METRICS  ${data.inputTokens || 0} in · ${data.outputTokens || 0} out · prompt ${Number(data.promptTokensPerSecond || 0).toFixed(1)} tok/s · decode ${Number(data.generationTokensPerSecond || 0).toFixed(1)} tok/s · TTFT ${data.firstTokenMs}ms`;
+                metrics.textContent = `METRICS  ${data.inputTokens || 0} in · ${data.outputTokens || 0} out · context ${(data.inputTokens || 0) + (data.outputTokens || 0)} · prompt ${Number(data.promptTokensPerSecond || 0).toFixed(1)} tok/s · decode ${Number(data.generationTokensPerSecond || 0).toFixed(1)} tok/s · TTFT ${data.firstTokenMs}ms`;
                 chat.insertBefore(metrics, answer);
               } else if (eventName === "error") {
                 answer.style.display = "block";
@@ -370,15 +458,51 @@
         while (chat.firstChild) chat.firstChild.remove();
       };
       const settingsPanel = document.querySelector("#settings-panel");
-      document.querySelector("#settings").onclick = () => { settingsPanel.hidden = !settingsPanel.hidden; };
-      document.querySelector("#scanlines").onchange = (event) => { document.body.classList.toggle("scanlines", event.target.checked); localStorage.setItem("remindme.scanlines", event.target.checked ? "1" : "0"); };
-      document.querySelector("#glow").oninput = (event) => { document.documentElement.style.setProperty("--glow", `${event.target.value / 100}`); };
-      if (localStorage.getItem("remindme.scanlines") === "1") { document.querySelector("#scanlines").checked = true; document.body.classList.add("scanlines"); }
+      document.querySelector("#settings").onclick = () => {
+        settingsPanel.hidden = !settingsPanel.hidden;
+      };
+      document.querySelector("#scanlines").onchange = (event) => {
+        document.body.classList.toggle("scanlines", event.target.checked);
+        localStorage.setItem(
+          "remindme.scanlines",
+          event.target.checked ? "1" : "0",
+        );
+      };
+      document.querySelector("#save-settings").onclick = async () => {
+        const result = document.querySelector("#settings-result");
+        result.textContent = "Saving…";
+        const r = await fetch("./api/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ localLlmUrl: document.querySelector("#llm-url").value, model: document.querySelector("#llm-model").value, exaApiKey: document.querySelector("#exa-key").value }) });
+        result.textContent = r.ok ? "Saved. Restart the add-on to apply connection changes." : "Save failed: " + (await r.text());
+      };
+      fetch("./api/settings").then(r => r.json()).then(d => { document.querySelector("#llm-url").value = d.localLlmUrl; document.querySelector("#llm-model").value = d.model; }).catch(() => {});
+      document.querySelector("#profile").onchange = (event) => {
+        const value = event.target.value.toLowerCase();
+        document.querySelector("#thinking").value = value;
+        localStorage.setItem("remindme.profile", value);
+      };
+      const savedProfile = localStorage.getItem("remindme.profile");
+      if (savedProfile) {
+        document.querySelector("#profile").value =
+          savedProfile[0].toUpperCase() + savedProfile.slice(1);
+        document.querySelector("#thinking").value = savedProfile;
+      }
+      document.querySelector("#glow").oninput = (event) => {
+        document.documentElement.style.setProperty(
+          "--glow",
+          `${event.target.value / 100}`,
+        );
+      };
+      if (localStorage.getItem("remindme.scanlines") === "1") {
+        document.querySelector("#scanlines").checked = true;
+        document.body.classList.add("scanlines");
+      }
       fetch("./api/status")
         .then((r) => r.json())
         .then((d) => {
           document.querySelector("#model").textContent = "LOCAL • " + d.model;
           document.querySelector("#status").textContent = "● local tools ready";
+          const hw = d.hardware;
+          if (hw) document.querySelector("#cookbook").textContent = `Hardware: ${hw.architecture} · ${hw.cpuCores} cores · ${(hw.memoryFree / 1073741824).toFixed(1)} GB free / ${(hw.memoryTotal / 1073741824).toFixed(1)} GB total`;
         })
         .catch(
           () => (document.querySelector("#status").textContent = "● offline"),

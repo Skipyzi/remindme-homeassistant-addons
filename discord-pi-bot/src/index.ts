@@ -4,7 +4,7 @@ import { config, validateConfig } from "./config";
 import { setupCommands } from "./commands";
 import { setupAIChat } from "./chat";
 import { setupPiBridge } from "./piBridge";
-import { startPeriodicCleanup } from "./utils/reminderManager";
+import { loadReminders, startPeriodicCleanup } from "./utils/reminderManager";
 import { startPresenceMonitor } from "./presence";
 
 async function main() {
@@ -43,9 +43,15 @@ async function main() {
 	// Login
 	client.login(config.token);
 
-	client.once("clientReady", () => {
+	client.once("clientReady", async () => {
 		if (client.user) {
 			console.log(`Logged in as ${client.user.tag}`);
+			await loadReminders(async (reminder) => {
+				const channel = await client.channels.fetch(reminder.channelId);
+				if (channel?.isSendable()) {
+					await channel.send(`⏰ <@${reminder.userId}>, reminder: **${reminder.message}**`);
+				}
+			});
 			startPresenceMonitor(client);
 		}
 	});
