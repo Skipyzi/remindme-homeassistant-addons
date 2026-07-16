@@ -38,7 +38,10 @@ function parseTime(input: string): { text: string; delayMs: number } | null {
 		const date = new Date();
 		date.setDate(date.getDate() + 1);
 		date.setHours(9, 0, 0, 0);
-		return { text: tomorrowMatch[1].trim(), delayMs: date.getTime() - Date.now() };
+		return {
+			text: tomorrowMatch[1].trim(),
+			delayMs: date.getTime() - Date.now(),
+		};
 	}
 
 	const weekdayMatch = input.match(
@@ -104,19 +107,29 @@ function parseTime(input: string): { text: string; delayMs: number } | null {
 	return null;
 }
 
-async function reviewReminderIntent(input: string): Promise<{ text: string; delayMs: number } | null> {
+async function reviewReminderIntent(
+	input: string,
+): Promise<{ text: string; delayMs: number } | null> {
 	if (!config.localLlmEnabled) return null;
 	try {
 		const result = await askLocalLlm(
 			`Decide whether this is a reminder request. Return JSON only: {"isReminder":boolean,"text":string,"delayMinutes":number}. Current time is ${new Date().toISOString()}. If it is not a reminder or has no reliable future time, use isReminder false. Request: ${input}`,
 		);
-		const json = JSON.parse(result.replace(/^```json\s*|\s*```$/g, "").trim()) as {
+		const json = JSON.parse(
+			result.replace(/^```json\s*|\s*```$/g, "").trim(),
+		) as {
 			isReminder?: boolean;
 			text?: string;
 			delayMinutes?: number;
 		};
 		const delayMinutes = json.delayMinutes;
-		if (json.isReminder && json.text && typeof delayMinutes === "number" && Number.isFinite(delayMinutes) && delayMinutes > 0) {
+		if (
+			json.isReminder &&
+			json.text &&
+			typeof delayMinutes === "number" &&
+			Number.isFinite(delayMinutes) &&
+			delayMinutes > 0
+		) {
 			return { text: json.text, delayMs: delayMinutes * 60_000 };
 		}
 	} catch (error) {
@@ -140,7 +153,8 @@ export async function handleRemindCommand(
 		return;
 	}
 	const reminderInput = commandText(input ?? message.content);
-	const parsed = parseTime(reminderInput) ?? (await reviewReminderIntent(reminderInput));
+	const parsed =
+		parseTime(reminderInput) ?? (await reviewReminderIntent(reminderInput));
 	if (!parsed || parsed.delayMs <= 0) {
 		await message.reply(
 			"Usage: `!remindme <thing> in <number> minutes/hours/days/weeks` or `!remindme <thing> on <date>`.",

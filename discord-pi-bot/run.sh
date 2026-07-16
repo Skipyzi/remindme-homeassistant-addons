@@ -12,6 +12,8 @@ export PI_AGENT_WEBHOOK_URL="$(get_option pi_agent_webhook_url)"
 export LOCAL_LLM_ENABLED="$(get_option local_llm_enabled)"
 export LOCAL_LLM_URL="$(get_option local_llm_url)"
 export LOCAL_LLM_MODEL="$(get_option local_llm_model)"
+export EXA_API_KEY="$(get_option exa_api_key)"
 export REMINDER_DATA_PATH=/data/reminders.json
 
+node /app/dist/harness-server.js &
 exec node /app/dist/index.js
