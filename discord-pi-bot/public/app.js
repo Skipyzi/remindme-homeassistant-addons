@@ -54,6 +54,7 @@ function harness() {
 			notifyTarget: "",
 			hardwareProfile: null,
 		},
+		...window.RemindMeModelCookbook.state(),
 		modelBadge: "LOCAL • QWEN",
 		sessionLabel: "ready // private network",
 		hardware: "raspberry pi profile",
@@ -86,6 +87,16 @@ function harness() {
 							100,
 					)
 				: 0;
+		},
+		get modelOperationBusy() {
+			return [
+				"preflight",
+				"downloading",
+				"verifying",
+				"activating",
+				"probing",
+				"rollback",
+			].includes(this.modelOperation?.phase);
 		},
 		get contextLevel() {
 			return this.contextPercent >= 90
@@ -132,6 +143,9 @@ function harness() {
 						? `notify.${d.notifyTarget.replace(/^notify\./, "")}`
 						: "";
 					this.settings.hardwareProfile = d.hardwareProfile;
+					this.modelManagerEnabled = Boolean(d.modelManagerEnabled);
+					if (this.modelManagerEnabled)
+						window.RemindMeModelCookbook.load(this);
 				})
 				.catch(() => {});
 		},
@@ -371,6 +385,33 @@ function harness() {
 				m.items ? { ...m, items: m.items.filter((i) => i.id !== id) } : m,
 			);
 			this.persist();
+		},
+		async reloadModels() {
+			return window.RemindMeModelCookbook.load(this);
+		},
+		async installModel(id) {
+			return window.RemindMeModelCookbook.install(this, id);
+		},
+		async activateModel(id) {
+			return window.RemindMeModelCookbook.activate(this, id);
+		},
+		async cancelModelOperation() {
+			return window.RemindMeModelCookbook.cancel(this);
+		},
+		async removeModel(id) {
+			return window.RemindMeModelCookbook.remove(this, id);
+		},
+		async saveModelToken() {
+			return window.RemindMeModelCookbook.saveToken(this);
+		},
+		async saveCustomModel() {
+			return window.RemindMeModelCookbook.saveCustom(this);
+		},
+		formatModelBytes(bytes) {
+			return window.RemindMeModelCookbook.formatBytes(bytes);
+		},
+		modelProgressPercent() {
+			return window.RemindMeModelCookbook.progressPercent(this.modelOperation);
 		},
 		async saveSettings() {
 			this.settingsMessage = "Saving…";

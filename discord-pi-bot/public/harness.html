@@ -11,6 +11,7 @@
     <script defer src="./components/entities.js"></script>
     <script defer src="./components/conversations.js"></script>
     <script defer src="./components/attachments.js"></script>
+    <script defer src="./components/model-cookbook.js"></script>
     <script defer src="./app.js"></script>
     <script defer src="./vendor/alpine.min.js"></script>
     <link rel="stylesheet" href="./styles.css" />
@@ -423,31 +424,194 @@
             <p
               x-text="settings.hardwareProfile ? `Context ${settings.hardwareProfile.contextSize} · Batch ${settings.hardwareProfile.batchSize} · Threads ${settings.hardwareProfile.threads} · Flash attention ${settings.hardwareProfile.flashAttention ? 'on' : 'off'}` : ''"
             ></p>
-            <div class="preset-cards">
-              <template x-for="preset in thinkingProfiles" :key="preset.id"
-                ><article :class="{recommended:preset.recommended}">
-                  <header>
-                    <b x-text="preset.name"></b
-                    ><em x-show="preset.recommended">Recommended</em>
-                  </header>
-                  <p x-text="preset.description"></p>
-                  <dl>
-                    <div>
-                      <dt>Thinking</dt>
-                      <dd x-text="`${preset.reasoningBudget} tokens`"></dd>
+            <details class="thinking-cookbook">
+              <summary>Thinking and answer budgets</summary>
+              <div class="preset-cards">
+                <template x-for="preset in thinkingProfiles" :key="preset.id"
+                  ><article :class="{recommended:preset.recommended}">
+                    <header>
+                      <b x-text="preset.name"></b
+                      ><em x-show="preset.recommended">Recommended</em>
+                    </header>
+                    <p x-text="preset.description"></p>
+                    <dl>
+                      <div>
+                        <dt>Thinking</dt>
+                        <dd x-text="`${preset.reasoningBudget} tokens`"></dd>
+                      </div>
+                      <div>
+                        <dt>Answer reserved</dt>
+                        <dd x-text="`${preset.answerReserve} tokens`"></dd>
+                      </div>
+                    </dl></article
+                ></template>
+              </div>
+            </details>
+            <div
+              class="model-catalog"
+              data-model-catalog
+              x-show="modelManagerEnabled"
+            >
+              <header class="model-catalog-head">
+                <div>
+                  <div class="kicker">Local model vault</div>
+                  <b
+                    x-text="modelStatus?.state?.active?.id ? `Active // ${modelStatus.state.active.id}` : 'No active managed model'"
+                  ></b>
+                  <small
+                    x-show="modelStatus?.state?.fallback?.id"
+                    x-text="`Fallback // ${modelStatus?.state?.fallback?.id}`"
+                  ></small>
+                </div>
+                <button class="ghost" @click="reloadModels()">Refresh</button>
+              </header>
+              <div
+                class="model-operation"
+                aria-live="polite"
+                x-show="modelOperation?.phase && modelOperation.phase!=='idle'"
+              >
+                <div>
+                  <b
+                    x-text="(modelOperation?.phase || '').replaceAll('_',' ')"
+                  ></b>
+                  <span
+                    x-text="modelOperation?.bytesTotal ? `${formatModelBytes(modelOperation.bytesDone)} / ${formatModelBytes(modelOperation.bytesTotal)}` : modelOperation?.variantId || ''"
+                  ></span>
+                </div>
+                <div class="model-progress">
+                  <i :style="`width:${modelProgressPercent()}%`"></i>
+                </div>
+                <button
+                  class="ghost"
+                  x-show="modelOperation?.phase==='downloading'"
+                  @click="cancelModelOperation()"
+                >
+                  Cancel download
+                </button>
+              </div>
+              <p
+                class="model-error"
+                role="alert"
+                x-show="modelError"
+                x-text="modelError"
+              ></p>
+              <div class="model-grid">
+                <template
+                  x-for="variant in modelCatalog"
+                  :key="variant.model.id"
+                  ><article
+                    class="model-card"
+                    :class="{active:variant.active,unsafe:!variant.assessment?.safe}"
+                  >
+                    <header>
+                      <div>
+                        <b x-text="variant.model.family"></b>
+                        <small
+                          x-text="`${variant.model.quantization} · ${variant.model.source}`"
+                        ></small>
+                      </div>
+                      <em
+                        :class="variant.model.tier"
+                        x-text="variant.active ? 'active' : variant.model.tier"
+                      ></em>
+                    </header>
+                    <div class="model-capabilities">
+                      <template
+                        x-for="capability in variant.model.capabilities"
+                        :key="capability"
+                        ><span x-text="capability"></span
+                      ></template>
                     </div>
-                    <div>
-                      <dt>Answer reserved</dt>
-                      <dd x-text="`${preset.answerReserve} tokens`"></dd>
+                    <dl>
+                      <div>
+                        <dt>Download</dt>
+                        <dd
+                          x-text="formatModelBytes(variant.model.expectedBytes)"
+                        ></dd>
+                      </div>
+                      <div>
+                        <dt>Memory est.</dt>
+                        <dd
+                          x-text="formatModelBytes(variant.assessment?.requiredRAM)"
+                        ></dd>
+                      </div>
+                      <div>
+                        <dt>Context</dt>
+                        <dd
+                          x-text="variant.assessment?.runtime?.context || variant.model.recommendedContext"
+                        ></dd>
+                      </div>
+                      <div>
+                        <dt>Fit</dt>
+                        <dd
+                          x-text="variant.assessment?.safe ? `${variant.assessment.score}/100` : variant.assessment?.code"
+                        ></dd>
+                      </div>
+                    </dl>
+                    <p
+                      x-show="variant.assessment?.warnings?.length"
+                      x-text="variant.assessment?.warnings?.[0]"
+                    ></p>
+                    <div class="model-actions">
+                      <button
+                        class="action"
+                        x-show="!variant.installed"
+                        :disabled="modelOperationBusy"
+                        @click="installModel(variant.model.id)"
+                      >
+                        Install + activate
+                      </button>
+                      <button
+                        class="action"
+                        x-show="variant.installed && !variant.active"
+                        :disabled="modelOperationBusy"
+                        @click="activateModel(variant.model.id)"
+                      >
+                        Activate
+                      </button>
+                      <button
+                        class="ghost"
+                        x-show="variant.installed && !variant.active && !variant.fallback"
+                        :disabled="modelOperationBusy"
+                        @click="removeModel(variant.model.id)"
+                      >
+                        Remove
+                      </button>
                     </div>
-                    <div>
-                      <dt>Worst-case thought</dt>
-                      <dd
-                        x-text="preset.estimatedMaxSeconds ? formatDuration(preset.estimatedMaxSeconds * 1000) : 'Off'"
-                      ></dd>
-                    </div>
-                  </dl></article
-              ></template>
+                  </article></template
+                >
+              </div>
+              <details class="model-advanced">
+                <summary>Hugging Face access and custom GGUF</summary>
+                <div class="model-advanced-grid">
+                  <label
+                    >Hugging Face token
+                    <input
+                      x-model="hfToken"
+                      type="password"
+                      autocomplete="off"
+                      placeholder="hf_…"
+                  /></label>
+                  <button class="action" @click="saveModelToken()">
+                    Save token server-side
+                  </button>
+                  <label
+                    >Custom repository
+                    <input
+                      x-model="customModel.repo"
+                      placeholder="owner/repository"
+                  /></label>
+                  <label
+                    >Exact GGUF filename
+                    <input
+                      x-model="customModel.file"
+                      placeholder="model-Q4_K_M.gguf"
+                  /></label>
+                  <button class="action" @click="saveCustomModel()">
+                    Add unverified model
+                  </button>
+                </div>
+              </details>
             </div>
           </section>
           <div class="settings-actions">
