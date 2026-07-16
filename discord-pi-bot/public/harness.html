@@ -286,10 +286,26 @@
             Profiles tune context and reasoning for the Raspberry Pi 5.
             Connection keys remain in add-on settings.
           </p>
-          <div id="cookbook" class="settings-note">Reading hardware profile…</div>
-          <label>Model endpoint <input id="llm-url" type="url" value="http://homeassistant:8080/v1/chat/completions" /></label>
-          <label>Model name <input id="llm-model" type="text" value="qwen3-1.7b" /></label>
-          <label>Exa API key <input id="exa-key" type="password" placeholder="Leave unchanged to keep existing key" /></label>
+          <div id="cookbook" class="settings-note">
+            Reading hardware profile…
+          </div>
+          <label
+            >Model endpoint
+            <input
+              id="llm-url"
+              type="url"
+              value="http://homeassistant:8080/v1/chat/completions"
+          /></label>
+          <label
+            >Model name <input id="llm-model" type="text" value="qwen3-1.7b"
+          /></label>
+          <label
+            >Exa API key
+            <input
+              id="exa-key"
+              type="password"
+              placeholder="Leave unchanged to keep existing key"
+          /></label>
           <button id="save-settings" class="send">Save connections</button>
           <div id="settings-result" class="settings-note"></div>
         </div>
@@ -325,14 +341,34 @@
         form = document.querySelector("form"),
         input = document.querySelector("textarea"),
         thinking = document.querySelector("#thinking");
+      function saveHistory() {
+        try {
+          const items = [...chat.querySelectorAll(".bubble")].map((el) => ({ className: el.className, text: el.textContent || "" }));
+          localStorage.setItem("remindme.history", JSON.stringify(items));
+        } catch (_) { /* storage is optional */ }
+      }
       function bubble(cls, text) {
         const el = document.createElement("div");
         el.className = "bubble " + cls;
         el.textContent = text;
         chat.append(el);
         chat.scrollTop = chat.scrollHeight;
+        saveHistory();
         return el;
       }
+      try {
+        const saved = JSON.parse(localStorage.getItem("remindme.history") || "null");
+        if (Array.isArray(saved)) {
+          while (chat.firstChild) chat.firstChild.remove();
+          for (const item of saved) {
+            if (typeof item?.text !== "string" || typeof item?.className !== "string") continue;
+            const restored = document.createElement("div");
+            restored.className = item.className;
+            restored.textContent = item.text;
+            chat.append(restored);
+          }
+        }
+      } catch (_) { /* storage is optional */ }
       function thinkingBox() {
         const d = document.createElement("details");
         d.open = false;
@@ -402,6 +438,7 @@
                   confirm.className = "send";
                   confirm.onclick = async () => {
                     confirm.disabled = true;
+                    cancel.disabled = true;
                     confirm.textContent = "APPLYING…";
                     const result = await fetch("./api/confirm", {
                       method: "POST",
@@ -410,21 +447,43 @@
                     });
                     confirm.textContent = result.ok ? "APPLIED" : "FAILED";
                   };
-                  card.append(document.createElement("br"), confirm);
+                  const cancel = document.createElement("button");
+                  cancel.textContent = "CANCEL";
+                  cancel.className = "send";
+                  cancel.onclick = () => { cancel.disabled = true; confirm.disabled = true; cancel.textContent = "CANCELLED"; };
+                  card.append(document.createElement("br"), confirm, cancel);
                   chat.insertBefore(card, answer);
                 }
                 if (data.state === "complete" && Array.isArray(data.result)) {
                   const card = document.createElement("div");
                   card.className = "bubble assistant";
                   const title = document.createElement("strong");
-                  title.textContent = `${data.name} · ${data.result.length} entities`;
+                  title.textContent = `${data.name} · ${data.result.length} items`;
                   card.append(title);
                   for (const entity of data.result.slice(0, 20)) {
                     const row = document.createElement("div");
-                    row.textContent = `${entity.attributes?.friendly_name || entity.entity_id}: ${entity.state}`;
+                    row.textContent =
+                      data.name === "list_reminders"
+                        ? `${entity.message} · ${new Date(entity.time).toLocaleString()}`
+                        : `${entity.attributes?.friendly_name || entity.entity_id}: ${entity.state}`;
                     row.style.cssText =
                       "padding:8px 0;border-bottom:1px solid var(--line);color:var(--mint)";
                     card.append(row);
+                    if (data.name === "list_reminders") {
+                      const remove = document.createElement("button");
+                      remove.textContent = "DELETE";
+                      remove.className = "send";
+                      remove.style.margin = "6px 0";
+                      remove.onclick = async () => {
+                        const result = await fetch(
+                          `./api/reminders/${encodeURIComponent(entity.id)}`,
+                          { method: "DELETE" },
+                        );
+                        remove.textContent = result.ok ? "DELETED" : "FAILED";
+                        remove.disabled = true;
+                      };
+                      card.append(remove);
+                    }
                   }
                   chat.insertBefore(card, answer);
                 }
@@ -444,6 +503,7 @@
             wait.querySelector("div").textContent =
               "No reasoning trace returned.";
           answer.style.display = answer.textContent ? "block" : "none";
+          saveHistory();
         } catch (error) {
           wait.querySelector("summary").textContent = "⚠ Request failed";
           wait.querySelector("div").textContent = error.message;
@@ -452,10 +512,12 @@
       });
       document.querySelector("#new").onclick = () => {
         while (chat.firstChild) chat.firstChild.remove();
+        localStorage.removeItem("remindme.history");
         bubble("assistant", "New conversation started.");
       };
       document.querySelector("#clear").onclick = () => {
         while (chat.firstChild) chat.firstChild.remove();
+        localStorage.removeItem("remindme.history");
       };
       const settingsPanel = document.querySelector("#settings-panel");
       document.querySelector("#settings").onclick = () => {
@@ -471,10 +533,26 @@
       document.querySelector("#save-settings").onclick = async () => {
         const result = document.querySelector("#settings-result");
         result.textContent = "Saving…";
-        const r = await fetch("./api/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ localLlmUrl: document.querySelector("#llm-url").value, model: document.querySelector("#llm-model").value, exaApiKey: document.querySelector("#exa-key").value }) });
-        result.textContent = r.ok ? "Saved. Restart the add-on to apply connection changes." : "Save failed: " + (await r.text());
+        const r = await fetch("./api/settings", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            localLlmUrl: document.querySelector("#llm-url").value,
+            model: document.querySelector("#llm-model").value,
+            exaApiKey: document.querySelector("#exa-key").value,
+          }),
+        });
+        result.textContent = r.ok
+          ? "Saved. Restart the add-on to apply connection changes."
+          : "Save failed: " + (await r.text());
       };
-      fetch("./api/settings").then(r => r.json()).then(d => { document.querySelector("#llm-url").value = d.localLlmUrl; document.querySelector("#llm-model").value = d.model; }).catch(() => {});
+      fetch("./api/settings")
+        .then((r) => r.json())
+        .then((d) => {
+          document.querySelector("#llm-url").value = d.localLlmUrl;
+          document.querySelector("#llm-model").value = d.model;
+        })
+        .catch(() => {});
       document.querySelector("#profile").onchange = (event) => {
         const value = event.target.value.toLowerCase();
         document.querySelector("#thinking").value = value;
@@ -502,7 +580,9 @@
           document.querySelector("#model").textContent = "LOCAL • " + d.model;
           document.querySelector("#status").textContent = "● local tools ready";
           const hw = d.hardware;
-          if (hw) document.querySelector("#cookbook").textContent = `Hardware: ${hw.architecture} · ${hw.cpuCores} cores · ${(hw.memoryFree / 1073741824).toFixed(1)} GB free / ${(hw.memoryTotal / 1073741824).toFixed(1)} GB total`;
+          if (hw)
+            document.querySelector("#cookbook").textContent =
+              `Hardware: ${hw.architecture} · ${hw.cpuCores} cores · ${(hw.memoryFree / 1073741824).toFixed(1)} GB free / ${(hw.memoryTotal / 1073741824).toFixed(1)} GB total`;
         })
         .catch(
           () => (document.querySelector("#status").textContent = "● offline"),

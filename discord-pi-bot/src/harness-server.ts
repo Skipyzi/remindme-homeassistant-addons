@@ -2,7 +2,11 @@ import "dotenv/config";
 import express from "express";
 import os from "node:os";
 import { config } from "./config";
-import { getReminders } from "./utils/reminderManager";
+import {
+	deleteReminder,
+	getReminders,
+	loadReminders,
+} from "./utils/reminderManager";
 
 const app = express();
 const port = Number(process.env.HARNESS_PORT || 8090);
@@ -11,15 +15,18 @@ const homeAssistantUrl = "http://supervisor/core/api";
 const supervisorUrl = "http://supervisor";
 const pendingActions = new Map<
 	string,
-	{ domain: string; service: string; entityId: string }
+	{ domain: string; service: string; entityId: string; serviceData: Record<string, unknown> }
 >();
+void loadReminders(async () => {});
 type Send = (event: string, data: unknown) => void;
 type ToolCall = { id: string; function: { name: string; arguments: string } };
 
 app.use(express.json({ limit: "64kb" }));
 app.get("/api/settings", (_request, response) => {
 	response.json({
-		localLlmUrl: process.env.LOCAL_LLM_URL || "http://homeassistant:8080/v1/chat/completions",
+		localLlmUrl:
+			process.env.LOCAL_LLM_URL ||
+			"http://homeassistant:8080/v1/chat/completions",
 		model: config.localLlmModel,
 		exaConfigured: Boolean(process.env.EXA_API_KEY),
 	});
@@ -27,16 +34,41 @@ app.get("/api/settings", (_request, response) => {
 app.post("/api/settings", async (request, response) => {
 	const values = request.body || {};
 	const options: Record<string, unknown> = {};
-	if (typeof values.localLlmUrl === "string") options.local_llm_url = values.localLlmUrl;
+	if (typeof values.localLlmUrl === "string")
+		options.local_llm_url = values.localLlmUrl;
 	if (typeof values.model === "string") options.local_llm_model = values.model;
-	if (typeof values.exaApiKey === "string" && values.exaApiKey) options.exa_api_key = values.exaApiKey;
-	if (!Object.keys(options).length) { response.status(400).json({ error: "No settings supplied" }); return; }
+	if (typeof values.exaApiKey === "string" && values.exaApiKey)
+		options.exa_api_key = values.exaApiKey;
+	if (!Object.keys(options).length) {
+		response.status(400).json({ error: "No settings supplied" });
+		return;
+	}
 	try {
-		const result = await supervisorRequest("/addons/self/options", "POST", { options });
+		const result = await supervisorRequest("/addons/self/options", "POST", {
+			options,
+		});
 		response.json({ saved: true, result });
 	} catch (error) {
-		response.status(502).json({ error: error instanceof Error ? error.message : "Unable to save settings" });
+		response.status(502).json({
+			error: error instanceof Error ? error.message : "Unable to save settings",
+		});
 	}
+});
+app.get("/api/reminders", (_request, response) => {
+	response.json(
+		getReminders(process.env.OWNER_ID || "").map((item) => ({
+			id: item.id,
+			message: item.message,
+			time: item.time.toISOString(),
+		})),
+	);
+});
+app.delete("/api/reminders/:id", (_request, response) => {
+	const deleted = deleteReminder(
+		_request.params.id,
+		process.env.OWNER_ID || "",
+	);
+	response.status(deleted ? 204 : 404).end();
 });
 app.get("/api/status", (_request, response) => {
 	response.json({
@@ -46,7 +78,12 @@ app.get("/api/status", (_request, response) => {
 			"http://homeassistant:8080/v1/chat/completions",
 		vision: false,
 		profiles: ["fast", "balanced", "deep"],
-		hardware: { architecture: process.arch, cpuCores: os.cpus().length, memoryTotal: os.totalmem(), memoryFree: os.freemem() },
+		hardware: {
+			architecture: process.arch,
+			cpuCores: os.cpus().length,
+			memoryTotal: os.totalmem(),
+			memoryFree: os.freemem(),
+		},
 	});
 });
 app.get("/", (_request, response) =>
@@ -63,6 +100,7 @@ app.post("/api/confirm", async (request, response) => {
 	pendingActions.delete(token);
 	response.json(
 		await hassRequest(`/services/${action.domain}/${action.service}`, "POST", {
+			...action.serviceData,
 			entity_id: action.entityId,
 		}),
 	);
@@ -139,6 +177,7 @@ const tools = [
 					domain: { type: "string" },
 					service: { type: "string" },
 					entity_id: { type: "string" },
+					service_data: { type: "object" },
 				},
 				required: ["domain", "service", "entity_id"],
 			},
@@ -365,13 +404,17 @@ async function executeTool(
 		const domain = String(args.domain);
 		const service = String(args.service);
 		const entityId = String(args.entity_id);
+		const serviceData =
+			args.service_data && typeof args.service_data === "object" && !Array.isArray(args.service_data)
+				? (args.service_data as Record<string, unknown>)
+				: {};
 		if (
 			!/^[a-z0-9_]+$/.test(domain) ||
 			!/^[a-z0-9_]+$/.test(service) ||
 			!/^[a-z0-9_]+\.[a-z0-9_]+$/.test(entityId)
 		)
 			return { error: "Invalid entity action" };
-		pendingActions.set(token, { domain, service, entityId });
+		pendingActions.set(token, { domain, service, entityId, serviceData });
 		return {
 			confirmation_required: true,
 			token,
@@ -389,13 +432,20 @@ async function executeTool(
 }
 
 async function supervisorRequest(path: string, method = "GET", body?: unknown) {
-	if (!supervisorToken) throw new Error("Supervisor API access is not configured");
+	if (!supervisorToken)
+		throw new Error("Supervisor API access is not configured");
 	const response = await fetch(`${supervisorUrl}${path}`, {
 		method,
-		headers: { Authorization: `Bearer ${supervisorToken}`, "Content-Type": "application/json" },
+		headers: {
+			Authorization: `Bearer ${supervisorToken}`,
+			"Content-Type": "application/json",
+		},
 		body: body ? JSON.stringify(body) : undefined,
 	});
-	if (!response.ok) throw new Error(`Supervisor returned HTTP ${response.status}: ${await response.text()}`);
+	if (!response.ok)
+		throw new Error(
+			`Supervisor returned HTTP ${response.status}: ${await response.text()}`,
+		);
 	return response.json();
 }
 

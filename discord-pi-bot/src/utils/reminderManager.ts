@@ -44,9 +44,12 @@ function schedule(reminder: Reminder, onDue: DueHandler): void {
 export async function loadReminders(onDue: DueHandler): Promise<void> {
 	try {
 		const raw = await readFile(dataPath, "utf8");
-		const saved = JSON.parse(raw) as Array<Reminder & { time: string; createdAt: string }>;
+		const saved = JSON.parse(raw) as Array<
+			Reminder & { time: string; createdAt: string }
+		>;
 		for (const item of saved) {
-			if (item.notified || new Date(item.time).getTime() <= Date.now()) continue;
+			if (item.notified || new Date(item.time).getTime() <= Date.now())
+				continue;
 			const reminder: Reminder = {
 				...item,
 				time: new Date(item.time),
@@ -56,7 +59,10 @@ export async function loadReminders(onDue: DueHandler): Promise<void> {
 			schedule(reminder, onDue);
 		}
 	} catch (error: unknown) {
-		const code = error && typeof error === "object" && "code" in error ? error.code : undefined;
+		const code =
+			error && typeof error === "object" && "code" in error
+				? error.code
+				: undefined;
 		if (code !== "ENOENT") console.error("Failed to load reminders:", error);
 	}
 }

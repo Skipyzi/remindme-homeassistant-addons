@@ -49,7 +49,9 @@ async function main() {
 			await loadReminders(async (reminder) => {
 				const channel = await client.channels.fetch(reminder.channelId);
 				if (channel?.isSendable()) {
-					await channel.send(`⏰ <@${reminder.userId}>, reminder: **${reminder.message}**`);
+					await channel.send(
+						`⏰ <@${reminder.userId}>, reminder: **${reminder.message}**`,
+					);
 				}
 			});
 			startPresenceMonitor(client);

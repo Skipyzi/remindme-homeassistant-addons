@@ -2,12 +2,20 @@ import { ActivityType, type Client } from "discord.js";
 import { config } from "./config";
 
 const CHECK_INTERVAL_MS = 60_000;
-const bridgeUrl = new URL(config.webhookUrl);
-if (bridgeUrl.protocol !== "http:" && bridgeUrl.protocol !== "https:") {
-	throw new Error("PI_AGENT_WEBHOOK_URL must use HTTP or HTTPS");
+let bridgeUrl: URL | undefined;
+if (config.webhookUrl) {
+	try {
+		const parsed = new URL(config.webhookUrl);
+		if (parsed.protocol !== "http:" && parsed.protocol !== "https:")
+			throw new Error("PI_AGENT_WEBHOOK_URL must use HTTP or HTTPS");
+		bridgeUrl = parsed;
+	} catch (error) {
+		console.error("Invalid PI_AGENT_WEBHOOK_URL; presence monitoring disabled:", error);
+	}
 }
 
 async function piAgentIsReachable(): Promise<boolean> {
+	if (!bridgeUrl) return false;
 	try {
 		const response = await fetch(bridgeUrl, {
 			method: "GET",
