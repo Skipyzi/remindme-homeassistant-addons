@@ -56,3 +56,18 @@ export function publicSettings(environment: NodeJS.ProcessEnv) {
 		notifyTarget: environment.HA_NOTIFY_TARGET || "",
 	};
 }
+
+export function mergeAddonOptions(
+	supervisorResponse: unknown,
+	updates: Record<string, unknown>,
+): Record<string, unknown> {
+	if (!supervisorResponse || typeof supervisorResponse !== "object")
+		throw new Error("Unable to read current add-on options from Supervisor");
+	const data = (supervisorResponse as { data?: unknown }).data;
+	if (!data || typeof data !== "object")
+		throw new Error("Unable to read current add-on options from Supervisor");
+	const options = (data as { options?: unknown }).options;
+	if (!options || typeof options !== "object" || Array.isArray(options))
+		throw new Error("Unable to read current add-on options from Supervisor");
+	return { ...(options as Record<string, unknown>), ...updates };
+}

@@ -415,14 +415,19 @@ function harness() {
 		},
 		async saveSettings() {
 			this.settingsMessage = "Saving…";
-			const r = await fetch("./api/settings", {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify(this.settings),
-			});
-			this.settingsMessage = r.ok
-				? "Saved. Restart the add-on to apply connection changes."
-				: "Save failed.";
+			try {
+				const r = await fetch("./api/settings", {
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify(this.settings),
+				});
+				const payload = await r.json().catch(() => ({}));
+				this.settingsMessage = r.ok
+					? "Saved. Restart the add-on to apply connection changes."
+					: `Save failed: ${payload.error || `HTTP ${r.status}`}`;
+			} catch (error) {
+				this.settingsMessage = `Save failed: ${error.message}`;
+			}
 		},
 	};
 }

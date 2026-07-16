@@ -28,6 +28,7 @@ import {
 } from "./harness/entityActions";
 import { ConversationStore } from "./harness/conversations";
 import {
+	mergeAddonOptions,
 	publicSettings,
 	recommendHardwareProfile,
 	validateLocalModelUrl,
@@ -247,8 +248,10 @@ app.post("/api/settings", async (request, response) => {
 		return;
 	}
 	try {
+		const current = await supervisorRequest("/addons/self/info");
+		const mergedOptions = mergeAddonOptions(current, options);
 		const result = await supervisorRequest("/addons/self/options", "POST", {
-			options,
+			options: mergedOptions,
 		});
 		response.json({ saved: true, result });
 	} catch (error) {
@@ -826,9 +829,9 @@ type ManagedActiveModel = {
 async function managedActiveModel(): Promise<ManagedActiveModel | undefined> {
 	if (process.env.MODEL_MANAGER_ENABLED !== "true") return undefined;
 	try {
-		const status = await (
-			await getModelManagerClient()
-		).request<{ activeModel?: ManagedActiveModel }>("/status", {
+		const status = await (await getModelManagerClient()).request<{
+			activeModel?: ManagedActiveModel;
+		}>("/status", {
 			signal: AbortSignal.timeout(2_000),
 		});
 		return status.activeModel;

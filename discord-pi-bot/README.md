@@ -1,6 +1,6 @@
 # RemindMe Discord Bot and Home Terminal
 
-Install this add-on after `local-llama-cpp`. Version 2.2.0 adds the Hardware Cookbook model vault to the RemindMe Home Assistant sidebar while retaining Discord chat, reminders, Assist tools, Exa search, and the Pi bridge.
+Install this add-on after `local-llama-cpp`. Version 2.2.1 adds the Hardware Cookbook model vault to the RemindMe Home Assistant sidebar while retaining Discord chat, reminders, Assist tools, Exa search, and the Pi bridge. Sidebar settings now preserve the complete add-on configuration when saved.
 
 ## Local endpoints
 
