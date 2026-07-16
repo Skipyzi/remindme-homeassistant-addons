@@ -18,6 +18,9 @@ export LOCAL_LLM_URL
 export LOCAL_LLM_MODEL="$(get_option local_llm_model)"
 export LOCAL_LLM_CONTEXT_SIZE="$(get_option local_llm_context_size)"
 export LOCAL_LLM_VISION="$(get_option local_llm_vision)"
+export MODEL_MANAGER_ENABLED="$(get_option model_manager_enabled)"
+export MODEL_MANAGER_URL="$(get_option model_manager_url)"
+export MODEL_MANAGER_TOKEN_PATH=/data/model-manager-token
 export EXA_API_KEY="$(get_option exa_api_key)"
 export HA_NOTIFY_TARGET="$(get_option ha_notify_target)"
 export REMINDER_DATA_PATH=/data/reminders.json
