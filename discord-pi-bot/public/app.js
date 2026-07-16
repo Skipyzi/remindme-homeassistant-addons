@@ -8,6 +8,11 @@ function harness() {
 		attachments: [],
 		attachmentError: "",
 		visionEnabled: false,
+		thinkingProfiles: [
+			{ id: "fast", name: "Fast", reasoningBudget: 0, answerReserve: 512, description: "No visible reasoning.", estimatedMaxSeconds: 0, recommended: false },
+			{ id: "balanced", name: "Balanced", reasoningBudget: 384, answerReserve: 768, description: "Short bounded reasoning.", estimatedMaxSeconds: 55, recommended: true },
+			{ id: "deep", name: "Deep", reasoningBudget: 1024, answerReserve: 1024, description: "Longer reasoning for difficult questions.", estimatedMaxSeconds: 147, recommended: false },
+		],
 		thinking: localStorage.getItem("remindme.profile") || "fast",
 		profile: localStorage.getItem("remindme.profile") || "fast",
 		busy: false,
@@ -34,6 +39,9 @@ function harness() {
 			promptTokens: 0,
 			contextTokens: 0,
 			contextCapacity: 8192,
+		},
+		get currentThinkingProfile() {
+			return this.thinkingProfiles.find((preset) => preset.id === this.thinking) || this.thinkingProfiles[0];
 		},
 		get filteredConversations() {
 			const query = this.conversationSearch.trim().toLowerCase();
@@ -62,9 +70,9 @@ function harness() {
 		init() {
 			this.restore();
 			this.scanlines = localStorage.getItem("remindme.scanlines") !== "0";
-			this.$watch("profile", (v) => {
-				this.thinking = v;
-				localStorage.setItem("remindme.profile", v);
+			this.$watch("thinking", (value) => {
+				this.profile = value;
+				localStorage.setItem("remindme.profile", value);
 			});
 			this.$watch("draft", () => window.RemindMeComposer.measure(this));
 			window.RemindMeComposer.measure(this, 0);
@@ -74,6 +82,13 @@ function harness() {
 				.then((d) => {
 					this.modelBadge = "LOCAL • " + d.model;
 					this.visionEnabled = Boolean(d.vision);
+					if (Array.isArray(d.profiles) && d.profiles.length) {
+						this.thinkingProfiles = d.profiles;
+						if (!d.profiles.some((preset) => preset.id === this.thinking)) {
+							this.thinking = d.profiles.find((preset) => preset.recommended)?.id || "fast";
+							this.profile = this.thinking;
+						}
+					}
 					if (d.hardware)
 						this.hardware = `${d.hardware.architecture} / ${d.hardware.cpuCores} cores`;
 				})

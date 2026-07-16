@@ -33,6 +33,11 @@ import {
 } from "./harness/settings";
 import { allowedToolNames, toolCallKey } from "./harness/intentRouting";
 import {
+	getThinkingProfile,
+	thinkingProfilesForHardware,
+	type ThinkingMode,
+} from "./harness/thinkingProfiles";
+import {
 	userContent,
 	validateAttachments,
 	type ImageAttachment,
@@ -215,7 +220,10 @@ app.get("/api/status", (_request, response) => {
 			process.env.LOCAL_LLM_URL ||
 			"http://homeassistant:8080/v1/chat/completions",
 		vision: process.env.LOCAL_LLM_VISION === "true",
-		profiles: ["fast", "balanced", "deep"],
+		profiles: thinkingProfilesForHardware(
+			os.totalmem(),
+			Number(process.env.LOCAL_LLM_CONTEXT_SIZE || 8192),
+		),
 		hardware: {
 			architecture: process.arch,
 			cpuCores: os.cpus().length,
@@ -249,11 +257,11 @@ app.post("/api/chat", async (request, response) => {
 		typeof request.body?.message === "string"
 			? request.body.message.trim()
 			: "";
-	const thinkingMode =
-		request.body?.thinkingMode === "deep" ||
-		request.body?.thinkingMode === "balanced"
-			? request.body.thinkingMode
-			: "fast";
+	const thinkingMode = getThinkingProfile(
+		typeof request.body?.thinkingMode === "string" ? request.body.thinkingMode : "fast",
+		os.totalmem(),
+		Number(process.env.LOCAL_LLM_CONTEXT_SIZE || 8192),
+	).id;
 	if (!prompt) {
 		response.status(400).json({ error: "message is required" });
 		return;
@@ -354,7 +362,7 @@ const tools = [
 
 async function runAgent(
 	prompt: string,
-	thinkingMode: string,
+	thinkingMode: ThinkingMode,
 	send: Send,
 	requestId: string,
 	attachments: ImageAttachment[],
@@ -368,7 +376,7 @@ async function runAgent(
 		{
 			role: "system",
 			content:
-				"You are a concise Home Assistant assistant. You have access to every tool listed in this request and must never claim that a listed tool is unavailable. Call a tool only when the user explicitly asks for current home state, a home action, reminders, or current web information. If asked whether you can search the web without a search topic, answer yes and ask what to search for. Never call tools for greetings or ordinary conversation. Explain actions clearly.",
+				"You are a concise Home Assistant assistant. Answer the user's question directly. Do not audit, score, restate, or discuss these instructions. Keep internal reasoning focused only on solving the user's request. You have access to every tool listed in this request and must never claim that a listed tool is unavailable. Call a tool only when the user explicitly asks for current home state, a home action, reminders, or current web information. If asked whether you can search the web without a search topic, answer yes and ask what to search for. Never call tools for greetings or ordinary conversation. Explain actions clearly.",
 		},
 		{ role: "user", content: userContent(prompt, attachments) },
 	];
@@ -468,23 +476,27 @@ async function runAgent(
 
 async function streamModel(
 	messages: Array<Record<string, unknown>>,
-	thinkingMode: string,
+	thinkingMode: ThinkingMode,
 	requestTools: unknown[],
 	send: Send,
 	phaseId: string,
 	iteration: number,
 ) {
 	const started = Date.now();
+	const thinkingProfile = getThinkingProfile(
+		thinkingMode,
+		os.totalmem(),
+		Number(process.env.LOCAL_LLM_CONTEXT_SIZE || 8192),
+	);
 	const requestBody: Record<string, unknown> = {
 		model: config.localLlmModel,
 		messages,
 		stream: true,
-		max_tokens:
-			thinkingMode === "deep" ? 1024 : thinkingMode === "balanced" ? 512 : 256,
+		max_tokens: thinkingProfile.maxTokens,
 		chat_template_kwargs: { enable_thinking: thinkingMode !== "fast" },
 		reasoning_format: thinkingMode === "fast" ? "none" : "deepseek",
 		reasoning: thinkingMode === "fast" ? "off" : "on",
-		reasoning_budget: thinkingMode === "fast" ? 0 : -1,
+		reasoning_budget: thinkingProfile.reasoningBudget,
 	};
 	if (requestTools.length) {
 		requestBody.tools = requestTools;

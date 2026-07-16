@@ -1138,3 +1138,16 @@ textarea::-webkit-scrollbar-thumb {
 .message.answer {
 	height: auto;
 }
+.thinking-hint { color:var(--oxidized-brass); }
+.preset-cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:7px; margin-top:12px; }
+.preset-cards article { border:1px solid rgba(176,138,72,.24); background:rgba(9,11,13,.28); padding:9px; }
+.preset-cards article.recommended { border-color:var(--turquoise-neon); }
+.preset-cards header { display:flex; justify-content:space-between; gap:8px; }
+.preset-cards b { color:var(--casino-amber); }
+.preset-cards em { color:var(--turquoise-neon); font:8px ui-monospace,Consolas,monospace; text-transform:uppercase; }
+.preset-cards p { min-height:2.8em; }
+.preset-cards dl { margin:7px 0 0; display:grid; gap:3px; font:9px ui-monospace,Consolas,monospace; }
+.preset-cards dl div { display:flex; justify-content:space-between; gap:10px; }
+.preset-cards dt { color:var(--muted); }
+.preset-cards dd { margin:0; color:var(--text); }
+.settings-card { width:min(760px,100%); max-height:min(90dvh,820px); overflow:auto; }
