@@ -1,5 +1,5 @@
 name: Local llama.cpp
-version: "1.6.0"
+version: "1.7.0"
 slug: local_llama_cpp
 description: Local OpenAI-compatible llama.cpp server with Hugging Face model downloads
 arch:
@@ -25,7 +25,7 @@ options:
   hf_file: Qwen3-1.7B-Q8_0.gguf
   hf_token: ""
   model_path: ""
-  context_size: 2048
+  context_size: 8192
   threads: 4
   threads_batch: 4
   batch_size: 512
@@ -34,6 +34,8 @@ options:
   jinja: true
   kv_unified: true
   flash_attention: false
+  reasoning_format: deepseek
+  reasoning_mode: auto
 schema:
   hf_repo: str
   hf_file: str
@@ -48,3 +50,5 @@ schema:
   jinja: bool
   kv_unified: bool
   flash_attention: bool
+  reasoning_format: list(none|deepseek|deepseek-legacy)
+  reasoning_mode: list(on|off|auto)

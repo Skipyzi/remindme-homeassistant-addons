@@ -16,6 +16,48 @@ export interface PhaseMetrics {
 
 export type PhaseKind = "thinking" | "tool" | "answer";
 
+export interface ThinkState {
+	active: boolean;
+}
+
+export function reasoningText(delta: {
+	reasoning_content?: string;
+	reasoning?: string;
+}): string {
+	return delta.reasoning_content || delta.reasoning || "";
+}
+
+export function routeThinkTags(
+	content: string,
+	state: ThinkState,
+): { reasoning: string; answer: string } {
+	let remaining = content;
+	let reasoning = "";
+	let answer = "";
+	while (remaining) {
+		if (state.active) {
+			const end = remaining.indexOf("</think>");
+			if (end < 0) {
+				reasoning += remaining;
+				break;
+			}
+			reasoning += remaining.slice(0, end);
+			remaining = remaining.slice(end + 8);
+			state.active = false;
+			continue;
+		}
+		const start = remaining.indexOf("<think>");
+		if (start < 0) {
+			answer += remaining;
+			break;
+		}
+		answer += remaining.slice(0, start);
+		remaining = remaining.slice(start + 7);
+		state.active = true;
+	}
+	return { reasoning, answer };
+}
+
 export interface HarnessEvent {
 	phaseId: string;
 	iteration: number;

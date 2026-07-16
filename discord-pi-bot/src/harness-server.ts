@@ -12,6 +12,8 @@ import {
 	createPhaseId,
 	createToolCall,
 	normalizePhaseMetrics,
+	reasoningText,
+	routeThinkTags,
 	type PhaseMetrics,
 	type ToolCall,
 } from "./harness/modelPhases";
@@ -482,6 +484,7 @@ async function streamModel(
 						? 512
 						: 256,
 			chat_template_kwargs: { enable_thinking: thinkingMode !== "fast" },
+			reasoning_format: thinkingMode === "fast" ? "none" : "deepseek",
 		}),
 	});
 	if (!response.ok)
@@ -495,6 +498,7 @@ async function streamModel(
 	let timings: Record<string, number> = {};
 	let usage: Record<string, number> = {};
 	let firstTokenAt: number | undefined;
+	const thinkState = { active: false };
 	const toolCalls: ToolCall[] = [];
 	for await (const chunk of response.body as unknown as AsyncIterable<Uint8Array>) {
 		buffer += Buffer.from(chunk).toString("utf8");
@@ -509,6 +513,7 @@ async function streamModel(
 					delta?: {
 						content?: string;
 						reasoning_content?: string;
+						reasoning?: string;
 						tool_calls?: Array<{
 							index?: number;
 							id?: string;
@@ -529,27 +534,21 @@ async function streamModel(
 			if (choice?.timings) timings = { ...timings, ...choice.timings };
 			const delta = choice?.delta;
 			if (!delta) continue;
-			if (delta.content) {
+			const explicitReasoning = reasoningText(delta);
+			const routed = explicitReasoning
+				? { reasoning: explicitReasoning, answer: delta.content || "" }
+				: routeThinkTags(delta.content || "", thinkState);
+			if (routed.answer) {
 				firstTokenAt ??= Date.now();
-				text += delta.content;
-				send("token", { text: delta.content });
-				send("answer_delta", {
-					phaseId,
-					iteration,
-					kind: "answer",
-					text: delta.content,
-				});
+				text += routed.answer;
+				send("token", { text: routed.answer });
+				send("answer_delta", { phaseId, iteration, kind: "answer", text: routed.answer });
 			}
-			if (delta.reasoning_content) {
+			if (routed.reasoning) {
 				firstTokenAt ??= Date.now();
-				thinking += delta.reasoning_content;
-				send("thinking", { text: delta.reasoning_content });
-				send("thinking_delta", {
-					phaseId,
-					iteration,
-					kind: "thinking",
-					text: delta.reasoning_content,
-				});
+				thinking += routed.reasoning;
+				send("thinking", { text: routed.reasoning });
+				send("thinking_delta", { phaseId, iteration, kind: "thinking", text: routed.reasoning });
 			}
 			for (const call of delta.tool_calls || []) {
 				const index = call.index || 0;

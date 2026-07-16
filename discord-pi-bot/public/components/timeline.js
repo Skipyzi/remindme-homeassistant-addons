@@ -126,16 +126,21 @@
 			);
 		}
 		if (event === "phase_complete") {
-			return entries.map((entry) =>
-				entry.phaseId === phaseId
-					? {
-							...entry,
-							state: "complete",
-							metrics: data.metrics || entry.metrics,
-							completedAt: Date.now(),
-						}
-					: entry,
-			);
+			return entries
+				.filter(
+					(entry) =>
+						!(entry.phaseId === phaseId && entry.kind === "thinking" && !String(entry.text || "").trim()),
+				)
+				.map((entry) =>
+					entry.phaseId === phaseId
+						? {
+								...entry,
+								state: "complete",
+								metrics: data.metrics || entry.metrics,
+								completedAt: Date.now(),
+							}
+						: entry,
+				);
 		}
 		return entries;
 	}

@@ -146,6 +146,24 @@ function harness() {
 		toolLabel(message) {
 			return window.RemindMeTools.toolActivity(message.name);
 		},
+		completedToolLabel(message) {
+			const duration = this.formatDuration(message.metrics?.totalMs);
+			return `${String(message.name || "Tool").replaceAll("_", " ")} · ${duration}`;
+		},
+		formatSpeed(value) {
+			return `${Number(value || 0).toFixed(1)} tok/s`;
+		},
+		formatDuration(value) {
+			const milliseconds = Number(value || 0);
+			return milliseconds >= 60_000
+				? `${(milliseconds / 60_000).toFixed(1)} min`
+				: `${(milliseconds / 1_000).toFixed(1)} s`;
+		},
+		formatValue(value) {
+			if (value === null || value === undefined) return "—";
+			if (typeof value === "object") return JSON.stringify(value, null, 2);
+			return String(value);
+		},
 		rgbHex(rgb) {
 			const values = Array.isArray(rgb) ? rgb : [242, 184, 75];
 			return `#${values
