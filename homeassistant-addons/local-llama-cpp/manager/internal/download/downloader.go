@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -40,6 +41,10 @@ type Result struct {
 	Bytes int64  `json:"bytes"`
 }
 
+type Metadata struct {
+	Bytes int64 `json:"bytes"`
+}
+
 type Error struct {
 	Code        string
 	SafeMessage string
@@ -60,6 +65,48 @@ type Downloader struct {
 	ResolveBase string
 	MaxBytes    int64
 	Now         func() time.Time
+}
+
+func (downloader Downloader) Inspect(ctx context.Context, variant catalog.Variant, token string) (Metadata, error) {
+	if _, err := catalog.ValidateCustom(catalog.CustomInput{Repo: variant.Repo, File: variant.File}); err != nil {
+		return Metadata{}, &Error{Code: CodeRepositoryUnavailable, SafeMessage: "The Hugging Face repository or GGUF filename is invalid."}
+	}
+	requestURL := strings.TrimRight(downloader.resolveBase(), "/") + "/" + variant.Repo + "/resolve/main/" + url.PathEscape(variant.File)
+	request, err := http.NewRequestWithContext(ctx, http.MethodHead, requestURL, nil)
+	if err != nil {
+		return Metadata{}, &Error{Code: CodeRepositoryUnavailable, SafeMessage: "The Hugging Face model address is invalid."}
+	}
+	if token != "" {
+		request.Header.Set("Authorization", "Bearer "+token)
+	}
+	response, err := downloader.httpClient().Do(request)
+	if err != nil {
+		var safeErr *Error
+		if errors.As(err, &safeErr) {
+			return Metadata{}, safeErr
+		}
+		return Metadata{}, &Error{Code: CodeRepositoryUnavailable, SafeMessage: "The Hugging Face model file is unavailable.", Retryable: true}
+	}
+	defer response.Body.Close()
+	if response.StatusCode == http.StatusUnauthorized || response.StatusCode == http.StatusForbidden {
+		return Metadata{}, &Error{Code: CodeAuthenticationRequired, SafeMessage: "Configure Hugging Face access and accept the model licence first."}
+	}
+	if response.StatusCode != http.StatusOK {
+		return Metadata{}, &Error{Code: CodeRepositoryUnavailable, SafeMessage: "The Hugging Face model file is unavailable.", Retryable: response.StatusCode >= 500}
+	}
+	rawSize := response.Header.Get("X-Linked-Size")
+	if rawSize == "" {
+		rawSize = response.Header.Get("Content-Length")
+	}
+	size, parseErr := strconv.ParseInt(rawSize, 10, 64)
+	maxBytes := downloader.MaxBytes
+	if maxBytes <= 0 {
+		maxBytes = defaultMaxBytes
+	}
+	if parseErr != nil || size <= 0 || size > maxBytes {
+		return Metadata{}, &Error{Code: CodeSizeMismatch, SafeMessage: "The custom model does not report a safe download size."}
+	}
+	return Metadata{Bytes: size}, nil
 }
 
 func (downloader Downloader) Download(ctx context.Context, variant catalog.Variant, token string, progress func(Progress)) (Result, error) {

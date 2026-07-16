@@ -100,6 +100,16 @@ func (supervisor *Supervisor) State() state.State {
 	return cloneState(supervisor.persisted)
 }
 
+func (supervisor *Supervisor) Persist(current state.State) error {
+	supervisor.mu.Lock()
+	defer supervisor.mu.Unlock()
+	if err := supervisor.store.Save(current); err != nil {
+		return err
+	}
+	supervisor.persisted = cloneState(current)
+	return nil
+}
+
 func (supervisor *Supervisor) Start(ctx context.Context, installed state.Installed, runtime hardware.Runtime) error {
 	supervisor.mu.Lock()
 	defer supervisor.mu.Unlock()

@@ -19,6 +19,21 @@ func checksum(data []byte) string {
 	return hex.EncodeToString(sum[:])
 }
 
+func TestInspectReadsHuggingFaceLinkedSize(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		if request.Method != http.MethodHead {
+			t.Fatalf("method=%s", request.Method)
+		}
+		response.Header().Set("X-Linked-Size", "123456")
+	}))
+	defer server.Close()
+	downloader := Downloader{Client: server.Client(), ModelDir: t.TempDir(), ResolveBase: server.URL, MaxBytes: 1_000_000}
+	metadata, err := downloader.Inspect(context.Background(), catalog.Variant{Repo: "owner/repo", File: "model.gguf"}, "")
+	if err != nil || metadata.Bytes != 123456 {
+		t.Fatalf("metadata=%#v err=%v", metadata, err)
+	}
+}
+
 func TestDownloadResumesPartialFile(t *testing.T) {
 	full := []byte("GGUF0000tail")
 	var rangeHeader string
@@ -128,14 +143,12 @@ func TestDownloadRejectsRedirectOutsideHuggingFace(t *testing.T) {
 }
 
 func TestCancelledDownloadRemainsResumable(t *testing.T) {
-	started := make(chan struct{})
 	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		response.WriteHeader(http.StatusOK)
 		_, _ = response.Write([]byte("GGUF"))
 		if flusher, ok := response.(http.Flusher); ok {
 			flusher.Flush()
 		}
-		close(started)
 		<-request.Context().Done()
 	}))
 	defer server.Close()
@@ -143,11 +156,17 @@ func TestCancelledDownloadRemainsResumable(t *testing.T) {
 	dir := t.TempDir()
 	downloader := Downloader{Client: server.Client(), ModelDir: dir, ResolveBase: server.URL, MaxBytes: 1024}
 	result := make(chan error, 1)
+	progressed := make(chan struct{}, 1)
 	go func() {
-		_, err := downloader.Download(ctx, catalog.Variant{Repo: "owner/repo", File: "model.gguf", ExpectedBytes: 8}, "", func(Progress) {})
+		_, err := downloader.Download(ctx, catalog.Variant{Repo: "owner/repo", File: "model.gguf", ExpectedBytes: 8}, "", func(Progress) {
+			select {
+			case progressed <- struct{}{}:
+			default:
+			}
+		})
 		result <- err
 	}()
-	<-started
+	<-progressed
 	cancel()
 	err := <-result
 	var safeErr *Error
