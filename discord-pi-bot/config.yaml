@@ -1,5 +1,5 @@
 name: RemindMe Discord Bot
-version: "2.1.1"
+version: "2.1.2"
 slug: remindme_discord_bot
 description: Discord bot with reminders, pi-agent bridge, and local LLM support
 arch:
