@@ -318,9 +318,13 @@
               <label
                 >Thinking
                 <select x-model="thinking">
-                  <template x-for="preset in thinkingProfiles" :key="preset.id"><option :value="preset.id" x-text="preset.name"></option></template>
-                </select></label
-              ><span class="thinking-hint" x-text="`${currentThinkingProfile.reasoningBudget} thought · ${currentThinkingProfile.answerReserve} answer tokens${currentThinkingProfile.estimatedMaxSeconds ? ` · up to ${formatDuration(currentThinkingProfile.estimatedMaxSeconds * 1000)}` : ''}`"></span
+                  <template x-for="preset in thinkingProfiles" :key="preset.id"
+                    ><option :value="preset.id" x-text="preset.name"></option
+                  ></template></select></label
+              ><span
+                class="thinking-hint"
+                x-text="`${currentThinkingProfile.reasoningBudget} thought · ${currentThinkingProfile.answerReserve} answer tokens${currentThinkingProfile.estimatedMaxSeconds ? ` · up to ${formatDuration(currentThinkingProfile.estimatedMaxSeconds * 1000)}` : ''}`"
+              ></span
               ><span
                 x-show="tokenUsage.exact"
                 x-text="`Prompt ${tokenUsage.promptTokens} tokens · Context ${tokenUsage.contextTokens + tokenUsage.promptTokens} / ${tokenUsage.contextCapacity}`"
@@ -379,8 +383,12 @@
                 x-model="profile"
                 @change="thinking=profile"
               >
-                <template x-for="preset in thinkingProfiles" :key="preset.id"><option :value="preset.id" x-text="`${preset.name}${preset.recommended ? ' · recommended' : ''}`"></option></template>
-              </select></label
+                <template x-for="preset in thinkingProfiles" :key="preset.id"
+                  ><option
+                    :value="preset.id"
+                    x-text="`${preset.name}${preset.recommended ? ' · recommended' : ''}`"
+                  ></option
+                ></template></select></label
             ><label
               >Model endpoint<input
                 x-model="settings.localLlmUrl"
@@ -412,8 +420,35 @@
           <section class="cookbook" x-show="settings.hardwareProfile">
             <div class="kicker">Hardware cookbook</div>
             <h3 x-text="settings.hardwareProfile?.name"></h3>
-            <p x-text="settings.hardwareProfile ? `Context ${settings.hardwareProfile.contextSize} · Batch ${settings.hardwareProfile.batchSize} · Threads ${settings.hardwareProfile.threads} · Flash attention ${settings.hardwareProfile.flashAttention ? 'on' : 'off'}` : ''"></p>
-            <div class="preset-cards"><template x-for="preset in thinkingProfiles" :key="preset.id"><article :class="{recommended:preset.recommended}"><header><b x-text="preset.name"></b><em x-show="preset.recommended">Recommended</em></header><p x-text="preset.description"></p><dl><div><dt>Thinking</dt><dd x-text="`${preset.reasoningBudget} tokens`"></dd></div><div><dt>Answer reserved</dt><dd x-text="`${preset.answerReserve} tokens`"></dd></div><div><dt>Worst-case thought</dt><dd x-text="preset.estimatedMaxSeconds ? formatDuration(preset.estimatedMaxSeconds * 1000) : 'Off'"></dd></div></dl></article></template></div>
+            <p
+              x-text="settings.hardwareProfile ? `Context ${settings.hardwareProfile.contextSize} · Batch ${settings.hardwareProfile.batchSize} · Threads ${settings.hardwareProfile.threads} · Flash attention ${settings.hardwareProfile.flashAttention ? 'on' : 'off'}` : ''"
+            ></p>
+            <div class="preset-cards">
+              <template x-for="preset in thinkingProfiles" :key="preset.id"
+                ><article :class="{recommended:preset.recommended}">
+                  <header>
+                    <b x-text="preset.name"></b
+                    ><em x-show="preset.recommended">Recommended</em>
+                  </header>
+                  <p x-text="preset.description"></p>
+                  <dl>
+                    <div>
+                      <dt>Thinking</dt>
+                      <dd x-text="`${preset.reasoningBudget} tokens`"></dd>
+                    </div>
+                    <div>
+                      <dt>Answer reserved</dt>
+                      <dd x-text="`${preset.answerReserve} tokens`"></dd>
+                    </div>
+                    <div>
+                      <dt>Worst-case thought</dt>
+                      <dd
+                        x-text="preset.estimatedMaxSeconds ? formatDuration(preset.estimatedMaxSeconds * 1000) : 'Off'"
+                      ></dd>
+                    </div>
+                  </dl></article
+              ></template>
+            </div>
           </section>
           <div class="settings-actions">
             <button class="ghost" @click="settingsOpen=false">Close</button

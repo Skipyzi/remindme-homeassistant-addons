@@ -258,7 +258,9 @@ app.post("/api/chat", async (request, response) => {
 			? request.body.message.trim()
 			: "";
 	const thinkingMode = getThinkingProfile(
-		typeof request.body?.thinkingMode === "string" ? request.body.thinkingMode : "fast",
+		typeof request.body?.thinkingMode === "string"
+			? request.body.thinkingMode
+			: "fast",
 		os.totalmem(),
 		Number(process.env.LOCAL_LLM_CONTEXT_SIZE || 8192),
 	).id;
