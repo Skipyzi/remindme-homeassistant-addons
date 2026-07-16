@@ -9,7 +9,12 @@ const homeAssistantUrl = "http://supervisor/core/api";
 
 app.use(express.json({ limit: "64kb" }));
 app.get("/api/status", (_request, response) => {
-	response.json({ model: config.localLlmModel, vision: false, profiles: ["fast", "balanced", "deep"] });
+	response.json({
+		model: config.localLlmModel,
+		llmUrl: process.env.LOCAL_LLM_URL || "http://homeassistant:8080/v1/chat/completions",
+		vision: false,
+		profiles: ["fast", "balanced", "deep"],
+	});
 });
 app.get("/", (_request, response) =>
 	response.sendFile("harness.html", { root: "public" }),
@@ -20,7 +25,11 @@ app.post("/api/chat", async (request, response) => {
 		typeof request.body?.message === "string"
 			? request.body.message.trim()
 			: "";
-	const thinkingMode = request.body?.thinkingMode === "deep" || request.body?.thinkingMode === "balanced" ? request.body.thinkingMode : "fast";
+	const thinkingMode =
+		request.body?.thinkingMode === "deep" ||
+		request.body?.thinkingMode === "balanced"
+			? request.body.thinkingMode
+			: "fast";
 	if (!prompt) {
 		response.status(400).json({ error: "message is required" });
 		return;
@@ -29,7 +38,8 @@ app.post("/api/chat", async (request, response) => {
 		response.json({ response: await runAgent(prompt, thinkingMode) });
 	} catch (error) {
 		console.error("Harness request failed:", error);
-		response.status(500).json({ error: "The local AI request failed." });
+		const detail = error instanceof Error ? error.message : "Unknown error";
+		response.status(500).json({ error: `The local AI request failed: ${detail}` });
 	}
 });
 
@@ -126,7 +136,12 @@ async function askLocalLlmWithTools(
 			messages,
 			tools,
 			tool_choice: "auto",
-			max_tokens: thinkingMode === "deep" ? 1024 : thinkingMode === "balanced" ? 512 : 256,
+			max_tokens:
+				thinkingMode === "deep"
+					? 1024
+					: thinkingMode === "balanced"
+						? 512
+						: 256,
 			chat_template_kwargs: { enable_thinking: thinkingMode !== "fast" },
 		}),
 	});
