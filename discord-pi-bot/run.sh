@@ -16,7 +16,10 @@ case "$LOCAL_LLM_URL" in
 esac
 export LOCAL_LLM_URL
 export LOCAL_LLM_MODEL="$(get_option local_llm_model)"
+export LOCAL_LLM_CONTEXT_SIZE="$(get_option local_llm_context_size)"
+export LOCAL_LLM_VISION="$(get_option local_llm_vision)"
 export EXA_API_KEY="$(get_option exa_api_key)"
+export HA_NOTIFY_TARGET="$(get_option ha_notify_target)"
 export REMINDER_DATA_PATH=/data/reminders.json
 
 node /app/dist/harness-server.js &

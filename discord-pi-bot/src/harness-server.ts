@@ -1,12 +1,27 @@
 import "dotenv/config";
-import express from "express";
+import express, { type Express } from "express";
 import os from "node:os";
+import { resolve } from "node:path";
 import { config } from "./config";
 import {
 	deleteReminder,
 	getReminders,
 	loadReminders,
 } from "./utils/reminderManager";
+import {
+	createPhaseId,
+	createToolCall,
+	normalizePhaseMetrics,
+	type PhaseMetrics,
+	type ToolCall,
+} from "./harness/modelPhases";
+import { createSseSender } from "./harness/sse";
+import { measureTokenUsage, tokenizerUrl } from "./harness/tokenizer";
+import { normalizeEntity, type HassEntity } from "./harness/entities";
+import { validateEntityAction, type EntityAction } from "./harness/entityActions";
+import { ConversationStore } from "./harness/conversations";
+import { publicSettings, recommendHardwareProfile, validateLocalModelUrl } from "./harness/settings";
+import { userContent, validateAttachments, type ImageAttachment } from "./harness/attachments";
 
 const app = express();
 const port = Number(process.env.HARNESS_PORT || 8090);
@@ -23,31 +38,56 @@ const pendingActions = new Map<
 	}
 >();
 void loadReminders(async () => {});
+const conversations = new ConversationStore();
+void conversations.load();
 type Send = (event: string, data: unknown) => void;
-type ToolCall = {
-	id: string;
-	type: "function";
-	function: { name: string; arguments: string };
-};
 
 app.use(express.json({ limit: "64kb" }));
+app.get("/api/conversations", (request, response) => {
+	response.json(conversations.list(typeof request.query.search === "string" ? request.query.search : ""));
+});
+app.post("/api/conversations", async (_request, response) => {
+	response.status(201).json(await conversations.create());
+});
+app.patch("/api/conversations/:id", async (request, response) => {
+	const updated = await conversations.update(request.params.id, request.body || {});
+	response.status(updated ? 200 : 404).json(updated || { error: "Conversation not found" });
+});
+app.delete("/api/conversations/:id", async (request, response) => {
+	const deleted = await conversations.delete(request.params.id);
+	response.status(deleted ? 204 : 404).end();
+});
+app.post("/api/tokenize", async (request, response) => {
+	const prompt = typeof request.body?.prompt === "string" ? request.body.prompt : "";
+	const messages = Array.isArray(request.body?.messages) ? request.body.messages.slice(-100) : [];
+	try {
+		const usage = await measureTokenUsage(
+			tokenizerUrl(getLocalLlmUrl()),
+			prompt.slice(0, 32_000),
+			messages,
+			Number(process.env.LOCAL_LLM_CONTEXT_SIZE || 8192),
+		);
+		response.json(usage);
+	} catch (error) {
+		response.status(503).json({ exact: false, error: error instanceof Error ? error.message : "Tokenizer unavailable" });
+	}
+});
 app.get("/api/settings", (_request, response) => {
-	response.json({
-		localLlmUrl:
-			process.env.LOCAL_LLM_URL ||
-			"http://homeassistant:8080/v1/chat/completions",
-		model: config.localLlmModel,
-		exaConfigured: Boolean(process.env.EXA_API_KEY),
-	});
+	response.json({ ...publicSettings(process.env), hardwareProfile: recommendHardwareProfile(os.totalmem(), os.cpus().length) });
 });
 app.post("/api/settings", async (request, response) => {
 	const values = request.body || {};
 	const options: Record<string, unknown> = {};
-	if (typeof values.localLlmUrl === "string")
-		options.local_llm_url = values.localLlmUrl;
+	try {
+		if (typeof values.localLlmUrl === "string") options.local_llm_url = validateLocalModelUrl(values.localLlmUrl);
+	} catch (error) {
+		response.status(400).json({ error: error instanceof Error ? error.message : "Invalid model endpoint" });
+		return;
+	}
 	if (typeof values.model === "string") options.local_llm_model = values.model;
 	if (typeof values.exaApiKey === "string" && values.exaApiKey)
 		options.exa_api_key = values.exaApiKey;
+	if (typeof values.notifyTarget === "string") options.ha_notify_target = values.notifyTarget.replace(/^notify\./, "");
 	if (!Object.keys(options).length) {
 		response.status(400).json({ error: "No settings supplied" });
 		return;
@@ -61,6 +101,34 @@ app.post("/api/settings", async (request, response) => {
 		response.status(502).json({
 			error: error instanceof Error ? error.message : "Unable to save settings",
 		});
+	}
+});
+app.get("/api/entities/:id", async (request, response) => {
+	const result = await hassRequest(`/states/${encodeURIComponent(request.params.id)}`);
+	if (!result || typeof result !== "object" || !("entity_id" in result)) {
+		response.status(502).json(result);
+		return;
+	}
+	response.json(normalizeEntity(result as HassEntity));
+});
+app.post("/api/entities/action", async (request, response) => {
+	const entityId = typeof request.body?.entityId === "string" ? request.body.entityId : "";
+	const action = request.body?.action as EntityAction;
+	try {
+		const state = await hassRequest(`/states/${encodeURIComponent(entityId)}`);
+		if (!state || typeof state !== "object" || !("entity_id" in state)) throw new Error("Entity state unavailable");
+		const validated = validateEntityAction(normalizeEntity(state as HassEntity), action, request.body?.value);
+		if (validated.requiresConfirmation) {
+			const token = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+			pendingActions.set(token, validated);
+			response.json({ confirmation_required: true, token, message: `Confirm ${validated.service} for ${validated.entityId}` });
+			return;
+		}
+		await hassRequest(`/services/${validated.domain}/${validated.service}`, "POST", { ...validated.serviceData, entity_id: validated.entityId });
+		const refreshed = await hassRequest(`/states/${encodeURIComponent(validated.entityId)}`);
+		response.json(refreshed && typeof refreshed === "object" && "entity_id" in refreshed ? normalizeEntity(refreshed as HassEntity) : refreshed);
+	} catch (error) {
+		response.status(400).json({ error: error instanceof Error ? error.message : "Invalid entity action" });
 	}
 });
 app.get("/api/reminders", (_request, response) => {
@@ -85,7 +153,7 @@ app.get("/api/status", (_request, response) => {
 		llmUrl:
 			process.env.LOCAL_LLM_URL ||
 			"http://homeassistant:8080/v1/chat/completions",
-		vision: false,
+		vision: process.env.LOCAL_LLM_VISION === "true",
 		profiles: ["fast", "balanced", "deep"],
 		hardware: {
 			architecture: process.arch,
@@ -134,10 +202,10 @@ app.post("/api/chat", async (request, response) => {
 		"Cache-Control": "no-cache",
 		Connection: "keep-alive",
 	});
-	const send: Send = (event, data) =>
-		response.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+	const send = createSseSender(response);
 	try {
-		await runAgent(prompt, thinkingMode, send);
+		const attachments = validateAttachments(request.body?.attachments, process.env.LOCAL_LLM_VISION === "true");
+		await runAgent(prompt, thinkingMode, send, `request-${Date.now()}`, attachments);
 		send("complete", {});
 	} catch (error) {
 		console.error("Harness request failed:", error);
@@ -218,6 +286,8 @@ async function runAgent(
 	prompt: string,
 	thinkingMode: string,
 	send: Send,
+	requestId: string,
+	attachments: ImageAttachment[],
 ): Promise<void> {
 	const messages: Array<Record<string, unknown>> = [
 		{
@@ -225,12 +295,15 @@ async function runAgent(
 			content:
 				"You are a Home Assistant assistant. Use tools for current state and web search. Explain actions clearly.",
 		},
-		{ role: "user", content: prompt },
+		{ role: "user", content: userContent(prompt, attachments) },
 	];
 	for (let iteration = 0; iteration < 5; iteration += 1) {
-		const result = await streamModel(messages, thinkingMode, tools, send);
+		const phaseId = createPhaseId(requestId, iteration);
+		send("phase_start", { phaseId, iteration, kind: "thinking", state: "active" });
+		const result = await streamModel(messages, thinkingMode, tools, send, phaseId, iteration);
 		if (!result.toolCalls.length) {
 			send("answer", { text: result.text });
+			send("phase_complete", { phaseId, iteration, kind: "answer", state: "complete", metrics: result.metrics });
 			return;
 		}
 		messages.push({
@@ -250,18 +323,21 @@ async function runAgent(
 				state: "running",
 				arguments: args,
 			});
+			send("tool_start", { phaseId, iteration, kind: "tool", state: "active", name: call.function.name, arguments: args, metrics: result.metrics });
 			const value = await executeTool(call.function.name, args);
 			send("tool", {
 				name: call.function.name,
 				state: "complete",
 				result: value,
 			});
+			send("tool_complete", { phaseId, iteration, kind: "tool", state: "complete", name: call.function.name, result: value, metrics: result.metrics });
 			messages.push({
 				role: "tool",
 				tool_call_id: call.id,
 				content: JSON.stringify(value),
 			});
 		}
+		send("phase_complete", { phaseId, iteration, kind: "tool", state: "complete", metrics: result.metrics });
 	}
 	send("answer", {
 		text: "I reached the tool-call limit before completing the request.",
@@ -273,6 +349,8 @@ async function streamModel(
 	thinkingMode: string,
 	requestTools: unknown[],
 	send: Send,
+	phaseId: string,
+	iteration: number,
 ) {
 	const started = Date.now();
 	const response = await fetch(getLocalLlmUrl(), {
@@ -342,19 +420,17 @@ async function streamModel(
 				firstTokenAt ??= Date.now();
 				text += delta.content;
 				send("token", { text: delta.content });
+				send("answer_delta", { phaseId, iteration, kind: "answer", text: delta.content });
 			}
 			if (delta.reasoning_content) {
 				firstTokenAt ??= Date.now();
 				thinking += delta.reasoning_content;
 				send("thinking", { text: delta.reasoning_content });
+				send("thinking_delta", { phaseId, iteration, kind: "thinking", text: delta.reasoning_content });
 			}
 			for (const call of delta.tool_calls || []) {
 				const index = call.index || 0;
-				toolCalls[index] ??= {
-					id: call.id || `tool-${index}`,
-					type: "function",
-					function: { name: "", arguments: "" },
-				};
+				toolCalls[index] ??= createToolCall(call.id || `tool-${index}`, "", "");
 				if (call.function?.name)
 					toolCalls[index].function.name += call.function.name;
 				if (call.function?.arguments)
@@ -363,16 +439,25 @@ async function streamModel(
 		}
 	}
 	const elapsed = Date.now() - started;
+	const metrics: PhaseMetrics = normalizePhaseMetrics(
+		usage,
+		timings,
+		firstTokenAt ? firstTokenAt - started : elapsed,
+		elapsed,
+		thinking.length,
+	);
+	if (!metrics.outputTokens) metrics.outputTokens = text.length;
 	send("metrics", {
-		inputTokens: usage.prompt_tokens || timings.prompt_n || 0,
-		outputTokens: usage.completion_tokens || timings.predicted_n || text.length,
-		promptTokensPerSecond: timings.prompt_per_second || 0,
-		generationTokensPerSecond: timings.predicted_per_second || 0,
-		firstTokenMs: firstTokenAt ? firstTokenAt - started : elapsed,
-		totalMs: elapsed,
-		thinkingTokens: thinking.length,
+		inputTokens: metrics.inputTokens,
+		outputTokens: metrics.outputTokens,
+		promptTokensPerSecond: metrics.encodeTokensPerSecond,
+		generationTokensPerSecond: metrics.decodeTokensPerSecond,
+		firstTokenMs: metrics.firstTokenMs,
+		totalMs: metrics.totalMs,
+		thinkingTokens: metrics.thinkingTokens,
 	});
-	return { text, toolCalls: toolCalls.filter(Boolean) };
+	send("phase_metrics", { phaseId, iteration, kind: toolCalls.length ? "tool" : "answer", metrics });
+	return { text, toolCalls: toolCalls.filter(Boolean), metrics };
 }
 
 function getLocalLlmUrl(): URL {
@@ -407,7 +492,8 @@ async function executeTool(
 			.filter(
 				(item) => !domain || String(item.entity_id).startsWith(`${domain}.`),
 			)
-			.slice(0, 50);
+			.slice(0, 50)
+			.map((item) => normalizeEntity(item as HassEntity));
 	}
 	if (name === "control_entity") {
 		const token = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -494,6 +580,17 @@ async function exaSearch(query: string) {
 	return response.json();
 }
 
-app.listen(port, () =>
-	console.log(`RemindMe harness listening on port ${port}`),
-);
+app.use(express.static(resolve(process.cwd(), "public")));
+app.use((_request, response) => {
+	response.status(404).type("text/plain").send("Not found");
+});
+
+export function createHarnessApp(): Express {
+	return app;
+}
+
+if (require.main === module) {
+	app.listen(port, () =>
+		console.log(`RemindMe harness listening on port ${port}`),
+	);
+}

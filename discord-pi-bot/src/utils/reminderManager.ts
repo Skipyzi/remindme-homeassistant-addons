@@ -9,9 +9,10 @@ export interface Reminder {
 	userId: string;
 	channelId: string;
 	notified: boolean;
+	deliveryStatus?: Record<string, "pending" | "delivered" | "failed" | "skipped">;
 }
 
-type DueHandler = (reminder: Reminder) => Promise<void>;
+type DueHandler = (reminder: Reminder) => Promise<Record<string, "pending" | "delivered" | "failed" | "skipped"> | void>;
 const reminders = new Map<string, Reminder>();
 const handlers = new Map<string, DueHandler>();
 let cleanupTimer: ReturnType<typeof setInterval> | undefined;
@@ -26,17 +27,20 @@ async function persist(): Promise<void> {
 	);
 }
 
-function schedule(reminder: Reminder, onDue: DueHandler): void {
+function schedule(reminder: Reminder, onDue: DueHandler, retryDelay?: number): void {
 	handlers.set(reminder.id, onDue);
-	const delay = Math.max(0, reminder.time.getTime() - Date.now());
+	const delay = retryDelay ?? Math.max(0, reminder.time.getTime() - Date.now());
 	setTimeout(async () => {
 		if (reminder.notified || !reminders.has(reminder.id)) return;
-		reminder.notified = true;
-		await persist();
 		try {
-			await onDue(reminder);
+			const status = await onDue(reminder);
+			if (status) reminder.deliveryStatus = status;
+			reminder.notified = !status || Object.values(status).every((value) => value === "delivered" || value === "skipped");
+			await persist();
+			if (!reminder.notified) schedule(reminder, onDue, 60_000);
 		} catch (error) {
 			console.error("Failed to deliver reminder:", error);
+			schedule(reminder, onDue, 60_000);
 		}
 	}, delay);
 }
@@ -48,8 +52,7 @@ export async function loadReminders(onDue: DueHandler): Promise<void> {
 			Reminder & { time: string; createdAt: string }
 		>;
 		for (const item of saved) {
-			if (item.notified || new Date(item.time).getTime() <= Date.now())
-				continue;
+			if (item.notified) continue;
 			const reminder: Reminder = {
 				...item,
 				time: new Date(item.time),

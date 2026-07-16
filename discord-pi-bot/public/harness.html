@@ -1,126 +1,224 @@
 <!doctype html>
 <html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>RemindMe // command deck</title>
-  <script defer src="./vendor/alpine.min.js"></script>
-  <style>
-    @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Space+Grotesk:wght@400;500;600;700&display=swap');
-    :root { --ink:#080b10; --panel:#101722; --panel-2:#151f2d; --line:#263548; --text:#f5f2e9; --muted:#8d9bae; --amber:#ffc857; --mint:#57e6d0; --coral:#ff6b5e; --violet:#be9cff; --glow:0.55; }
-    * { box-sizing:border-box; }
-    html,body { margin:0; min-height:100%; background:var(--ink); color:var(--text); font-family:'Space Grotesk',system-ui,sans-serif; }
-    body { overflow:hidden; }
-    [x-cloak] { display:none !important; }
-    .deck.scanlines::before { content:""; position:fixed; inset:0; pointer-events:none; z-index:10; opacity:.07; background:repeating-linear-gradient(0deg,transparent 0 3px,#fff 4px); mix-blend-mode:screen; }
-    body::after { content:""; position:fixed; inset:0; pointer-events:none; z-index:9; box-shadow:inset 0 0 12vw rgba(0,0,0,.75), inset 0 0 3px rgba(255,200,87,.2); }
-    button,input,textarea,select { font:inherit; }
-    button { cursor:pointer; }
-    .deck { display:grid; grid-template-columns:270px minmax(420px, 1fr) 260px; height:100vh; max-width:1800px; margin:auto; }
-    .rail { border-right:1px solid var(--line); background:linear-gradient(180deg,#0d131c,#080b10); padding:30px 24px; display:flex; flex-direction:column; gap:26px; }
-    .brand { letter-spacing:-.04em; font-size:27px; font-weight:700; line-height:1; }
-    .brand b { color:var(--amber); text-shadow:0 0 calc(20px * var(--glow)) rgba(255,200,87,.7); }
-    .kicker,.label { font:500 10px 'DM Mono',monospace; letter-spacing:.15em; text-transform:uppercase; color:var(--muted); }
-    .rail-copy { color:var(--muted); font-size:13px; line-height:1.5; max-width:190px; }
-    .nav { display:grid; gap:8px; }
-    .nav button,.ghost { border:1px solid transparent; color:var(--muted); background:transparent; text-align:left; padding:10px 12px; border-radius:2px; transition:.18s ease; }
-    .nav button:hover,.nav button:focus-visible,.ghost:hover { border-color:var(--line); color:var(--amber); background:rgba(255,200,87,.05); outline:none; }
-    .nav button:first-child { color:var(--ink); background:var(--amber); box-shadow:0 0 calc(24px * var(--glow)) rgba(255,200,87,.22); }
-    .rail-foot { margin-top:auto; display:grid; gap:8px; }
-    .status { font:500 11px 'DM Mono',monospace; color:var(--mint); }
-    .status::before { content:'●'; margin-right:8px; text-shadow:0 0 12px var(--mint); }
-    .main { min-width:0; display:flex; flex-direction:column; background:var(--panel); }
-    .topbar { height:72px; border-bottom:1px solid var(--line); padding:0 30px; display:flex; align-items:center; justify-content:space-between; }
-    .top-title { font-size:18px; font-weight:600; letter-spacing:-.02em; }
-    .top-title small { display:block; color:var(--muted); font:11px 'DM Mono',monospace; letter-spacing:.06em; margin-top:5px; }
-    .badge { border:1px solid var(--mint); color:var(--mint); padding:6px 9px; font:10px 'DM Mono',monospace; letter-spacing:.08em; }
-    .chat { flex:1; overflow:auto; padding:34px clamp(22px,6vw,80px); display:flex; flex-direction:column; gap:16px; }
-    .empty { margin:auto; max-width:600px; width:100%; border-left:3px solid var(--amber); padding:24px 28px; background:linear-gradient(90deg,rgba(255,200,87,.08),transparent); }
-    .empty h2 { margin:0 0 10px; font-size:29px; letter-spacing:-.05em; }
-    .empty p { margin:0; color:var(--muted); }
-    .message { max-width:760px; border:1px solid var(--line); padding:16px 18px; line-height:1.55; white-space:pre-wrap; animation:rise .24s ease both; }
-    .message.user { align-self:flex-end; border-color:var(--amber); background:rgba(255,200,87,.08); color:var(--text); }
-    .message.assistant { border-left:3px solid var(--mint); background:var(--panel-2); }
-    .message.tool { border-left:3px solid var(--violet); background:rgba(190,156,255,.07); font:12px 'DM Mono',monospace; color:var(--violet); }
-    .message.thinking { border-left:3px solid var(--coral); color:#ffb2a9; font:12px 'DM Mono',monospace; }
-    .message strong { display:block; color:var(--amber); font:11px 'DM Mono',monospace; letter-spacing:.1em; text-transform:uppercase; margin-bottom:8px; }
-    .entity-row,.reminder-row { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:10px 0; border-top:1px solid var(--line); font-size:13px; }
-    .entity-row:first-of-type,.reminder-row:first-of-type { margin-top:8px; }
-    .entity-state { color:var(--mint); font-family:'DM Mono',monospace; }
-    .micro { font:10px 'DM Mono',monospace; color:var(--muted); }
-    .action { border:1px solid var(--amber); background:transparent; color:var(--amber); padding:7px 10px; font:10px 'DM Mono',monospace; }
-    .action:hover { background:var(--amber); color:var(--ink); }
-    .composer { border-top:1px solid var(--line); padding:18px clamp(22px,4vw,54px) 20px; background:#0c121b; }
-    .compose-line { display:flex; gap:10px; }
-    textarea { width:100%; resize:none; min-height:48px; max-height:150px; border:1px solid var(--line); background:var(--panel); color:var(--text); padding:14px; outline:none; }
-    textarea:focus { border-color:var(--amber); box-shadow:0 0 0 2px rgba(255,200,87,.12); }
-    .send { border:1px solid var(--amber); background:var(--amber); color:var(--ink); font-weight:700; padding:0 20px; min-width:92px; }
-    .send:hover { box-shadow:0 0 calc(22px * var(--glow)) rgba(255,200,87,.38); }
-    .controls { display:flex; align-items:center; gap:14px; margin-top:10px; color:var(--muted); font:11px 'DM Mono',monospace; }
-    select { border:1px solid var(--line); color:var(--amber); background:var(--panel); padding:5px; }
-    .telemetry { border-left:1px solid var(--line); background:linear-gradient(180deg,#111c2b,#0b1018); padding:30px 22px; overflow:auto; }
-    .telemetry h2 { margin:0 0 24px; font-size:14px; letter-spacing:.04em; }
-    .meter { padding:15px 0; border-top:1px solid var(--line); }
-    .meter strong { display:block; color:var(--amber); font:22px 'DM Mono',monospace; margin-top:5px; }
-    .meter span { color:var(--muted); font:10px 'DM Mono',monospace; text-transform:uppercase; letter-spacing:.1em; }
-    .settings { position:fixed; z-index:20; inset:0; background:rgba(4,6,9,.8); display:grid; place-items:center; padding:20px; }
-    .settings-card { width:min(560px,100%); border:1px solid var(--amber); background:var(--panel); box-shadow:0 0 60px rgba(0,0,0,.7); padding:28px; }
-    .settings-card h2 { margin:0 0 20px; }
-    .settings-grid { display:grid; gap:12px; }
-    .settings-grid label { display:grid; gap:6px; color:var(--muted); font:11px 'DM Mono',monospace; }
-    .settings-grid input { border:1px solid var(--line); background:var(--ink); color:var(--text); padding:10px; }
-    .settings-actions { display:flex; justify-content:flex-end; gap:10px; margin-top:20px; }
-    .offline { color:var(--coral); }
-    @keyframes rise { from { opacity:0; transform:translateY(5px); } to { opacity:1; transform:none; } }
-    @media (max-width:1100px) { .deck { grid-template-columns:220px minmax(0,1fr); } .telemetry { display:none; } }
-    @media (max-width:700px) { body { overflow:auto; } .deck { display:block; height:auto; min-height:100vh; } .rail { min-height:0; padding:20px; border-right:0; border-bottom:1px solid var(--line); } .rail-copy,.rail-foot { display:none; } .nav { display:flex; flex-wrap:wrap; } .nav button { padding:8px 10px; } .main { min-height:calc(100vh - 110px); } .chat { padding:22px 16px; } .topbar { padding:0 16px; } }
-    @media (prefers-reduced-motion:reduce) { *,*::before,*::after { animation-duration:.01ms !important; transition-duration:.01ms !important; } }
-  </style>
-</head>
-<body>
-  <div class="deck" :class="{scanlines:scanlines}" x-data="harness()" x-init="init()">
-    <aside class="rail">
-      <div><div class="kicker">Local command deck / 01</div><div class="brand">◉ <b>RemindMe</b><br>AI</div></div>
-      <p class="rail-copy">A private home console for rooms, reminders, and the wider signal.</p>
-      <nav class="nav" aria-label="Conversation controls">
-        <button @click="newChat()">＋ New chat</button><button @click="clearChat()">Clear conversation</button><button @click="settingsOpen=true">Settings</button>
-      </nav>
-      <div class="rail-foot"><div class="status" :class="{'offline': offline}" x-text="offline ? 'local tools offline' : 'local tools ready'"></div><div class="micro" x-text="hardware"></div></div>
-    </aside>
-    <main class="main">
-      <header class="topbar"><div class="top-title">Home console<small x-text="sessionLabel"></small></div><div class="badge" x-text="modelBadge"></div></header>
-      <section class="chat" aria-live="polite">
-        <div class="empty" x-show="messages.length===0"><div class="kicker">Signal received</div><h2>What should we make easier?</h2><p>Ask about your home, set a reminder, or search the web. Actions wait for your confirmation.</p></div>
-        <template x-for="message in messages" :key="message.id">
-          <article class="message" :class="message.type">
-            <strong x-show="message.type==='tool'" x-text="message.label"></strong><span x-text="message.text"></span>
-            <template x-if="message.items"><div><template x-for="item in message.items" :key="item.id || item.entity_id"><div class="entity-row"><span x-text="item.message ? item.message : (item.attributes?.friendly_name || item.entity_id)"></span><span class="entity-state" x-text="item.message ? formatTime(item.time) : item.state"></span><button x-show="item.message" class="action" @click="deleteReminder(item.id)">DELETE</button></div></template></div></template>
-            <template x-if="message.confirm"><div class="controls"><button class="action" @click="confirmAction(message)">CONFIRM ACTION</button><button class="ghost" @click="cancelAction(message)">CANCEL</button></div></template>
-          </article>
-        </template>
-      </section>
-      <footer class="composer"><form @submit.prevent="send()"><div class="compose-line"><textarea x-model="draft" @keydown.enter.exact.prevent="send()" rows="1" placeholder="Ask the console anything…" aria-label="Message"></textarea><button class="send" :disabled="busy" x-text="busy ? 'Working…' : 'Send ↑'"></button></div><div class="controls"><label>Thinking <select x-model="thinking"><option value="fast">Off / fast</option><option value="balanced">Balanced</option><option value="deep">Deep</option></select></label><span>Enter to send · actions require confirmation</span></div></form></footer>
-    </main>
-    <aside class="telemetry"><div class="kicker">Live telemetry</div><h2>MODEL INSTRUMENTS</h2><div class="meter"><span>Prompt tokens</span><strong x-text="metrics.inputTokens || '—'"></strong></div><div class="meter"><span>Decode speed</span><strong x-text="metrics.decode ? metrics.decode.toFixed(1) : '—'"></strong><span> tok / sec</span></div><div class="meter"><span>First signal</span><strong x-text="metrics.ttft ? metrics.ttft : '—'"></strong><span> ms</span></div><div class="meter"><span>Context used</span><strong x-text="metrics.context || '—'"></strong></div><div class="meter"><span>Thought trace</span><strong x-text="metrics.thinking || 0"></strong><span> chars</span></div></aside>
-    <div class="settings" x-show="settingsOpen" x-cloak @keydown.escape.window="settingsOpen=false"><section class="settings-card" @click.outside="settingsOpen=false"><div class="kicker">Terminal settings</div><h2>Shape the console</h2><div class="settings-grid"><label>Performance profile<select x-model="profile" @change="thinking=profile"><option value="fast">Fast / low latency</option><option value="balanced">Balanced</option><option value="deep">Deep reasoning</option></select></label><label>Model endpoint<input x-model="settings.localLlmUrl" type="url"></label><label>Model name<input x-model="settings.model" type="text"></label><label>Exa API key<input x-model="settings.exaApiKey" type="password" placeholder="Leave unchanged"></label><label>Glow intensity<input type="range" min="0" max="100" x-model="glow" @input="document.documentElement.style.setProperty('--glow', glow / 100)"></label><label><span>CRT scanlines</span><input type="checkbox" x-model="scanlines"></label></div><div class="settings-actions"><button class="ghost" @click="settingsOpen=false">Close</button><button class="send" @click="saveSettings()">Save changes</button></div><p class="micro" x-text="settingsMessage"></p></section></div>
-  </div>
-  <script>
-    function harness() { return {
-      messages: [], draft: '', thinking: localStorage.getItem('remindme.profile') || 'fast', profile: localStorage.getItem('remindme.profile') || 'fast', busy: false, settingsOpen: false, offline: false, scanlines: true, glow: 55, settingsMessage: '', settings: { localLlmUrl: '', model: '', exaApiKey: '' }, modelBadge: 'LOCAL • QWEN', sessionLabel: 'ready // private network', hardware: 'raspberry pi profile', metrics: { },
-      init() { this.restore(); this.scanlines = localStorage.getItem('remindme.scanlines') !== '0'; this.$watch('profile', v => { this.thinking = v; localStorage.setItem('remindme.profile', v); }); fetch('./api/status').then(r => r.json()).then(d => { this.modelBadge = 'LOCAL • ' + d.model; if (d.hardware) this.hardware = `${d.hardware.architecture} / ${d.hardware.cpuCores} cores`; }).catch(() => { this.offline = true; }); fetch('./api/settings').then(r => r.json()).then(d => { this.settings.localLlmUrl=d.localLlmUrl; this.settings.model=d.model; }).catch(() => {}); },
-      persist() { localStorage.setItem('remindme.history', JSON.stringify(this.messages.map(({id,type,text,label,items}) => ({id,type,text,label,items})))); },
-      restore() { try { const saved=JSON.parse(localStorage.getItem('remindme.history') || '[]'); if (Array.isArray(saved)) this.messages=saved; } catch (_) {} },
-      add(type, text, extra={}) { const message={id: `${Date.now()}-${Math.random()}`,type,text,...extra}; this.messages.push(message); this.persist(); return message; },
-      newChat() { this.messages=[]; this.persist(); this.add('assistant','Fresh channel. What are we checking?'); },
-      clearChat() { this.messages=[]; this.persist(); },
-      formatTime(value) { return value ? new Date(value).toLocaleString() : ''; },
-      async send() { const text=this.draft.trim(); if (!text || this.busy) return; this.draft=''; this.add('user',text); const answer=this.add('assistant',''); this.busy=true; let waiting=this.add('thinking','Listening to the local model…'); try { const r=await fetch('./api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:text,thinkingMode:this.thinking})}); if (!r.ok || !r.body) throw new Error('The local model stream did not start.'); const reader=r.body.getReader(), decoder=new TextDecoder(); let buffer='', event=''; while(true) { const chunk=await reader.read(); if(chunk.done) break; buffer+=decoder.decode(chunk.value,{stream:true}); const lines=buffer.split('\n'); buffer=lines.pop() || ''; for(const line of lines) { if(line.startsWith('event: ')) event=line.slice(7); if(!line.startsWith('data: ')) continue; const data=JSON.parse(line.slice(6)); if(event==='token') answer.text += data.text; else if(event==='thinking') waiting.text += data.text; else if(event==='metrics') { this.metrics={inputTokens:data.inputTokens,decode:data.generationTokensPerSecond,ttft:data.firstTokenMs,context:(data.inputTokens||0)+(data.outputTokens||0),thinking:data.thinkingTokens}; } else if(event==='tool') this.handleTool(data); else if(event==='answer' && data.text && !answer.text) answer.text=data.text; else if(event==='error') throw new Error(data.message); this.persist(); } } waiting.text=waiting.text==='Listening to the local model…' ? 'No thought trace returned.' : waiting.text; } catch(error) { answer.text='ERROR // '+error.message; this.offline=true; } finally { this.busy=false; this.persist(); } },
-      handleTool(data) { if(data.state==='running') this.add('tool',`${data.name} // running`,{label:'TOOL BUS',text:`${data.name} // running`}); if(data.state!=='complete') return; if(data.result?.confirmation_required) this.add('tool',data.result.message,{label:'CONFIRMATION REQUIRED',confirm:data.result}); else if(Array.isArray(data.result)) this.add('assistant','',{label:data.name,items:data.result}); else this.add('tool',`${data.name} // complete`,{label:'TOOL BUS'}); },
-      async confirmAction(message) { const r=await fetch('./api/confirm',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:message.confirm.token})}); message.text=r.ok ? 'Action applied.' : 'Action failed.'; message.confirm=null; this.persist(); },
-      cancelAction(message) { message.text='Action cancelled.'; message.confirm=null; this.persist(); },
-      async deleteReminder(id) { await fetch('./api/reminders/'+encodeURIComponent(id),{method:'DELETE'}); this.messages=this.messages.map(m => m.items ? {...m,items:m.items.filter(i=>i.id!==id)} : m); this.persist(); },
-      async saveSettings() { this.settingsMessage='Saving…'; const r=await fetch('./api/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(this.settings)}); this.settingsMessage=r.ok ? 'Saved. Restart the add-on to apply connection changes.' : 'Save failed.'; }
-    }; }
-  </script>
-</body>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>RemindMe // command deck</title>
+    <script defer src="./components/timeline.js"></script>
+    <script defer src="./components/thinking.js"></script>
+    <script defer src="./components/tools.js"></script>
+    <script defer src="./components/composer.js"></script>
+    <script defer src="./components/entities.js"></script>
+    <script defer src="./components/conversations.js"></script>
+    <script defer src="./components/attachments.js"></script>
+    <script defer src="./app.js"></script>
+    <script defer src="./vendor/alpine.min.js"></script>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div
+      class="deck"
+      :class="{scanlines:scanlines}"
+      x-data="harness()"
+      x-init="init()"
+    >
+      <aside class="rail" id="conversation-library" :class="{open: historyOpen}">
+        <div>
+          <div class="kicker">Local command deck / 01</div>
+          <div class="brand">◉ <b>RemindMe</b><br />AI</div>
+        </div>
+        <p class="rail-copy">
+          A private home console for rooms, reminders, and the wider signal.
+        </p>
+        <nav class="nav" aria-label="Conversation controls">
+          <button @click="newChat()">＋ New chat</button>
+          <label class="history-search">Search<input x-model="conversationSearch" type="search"></label>
+          <div class="history-list"><template x-for="conversation in filteredConversations" :key="conversation.id"><button :class="{active:conversation.id===currentConversationId}" @click="selectConversation(conversation)"><span x-text="conversation.title"></span><small x-text="new Date(conversation.updatedAt).toLocaleDateString()"></small></button></template></div>
+          <button @click="clearChat()">Clear conversation</button>
+          <button @click="settingsOpen=true">Settings</button>
+        </nav>
+        <div class="rail-foot">
+          <div
+            class="status"
+            :class="{'offline': offline}"
+            x-text="offline ? 'local tools offline' : 'local tools ready'"
+          ></div>
+          <div class="micro" x-text="hardware"></div>
+        </div>
+      </aside>
+      <main class="main">
+        <header class="topbar">
+          <button class="mobile-toggle" aria-controls="conversation-library" @click="historyOpen=!historyOpen">☰ Chats</button>
+          <div class="top-title">
+            Home console<small x-text="sessionLabel"></small>
+          </div>
+          <div class="badge" x-text="modelBadge"></div>
+          <button class="mobile-toggle" aria-controls="house-board" @click="boardOpen=!boardOpen">House board</button>
+        </header>
+        <section class="chat" id="timeline" aria-live="polite">
+          <div class="empty" x-show="messages.length===0">
+            <div class="kicker">Signal received</div>
+            <h2>What should we make easier?</h2>
+            <p>
+              Ask about your home, set a reminder, or search the web. Actions
+              wait for your confirmation.
+            </p>
+          </div>
+          <template x-for="message in messages" :key="message.id">
+            <article class="message" :class="[message.type || message.kind, {settled: message.state==='complete' && (message.kind==='thinking' || message.kind==='tool')}]">
+              <template x-if="message.kind==='thinking'">
+                <details :open="message.expanded" @toggle="message.expanded=$event.target.open">
+                  <summary x-text="message.state==='active' ? '◌ Consulting the house…\n'+recentTrace(message) : thoughtLabel(message)"></summary>
+                  <pre x-text="message.text || 'No reasoning trace returned.'"></pre>
+                </details>
+              </template>
+              <template x-if="message.kind==='tool'">
+                <details :open="message.expanded" @toggle="message.expanded=$event.target.open">
+                  <summary x-text="message.state==='active' ? '◈ '+toolLabel(message) : message.name+' · complete'"></summary>
+                  <pre x-text="json({arguments:message.arguments,result:message.result,metrics:message.metrics})"></pre>
+                </details>
+              </template>
+              <span x-show="!message.kind || message.kind==='answer'" x-text="message.text"></span>
+              <template x-if="message.items"><div class="entity-stack">
+                <template x-for="item in message.items" :key="item.id || item.entityId"><section class="entity-card" :class="{pending:item.pending,applied:item.applied}">
+                  <header><div><b x-text="item.message ? item.message : item.name"></b><small x-text="item.message ? formatTime(item.time) : item.entityId"></small></div><span class="entity-state" x-text="item.message ? 'SCHEDULED' : item.state"></span></header>
+                  <template x-if="item.domain==='light'"><div class="entity-controls">
+                    <button class="action" @click="entityAction(item,item.state==='on'?'turn_off':'turn_on')" x-text="item.state==='on'?'Turn off':'Turn on'"></button>
+                    <label x-show="item.capabilities?.brightness">Intensity <input type="range" min="0" max="255" :value="item.brightness || 0" @change="entityAction(item,'brightness',Number($event.target.value))"></label>
+                    <label x-show="item.capabilities?.colorTemperature">Warmth <input type="range" min="1000" max="12000" :value="item.colorTemperature || 2700" @change="entityAction(item,'color_temperature',Number($event.target.value))"></label>
+                    <label x-show="item.capabilities?.color">Color <input type="color" :value="rgbHex(item.rgbColor)" @change="entityAction(item,'rgb_color',hexRgb($event.target.value))"></label>
+                  </div></template>
+                  <button x-show="item.message" class="action" @click="deleteReminder(item.id)">Delete reminder</button>
+                  <p class="entity-error" x-show="item.error" x-text="item.error"></p>
+                </section></template>
+              </div></template>
+              <template x-if="message.confirm"
+                ><div class="controls">
+                  <button class="action" @click="confirmAction(message)">
+                    CONFIRM ACTION</button
+                  ><button class="ghost" @click="cancelAction(message)">
+                    CANCEL
+                  </button>
+                </div></template
+              >
+            </article>
+          </template>
+        </section>
+        <footer class="composer" id="composer" @dragover.prevent @drop.prevent="addAttachments($event.dataTransfer.files)" @paste.window="addAttachments($event.clipboardData.files)">
+          <form @submit.prevent="send()">
+            <div class="compose-line">
+              <textarea
+                x-model="draft"
+                @keydown.enter.exact.prevent="send()"
+                rows="1"
+                placeholder="Ask the console anything…"
+                aria-label="Message"
+              ></textarea
+              ><button
+                class="send"
+                :disabled="busy"
+                x-text="busy ? 'Working…' : 'Send ↑'"
+              ></button>
+            </div>
+            <div class="attachment-strip" x-show="attachments.length"><template x-for="(attachment,index) in attachments" :key="attachment.name+index"><span><img :src="attachment.dataUrl" :alt="attachment.name"><button type="button" @click="attachments.splice(index,1)">×</button></span></template></div>
+            <p class="entity-error" x-show="attachmentError" x-text="attachmentError"></p>
+            <div class="controls">
+              <label class="attach-button">Attach image<input type="file" accept="image/jpeg,image/png,image/webp" multiple @change="addAttachments($event.target.files)"></label>
+              <label
+                >Thinking
+                <select x-model="thinking">
+                  <option value="fast">Off / fast</option>
+                  <option value="balanced">Balanced</option>
+                  <option value="deep">Deep</option>
+                </select></label
+              ><span x-show="tokenUsage.exact" x-text="`Prompt ${tokenUsage.promptTokens} tokens · Context ${tokenUsage.contextTokens + tokenUsage.promptTokens} / ${tokenUsage.contextCapacity}`"></span>
+              <span x-show="!tokenUsage.exact">Exact token count unavailable</span>
+            </div>
+            <div class="context-track" :class="contextLevel"><i :style="`width:${contextPercent}%`"></i></div>
+          </form>
+        </footer>
+      </main>
+      <aside class="telemetry" id="house-board" :class="{open: boardOpen}">
+        <div class="kicker">Live telemetry</div>
+        <h2>MODEL INSTRUMENTS</h2>
+        <div class="meter">
+          <span>Prompt tokens</span
+          ><strong x-text="metrics.inputTokens || '—'"></strong>
+        </div>
+        <div class="meter">
+          <span>Decode speed</span
+          ><strong
+            x-text="metrics.decode ? metrics.decode.toFixed(1) : '—'"
+          ></strong
+          ><span> tok / sec</span>
+        </div>
+        <div class="meter">
+          <span>First signal</span
+          ><strong x-text="metrics.ttft ? metrics.ttft : '—'"></strong
+          ><span> ms</span>
+        </div>
+        <div class="meter">
+          <span>Context used</span
+          ><strong x-text="metrics.context || '—'"></strong>
+        </div>
+        <div class="meter">
+          <span>Thought trace</span
+          ><strong x-text="metrics.thinking || 0"></strong><span> chars</span>
+        </div>
+      </aside>
+      <div
+        class="settings"
+        id="settings-view"
+        x-show="settingsOpen"
+        x-cloak
+        @keydown.escape.window="settingsOpen=false"
+      >
+        <section class="settings-card" @click.outside="settingsOpen=false">
+          <div class="kicker">Terminal settings</div>
+          <h2>Shape the console</h2>
+          <div class="settings-grid">
+            <label
+              >Performance profile<select
+                x-model="profile"
+                @change="thinking=profile"
+              >
+                <option value="fast">Fast / low latency</option>
+                <option value="balanced">Balanced</option>
+                <option value="deep">Deep reasoning</option>
+              </select></label
+            ><label
+              >Model endpoint<input
+                x-model="settings.localLlmUrl"
+                type="url" /></label
+            ><label
+              >Model name<input x-model="settings.model" type="text" /></label
+            ><label
+              >Exa API key<input
+                x-model="settings.exaApiKey"
+                type="password"
+                placeholder="Leave unchanged" /></label
+            ><label>Home Assistant mobile notification target<input x-model="settings.notifyTarget" type="text" placeholder="notify.mobile_app_phone" /></label
+            ><label
+              >Glow intensity<input
+                type="range"
+                min="0"
+                max="100"
+                x-model="glow"
+                @input="document.documentElement.style.setProperty('--glow', glow / 100)" /></label
+            ><label
+              ><span>CRT scanlines</span
+              ><input type="checkbox" x-model="scanlines"
+            /></label>
+          </div>
+          <section class="cookbook" x-show="settings.hardwareProfile"><div class="kicker">Hardware cookbook</div><h3 x-text="settings.hardwareProfile?.name"></h3><p x-text="settings.hardwareProfile ? `Context ${settings.hardwareProfile.contextSize} · Batch ${settings.hardwareProfile.batchSize} · Threads ${settings.hardwareProfile.threads} · Flash attention ${settings.hardwareProfile.flashAttention ? 'on' : 'off'}` : ''"></p></section>
+          <div class="settings-actions">
+            <button class="ghost" @click="settingsOpen=false">Close</button
+            ><button class="send" @click="saveSettings()">Save changes</button>
+          </div>
+          <p class="micro" x-text="settingsMessage"></p>
+        </section>
+      </div>
+    </div>
+    
+  </body>
 </html>
