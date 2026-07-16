@@ -1,10 +1,388 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>RemindMe AI</title><style>
-:root{color-scheme:dark;--bg:#0b0f14;--panel:#121923;--panel2:#182230;--mint:#7cffb2;--blue:#8ba7ff;--muted:#8793a5;--line:#263243}*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 80% -20%,#1b3150 0,#0b0f14 42%);color:#e8eef5;font:15px Inter,system-ui,sans-serif}main{max-width:1050px;margin:auto;min-height:100vh;display:grid;grid-template-columns:190px 1fr;gap:1px;background:var(--line)}aside{background:var(--bg);padding:24px 16px}aside h1{font:700 19px 'Space Grotesk',sans-serif;color:var(--mint);letter-spacing:-.04em}aside p{color:var(--muted);font-size:12px;line-height:1.5}.nav{margin-top:36px;display:grid;gap:8px}.nav button{background:transparent;border:0;color:var(--muted);text-align:left;padding:10px;border-radius:8px;cursor:pointer}.nav button:hover{background:var(--panel);color:#fff}.status{position:fixed;bottom:18px;color:var(--muted);font:11px monospace}section{background:rgba(18,25,35,.9);display:flex;flex-direction:column;min-height:100vh}.top{padding:20px 28px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center}.top strong{font:600 18px 'Space Grotesk',sans-serif}.badge{color:var(--mint);font:11px monospace}.chat{flex:1;padding:30px;overflow:auto;max-width:850px;width:100%;margin:auto}.bubble{padding:15px 18px;border-radius:12px;margin:16px 0;line-height:1.65;white-space:pre-wrap}.user{background:#1c3150;margin-left:16%;border:1px solid #2d527c}.assistant{background:var(--panel2);margin-right:8%;border-left:3px solid var(--mint)}.tool{background:#20202a;color:#fcd477;border-left:3px solid #fcd477;font:12px monospace}.thinking{border-left:3px solid var(--blue);color:#b8c7ed}.thinking summary{cursor:pointer;color:var(--blue);font-weight:600}.composer{padding:18px 30px;border-top:1px solid var(--line);background:var(--bg)}form{max-width:850px;margin:auto;display:flex;gap:10px}textarea{flex:1;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:13px;color:#fff;resize:none;min-height:48px}button.send{background:var(--mint);color:#07130d;border:0;border-radius:9px;padding:0 20px;font-weight:700;cursor:pointer}.controls{max-width:850px;margin:10px auto 0;display:flex;gap:8px;align-items:center;color:var(--muted);font-size:12px}.controls select{background:var(--panel);border:1px solid var(--line);color:#fff;border-radius:6px;padding:5px}@media(max-width:700px){main{display:block}aside{display:none}.chat{padding:18px}.user,.assistant{margin-left:0;margin-right:0}}
-</style></head><body><main><aside><h1>◉ RemindMe AI</h1><p>Local home assistant with visible tools.</p><div class="nav"><button id="new">＋ New chat</button><button id="clear">Clear conversation</button></div><div class="status" id="status">connecting…</div></aside><section><header class="top"><strong>Home console</strong><span class="badge" id="model">LOCAL • QWEN</span></header><div class="chat" id="chat"><div class="bubble assistant">Ask about your home, reminders, or search the web.</div></div><div class="composer"><form><textarea rows="1" placeholder="Ask RemindMe anything…"></textarea><button class="send">Send ↑</button></form><div class="controls"><label>Thinking <select id="thinking"><option value="fast">Off / fast</option><option value="balanced">Balanced</option><option value="deep">Deep</option></select></label><span>Images unavailable for the current text model</span></div></div></section></main><script>
-const chat=document.querySelector('#chat'),form=document.querySelector('form'),input=document.querySelector('textarea'),thinking=document.querySelector('#thinking');
-function bubble(cls,text){const el=document.createElement('div');el.className='bubble '+cls;el.textContent=text;chat.append(el);chat.scrollTop=chat.scrollHeight;return el}
-function thinkingBox(){const d=document.createElement('details');d.open=false;d.className='bubble thinking';const s=document.createElement('summary');s.textContent='Thinking / tools running…';const p=document.createElement('div');p.textContent='Waiting for the local model.';d.append(s,p);chat.append(d);return d}
-form.addEventListener('submit',async e=>{e.preventDefault();const text=input.value.trim();if(!text)return;input.value='';bubble('user','You: '+text);const wait=thinkingBox();try{const r=await fetch('./api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:text,thinkingMode:thinking.value})});const data=await r.json();wait.remove();bubble(r.ok?'assistant':'tool',r.ok?'AI: '+data.response:'Error: '+(data.error||'request failed'));}catch(error){wait.querySelector('div').textContent=error.message;wait.open=true;}});
-document.querySelector('#new').onclick=()=>{while(chat.firstChild)chat.firstChild.remove();bubble('assistant','New conversation started.')};document.querySelector('#clear').onclick=()=>{while(chat.firstChild)chat.firstChild.remove()};fetch('./api/status').then(r=>r.json()).then(d=>{document.querySelector('#model').textContent='LOCAL • '+d.model;document.querySelector('#status').textContent='● local tools ready'}).catch(()=>document.querySelector('#status').textContent='● offline');
-</script></body></html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>RemindMe AI</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #0b0f14;
+        --panel: #121923;
+        --panel2: #182230;
+        --mint: #7cffb2;
+        --blue: #8ba7ff;
+        --muted: #8793a5;
+        --line: #263243;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: radial-gradient(circle at 80% -20%, #1b3150 0, #0b0f14 42%);
+        color: #e8eef5;
+        font:
+          15px Inter,
+          system-ui,
+          sans-serif;
+      }
+      main {
+        max-width: 1050px;
+        margin: auto;
+        min-height: 100vh;
+        display: grid;
+        grid-template-columns: 190px 1fr;
+        gap: 1px;
+        background: var(--line);
+      }
+      aside {
+        background: var(--bg);
+        padding: 24px 16px;
+      }
+      aside h1 {
+        font:
+          700 19px "Space Grotesk",
+          sans-serif;
+        color: var(--mint);
+        letter-spacing: -0.04em;
+      }
+      aside p {
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.5;
+      }
+      .nav {
+        margin-top: 36px;
+        display: grid;
+        gap: 8px;
+      }
+      .nav button {
+        background: transparent;
+        border: 0;
+        color: var(--muted);
+        text-align: left;
+        padding: 10px;
+        border-radius: 8px;
+        cursor: pointer;
+      }
+      .nav button:hover {
+        background: var(--panel);
+        color: #fff;
+      }
+      .settings-panel { padding: 24px 30px; background: #161d28; border-bottom: 1px solid var(--line); display: grid; gap: 12px; }
+      .settings-panel[hidden] { display: none; }
+      .settings-panel h2 { margin: 0; color: var(--mint); font: 600 18px 'Space Grotesk', sans-serif; }
+      .settings-panel label { display: flex; gap: 12px; align-items: center; color: var(--muted); }
+      .settings-panel select { background: var(--panel); color: #fff; border: 1px solid var(--line); padding: 6px; border-radius: 6px; }
+      .settings-note { color: var(--muted); font-size: 12px; margin: 0; }
+      body.scanlines::after { content: ''; position: fixed; inset: 0; pointer-events: none; opacity: .12; background: repeating-linear-gradient(0deg, transparent 0 3px, #7cffb2 4px); mix-blend-mode: overlay; }
+      .status {
+        position: fixed;
+        bottom: 18px;
+        color: var(--muted);
+        font: 11px monospace;
+      }
+      section {
+        background: rgba(18, 25, 35, 0.9);
+        display: flex;
+        flex-direction: column;
+        min-height: 100vh;
+      }
+      .top {
+        padding: 20px 28px;
+        border-bottom: 1px solid var(--line);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      .top strong {
+        font:
+          600 18px "Space Grotesk",
+          sans-serif;
+      }
+      .badge {
+        color: var(--mint);
+        font: 11px monospace;
+      }
+      .chat {
+        flex: 1;
+        padding: 30px;
+        overflow: auto;
+        max-width: 850px;
+        width: 100%;
+        margin: auto;
+      }
+      .bubble {
+        padding: 15px 18px;
+        border-radius: 12px;
+        margin: 16px 0;
+        line-height: 1.65;
+        white-space: pre-wrap;
+      }
+      .user {
+        background: #1c3150;
+        margin-left: 16%;
+        border: 1px solid #2d527c;
+      }
+      .assistant {
+        background: var(--panel2);
+        margin-right: 8%;
+        border-left: 3px solid var(--mint);
+      }
+      .tool {
+        background: #20202a;
+        color: #fcd477;
+        border-left: 3px solid #fcd477;
+        font: 12px monospace;
+      }
+      .thinking {
+        border-left: 3px solid var(--blue);
+        color: #b8c7ed;
+      }
+      .thinking summary {
+        cursor: pointer;
+        color: var(--blue);
+        font-weight: 600;
+      }
+      .composer {
+        padding: 18px 30px;
+        border-top: 1px solid var(--line);
+        background: var(--bg);
+      }
+      form {
+        max-width: 850px;
+        margin: auto;
+        display: flex;
+        gap: 10px;
+      }
+      textarea {
+        flex: 1;
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 13px;
+        color: #fff;
+        resize: none;
+        min-height: 48px;
+      }
+      button.send {
+        background: var(--mint);
+        color: #07130d;
+        border: 0;
+        border-radius: 9px;
+        padding: 0 20px;
+        font-weight: 700;
+        cursor: pointer;
+      }
+      .controls {
+        max-width: 850px;
+        margin: 10px auto 0;
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .controls select {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        color: #fff;
+        border-radius: 6px;
+        padding: 5px;
+      }
+      @media (max-width: 700px) {
+        main {
+          display: block;
+        }
+        aside {
+          display: none;
+        }
+        .chat {
+          padding: 18px;
+        }
+        .user,
+        .assistant {
+          margin-left: 0;
+          margin-right: 0;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <aside>
+        <h1>◉ RemindMe AI</h1>
+        <p>Local home assistant with visible tools.</p>
+        <div class="nav">
+          <button id="new">＋ New chat</button
+          ><button id="clear">Clear conversation</button
+          ><button id="settings">Settings</button>
+        </div>
+        <div class="status" id="status">connecting…</div>
+      </aside>
+      <section>
+        <div id="settings-panel" class="settings-panel" hidden>
+          <h2>Terminal settings</h2>
+          <label>Performance profile <select id="profile"><option>Fast</option><option selected>Balanced</option><option>Deep</option></select></label>
+          <label>CRT scanlines <input id="scanlines" type="checkbox"></label>
+          <label>Glow intensity <input id="glow" type="range" min="0" max="100" value="55"></label>
+          <p class="settings-note">Profiles tune context and reasoning for the Raspberry Pi 5. Connection keys remain in add-on settings.</p>
+        </div>
+        <header class="top">
+          <strong>Home console</strong
+          ><span class="badge" id="model">LOCAL • QWEN</span>
+        </header>
+        <div class="chat" id="chat">
+          <div class="bubble assistant">
+            Ask about your home, reminders, or search the web.
+          </div>
+        </div>
+        <div class="composer">
+          <form>
+            <textarea rows="1" placeholder="Ask RemindMe anything…"></textarea
+            ><button class="send">Send ↑</button>
+          </form>
+          <div class="controls">
+            <label
+              >Thinking
+              <select id="thinking">
+                <option value="fast">Off / fast</option>
+                <option value="balanced">Balanced</option>
+                <option value="deep">Deep</option>
+              </select></label
+            ><span>Images unavailable for the current text model</span>
+          </div>
+        </div>
+      </section>
+    </main>
+    <script>
+      const chat = document.querySelector("#chat"),
+        form = document.querySelector("form"),
+        input = document.querySelector("textarea"),
+        thinking = document.querySelector("#thinking");
+      function bubble(cls, text) {
+        const el = document.createElement("div");
+        el.className = "bubble " + cls;
+        el.textContent = text;
+        chat.append(el);
+        chat.scrollTop = chat.scrollHeight;
+        return el;
+      }
+      function thinkingBox() {
+        const d = document.createElement("details");
+        d.open = false;
+        d.className = "bubble thinking";
+        const s = document.createElement("summary");
+        s.textContent = "Thinking / tools running…";
+        const p = document.createElement("div");
+        p.textContent = "Waiting for the local model.";
+        d.append(s, p);
+        chat.append(d);
+        return d;
+      }
+      form.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const text = input.value.trim();
+        if (!text) return;
+        input.value = "";
+        bubble("user", "You: " + text);
+        const wait = thinkingBox();
+        const answer = bubble("assistant", "");
+        answer.style.display = "none";
+        try {
+          const r = await fetch("./api/chat", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              message: text,
+              thinkingMode: thinking.value,
+            }),
+          });
+          if (!r.ok || !r.body)
+            throw new Error("The harness could not start the model stream.");
+          const reader = r.body.getReader();
+          const decoder = new TextDecoder();
+          let buffer = "";
+          let eventName = "";
+          while (true) {
+            const chunk = await reader.read();
+            if (chunk.done) break;
+            buffer += decoder.decode(chunk.value, { stream: true });
+            const lines = buffer.split("\\n");
+            buffer = lines.pop() || "";
+            for (const line of lines) {
+              if (line.startsWith("event: ")) eventName = line.slice(7);
+              if (!line.startsWith("data: ")) continue;
+              const data = JSON.parse(line.slice(6));
+              if (eventName === "thinking") {
+                wait.querySelector("summary").textContent = "Thinking…";
+                wait.querySelector("div").textContent += data.text;
+              } else if (eventName === "token") {
+                answer.style.display = "block";
+                answer.textContent += data.text;
+              } else if (eventName === "tool") {
+                const tool = document.createElement("div");
+                tool.className = "bubble tool";
+                tool.textContent = `⌁ ${data.name} · ${data.state}`;
+                chat.insertBefore(tool, answer);
+                if (data.state === "complete" && Array.isArray(data.result)) {
+                  const card = document.createElement("div");
+                  card.className = "bubble assistant";
+                  const title = document.createElement("strong");
+                  title.textContent = `${data.name} · ${data.result.length} entities`;
+                  card.append(title);
+                  for (const entity of data.result.slice(0, 20)) {
+                    const row = document.createElement("div");
+                    row.textContent = `${entity.attributes?.friendly_name || entity.entity_id}: ${entity.state}`;
+                    row.style.cssText = "padding:8px 0;border-bottom:1px solid var(--line);color:var(--mint)";
+                    card.append(row);
+                  }
+                  chat.insertBefore(card, answer);
+                }
+              } else if (eventName === "metrics") {
+                const metrics = document.createElement("div");
+                metrics.className = "bubble tool";
+                metrics.textContent = `METRICS  ${data.inputTokens || 0} in · ${data.outputTokens || 0} out · prompt ${Number(data.promptTokensPerSecond || 0).toFixed(1)} tok/s · decode ${Number(data.generationTokensPerSecond || 0).toFixed(1)} tok/s · TTFT ${data.firstTokenMs}ms`;
+                chat.insertBefore(metrics, answer);
+              } else if (eventName === "error") {
+                answer.style.display = "block";
+                answer.textContent = "Error: " + data.message;
+              }
+            }
+          }
+          wait.querySelector("summary").textContent = "🧠 Thought trace";
+          if (!wait.querySelector("div").textContent.trim())
+            wait.querySelector("div").textContent =
+              "No reasoning trace returned.";
+          answer.style.display = answer.textContent ? "block" : "none";
+        } catch (error) {
+          wait.querySelector("summary").textContent = "⚠ Request failed";
+          wait.querySelector("div").textContent = error.message;
+          wait.open = true;
+        }
+      });
+      document.querySelector("#new").onclick = () => {
+        while (chat.firstChild) chat.firstChild.remove();
+        bubble("assistant", "New conversation started.");
+      };
+      document.querySelector("#clear").onclick = () => {
+        while (chat.firstChild) chat.firstChild.remove();
+      };
+      const settingsPanel = document.querySelector("#settings-panel");
+      document.querySelector("#settings").onclick = () => { settingsPanel.hidden = !settingsPanel.hidden; };
+      document.querySelector("#scanlines").onchange = (event) => { document.body.classList.toggle("scanlines", event.target.checked); localStorage.setItem("remindme.scanlines", event.target.checked ? "1" : "0"); };
+      document.querySelector("#glow").oninput = (event) => { document.documentElement.style.setProperty("--glow", `${event.target.value / 100}`); };
+      if (localStorage.getItem("remindme.scanlines") === "1") { document.querySelector("#scanlines").checked = true; document.body.classList.add("scanlines"); }
+      fetch("./api/status")
+        .then((r) => r.json())
+        .then((d) => {
+          document.querySelector("#model").textContent = "LOCAL • " + d.model;
+          document.querySelector("#status").textContent = "● local tools ready";
+        })
+        .catch(
+          () => (document.querySelector("#status").textContent = "● offline"),
+        );
+    </script>
+  </body>
+</html>
