@@ -27,6 +27,9 @@ THREADS_BATCH="$(get_option threads_batch)"
 BATCH_SIZE="$(get_option batch_size)"
 UBATCH_SIZE="$(get_option ubatch_size)"
 CACHE_REUSE="$(get_option cache_reuse)"
+JINJA="$(get_option jinja)"
+KV_UNIFIED="$(get_option kv_unified)"
+FLASH_ATTENTION="$(get_option flash_attention)"
 
 # llama.cpp stores Hugging Face downloads beneath HOME. Keep them persistent.
 export HOME=/data
@@ -41,6 +44,10 @@ set -- --host 0.0.0.0 --port 8080 \
 	--cache-prompt \
 	--cache-reuse "$CACHE_REUSE" \
 	--parallel 1
+
+if [ "$JINJA" = "true" ]; then set -- "$@" --jinja; fi
+if [ "$KV_UNIFIED" = "true" ]; then set -- "$@" --kv-unified; fi
+if [ "$FLASH_ATTENTION" = "true" ]; then set -- "$@" --flash-attn on; fi
 
 if [ -n "$HF_REPO" ]; then
 	set -- "$@" --hf-repo "$HF_REPO"
