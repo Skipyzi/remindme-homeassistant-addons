@@ -1,592 +1,126 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>RemindMe AI</title>
-    <style>
-      :root {
-        color-scheme: dark;
-        --bg: #0b0f14;
-        --panel: #121923;
-        --panel2: #182230;
-        --mint: #7cffb2;
-        --blue: #8ba7ff;
-        --muted: #8793a5;
-        --line: #263243;
-      }
-      * {
-        box-sizing: border-box;
-      }
-      body {
-        margin: 0;
-        background: radial-gradient(circle at 80% -20%, #1b3150 0, #0b0f14 42%);
-        color: #e8eef5;
-        font:
-          15px Inter,
-          system-ui,
-          sans-serif;
-      }
-      main {
-        max-width: 1050px;
-        margin: auto;
-        min-height: 100vh;
-        display: grid;
-        grid-template-columns: 190px 1fr;
-        gap: 1px;
-        background: var(--line);
-      }
-      aside {
-        background: var(--bg);
-        padding: 24px 16px;
-      }
-      aside h1 {
-        font:
-          700 19px "Space Grotesk",
-          sans-serif;
-        color: var(--mint);
-        letter-spacing: -0.04em;
-      }
-      aside p {
-        color: var(--muted);
-        font-size: 12px;
-        line-height: 1.5;
-      }
-      .nav {
-        margin-top: 36px;
-        display: grid;
-        gap: 8px;
-      }
-      .nav button {
-        background: transparent;
-        border: 0;
-        color: var(--muted);
-        text-align: left;
-        padding: 10px;
-        border-radius: 8px;
-        cursor: pointer;
-      }
-      .nav button:hover {
-        background: var(--panel);
-        color: #fff;
-      }
-      .settings-panel {
-        padding: 24px 30px;
-        background: #161d28;
-        border-bottom: 1px solid var(--line);
-        display: grid;
-        gap: 12px;
-      }
-      .settings-panel[hidden] {
-        display: none;
-      }
-      .settings-panel h2 {
-        margin: 0;
-        color: var(--mint);
-        font:
-          600 18px "Space Grotesk",
-          sans-serif;
-      }
-      .settings-panel label {
-        display: flex;
-        gap: 12px;
-        align-items: center;
-        color: var(--muted);
-      }
-      .settings-panel select,
-      .settings-panel input[type="url"],
-      .settings-panel input[type="text"],
-      .settings-panel input[type="password"] {
-        background: var(--panel);
-        color: #fff;
-        border: 1px solid var(--line);
-        padding: 6px;
-        border-radius: 6px;
-        flex: 1;
-      }
-      .settings-note {
-        color: var(--muted);
-        font-size: 12px;
-        margin: 0;
-      }
-      body.scanlines::after {
-        content: "";
-        position: fixed;
-        inset: 0;
-        pointer-events: none;
-        opacity: 0.12;
-        background: repeating-linear-gradient(
-          0deg,
-          transparent 0 3px,
-          #7cffb2 4px
-        );
-        mix-blend-mode: overlay;
-      }
-      .status {
-        position: fixed;
-        bottom: 18px;
-        color: var(--muted);
-        font: 11px monospace;
-      }
-      section {
-        background: rgba(18, 25, 35, 0.9);
-        display: flex;
-        flex-direction: column;
-        min-height: 100vh;
-      }
-      .top {
-        padding: 20px 28px;
-        border-bottom: 1px solid var(--line);
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-      }
-      .top strong {
-        font:
-          600 18px "Space Grotesk",
-          sans-serif;
-      }
-      .badge {
-        color: var(--mint);
-        font: 11px monospace;
-      }
-      .chat {
-        flex: 1;
-        padding: 30px;
-        overflow: auto;
-        max-width: 850px;
-        width: 100%;
-        margin: auto;
-      }
-      .bubble {
-        padding: 15px 18px;
-        border-radius: 12px;
-        margin: 16px 0;
-        line-height: 1.65;
-        white-space: pre-wrap;
-      }
-      .user {
-        background: #1c3150;
-        margin-left: 16%;
-        border: 1px solid #2d527c;
-      }
-      .assistant {
-        background: var(--panel2);
-        margin-right: 8%;
-        border-left: 3px solid var(--mint);
-      }
-      .tool {
-        background: #20202a;
-        color: #fcd477;
-        border-left: 3px solid #fcd477;
-        font: 12px monospace;
-      }
-      .thinking {
-        border-left: 3px solid var(--blue);
-        color: #b8c7ed;
-      }
-      .thinking summary {
-        cursor: pointer;
-        color: var(--blue);
-        font-weight: 600;
-      }
-      .composer {
-        padding: 18px 30px;
-        border-top: 1px solid var(--line);
-        background: var(--bg);
-      }
-      form {
-        max-width: 850px;
-        margin: auto;
-        display: flex;
-        gap: 10px;
-      }
-      textarea {
-        flex: 1;
-        background: var(--panel);
-        border: 1px solid var(--line);
-        border-radius: 10px;
-        padding: 13px;
-        color: #fff;
-        resize: none;
-        min-height: 48px;
-      }
-      button.send {
-        background: var(--mint);
-        color: #07130d;
-        border: 0;
-        border-radius: 9px;
-        padding: 0 20px;
-        font-weight: 700;
-        cursor: pointer;
-      }
-      .controls {
-        max-width: 850px;
-        margin: 10px auto 0;
-        display: flex;
-        gap: 8px;
-        align-items: center;
-        color: var(--muted);
-        font-size: 12px;
-      }
-      .controls select {
-        background: var(--panel);
-        border: 1px solid var(--line);
-        color: #fff;
-        border-radius: 6px;
-        padding: 5px;
-      }
-      @media (max-width: 700px) {
-        main {
-          display: block;
-        }
-        aside {
-          display: none;
-        }
-        .chat {
-          padding: 18px;
-        }
-        .user,
-        .assistant {
-          margin-left: 0;
-          margin-right: 0;
-        }
-      }
-    </style>
-  </head>
-  <body>
-    <main>
-      <aside>
-        <h1>◉ RemindMe AI</h1>
-        <p>Local home assistant with visible tools.</p>
-        <div class="nav">
-          <button id="new">＋ New chat</button
-          ><button id="clear">Clear conversation</button
-          ><button id="settings">Settings</button>
-        </div>
-        <div class="status" id="status">connecting…</div>
-      </aside>
-      <section>
-        <div id="settings-panel" class="settings-panel" hidden>
-          <h2>Terminal settings</h2>
-          <label
-            >Performance profile
-            <select id="profile">
-              <option>Fast</option>
-              <option selected>Balanced</option>
-              <option>Deep</option>
-            </select></label
-          >
-          <label>CRT scanlines <input id="scanlines" type="checkbox" /></label>
-          <label
-            >Glow intensity
-            <input id="glow" type="range" min="0" max="100" value="55"
-          /></label>
-          <p class="settings-note">
-            Profiles tune context and reasoning for the Raspberry Pi 5.
-            Connection keys remain in add-on settings.
-          </p>
-          <div id="cookbook" class="settings-note">
-            Reading hardware profile…
-          </div>
-          <label
-            >Model endpoint
-            <input
-              id="llm-url"
-              type="url"
-              value="http://homeassistant:8080/v1/chat/completions"
-          /></label>
-          <label
-            >Model name <input id="llm-model" type="text" value="qwen3-1.7b"
-          /></label>
-          <label
-            >Exa API key
-            <input
-              id="exa-key"
-              type="password"
-              placeholder="Leave unchanged to keep existing key"
-          /></label>
-          <button id="save-settings" class="send">Save connections</button>
-          <div id="settings-result" class="settings-note"></div>
-        </div>
-        <header class="top">
-          <strong>Home console</strong
-          ><span class="badge" id="model">LOCAL • QWEN</span>
-        </header>
-        <div class="chat" id="chat">
-          <div class="bubble assistant">
-            Ask about your home, reminders, or search the web.
-          </div>
-        </div>
-        <div class="composer">
-          <form>
-            <textarea rows="1" placeholder="Ask RemindMe anything…"></textarea
-            ><button class="send">Send ↑</button>
-          </form>
-          <div class="controls">
-            <label
-              >Thinking
-              <select id="thinking">
-                <option value="fast">Off / fast</option>
-                <option value="balanced">Balanced</option>
-                <option value="deep">Deep</option>
-              </select></label
-            ><span>Images unavailable for the current text model</span>
-          </div>
-        </div>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>RemindMe // command deck</title>
+  <script defer src="./vendor/alpine.min.js"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Space+Grotesk:wght@400;500;600;700&display=swap');
+    :root { --ink:#080b10; --panel:#101722; --panel-2:#151f2d; --line:#263548; --text:#f5f2e9; --muted:#8d9bae; --amber:#ffc857; --mint:#57e6d0; --coral:#ff6b5e; --violet:#be9cff; --glow:0.55; }
+    * { box-sizing:border-box; }
+    html,body { margin:0; min-height:100%; background:var(--ink); color:var(--text); font-family:'Space Grotesk',system-ui,sans-serif; }
+    body { overflow:hidden; }
+    [x-cloak] { display:none !important; }
+    .deck.scanlines::before { content:""; position:fixed; inset:0; pointer-events:none; z-index:10; opacity:.07; background:repeating-linear-gradient(0deg,transparent 0 3px,#fff 4px); mix-blend-mode:screen; }
+    body::after { content:""; position:fixed; inset:0; pointer-events:none; z-index:9; box-shadow:inset 0 0 12vw rgba(0,0,0,.75), inset 0 0 3px rgba(255,200,87,.2); }
+    button,input,textarea,select { font:inherit; }
+    button { cursor:pointer; }
+    .deck { display:grid; grid-template-columns:270px minmax(420px, 1fr) 260px; height:100vh; max-width:1800px; margin:auto; }
+    .rail { border-right:1px solid var(--line); background:linear-gradient(180deg,#0d131c,#080b10); padding:30px 24px; display:flex; flex-direction:column; gap:26px; }
+    .brand { letter-spacing:-.04em; font-size:27px; font-weight:700; line-height:1; }
+    .brand b { color:var(--amber); text-shadow:0 0 calc(20px * var(--glow)) rgba(255,200,87,.7); }
+    .kicker,.label { font:500 10px 'DM Mono',monospace; letter-spacing:.15em; text-transform:uppercase; color:var(--muted); }
+    .rail-copy { color:var(--muted); font-size:13px; line-height:1.5; max-width:190px; }
+    .nav { display:grid; gap:8px; }
+    .nav button,.ghost { border:1px solid transparent; color:var(--muted); background:transparent; text-align:left; padding:10px 12px; border-radius:2px; transition:.18s ease; }
+    .nav button:hover,.nav button:focus-visible,.ghost:hover { border-color:var(--line); color:var(--amber); background:rgba(255,200,87,.05); outline:none; }
+    .nav button:first-child { color:var(--ink); background:var(--amber); box-shadow:0 0 calc(24px * var(--glow)) rgba(255,200,87,.22); }
+    .rail-foot { margin-top:auto; display:grid; gap:8px; }
+    .status { font:500 11px 'DM Mono',monospace; color:var(--mint); }
+    .status::before { content:'●'; margin-right:8px; text-shadow:0 0 12px var(--mint); }
+    .main { min-width:0; display:flex; flex-direction:column; background:var(--panel); }
+    .topbar { height:72px; border-bottom:1px solid var(--line); padding:0 30px; display:flex; align-items:center; justify-content:space-between; }
+    .top-title { font-size:18px; font-weight:600; letter-spacing:-.02em; }
+    .top-title small { display:block; color:var(--muted); font:11px 'DM Mono',monospace; letter-spacing:.06em; margin-top:5px; }
+    .badge { border:1px solid var(--mint); color:var(--mint); padding:6px 9px; font:10px 'DM Mono',monospace; letter-spacing:.08em; }
+    .chat { flex:1; overflow:auto; padding:34px clamp(22px,6vw,80px); display:flex; flex-direction:column; gap:16px; }
+    .empty { margin:auto; max-width:600px; width:100%; border-left:3px solid var(--amber); padding:24px 28px; background:linear-gradient(90deg,rgba(255,200,87,.08),transparent); }
+    .empty h2 { margin:0 0 10px; font-size:29px; letter-spacing:-.05em; }
+    .empty p { margin:0; color:var(--muted); }
+    .message { max-width:760px; border:1px solid var(--line); padding:16px 18px; line-height:1.55; white-space:pre-wrap; animation:rise .24s ease both; }
+    .message.user { align-self:flex-end; border-color:var(--amber); background:rgba(255,200,87,.08); color:var(--text); }
+    .message.assistant { border-left:3px solid var(--mint); background:var(--panel-2); }
+    .message.tool { border-left:3px solid var(--violet); background:rgba(190,156,255,.07); font:12px 'DM Mono',monospace; color:var(--violet); }
+    .message.thinking { border-left:3px solid var(--coral); color:#ffb2a9; font:12px 'DM Mono',monospace; }
+    .message strong { display:block; color:var(--amber); font:11px 'DM Mono',monospace; letter-spacing:.1em; text-transform:uppercase; margin-bottom:8px; }
+    .entity-row,.reminder-row { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:10px 0; border-top:1px solid var(--line); font-size:13px; }
+    .entity-row:first-of-type,.reminder-row:first-of-type { margin-top:8px; }
+    .entity-state { color:var(--mint); font-family:'DM Mono',monospace; }
+    .micro { font:10px 'DM Mono',monospace; color:var(--muted); }
+    .action { border:1px solid var(--amber); background:transparent; color:var(--amber); padding:7px 10px; font:10px 'DM Mono',monospace; }
+    .action:hover { background:var(--amber); color:var(--ink); }
+    .composer { border-top:1px solid var(--line); padding:18px clamp(22px,4vw,54px) 20px; background:#0c121b; }
+    .compose-line { display:flex; gap:10px; }
+    textarea { width:100%; resize:none; min-height:48px; max-height:150px; border:1px solid var(--line); background:var(--panel); color:var(--text); padding:14px; outline:none; }
+    textarea:focus { border-color:var(--amber); box-shadow:0 0 0 2px rgba(255,200,87,.12); }
+    .send { border:1px solid var(--amber); background:var(--amber); color:var(--ink); font-weight:700; padding:0 20px; min-width:92px; }
+    .send:hover { box-shadow:0 0 calc(22px * var(--glow)) rgba(255,200,87,.38); }
+    .controls { display:flex; align-items:center; gap:14px; margin-top:10px; color:var(--muted); font:11px 'DM Mono',monospace; }
+    select { border:1px solid var(--line); color:var(--amber); background:var(--panel); padding:5px; }
+    .telemetry { border-left:1px solid var(--line); background:linear-gradient(180deg,#111c2b,#0b1018); padding:30px 22px; overflow:auto; }
+    .telemetry h2 { margin:0 0 24px; font-size:14px; letter-spacing:.04em; }
+    .meter { padding:15px 0; border-top:1px solid var(--line); }
+    .meter strong { display:block; color:var(--amber); font:22px 'DM Mono',monospace; margin-top:5px; }
+    .meter span { color:var(--muted); font:10px 'DM Mono',monospace; text-transform:uppercase; letter-spacing:.1em; }
+    .settings { position:fixed; z-index:20; inset:0; background:rgba(4,6,9,.8); display:grid; place-items:center; padding:20px; }
+    .settings-card { width:min(560px,100%); border:1px solid var(--amber); background:var(--panel); box-shadow:0 0 60px rgba(0,0,0,.7); padding:28px; }
+    .settings-card h2 { margin:0 0 20px; }
+    .settings-grid { display:grid; gap:12px; }
+    .settings-grid label { display:grid; gap:6px; color:var(--muted); font:11px 'DM Mono',monospace; }
+    .settings-grid input { border:1px solid var(--line); background:var(--ink); color:var(--text); padding:10px; }
+    .settings-actions { display:flex; justify-content:flex-end; gap:10px; margin-top:20px; }
+    .offline { color:var(--coral); }
+    @keyframes rise { from { opacity:0; transform:translateY(5px); } to { opacity:1; transform:none; } }
+    @media (max-width:1100px) { .deck { grid-template-columns:220px minmax(0,1fr); } .telemetry { display:none; } }
+    @media (max-width:700px) { body { overflow:auto; } .deck { display:block; height:auto; min-height:100vh; } .rail { min-height:0; padding:20px; border-right:0; border-bottom:1px solid var(--line); } .rail-copy,.rail-foot { display:none; } .nav { display:flex; flex-wrap:wrap; } .nav button { padding:8px 10px; } .main { min-height:calc(100vh - 110px); } .chat { padding:22px 16px; } .topbar { padding:0 16px; } }
+    @media (prefers-reduced-motion:reduce) { *,*::before,*::after { animation-duration:.01ms !important; transition-duration:.01ms !important; } }
+  </style>
+</head>
+<body>
+  <div class="deck" :class="{scanlines:scanlines}" x-data="harness()" x-init="init()">
+    <aside class="rail">
+      <div><div class="kicker">Local command deck / 01</div><div class="brand">◉ <b>RemindMe</b><br>AI</div></div>
+      <p class="rail-copy">A private home console for rooms, reminders, and the wider signal.</p>
+      <nav class="nav" aria-label="Conversation controls">
+        <button @click="newChat()">＋ New chat</button><button @click="clearChat()">Clear conversation</button><button @click="settingsOpen=true">Settings</button>
+      </nav>
+      <div class="rail-foot"><div class="status" :class="{'offline': offline}" x-text="offline ? 'local tools offline' : 'local tools ready'"></div><div class="micro" x-text="hardware"></div></div>
+    </aside>
+    <main class="main">
+      <header class="topbar"><div class="top-title">Home console<small x-text="sessionLabel"></small></div><div class="badge" x-text="modelBadge"></div></header>
+      <section class="chat" aria-live="polite">
+        <div class="empty" x-show="messages.length===0"><div class="kicker">Signal received</div><h2>What should we make easier?</h2><p>Ask about your home, set a reminder, or search the web. Actions wait for your confirmation.</p></div>
+        <template x-for="message in messages" :key="message.id">
+          <article class="message" :class="message.type">
+            <strong x-show="message.type==='tool'" x-text="message.label"></strong><span x-text="message.text"></span>
+            <template x-if="message.items"><div><template x-for="item in message.items" :key="item.id || item.entity_id"><div class="entity-row"><span x-text="item.message ? item.message : (item.attributes?.friendly_name || item.entity_id)"></span><span class="entity-state" x-text="item.message ? formatTime(item.time) : item.state"></span><button x-show="item.message" class="action" @click="deleteReminder(item.id)">DELETE</button></div></template></div></template>
+            <template x-if="message.confirm"><div class="controls"><button class="action" @click="confirmAction(message)">CONFIRM ACTION</button><button class="ghost" @click="cancelAction(message)">CANCEL</button></div></template>
+          </article>
+        </template>
       </section>
+      <footer class="composer"><form @submit.prevent="send()"><div class="compose-line"><textarea x-model="draft" @keydown.enter.exact.prevent="send()" rows="1" placeholder="Ask the console anything…" aria-label="Message"></textarea><button class="send" :disabled="busy" x-text="busy ? 'Working…' : 'Send ↑'"></button></div><div class="controls"><label>Thinking <select x-model="thinking"><option value="fast">Off / fast</option><option value="balanced">Balanced</option><option value="deep">Deep</option></select></label><span>Enter to send · actions require confirmation</span></div></form></footer>
     </main>
-    <script>
-      const chat = document.querySelector("#chat"),
-        form = document.querySelector("form"),
-        input = document.querySelector("textarea"),
-        thinking = document.querySelector("#thinking");
-      function saveHistory() {
-        try {
-          const items = [...chat.querySelectorAll(".bubble")].map((el) => ({ className: el.className, text: el.textContent || "" }));
-          localStorage.setItem("remindme.history", JSON.stringify(items));
-        } catch (_) { /* storage is optional */ }
-      }
-      function bubble(cls, text) {
-        const el = document.createElement("div");
-        el.className = "bubble " + cls;
-        el.textContent = text;
-        chat.append(el);
-        chat.scrollTop = chat.scrollHeight;
-        saveHistory();
-        return el;
-      }
-      try {
-        const saved = JSON.parse(localStorage.getItem("remindme.history") || "null");
-        if (Array.isArray(saved)) {
-          while (chat.firstChild) chat.firstChild.remove();
-          for (const item of saved) {
-            if (typeof item?.text !== "string" || typeof item?.className !== "string") continue;
-            const restored = document.createElement("div");
-            restored.className = item.className;
-            restored.textContent = item.text;
-            chat.append(restored);
-          }
-        }
-      } catch (_) { /* storage is optional */ }
-      function thinkingBox() {
-        const d = document.createElement("details");
-        d.open = false;
-        d.className = "bubble thinking";
-        const s = document.createElement("summary");
-        s.textContent = "Thinking / tools running…";
-        const p = document.createElement("div");
-        p.textContent = "Waiting for the local model.";
-        d.append(s, p);
-        chat.append(d);
-        return d;
-      }
-      form.addEventListener("submit", async (e) => {
-        e.preventDefault();
-        const text = input.value.trim();
-        if (!text) return;
-        input.value = "";
-        bubble("user", "You: " + text);
-        const wait = thinkingBox();
-        const answer = bubble("assistant", "");
-        answer.style.display = "none";
-        try {
-          const r = await fetch("./api/chat", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              message: text,
-              thinkingMode: thinking.value,
-            }),
-          });
-          if (!r.ok || !r.body)
-            throw new Error("The harness could not start the model stream.");
-          const reader = r.body.getReader();
-          const decoder = new TextDecoder();
-          let buffer = "";
-          let eventName = "";
-          while (true) {
-            const chunk = await reader.read();
-            if (chunk.done) break;
-            buffer += decoder.decode(chunk.value, { stream: true });
-            const lines = buffer.split("\\n");
-            buffer = lines.pop() || "";
-            for (const line of lines) {
-              if (line.startsWith("event: ")) eventName = line.slice(7);
-              if (!line.startsWith("data: ")) continue;
-              const data = JSON.parse(line.slice(6));
-              if (eventName === "thinking") {
-                wait.querySelector("summary").textContent = "Thinking…";
-                wait.querySelector("div").textContent += data.text;
-              } else if (eventName === "token") {
-                answer.style.display = "block";
-                answer.textContent += data.text;
-              } else if (eventName === "tool") {
-                const tool = document.createElement("div");
-                tool.className = "bubble tool";
-                tool.textContent = `⌁ ${data.name} · ${data.state}`;
-                chat.insertBefore(tool, answer);
-                if (
-                  data.state === "complete" &&
-                  data.result?.confirmation_required
-                ) {
-                  const card = document.createElement("div");
-                  card.className = "bubble tool";
-                  card.textContent = data.result.message;
-                  const confirm = document.createElement("button");
-                  confirm.textContent = "CONFIRM ACTION";
-                  confirm.className = "send";
-                  confirm.onclick = async () => {
-                    confirm.disabled = true;
-                    cancel.disabled = true;
-                    confirm.textContent = "APPLYING…";
-                    const result = await fetch("./api/confirm", {
-                      method: "POST",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({ token: data.result.token }),
-                    });
-                    confirm.textContent = result.ok ? "APPLIED" : "FAILED";
-                  };
-                  const cancel = document.createElement("button");
-                  cancel.textContent = "CANCEL";
-                  cancel.className = "send";
-                  cancel.onclick = () => { cancel.disabled = true; confirm.disabled = true; cancel.textContent = "CANCELLED"; };
-                  card.append(document.createElement("br"), confirm, cancel);
-                  chat.insertBefore(card, answer);
-                }
-                if (data.state === "complete" && Array.isArray(data.result)) {
-                  const card = document.createElement("div");
-                  card.className = "bubble assistant";
-                  const title = document.createElement("strong");
-                  title.textContent = `${data.name} · ${data.result.length} items`;
-                  card.append(title);
-                  for (const entity of data.result.slice(0, 20)) {
-                    const row = document.createElement("div");
-                    row.textContent =
-                      data.name === "list_reminders"
-                        ? `${entity.message} · ${new Date(entity.time).toLocaleString()}`
-                        : `${entity.attributes?.friendly_name || entity.entity_id}: ${entity.state}`;
-                    row.style.cssText =
-                      "padding:8px 0;border-bottom:1px solid var(--line);color:var(--mint)";
-                    card.append(row);
-                    if (data.name === "list_reminders") {
-                      const remove = document.createElement("button");
-                      remove.textContent = "DELETE";
-                      remove.className = "send";
-                      remove.style.margin = "6px 0";
-                      remove.onclick = async () => {
-                        const result = await fetch(
-                          `./api/reminders/${encodeURIComponent(entity.id)}`,
-                          { method: "DELETE" },
-                        );
-                        remove.textContent = result.ok ? "DELETED" : "FAILED";
-                        remove.disabled = true;
-                      };
-                      card.append(remove);
-                    }
-                  }
-                  chat.insertBefore(card, answer);
-                }
-              } else if (eventName === "metrics") {
-                const metrics = document.createElement("div");
-                metrics.className = "bubble tool";
-                metrics.textContent = `METRICS  ${data.inputTokens || 0} in · ${data.outputTokens || 0} out · context ${(data.inputTokens || 0) + (data.outputTokens || 0)} · prompt ${Number(data.promptTokensPerSecond || 0).toFixed(1)} tok/s · decode ${Number(data.generationTokensPerSecond || 0).toFixed(1)} tok/s · TTFT ${data.firstTokenMs}ms`;
-                chat.insertBefore(metrics, answer);
-              } else if (eventName === "error") {
-                answer.style.display = "block";
-                answer.textContent = "Error: " + data.message;
-              }
-            }
-          }
-          wait.querySelector("summary").textContent = "🧠 Thought trace";
-          if (!wait.querySelector("div").textContent.trim())
-            wait.querySelector("div").textContent =
-              "No reasoning trace returned.";
-          answer.style.display = answer.textContent ? "block" : "none";
-          saveHistory();
-        } catch (error) {
-          wait.querySelector("summary").textContent = "⚠ Request failed";
-          wait.querySelector("div").textContent = error.message;
-          wait.open = true;
-        }
-      });
-      document.querySelector("#new").onclick = () => {
-        while (chat.firstChild) chat.firstChild.remove();
-        localStorage.removeItem("remindme.history");
-        bubble("assistant", "New conversation started.");
-      };
-      document.querySelector("#clear").onclick = () => {
-        while (chat.firstChild) chat.firstChild.remove();
-        localStorage.removeItem("remindme.history");
-      };
-      const settingsPanel = document.querySelector("#settings-panel");
-      document.querySelector("#settings").onclick = () => {
-        settingsPanel.hidden = !settingsPanel.hidden;
-      };
-      document.querySelector("#scanlines").onchange = (event) => {
-        document.body.classList.toggle("scanlines", event.target.checked);
-        localStorage.setItem(
-          "remindme.scanlines",
-          event.target.checked ? "1" : "0",
-        );
-      };
-      document.querySelector("#save-settings").onclick = async () => {
-        const result = document.querySelector("#settings-result");
-        result.textContent = "Saving…";
-        const r = await fetch("./api/settings", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            localLlmUrl: document.querySelector("#llm-url").value,
-            model: document.querySelector("#llm-model").value,
-            exaApiKey: document.querySelector("#exa-key").value,
-          }),
-        });
-        result.textContent = r.ok
-          ? "Saved. Restart the add-on to apply connection changes."
-          : "Save failed: " + (await r.text());
-      };
-      fetch("./api/settings")
-        .then((r) => r.json())
-        .then((d) => {
-          document.querySelector("#llm-url").value = d.localLlmUrl;
-          document.querySelector("#llm-model").value = d.model;
-        })
-        .catch(() => {});
-      document.querySelector("#profile").onchange = (event) => {
-        const value = event.target.value.toLowerCase();
-        document.querySelector("#thinking").value = value;
-        localStorage.setItem("remindme.profile", value);
-      };
-      const savedProfile = localStorage.getItem("remindme.profile");
-      if (savedProfile) {
-        document.querySelector("#profile").value =
-          savedProfile[0].toUpperCase() + savedProfile.slice(1);
-        document.querySelector("#thinking").value = savedProfile;
-      }
-      document.querySelector("#glow").oninput = (event) => {
-        document.documentElement.style.setProperty(
-          "--glow",
-          `${event.target.value / 100}`,
-        );
-      };
-      if (localStorage.getItem("remindme.scanlines") === "1") {
-        document.querySelector("#scanlines").checked = true;
-        document.body.classList.add("scanlines");
-      }
-      fetch("./api/status")
-        .then((r) => r.json())
-        .then((d) => {
-          document.querySelector("#model").textContent = "LOCAL • " + d.model;
-          document.querySelector("#status").textContent = "● local tools ready";
-          const hw = d.hardware;
-          if (hw)
-            document.querySelector("#cookbook").textContent =
-              `Hardware: ${hw.architecture} · ${hw.cpuCores} cores · ${(hw.memoryFree / 1073741824).toFixed(1)} GB free / ${(hw.memoryTotal / 1073741824).toFixed(1)} GB total`;
-        })
-        .catch(
-          () => (document.querySelector("#status").textContent = "● offline"),
-        );
-    </script>
-  </body>
+    <aside class="telemetry"><div class="kicker">Live telemetry</div><h2>MODEL INSTRUMENTS</h2><div class="meter"><span>Prompt tokens</span><strong x-text="metrics.inputTokens || '—'"></strong></div><div class="meter"><span>Decode speed</span><strong x-text="metrics.decode ? metrics.decode.toFixed(1) : '—'"></strong><span> tok / sec</span></div><div class="meter"><span>First signal</span><strong x-text="metrics.ttft ? metrics.ttft : '—'"></strong><span> ms</span></div><div class="meter"><span>Context used</span><strong x-text="metrics.context || '—'"></strong></div><div class="meter"><span>Thought trace</span><strong x-text="metrics.thinking || 0"></strong><span> chars</span></div></aside>
+    <div class="settings" x-show="settingsOpen" x-cloak @keydown.escape.window="settingsOpen=false"><section class="settings-card" @click.outside="settingsOpen=false"><div class="kicker">Terminal settings</div><h2>Shape the console</h2><div class="settings-grid"><label>Performance profile<select x-model="profile" @change="thinking=profile"><option value="fast">Fast / low latency</option><option value="balanced">Balanced</option><option value="deep">Deep reasoning</option></select></label><label>Model endpoint<input x-model="settings.localLlmUrl" type="url"></label><label>Model name<input x-model="settings.model" type="text"></label><label>Exa API key<input x-model="settings.exaApiKey" type="password" placeholder="Leave unchanged"></label><label>Glow intensity<input type="range" min="0" max="100" x-model="glow" @input="document.documentElement.style.setProperty('--glow', glow / 100)"></label><label><span>CRT scanlines</span><input type="checkbox" x-model="scanlines"></label></div><div class="settings-actions"><button class="ghost" @click="settingsOpen=false">Close</button><button class="send" @click="saveSettings()">Save changes</button></div><p class="micro" x-text="settingsMessage"></p></section></div>
+  </div>
+  <script>
+    function harness() { return {
+      messages: [], draft: '', thinking: localStorage.getItem('remindme.profile') || 'fast', profile: localStorage.getItem('remindme.profile') || 'fast', busy: false, settingsOpen: false, offline: false, scanlines: true, glow: 55, settingsMessage: '', settings: { localLlmUrl: '', model: '', exaApiKey: '' }, modelBadge: 'LOCAL • QWEN', sessionLabel: 'ready // private network', hardware: 'raspberry pi profile', metrics: { },
+      init() { this.restore(); this.scanlines = localStorage.getItem('remindme.scanlines') !== '0'; this.$watch('profile', v => { this.thinking = v; localStorage.setItem('remindme.profile', v); }); fetch('./api/status').then(r => r.json()).then(d => { this.modelBadge = 'LOCAL • ' + d.model; if (d.hardware) this.hardware = `${d.hardware.architecture} / ${d.hardware.cpuCores} cores`; }).catch(() => { this.offline = true; }); fetch('./api/settings').then(r => r.json()).then(d => { this.settings.localLlmUrl=d.localLlmUrl; this.settings.model=d.model; }).catch(() => {}); },
+      persist() { localStorage.setItem('remindme.history', JSON.stringify(this.messages.map(({id,type,text,label,items}) => ({id,type,text,label,items})))); },
+      restore() { try { const saved=JSON.parse(localStorage.getItem('remindme.history') || '[]'); if (Array.isArray(saved)) this.messages=saved; } catch (_) {} },
+      add(type, text, extra={}) { const message={id: `${Date.now()}-${Math.random()}`,type,text,...extra}; this.messages.push(message); this.persist(); return message; },
+      newChat() { this.messages=[]; this.persist(); this.add('assistant','Fresh channel. What are we checking?'); },
+      clearChat() { this.messages=[]; this.persist(); },
+      formatTime(value) { return value ? new Date(value).toLocaleString() : ''; },
+      async send() { const text=this.draft.trim(); if (!text || this.busy) return; this.draft=''; this.add('user',text); const answer=this.add('assistant',''); this.busy=true; let waiting=this.add('thinking','Listening to the local model…'); try { const r=await fetch('./api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:text,thinkingMode:this.thinking})}); if (!r.ok || !r.body) throw new Error('The local model stream did not start.'); const reader=r.body.getReader(), decoder=new TextDecoder(); let buffer='', event=''; while(true) { const chunk=await reader.read(); if(chunk.done) break; buffer+=decoder.decode(chunk.value,{stream:true}); const lines=buffer.split('\n'); buffer=lines.pop() || ''; for(const line of lines) { if(line.startsWith('event: ')) event=line.slice(7); if(!line.startsWith('data: ')) continue; const data=JSON.parse(line.slice(6)); if(event==='token') answer.text += data.text; else if(event==='thinking') waiting.text += data.text; else if(event==='metrics') { this.metrics={inputTokens:data.inputTokens,decode:data.generationTokensPerSecond,ttft:data.firstTokenMs,context:(data.inputTokens||0)+(data.outputTokens||0),thinking:data.thinkingTokens}; } else if(event==='tool') this.handleTool(data); else if(event==='answer' && data.text && !answer.text) answer.text=data.text; else if(event==='error') throw new Error(data.message); this.persist(); } } waiting.text=waiting.text==='Listening to the local model…' ? 'No thought trace returned.' : waiting.text; } catch(error) { answer.text='ERROR // '+error.message; this.offline=true; } finally { this.busy=false; this.persist(); } },
+      handleTool(data) { if(data.state==='running') this.add('tool',`${data.name} // running`,{label:'TOOL BUS',text:`${data.name} // running`}); if(data.state!=='complete') return; if(data.result?.confirmation_required) this.add('tool',data.result.message,{label:'CONFIRMATION REQUIRED',confirm:data.result}); else if(Array.isArray(data.result)) this.add('assistant','',{label:data.name,items:data.result}); else this.add('tool',`${data.name} // complete`,{label:'TOOL BUS'}); },
+      async confirmAction(message) { const r=await fetch('./api/confirm',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:message.confirm.token})}); message.text=r.ok ? 'Action applied.' : 'Action failed.'; message.confirm=null; this.persist(); },
+      cancelAction(message) { message.text='Action cancelled.'; message.confirm=null; this.persist(); },
+      async deleteReminder(id) { await fetch('./api/reminders/'+encodeURIComponent(id),{method:'DELETE'}); this.messages=this.messages.map(m => m.items ? {...m,items:m.items.filter(i=>i.id!==id)} : m); this.persist(); },
+      async saveSettings() { this.settingsMessage='Saving…'; const r=await fetch('./api/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(this.settings)}); this.settingsMessage=r.ok ? 'Saved. Restart the add-on to apply connection changes.' : 'Save failed.'; }
+    }; }
+  </script>
+</body>
 </html>

@@ -15,11 +15,20 @@ const homeAssistantUrl = "http://supervisor/core/api";
 const supervisorUrl = "http://supervisor";
 const pendingActions = new Map<
 	string,
-	{ domain: string; service: string; entityId: string; serviceData: Record<string, unknown> }
+	{
+		domain: string;
+		service: string;
+		entityId: string;
+		serviceData: Record<string, unknown>;
+	}
 >();
 void loadReminders(async () => {});
 type Send = (event: string, data: unknown) => void;
-type ToolCall = { id: string; function: { name: string; arguments: string } };
+type ToolCall = {
+	id: string;
+	type: "function";
+	function: { name: string; arguments: string };
+};
 
 app.use(express.json({ limit: "64kb" }));
 app.get("/api/settings", (_request, response) => {
@@ -343,6 +352,7 @@ async function streamModel(
 				const index = call.index || 0;
 				toolCalls[index] ??= {
 					id: call.id || `tool-${index}`,
+					type: "function",
 					function: { name: "", arguments: "" },
 				};
 				if (call.function?.name)
@@ -405,7 +415,9 @@ async function executeTool(
 		const service = String(args.service);
 		const entityId = String(args.entity_id);
 		const serviceData =
-			args.service_data && typeof args.service_data === "object" && !Array.isArray(args.service_data)
+			args.service_data &&
+			typeof args.service_data === "object" &&
+			!Array.isArray(args.service_data)
 				? (args.service_data as Record<string, unknown>)
 				: {};
 		if (

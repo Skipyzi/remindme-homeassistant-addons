@@ -10,7 +10,10 @@ if (config.webhookUrl) {
 			throw new Error("PI_AGENT_WEBHOOK_URL must use HTTP or HTTPS");
 		bridgeUrl = parsed;
 	} catch (error) {
-		console.error("Invalid PI_AGENT_WEBHOOK_URL; presence monitoring disabled:", error);
+		console.error(
+			"Invalid PI_AGENT_WEBHOOK_URL; presence monitoring disabled:",
+			error,
+		);
 	}
 }
 
