@@ -10,6 +10,11 @@ test("unpaired model vault exposes a one-time code form", () => {
 	assert.match(html, /pairingCode/);
 	assert.match(html, /pairModelManager\(\)/);
 	assert.match(html, /six-character code/i);
+	assert.match(html, /class="model-grid" x-show="modelPairingConfigured"/);
+	assert.match(
+		html,
+		/class="model-advanced" x-show="modelPairingConfigured"/,
+	);
 });
 
 test("pairing code is cleared and never persisted", () => {

@@ -539,8 +539,8 @@
               >
                 <b>Direct manager pairing required</b>
                 <p>
-                  Open the llama.cpp add-on log and enter its six-character code.
-                  The code expires and can only be used once.
+                  Open the llama.cpp add-on log and enter its six-character
+                  code. The code expires and can only be used once.
                 </p>
                 <label
                   >Six-character code
@@ -554,7 +554,9 @@
                   />
                 </label>
                 <button class="action" type="submit" :disabled="pairingBusy">
-                  <span x-text="pairingBusy ? 'Pairing…' : 'Pair manager'"></span>
+                  <span
+                    x-text="pairingBusy ? 'Pairing…' : 'Pair manager'"
+                  ></span>
                 </button>
               </form>
               <div
@@ -587,7 +589,7 @@
                 x-show="modelError"
                 x-text="modelError"
               ></p>
-              <div class="model-grid">
+              <div class="model-grid" x-show="modelPairingConfigured">
                 <template
                   x-for="variant in modelCatalog"
                   :key="variant.model.id"
@@ -673,7 +675,7 @@
                   </article></template
                 >
               </div>
-              <details class="model-advanced">
+              <details class="model-advanced" x-show="modelPairingConfigured">
                 <summary>Hugging Face access and custom GGUF</summary>
                 <div class="model-advanced-grid">
                   <label

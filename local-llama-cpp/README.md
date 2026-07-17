@@ -4,7 +4,7 @@ ARM64 llama.cpp appliance for RemindMe with hardware-aware Hugging Face GGUF dow
 
 ## Managed model lifecycle
 
-Version 1.8.0 runs a small static model manager in front of `llama-server`:
+Version 1.9.0 runs a small static model manager in front of `llama-server`:
 
 - The OpenAI-compatible API remains at port `8080`, including `/v1/chat/completions`.
 - The active model continues serving while a candidate downloads and verifies.
@@ -14,7 +14,7 @@ Version 1.8.0 runs a small static model manager in front of `llama-server`:
 - The active model and one previous successful fallback are protected from removal.
 - Interrupted `.partial` downloads can resume.
 
-Use the **Hardware Cookbook** in the RemindMe sidebar to install or switch models. RemindMe generates and pairs the private `manager_token`; do not copy it into browser scripts or public configuration.
+Use the **Hardware Cookbook** in the RemindMe sidebar to install or switch models. At startup, the add-on log prints a short-lived six-character pairing code. Enter it in RemindMe's Local model vault. The code is single-use, expires, and is rate-limited; the protected manager token returned by the direct exchange never enters browser state.
 
 ## Initial configuration and migration
 
@@ -36,6 +36,8 @@ reasoning_mode: auto
 On first startup without manager state, the add-on matches `hf_repo` and `hf_file` to the curated catalog, downloads the model into `/data/models`, and records crash-safe state under `/data/model-manager`. A valid `model_path` is preserved as a legacy local model.
 
 `hf_token` is retained only for migration. Configure Hugging Face access from RemindMe afterward. Gated models such as Gemma also require accepting their licence on Hugging Face.
+
+The legacy `manager_token` option is accepted for this migration release only. It is imported only when `/data/model-manager/manager-token` does not already exist; the manager-owned file is authoritative and an existing token is never overwritten. New installations should leave `manager_token` blank and use the six-character pairing code. Preserve `/data/model-manager` when rolling back or reinstalling so the manager state and token remain available.
 
 ## Recovery
 

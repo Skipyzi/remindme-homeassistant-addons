@@ -1,6 +1,6 @@
 # RemindMe Discord Bot and Home Terminal
 
-Install this add-on after `local-llama-cpp`. Version 2.2.1 adds the Hardware Cookbook model vault to the RemindMe Home Assistant sidebar while retaining Discord chat, reminders, Assist tools, Exa search, and the Pi bridge. Sidebar settings now preserve the complete add-on configuration when saved.
+Install this add-on after `local-llama-cpp`. Version 2.3.0 synchronizes the Home Terminal settings with Home Assistant's native Configuration tab and replaces privileged sibling add-on mutation with direct, one-time model-manager pairing. Discord chat, reminders, Assist tools, Exa search, the Pi bridge, and the Hardware Cookbook remain available.
 
 ## Local endpoints
 
@@ -16,7 +16,17 @@ The model manager is server-side only:
 http://homeassistant:8080/manager/v1
 ```
 
-Do not expose the manager URL or credentials publicly. RemindMe generates a random pairing token, stores it under its protected `/data`, and updates the llama.cpp add-on through the Supervisor API. The token never enters browser state.
+Do not expose the manager URL or credentials publicly. On each llama.cpp start, its log prints a short-lived six-character pairing code. Enter that code in **Settings → Hardware cookbook → Local model vault**. The code is single-use, expires, and is rate-limited. RemindMe exchanges it directly with the manager, stores the returned token at `/data/model-manager-token` with owner-only permissions, and never places the code or token in browser persistence. RemindMe does not require Supervisor `manager` or `admin` privileges.
+
+## Synchronized settings
+
+Supervisor-rendered add-on options are the canonical configuration. The sidebar reloads live values, mirrors every safe schema field, and exposes only configured/not-configured flags for Discord and Exa secrets. To replace a secret, enter a new value; leaving the replacement blank preserves the configured value.
+
+Saving uses a revision check. If the native Configuration tab changed after the sidebar was opened, RemindMe reports a **configuration changed** conflict instead of overwriting newer values. Reload settings, review the live values, and save again.
+
+Settings marked as startup-bound are saved without disrupting the current response. Use the explicit **Restart add-on** control when ready; the sidebar waits for a new process instance before reconnecting through ingress.
+
+After upgrading from 2.2.x, existing options remain intact. Existing valid `/data/model-manager-token` files are reused. Otherwise, pair once using the current code from the llama.cpp add-on log. Roll back by reinstalling the previous add-on versions; do not delete either add-on's `/data` directory if you want to preserve models and credentials.
 
 ## Hardware Cookbook
 
