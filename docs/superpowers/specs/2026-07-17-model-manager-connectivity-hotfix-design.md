@@ -43,15 +43,17 @@ The RemindMe startup script retains defense in depth. It rewrites legacy loopbac
 
 ## Settings Data Flow
 
-1. RemindMe reads the Supervisor-rendered complete option map.
+1. RemindMe reads the Supervisor-rendered complete option map from `GET /addons/self/options/config`, which is explicitly available to the add-on's own token.
 2. The option model canonicalizes both local endpoints in migration mode.
-3. Validation checks the resulting canonical URLs and all existing schema constraints.
+3. Local validation checks the resulting canonical URLs and all existing schema constraints.
 4. The public settings response contains canonical URLs and no secrets.
 5. A revision is computed from the canonical complete option map.
 6. A settings patch is allowlisted and merged into freshly fetched options.
-7. Endpoint values are canonicalized and validated again before the complete map is written to Supervisor.
+7. Endpoint values are canonicalized and locally validated again.
+8. RemindMe sends the complete map directly to `POST /addons/self/options`.
+9. Supervisor validates the complete map before assigning it, so a failed write remains atomic.
 
-Canonicalization must not alter unrelated fields or configured secret values.
+RemindMe must not call `/addons/self/options/validate`. Supervisor's security middleware does not grant self-token access to that route, and RemindMe must not receive `manager` or `admin` privileges merely to preflight its own options. Canonicalization and local validation must not alter unrelated fields or configured secret values.
 
 ## Manager Client Behavior
 
@@ -78,7 +80,8 @@ The Hugging Face token must never be included in diagnostics.
 ## Error Handling
 
 - Invalid endpoint settings return the existing `400 invalid_settings` response.
-- Supervisor validation failures remain `422 configuration_invalid`.
+- A validation rejection returned by `POST /addons/self/options` maps to `422 configuration_invalid` with a safe Supervisor message.
+- Authorization, malformed responses, and other Supervisor failures remain `502 supervisor_unavailable`.
 - Stale settings revisions remain `409 configuration_changed`.
 - Network failures remain `503 manager_unavailable`.
 - Unknown bootstrap models are a degraded runtime state, not a fatal process error.
@@ -92,6 +95,8 @@ The Hugging Face token must never be included in diagnostics.
 - HTTPS, external hosts, wrong ports, credentials, query strings, fragments, and wrong paths are rejected.
 - Settings reads expose canonical values.
 - Settings saves persist canonical complete options without changing secrets or unknown fields.
+- Settings saves never call `/addons/self/options/validate`.
+- A Supervisor write-time validation rejection maps to `422 configuration_invalid` and does not trigger a second write.
 - Manager URL derivation rejects non-canonical hosts after migration.
 
 ### Shell/package tests
