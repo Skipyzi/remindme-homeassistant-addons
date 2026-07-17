@@ -150,13 +150,13 @@ function harness() {
 			fetch("./api/settings", { cache: "no-store" })
 				.then(async (r) => {
 					const payload = await r.json();
-					if (!r.ok) throw new Error(payload.error?.message || "Settings unavailable");
+					if (!r.ok)
+						throw new Error(payload.error?.message || "Settings unavailable");
 					return payload;
 				})
 				.then((payload) => {
 					this.applySettingsPayload(payload);
-					if (this.modelManagerEnabled)
-						window.RemindMeModelCookbook.load(this);
+					if (this.modelManagerEnabled) window.RemindMeModelCookbook.load(this);
 				})
 				.catch((error) => {
 					this.settingsMessage = error.message;
@@ -402,6 +402,9 @@ function harness() {
 		async reloadModels() {
 			return window.RemindMeModelCookbook.load(this);
 		},
+		async pairModelManager() {
+			return window.RemindMeModelCookbook.pair(this);
+		},
 		async installModel(id) {
 			return window.RemindMeModelCookbook.install(this, id);
 		},
@@ -437,7 +440,8 @@ function harness() {
 				notifyTarget: live.notifyTarget
 					? `notify.${String(live.notifyTarget).replace(/^notify\./, "")}`
 					: "",
-				hardwareProfile: payload.hardwareProfile || this.settings.hardwareProfile,
+				hardwareProfile:
+					payload.hardwareProfile || this.settings.hardwareProfile,
 			};
 			this.modelManagerEnabled = Boolean(this.settings.modelManagerEnabled);
 			this.settingsBaseline = {
@@ -462,7 +466,8 @@ function harness() {
 						: this.settings[field];
 				if (value !== this.settingsBaseline[field]) changes[field] = value;
 			}
-			if (this.settings.discordToken) changes.discordToken = this.settings.discordToken;
+			if (this.settings.discordToken)
+				changes.discordToken = this.settings.discordToken;
 			if (this.settings.exaApiKey) changes.exaApiKey = this.settings.exaApiKey;
 			return changes;
 		},
@@ -485,7 +490,9 @@ function harness() {
 				const payload = await r.json().catch(() => ({}));
 				if (!r.ok) {
 					if (payload.error?.code === "configuration_changed")
-						throw new Error("Configuration changed elsewhere. Reload settings before saving.");
+						throw new Error(
+							"Configuration changed elsewhere. Reload settings before saving.",
+						);
 					throw new Error(payload.error?.message || `HTTP ${r.status}`);
 				}
 				this.applySettingsPayload(payload);
@@ -500,11 +507,17 @@ function harness() {
 			}
 		},
 		async restartSettingsAddon() {
-			if (!window.confirm("Restart RemindMe now? The terminal will reconnect automatically."))
+			if (
+				!window.confirm(
+					"Restart RemindMe now? The terminal will reconnect automatically.",
+				)
+			)
 				return;
 			this.settingsMessage = "Requesting add-on restart…";
 			try {
-				const response = await fetch("./api/settings/restart", { method: "POST" });
+				const response = await fetch("./api/settings/restart", {
+					method: "POST",
+				});
 				const payload = await response.json().catch(() => ({}));
 				if (!response.ok)
 					throw new Error(payload.error?.message || `HTTP ${response.status}`);

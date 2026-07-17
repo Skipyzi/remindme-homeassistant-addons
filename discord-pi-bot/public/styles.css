@@ -1202,17 +1202,31 @@ textarea::-webkit-scrollbar-thumb {
 }
 /* Timeline cards must overflow the scrollport, never shrink inside it. */
 .message {
-  flex:0 0 auto;
-  min-width:0;
-  contain:layout paint;
-  overflow:hidden;
-  overflow-wrap:anywhere;
-  word-break:normal;
+	flex: 0 0 auto;
+	min-width: 0;
+	contain: layout paint;
+	overflow: hidden;
+	overflow-wrap: anywhere;
+	word-break: normal;
 }
-.message > span { display:block; max-width:100%; }
-.message details,.message .entity-stack,.message .entity-card { min-width:0; max-width:100%; }
-.message pre,.message code { overflow-wrap:anywhere; word-break:break-word; }
-.entity-stack { width:min(100%,72ch); }
+.message > span {
+	display: block;
+	max-width: 100%;
+}
+.message details,
+.message .entity-stack,
+.message .entity-card {
+	min-width: 0;
+	max-width: 100%;
+}
+.message pre,
+.message code {
+	overflow-wrap: anywhere;
+	word-break: break-word;
+}
+.entity-stack {
+	width: min(100%, 72ch);
+}
 
 /* Managed local model vault. */
 .settings-card {
@@ -1230,7 +1244,10 @@ textarea::-webkit-scrollbar-thumb {
 .model-advanced summary {
 	cursor: pointer;
 	color: var(--casino-amber);
-	font: 500 11px ui-monospace, Consolas, monospace;
+	font:
+		500 11px ui-monospace,
+		Consolas,
+		monospace;
 	letter-spacing: 0.08em;
 	text-transform: uppercase;
 }
@@ -1259,7 +1276,34 @@ textarea::-webkit-scrollbar-thumb {
 .model-card small {
 	margin-top: 4px;
 	color: var(--muted);
-	font: 9px ui-monospace, Consolas, monospace;
+	font:
+		9px ui-monospace,
+		Consolas,
+		monospace;
+}
+.model-pairing {
+	display: grid;
+	gap: 10px;
+	border: 1px solid var(--oxidized-brass);
+	background: linear-gradient(135deg, rgba(112, 66, 27, 0.2), rgba(9, 11, 13, 0.68));
+	padding: 14px;
+}
+.model-pairing p {
+	margin: 0;
+	color: var(--muted);
+}
+.model-pairing label {
+	display: grid;
+	gap: 5px;
+	max-width: 18rem;
+	color: var(--casino-amber);
+	font: 10px ui-monospace, Consolas, monospace;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+}
+.model-pairing input {
+	letter-spacing: 0.28em;
+	text-transform: uppercase;
 }
 .model-grid {
 	display: grid;
@@ -1284,7 +1328,10 @@ textarea::-webkit-scrollbar-thumb {
 	border: 1px solid var(--line);
 	padding: 3px 5px;
 	color: var(--muted);
-	font: normal 8px ui-monospace, Consolas, monospace;
+	font:
+		normal 8px ui-monospace,
+		Consolas,
+		monospace;
 	letter-spacing: 0.08em;
 	text-transform: uppercase;
 }
@@ -1308,7 +1355,10 @@ textarea::-webkit-scrollbar-thumb {
 	border: 1px solid rgba(72, 215, 196, 0.35);
 	padding: 2px 5px;
 	color: var(--turquoise-neon);
-	font: 8px ui-monospace, Consolas, monospace;
+	font:
+		8px ui-monospace,
+		Consolas,
+		monospace;
 	text-transform: uppercase;
 }
 .model-card dl {
@@ -1324,7 +1374,10 @@ textarea::-webkit-scrollbar-thumb {
 .model-card dt,
 .model-card dd {
 	margin: 0;
-	font: 9px ui-monospace, Consolas, monospace;
+	font:
+		9px ui-monospace,
+		Consolas,
+		monospace;
 }
 .model-card dt {
 	color: var(--muted);
@@ -1345,7 +1398,10 @@ textarea::-webkit-scrollbar-thumb {
 	border: 1px solid var(--oxidized-brass);
 	background: rgba(176, 138, 72, 0.08);
 	padding: 10px;
-	font: 10px ui-monospace, Consolas, monospace;
+	font:
+		10px ui-monospace,
+		Consolas,
+		monospace;
 }
 .model-operation b {
 	color: var(--casino-amber);
@@ -1379,7 +1435,10 @@ textarea::-webkit-scrollbar-thumb {
 	display: grid;
 	gap: 5px;
 	color: var(--muted);
-	font: 10px ui-monospace, Consolas, monospace;
+	font:
+		10px ui-monospace,
+		Consolas,
+		monospace;
 }
 .model-advanced-grid input {
 	min-width: 0;
@@ -1406,7 +1465,10 @@ textarea::-webkit-scrollbar-thumb {
 	background: rgba(176, 138, 72, 0.08);
 	padding: 10px;
 	color: var(--casino-amber);
-	font: 10px ui-monospace, Consolas, monospace;
+	font:
+		10px ui-monospace,
+		Consolas,
+		monospace;
 }
 .addon-settings-grid {
 	grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1416,7 +1478,10 @@ textarea::-webkit-scrollbar-thumb {
 	border: 1px solid rgba(72, 215, 196, 0.35);
 	padding: 2px 5px;
 	color: var(--turquoise-neon);
-	font: 8px ui-monospace, Consolas, monospace;
+	font:
+		8px ui-monospace,
+		Consolas,
+		monospace;
 	text-transform: uppercase;
 }
 .settings-grid .settings-toggle {
@@ -1438,7 +1503,10 @@ textarea::-webkit-scrollbar-thumb {
 .console-preferences summary {
 	cursor: pointer;
 	color: var(--casino-amber);
-	font: 10px ui-monospace, Consolas, monospace;
+	font:
+		10px ui-monospace,
+		Consolas,
+		monospace;
 	text-transform: uppercase;
 }
 .console-preferences .settings-grid {

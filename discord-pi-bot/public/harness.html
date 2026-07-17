@@ -532,6 +532,31 @@
                 </div>
                 <button class="ghost" @click="reloadModels()">Refresh</button>
               </header>
+              <form
+                class="model-pairing"
+                x-show="!modelPairingConfigured"
+                @submit.prevent="pairModelManager()"
+              >
+                <b>Direct manager pairing required</b>
+                <p>
+                  Open the llama.cpp add-on log and enter its six-character code.
+                  The code expires and can only be used once.
+                </p>
+                <label
+                  >Six-character code
+                  <input
+                    x-model="pairingCode"
+                    inputmode="text"
+                    maxlength="6"
+                    autocomplete="one-time-code"
+                    spellcheck="false"
+                    placeholder="ABC234"
+                  />
+                </label>
+                <button class="action" type="submit" :disabled="pairingBusy">
+                  <span x-text="pairingBusy ? 'Pairing…' : 'Pair manager'"></span>
+                </button>
+              </form>
               <div
                 class="model-operation"
                 aria-live="polite"

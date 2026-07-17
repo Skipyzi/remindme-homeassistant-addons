@@ -49,7 +49,8 @@ import {
 	ModelManagerClient,
 	ModelManagerError,
 	deriveManagerUrl,
-	ensureModelManagerPairing,
+	managerPairingConfigured,
+	pairModelManager,
 	readManagerToken,
 } from "./harness/modelManager";
 
@@ -142,6 +143,24 @@ app.get("/api/settings", async (_request, response) => {
 		});
 	} catch (error) {
 		sendSettingsError(response, error);
+	}
+});
+app.get("/api/models/pairing", async (_request, response) => {
+	response.set("Cache-Control", "no-store").json({
+		configured: await managerPairingConfigured(managerTokenPath()),
+	});
+});
+app.post("/api/models/pair", async (request, response) => {
+	const code =
+		typeof request.body?.code === "string"
+			? request.body.code.trim().toUpperCase()
+			: "";
+	try {
+		await pairModelManager(modelManagerUrl(), code, managerTokenPath());
+		modelManagerClientPromise = undefined;
+		response.json({ configured: true });
+	} catch (error) {
+		sendModelManagerError(response, error);
 	}
 });
 app.get("/api/models", async (_request, response) => {
@@ -262,10 +281,7 @@ app.post("/api/settings", async (request, response) => {
 		return;
 	}
 	try {
-		const saved = await supervisorSettings.save(
-			revision,
-			request.body.changes,
-		);
+		const saved = await supervisorSettings.save(revision, request.body.changes);
 		response.json({
 			...saved,
 			hardwareProfile: recommendHardwareProfile(
@@ -914,6 +930,17 @@ function safeModelError(code: string, message: string, retryable = false) {
 	return { code, message, retryable };
 }
 
+function managerTokenPath(): string {
+	return process.env.MODEL_MANAGER_TOKEN_PATH || "/data/model-manager-token";
+}
+
+function modelManagerUrl(): string {
+	return (
+		process.env.MODEL_MANAGER_URL ||
+		deriveManagerUrl(getLocalLlmUrl().toString())
+	);
+}
+
 async function getModelManagerClient(): Promise<ModelManagerClient> {
 	if (process.env.MODEL_MANAGER_ENABLED !== "true")
 		throw new ModelManagerError(
@@ -921,37 +948,18 @@ async function getModelManagerClient(): Promise<ModelManagerClient> {
 			"Local model management is disabled.",
 			503,
 		);
+	if (!(await managerPairingConfigured(managerTokenPath())))
+		throw new ModelManagerError(
+			"manager_unpaired",
+			"Pair RemindMe with the local model manager first.",
+			401,
+		);
 	if (!modelManagerClientPromise) {
-		modelManagerClientPromise = (async () => {
-			const secretPath =
-				process.env.MODEL_MANAGER_TOKEN_PATH || "/data/model-manager-token";
-			await ensureModelManagerPairing({
-				secretPath,
-				listAddons: async () => {
-					const payload = (await supervisorRequest("/addons")) as {
-						data?: { addons?: Array<{ slug: string; name?: string }> };
-						addons?: Array<{ slug: string; name?: string }>;
-					};
-					return payload.data?.addons || payload.addons || [];
-				},
-				updateOptions: async (slug, options) => {
-					await supervisorRequest(
-						`/addons/${encodeURIComponent(slug)}/options`,
-						"POST",
-						{ options },
-					);
-				},
-			});
-			const managerUrl =
-				process.env.MODEL_MANAGER_URL ||
-				deriveManagerUrl(getLocalLlmUrl().toString());
-			return new ModelManagerClient(managerUrl, () =>
-				readManagerToken(secretPath),
-			);
-		})();
-		modelManagerClientPromise.catch(() => {
-			modelManagerClientPromise = undefined;
-		});
+		modelManagerClientPromise = Promise.resolve(
+			new ModelManagerClient(modelManagerUrl(), () =>
+				readManagerToken(managerTokenPath()),
+			),
+		);
 	}
 	return modelManagerClientPromise;
 }

@@ -16,6 +16,9 @@ window.RemindMeModelCookbook = {
 	state() {
 		return {
 			modelManagerEnabled: false,
+			modelPairingConfigured: false,
+			pairingCode: "",
+			pairingBusy: false,
 			modelCatalog: [],
 			modelHardware: null,
 			modelStatus: null,
@@ -31,10 +34,37 @@ window.RemindMeModelCookbook = {
 		if (!vm.modelManagerEnabled) return;
 		vm.modelError = "";
 		try {
+			const pairing = await fetch("./api/models/pairing").then(readModelResponse);
+			vm.modelPairingConfigured = pairing.configured === true;
+			if (!vm.modelPairingConfigured) return;
 			await Promise.all([this.loadCatalog(vm), this.loadStatus(vm)]);
 			this.connect(vm);
 		} catch (error) {
 			vm.modelError = error.message || "Model cookbook is unavailable.";
+		}
+	},
+
+	async pair(vm) {
+		const code = vm.pairingCode.trim().toUpperCase();
+		if (!/^[A-HJ-NP-Z2-9]{6}$/.test(code)) {
+			vm.modelError = "Enter the six-character code shown by the llama.cpp add-on.";
+			return;
+		}
+		vm.pairingBusy = true;
+		vm.modelError = "";
+		try {
+			const result = await fetch("./api/models/pair", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ code }),
+			}).then(readModelResponse);
+			vm.modelPairingConfigured = result.configured === true;
+			if (vm.modelPairingConfigured) await this.load(vm);
+		} catch (error) {
+			vm.modelError = error.message || "Model manager pairing failed.";
+		} finally {
+			vm.pairingCode = "";
+			vm.pairingBusy = false;
 		}
 	},
 

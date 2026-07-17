@@ -1,26 +1,13 @@
-import { randomBytes as secureRandomBytes } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import {
+	chmod,
+	mkdir,
+	readFile,
+	rename,
+	unlink,
+	writeFile,
+} from "node:fs/promises";
 import { dirname } from "node:path";
-
-export interface SupervisorAddon {
-	slug: string;
-	name?: string;
-}
-
-export interface PairingDependencies {
-	secretPath: string;
-	listAddons: () => Promise<SupervisorAddon[]>;
-	updateOptions: (
-		slug: string,
-		options: Record<string, unknown>,
-	) => Promise<void>;
-	randomBytes?: () => Buffer;
-}
-
-export interface Pairing {
-	addonSlug: string;
-	configured: true;
-}
 
 export interface ManagerAPIError {
 	code?: string;
@@ -70,40 +57,83 @@ export async function readManagerToken(secretPath: string): Promise<string> {
 	return token;
 }
 
-async function loadOrCreateToken(
+export async function managerPairingConfigured(
 	secretPath: string,
-	generate: () => Buffer,
-): Promise<string> {
+): Promise<boolean> {
 	try {
-		return await readManagerToken(secretPath);
-	} catch (error) {
-		if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+		await readManagerToken(secretPath);
+		return true;
+	} catch {
+		return false;
 	}
-	const token = generate().toString("base64url");
-	if (token.length < 32)
-		throw new Error("Generated model manager secret is too short");
-	await mkdir(dirname(secretPath), { recursive: true, mode: 0o700 });
-	await writeFile(secretPath, token, { encoding: "utf8", mode: 0o600 });
-	return token;
 }
 
-export async function ensureModelManagerPairing(
-	dependencies: PairingDependencies,
-): Promise<Pairing> {
-	const token = await loadOrCreateToken(
-		dependencies.secretPath,
-		dependencies.randomBytes || (() => secureRandomBytes(32)),
+async function writeManagerToken(secretPath: string, token: string) {
+	await mkdir(dirname(secretPath), { recursive: true, mode: 0o700 });
+	const temporary = `${secretPath}.${process.pid}.${randomUUID()}.tmp`;
+	try {
+		await writeFile(temporary, token, {
+			encoding: "utf8",
+			mode: 0o600,
+			flag: "wx",
+		});
+		await chmod(temporary, 0o600);
+		await rename(temporary, secretPath);
+		await chmod(secretPath, 0o600);
+	} catch (error) {
+		await unlink(temporary).catch(() => {});
+		throw error;
+	}
+}
+
+export async function pairModelManager(
+	baseUrl: string,
+	code: string,
+	secretPath: string,
+	requestFetch: FetchLike = fetch,
+): Promise<void> {
+	if (!/^[A-HJ-NP-Z2-9]{6}$/.test(code))
+		throw new ModelManagerError(
+			"invalid_request",
+			"Pairing code must contain six valid characters.",
+			400,
+		);
+	deriveManagerUrl(
+		`${baseUrl.replace(/\/manager\/v1\/?$/, "")}/v1/chat/completions`,
 	);
-	const addons = await dependencies.listAddons();
-	const addon = addons.find(
-		(item) =>
-			item.slug === "local_llama_cpp" ||
-			item.slug.endsWith("_local_llama_cpp") ||
-			item.name?.toLowerCase() === "local llama.cpp",
-	);
-	if (!addon) throw new Error("Local llama.cpp add-on was not found");
-	await dependencies.updateOptions(addon.slug, { manager_token: token });
-	return { addonSlug: addon.slug, configured: true };
+	let response: Response;
+	try {
+		response = await requestFetch(`${baseUrl.replace(/\/$/, "")}/pair`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ code }),
+			signal: AbortSignal.timeout(15_000),
+		});
+	} catch {
+		throw new ModelManagerError(
+			"manager_unavailable",
+			"Local model manager is unavailable.",
+			503,
+			true,
+		);
+	}
+	const body = (await response.json().catch(() => ({}))) as ManagerAPIError & {
+		token?: unknown;
+	};
+	if (!response.ok)
+		throw new ModelManagerError(
+			body.code || "pairing_failed",
+			body.message || "Model manager pairing failed.",
+			response.status,
+			Boolean(body.retryable),
+		);
+	if (typeof body.token !== "string" || body.token.length < 32)
+		throw new ModelManagerError(
+			"pairing_failed",
+			"Model manager returned an invalid pairing response.",
+			502,
+		);
+	await writeManagerToken(secretPath, body.token);
 }
 
 export class ModelManagerClient {

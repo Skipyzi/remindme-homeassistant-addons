@@ -12,6 +12,9 @@ test("model manager routes proxy safely", async (context) => {
 	process.env.MODEL_MANAGER_URL = "http://homeassistant:8080/manager/v1";
 	process.env.MODEL_MANAGER_TOKEN_PATH = join(directory, "manager-token");
 
+	const pairedToken = "manager-secret-value-that-is-long-enough-123";
+	let pairingAuthorization = "unset";
+	let pairingBody = "";
 	let managerAuthorization = "";
 	let credentialBody = "";
 	const managerCatalog = {
@@ -32,15 +35,11 @@ test("model manager routes proxy safely", async (context) => {
 		init?: RequestInit,
 	) => {
 		const url = String(input);
-		if (url === "http://supervisor/addons") {
-			return Response.json({
-				data: {
-					addons: [{ slug: "local_local_llama_cpp", name: "Local llama.cpp" }],
-				},
-			});
-		}
-		if (url === "http://supervisor/addons/local_local_llama_cpp/options") {
-			return Response.json({ result: "ok" });
+		if (url === "http://homeassistant:8080/manager/v1/pair") {
+			pairingAuthorization =
+				new Headers(init?.headers).get("authorization") || "";
+			pairingBody = String(init?.body || "");
+			return Response.json({ token: pairedToken });
 		}
 		if (url === "http://homeassistant:8080/manager/v1/catalog") {
 			managerAuthorization =
@@ -76,18 +75,42 @@ test("model manager routes proxy safely", async (context) => {
 		globalThis.fetch = nativeFetch;
 	});
 
+	await context.test("starts unpaired and rejects invalid local codes", async () => {
+		const before = await nativeFetch(`${baseUrl}/api/models/pairing`);
+		assert.deepEqual(await before.json(), { configured: false });
+		const catalog = await nativeFetch(`${baseUrl}/api/models`);
+		assert.equal(catalog.status, 401);
+		assert.equal((await catalog.json()).code, "manager_unpaired");
+		const invalid = await nativeFetch(`${baseUrl}/api/models/pair`, {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ code: "wrong" }),
+		});
+		assert.equal(invalid.status, 400);
+		assert.equal((await invalid.json()).code, "invalid_request");
+	});
+
+	await context.test("pairs directly without Supervisor mutation", async () => {
+		const response = await nativeFetch(`${baseUrl}/api/models/pair`, {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ code: "ABC234" }),
+		});
+		assert.equal(response.status, 200);
+		assert.deepEqual(await response.json(), { configured: true });
+		assert.equal(pairingAuthorization, "");
+		assert.equal(pairingBody, JSON.stringify({ code: "ABC234" }));
+	});
+
 	await context.test(
-		"catalog pairs and proxies without exposing manager secret",
+		"catalog proxies without exposing manager secret",
 		async () => {
 			const response = await nativeFetch(`${baseUrl}/api/models`);
 			assert.equal(response.status, 200);
 			const body = await response.json();
 			assert.deepEqual(body, managerCatalog);
-			assert.match(managerAuthorization, /^Bearer [A-Za-z0-9_-]{32,}$/);
-			assert.equal(
-				JSON.stringify(body).includes(managerAuthorization.slice(7)),
-				false,
-			);
+			assert.equal(managerAuthorization, `Bearer ${pairedToken}`);
+			assert.equal(JSON.stringify(body).includes(pairedToken), false);
 		},
 	);
 

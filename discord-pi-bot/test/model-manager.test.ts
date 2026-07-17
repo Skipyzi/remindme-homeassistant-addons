@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, stat } from "node:fs/promises";
+import { mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -7,7 +7,8 @@ import {
 	ModelManagerClient,
 	ModelManagerError,
 	deriveManagerUrl,
-	ensureModelManagerPairing,
+	managerPairingConfigured,
+	pairModelManager,
 	readManagerToken,
 } from "../src/harness/modelManager";
 
@@ -21,51 +22,51 @@ test("derives the manager root from the internal completion endpoint", () => {
 	);
 });
 
-test("pairs by updating the discovered llama add-on without returning the token", async () => {
+test("pairs directly without sending a bearer token and persists the secret", async () => {
 	const directory = await mkdtemp(join(tmpdir(), "manager-pairing-"));
 	const secretPath = join(directory, "manager-token");
-	let saved: unknown;
-	const pairing = await ensureModelManagerPairing({
+	const expected = "manager-token-value-that-is-long-enough-123456";
+	let authorization = "unset";
+	let submitted = "";
+	await pairModelManager(
+		"http://homeassistant:8080/manager/v1",
+		"ABC234",
 		secretPath,
-		listAddons: async () => [
-			{ slug: "local_local_llama_cpp", name: "Local llama.cpp" },
-		],
-		updateOptions: async (slug, options) => {
-			saved = { slug, options };
+		async (_input, init) => {
+			authorization = new Headers(init?.headers).get("authorization") || "";
+			submitted = String(init?.body);
+			return Response.json({ token: expected });
 		},
-		randomBytes: () => Buffer.alloc(32, 7),
-	});
-	const expected = Buffer.alloc(32, 7).toString("base64url");
-	assert.deepEqual(pairing, {
-		addonSlug: "local_local_llama_cpp",
-		configured: true,
-	});
-	assert.deepEqual(saved, {
-		slug: "local_local_llama_cpp",
-		options: { manager_token: expected },
-	});
+	);
+	assert.equal(authorization, "");
+	assert.match(submitted, /ABC234/);
 	assert.equal(await readFile(secretPath, "utf8"), expected);
+	assert.equal(await managerPairingConfigured(secretPath), true);
 	if (process.platform !== "win32") {
 		assert.equal((await stat(secretPath)).mode & 0o777, 0o600);
 	}
 });
 
-test("reuses the persisted pairing secret", async () => {
+test("failed pairing preserves an existing valid secret", async () => {
 	const directory = await mkdtemp(join(tmpdir(), "manager-pairing-"));
 	const secretPath = join(directory, "manager-token");
-	const dependencies = {
-		secretPath,
-		listAddons: async () => [{ slug: "local_llama_cpp" }],
-		updateOptions: async () => {},
-		randomBytes: () => Buffer.alloc(32, 9),
-	};
-	await ensureModelManagerPairing(dependencies);
-	const first = await readManagerToken(secretPath);
-	await ensureModelManagerPairing({
-		...dependencies,
-		randomBytes: () => Buffer.alloc(32, 1),
-	});
-	assert.equal(await readManagerToken(secretPath), first);
+	const existing = "existing-manager-token-that-must-stay-123456";
+	await writeFile(secretPath, existing);
+	await assert.rejects(
+		pairModelManager(
+			"http://homeassistant:8080/manager/v1",
+			"ABC234",
+			secretPath,
+			async () =>
+				Response.json(
+					{ code: "pairing_invalid", message: "Invalid" },
+					{ status: 401 },
+				),
+		),
+		(error: unknown) =>
+			error instanceof ModelManagerError && error.code === "pairing_invalid",
+	);
+	assert.equal(await readManagerToken(secretPath), existing);
 });
 
 test("client sends the secret server-side and maps safe errors", async () => {
