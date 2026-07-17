@@ -499,5 +499,39 @@ function harness() {
 				this.settingsMessage = `Save failed: ${error.message}`;
 			}
 		},
+		async restartSettingsAddon() {
+			if (!window.confirm("Restart RemindMe now? The terminal will reconnect automatically."))
+				return;
+			this.settingsMessage = "Requesting add-on restart…";
+			try {
+				const response = await fetch("./api/settings/restart", { method: "POST" });
+				const payload = await response.json().catch(() => ({}));
+				if (!response.ok)
+					throw new Error(payload.error?.message || `HTTP ${response.status}`);
+				const previousInstanceId = payload.instanceId;
+				this.settingsMessage = "Waiting for the restarted add-on…";
+				await new Promise((resolve) => setTimeout(resolve, 3_000));
+				const deadline = Date.now() + 60_000;
+				while (Date.now() < deadline) {
+					try {
+						const statusResponse = await fetch("./api/status", {
+							cache: "no-store",
+						});
+						if (statusResponse.ok) {
+							const status = await statusResponse.json();
+							if (status.instanceId !== previousInstanceId) {
+								window.location.reload();
+								return;
+							}
+						}
+					} catch (_) {}
+					await new Promise((resolve) => setTimeout(resolve, 2_000));
+				}
+				this.settingsMessage =
+					"The add-on did not return in time. Reopen RemindMe from the sidebar.";
+			} catch (error) {
+				this.settingsMessage = `Restart failed: ${error.message}`;
+			}
+		},
 	};
 }

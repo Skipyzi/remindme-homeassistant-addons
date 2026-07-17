@@ -1396,6 +1396,18 @@ textarea::-webkit-scrollbar-thumb {
 		padding: 18px;
 	}
 }
+.restart-notice {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	margin-top: 14px;
+	border: 1px solid var(--oxidized-brass);
+	background: rgba(176, 138, 72, 0.08);
+	padding: 10px;
+	color: var(--casino-amber);
+	font: 10px ui-monospace, Consolas, monospace;
+}
 .addon-settings-grid {
 	grid-template-columns: repeat(2, minmax(0, 1fr));
 }

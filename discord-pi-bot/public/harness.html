@@ -681,11 +681,26 @@
               </details>
             </div>
           </section>
+          <div
+            class="restart-notice"
+            x-show="settingsRestartRequired"
+            role="status"
+            aria-live="polite"
+          >
+            <span>Saved configuration is waiting for an add-on restart.</span>
+            <button class="action" @click="restartSettingsAddon()">
+              Restart add-on
+            </button>
+          </div>
           <div class="settings-actions">
             <button class="ghost" @click="settingsOpen=false">Close</button
             ><button class="send" @click="saveSettings()">Save changes</button>
           </div>
-          <p class="micro" x-text="settingsMessage"></p>
+          <p
+            class="micro"
+            :role="settingsMessage.startsWith('Save failed') || settingsMessage.startsWith('Restart failed') ? 'alert' : 'status'"
+            x-text="settingsMessage"
+          ></p>
         </section>
       </div>
     </div>

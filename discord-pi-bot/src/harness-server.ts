@@ -1,5 +1,6 @@
 import "dotenv/config";
 import express, { type Express, type Response } from "express";
+import { randomUUID } from "node:crypto";
 import os from "node:os";
 import { resolve } from "node:path";
 import { config } from "./config";
@@ -32,6 +33,7 @@ import {
 	SupervisorSettingsClient,
 	SupervisorSettingsError,
 } from "./harness/supervisorSettings";
+import { RestartController } from "./harness/restart";
 import { allowedToolNames, toolCallKey } from "./harness/intentRouting";
 import {
 	getThinkingProfile,
@@ -59,6 +61,15 @@ const supervisorUrl = "http://supervisor";
 const supervisorSettings = new SupervisorSettingsClient(
 	supervisorUrl,
 	supervisorToken,
+);
+const instanceId = randomUUID();
+const restartController = new RestartController(
+	async () => {
+		await supervisorRequest("/addons/self/restart", "POST");
+	},
+	350,
+	undefined,
+	() => console.error("Supervisor self-restart failed"),
 );
 const pendingActions = new Map<
 	string,
@@ -266,6 +277,20 @@ app.post("/api/settings", async (request, response) => {
 		sendSettingsError(response, error);
 	}
 });
+app.post("/api/settings/restart", (_request, response) => {
+	try {
+		restartController.schedule();
+		response.status(202).json({ instanceId });
+	} catch {
+		response.status(409).json({
+			error: {
+				code: "restart_in_progress",
+				message: "An add-on restart is already in progress.",
+				retryable: true,
+			},
+		});
+	}
+});
 app.get("/api/entities/:id", async (request, response) => {
 	const result = await hassRequest(
 		`/states/${encodeURIComponent(request.params.id)}`,
@@ -339,7 +364,8 @@ app.get("/api/status", async (_request, response) => {
 	const contextSize =
 		managed?.recommendedContext ||
 		Number(process.env.LOCAL_LLM_CONTEXT_SIZE || 8192);
-	response.json({
+	response.set("Cache-Control", "no-store").json({
+		instanceId,
 		model: managed?.id || config.localLlmModel,
 		modelName: managed
 			? `${managed.family} ${managed.quantization}`.trim()
