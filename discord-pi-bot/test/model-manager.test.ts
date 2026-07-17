@@ -20,6 +20,12 @@ test("derives the manager root from the internal completion endpoint", () => {
 	assert.throws(() =>
 		deriveManagerUrl("https://public.example/v1/chat/completions"),
 	);
+	assert.throws(() =>
+		deriveManagerUrl("http://127.0.0.1:8080/v1/chat/completions"),
+	);
+	assert.throws(() =>
+		deriveManagerUrl("http://localhost:8080/v1/chat/completions"),
+	);
 });
 
 test("pairs directly without sending a bearer token and persists the secret", async () => {

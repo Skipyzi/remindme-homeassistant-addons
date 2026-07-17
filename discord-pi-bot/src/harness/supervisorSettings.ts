@@ -118,7 +118,7 @@ export class SupervisorSettingsClient {
 				true,
 			);
 		try {
-			normalizeAddonOptions(data);
+			return normalizeAddonOptions(data) as unknown as Record<string, unknown>;
 		} catch (error) {
 			throw new SupervisorSettingsError(
 				"configuration_invalid",
@@ -126,7 +126,6 @@ export class SupervisorSettingsClient {
 				422,
 			);
 		}
-		return data as Record<string, unknown>;
 	}
 
 	async load(): Promise<LoadedAddonSettings> {

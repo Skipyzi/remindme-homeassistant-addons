@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { validateLocalModelUrl } from "./settings";
+import { canonicalLocalEndpoint } from "./localEndpoints";
 
 export interface AddonOptions {
 	discord_token: string;
@@ -76,18 +76,25 @@ export function normalizeAddonOptions(options: unknown): AddonOptions {
 		Number(source.local_llm_context_size) > 32768
 	)
 		return invalid("Option local_llm_context_size must be between 1024 and 32768");
-	validateLocalModelUrl(String(source.local_llm_url));
-	let managerUrl: URL;
+	const normalized = { ...source };
 	try {
-		managerUrl = new URL(String(source.model_manager_url));
+		normalized.local_llm_url = canonicalLocalEndpoint(
+			String(source.local_llm_url),
+			"inference",
+			true,
+		);
 	} catch {
-		return invalid("Option model_manager_url must be a valid URL");
+		return invalid("Option local_llm_url must use the local inference endpoint");
 	}
-	if (
-		managerUrl.protocol !== "http:" ||
-		!["homeassistant", "localhost", "127.0.0.1"].includes(managerUrl.hostname)
-	)
-		return invalid("Option model_manager_url must target the local add-on network");
+	try {
+		normalized.model_manager_url = canonicalLocalEndpoint(
+			String(source.model_manager_url),
+			"manager",
+			true,
+		);
+	} catch {
+		return invalid("Option model_manager_url must use the local manager endpoint");
+	}
 	if (source.pi_agent_webhook_url) {
 		try {
 			new URL(String(source.pi_agent_webhook_url));
@@ -95,7 +102,7 @@ export function normalizeAddonOptions(options: unknown): AddonOptions {
 			return invalid("Option pi_agent_webhook_url must be a valid URL");
 		}
 	}
-	return source as unknown as AddonOptions;
+	return normalized as unknown as AddonOptions;
 }
 
 export function publicAddonSettings(options: AddonOptions): PublicAddonSettings {
@@ -169,6 +176,5 @@ export function applySettingsPatch(
 				? value.replace(/^notify\./, "")
 				: value;
 	}
-	normalizeAddonOptions(merged);
-	return merged;
+	return normalizeAddonOptions(merged) as unknown as Record<string, unknown>;
 }

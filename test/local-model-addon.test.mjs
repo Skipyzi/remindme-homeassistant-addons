@@ -41,6 +41,14 @@ test("release packages secure direct pairing without sibling privileges", () => 
 	assert.doesNotMatch(remindMeConfig, /hassio_role:\s*(manager|admin)/);
 	assert.doesNotMatch(remindMeServer, /\/addons\/\$\{.*\}\/options/);
 	assert.match(remindMeRun, /MODEL_MANAGER_TOKEN_PATH=\/data\/model-manager-token/);
+	assert.match(
+		remindMeRun,
+		/LOCAL_LLM_URL="http:\/\/homeassistant:8080\/v1\/chat\/completions"/,
+	);
+	assert.match(
+		remindMeRun,
+		/MODEL_MANAGER_URL="http:\/\/homeassistant:8080\/manager\/v1"/,
+	);
 	assert.match(managerMain, /filepath\.Join\(dataDirectory, "manager-token"\)/);
 });
 

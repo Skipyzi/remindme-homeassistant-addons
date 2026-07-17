@@ -12,14 +12,20 @@ export PI_AGENT_WEBHOOK_URL="$(get_option pi_agent_webhook_url)"
 export LOCAL_LLM_ENABLED="$(get_option local_llm_enabled)"
 LOCAL_LLM_URL="$(get_option local_llm_url)"
 case "$LOCAL_LLM_URL" in
-"" | *127.0.0.1* | *localhost* | *local-llama-cpp*) LOCAL_LLM_URL="http://homeassistant:8080/v1/chat/completions" ;;
+"" | "http://127.0.0.1:8080/v1/chat/completions" | "http://localhost:8080/v1/chat/completions" | "http://local-llama-cpp:8080/v1/chat/completions")
+	LOCAL_LLM_URL="http://homeassistant:8080/v1/chat/completions" ;;
 esac
 export LOCAL_LLM_URL
 export LOCAL_LLM_MODEL="$(get_option local_llm_model)"
 export LOCAL_LLM_CONTEXT_SIZE="$(get_option local_llm_context_size)"
 export LOCAL_LLM_VISION="$(get_option local_llm_vision)"
 export MODEL_MANAGER_ENABLED="$(get_option model_manager_enabled)"
-export MODEL_MANAGER_URL="$(get_option model_manager_url)"
+MODEL_MANAGER_URL="$(get_option model_manager_url)"
+case "$MODEL_MANAGER_URL" in
+"" | "http://127.0.0.1:8080/manager/v1" | "http://localhost:8080/manager/v1" | "http://local-llama-cpp:8080/manager/v1")
+	MODEL_MANAGER_URL="http://homeassistant:8080/manager/v1" ;;
+esac
+export MODEL_MANAGER_URL
 export MODEL_MANAGER_TOKEN_PATH=/data/model-manager-token
 export EXA_API_KEY="$(get_option exa_api_key)"
 export HA_NOTIFY_TARGET="$(get_option ha_notify_target)"

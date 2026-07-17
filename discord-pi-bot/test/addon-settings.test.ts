@@ -43,6 +43,46 @@ test("normalizes every add-on field and redacts secrets", () => {
 	assert.equal(JSON.stringify(publicValue).includes("exa-secret"), false);
 });
 
+test("migrates loopback endpoints without mutating complete options", () => {
+	const legacy = {
+		...completeOptions,
+		local_llm_url: "http://127.0.0.1:8080/v1/chat/completions",
+		model_manager_url: "http://localhost:8080/manager/v1",
+	};
+	const normalized = normalizeAddonOptions(legacy);
+	assert.equal(
+		normalized.local_llm_url,
+		"http://homeassistant:8080/v1/chat/completions",
+	);
+	assert.equal(
+		normalized.model_manager_url,
+		"http://homeassistant:8080/manager/v1",
+	);
+	assert.equal(legacy.local_llm_url.includes("127.0.0.1"), true);
+	assert.equal(
+		(normalized as unknown as Record<string, unknown>).future_option,
+		"preserve-me",
+	);
+	const publicValue = publicAddonSettings(normalized);
+	assert.equal(publicValue.localLlmUrl, normalized.local_llm_url);
+	assert.equal(publicValue.modelManagerUrl, normalized.model_manager_url);
+});
+
+test("patch canonicalizes legacy endpoints before persistence", () => {
+	const merged = applySettingsPatch(completeOptions, {
+		localLlmUrl: "http://localhost:8080/v1/chat/completions",
+		modelManagerUrl: "http://127.0.0.1:8080/manager/v1",
+	});
+	assert.equal(
+		merged.local_llm_url,
+		"http://homeassistant:8080/v1/chat/completions",
+	);
+	assert.equal(
+		merged.model_manager_url,
+		"http://homeassistant:8080/manager/v1",
+	);
+});
+
 test("revision is stable across key order and changes with values", () => {
 	const reordered = Object.fromEntries(Object.entries(completeOptions).reverse());
 	assert.equal(settingsRevision(completeOptions), settingsRevision(reordered));

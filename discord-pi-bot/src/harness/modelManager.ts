@@ -8,6 +8,10 @@ import {
 	writeFile,
 } from "node:fs/promises";
 import { dirname } from "node:path";
+import {
+	CANONICAL_MANAGER_URL,
+	canonicalLocalEndpoint,
+} from "./localEndpoints";
 
 export interface ManagerAPIError {
 	code?: string;
@@ -33,22 +37,8 @@ export class ModelManagerError extends Error {
 }
 
 export function deriveManagerUrl(completionUrl: string): string {
-	let url: URL;
-	try {
-		url = new URL(completionUrl);
-	} catch {
-		throw new Error("Model manager endpoint must be a valid URL");
-	}
-	if (
-		url.protocol !== "http:" ||
-		!["homeassistant", "localhost", "127.0.0.1"].includes(url.hostname)
-	) {
-		throw new Error("Model manager must use the internal add-on network");
-	}
-	url.pathname = "/manager/v1";
-	url.search = "";
-	url.hash = "";
-	return url.toString().replace(/\/$/, "");
+	canonicalLocalEndpoint(completionUrl, "inference");
+	return CANONICAL_MANAGER_URL;
 }
 
 export async function readManagerToken(secretPath: string): Promise<string> {
