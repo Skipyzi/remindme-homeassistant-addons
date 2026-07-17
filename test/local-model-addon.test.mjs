@@ -36,12 +36,16 @@ test("startup delegates JSON parsing to the Go manager", () => {
 });
 
 test("release packages secure direct pairing without sibling privileges", () => {
-	assert.match(remindMeConfig, /version: "2\.3\.1"/);
+	assert.match(remindMeConfig, /version: "2\.3\.2"/);
 	assert.match(config, /version: "1\.9\.2"/);
 	assert.doesNotMatch(remindMeConfig, /hassio_role:\s*(manager|admin)/);
 	assert.doesNotMatch(remindMeServer, /\/addons\/\$\{.*\}\/options/);
 	assert.doesNotMatch(remindMeServer, /\/addons\/self\/options\/validate/);
 	assert.match(remindMeRun, /MODEL_MANAGER_TOKEN_PATH=\/data\/model-manager-token/);
+	assert.match(
+		remindMeRun,
+		/PRESENCE_UPTIME_PATH=\/data\/presence-uptime\.json/,
+	);
 	assert.match(
 		remindMeRun,
 		/LOCAL_LLM_URL="http:\/\/homeassistant:8080\/v1\/chat\/completions"/,
@@ -66,6 +70,13 @@ test("legacy manager token is migration-only and pairing is documented", () => {
 	assert.match(remindMeReadme, /native.*Configuration|Configuration.*native/i);
 	assert.match(llamaReadme, /legacy.*manager_token|manager_token.*legacy/i);
 	assert.match(llamaReadme, /preserv.*unknown|unknown.*preserv/i);
+});
+
+test("RemindMe documents persistent lifetime presence uptime", () => {
+	assert.match(remindMeReadme, /cumulative.*uptime|uptime.*cumulative/i);
+	assert.match(remindMeReadme, /lifetime.*availability|availability.*lifetime/i);
+	assert.match(remindMeReadme, /stopped.*downtime|downtime.*stopped/i);
+	assert.match(remindMeReadme, /presence-uptime\.json/);
 });
 
 test("llama startup waits for internal server readiness", () => {

@@ -30,6 +30,7 @@ export MODEL_MANAGER_TOKEN_PATH=/data/model-manager-token
 export EXA_API_KEY="$(get_option exa_api_key)"
 export HA_NOTIFY_TARGET="$(get_option ha_notify_target)"
 export REMINDER_DATA_PATH=/data/reminders.json
+export PRESENCE_UPTIME_PATH=/data/presence-uptime.json
 
 node /app/dist/harness-server.js &
 exec node /app/dist/index.js

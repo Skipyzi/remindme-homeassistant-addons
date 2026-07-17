@@ -1,6 +1,6 @@
 # RemindMe Discord Bot and Home Terminal
 
-Install this add-on after `local-llama-cpp`. Version 2.3.1 fixes self-service option saves and cross-container model-manager connectivity. It retains the synchronized Home Terminal settings, direct one-time pairing, Discord chat, reminders, Assist tools, Exa search, the Pi bridge, and the Hardware Cookbook.
+Install this add-on after `local-llama-cpp`. Version 2.3.2 adds persistent lifetime uptime and availability to the Discord rich presence. It retains synchronized settings, direct one-time pairing, Discord chat, reminders, Assist tools, Exa search, the Pi bridge, and the Hardware Cookbook.
 
 ## Local endpoints
 
@@ -62,6 +62,12 @@ The token is sent once to the server and stored only in the llama.cpp add-on's p
 - **Gemma 3 4B:** text-only in this release. Vision execution and projector management are a separate future subsystem.
 
 This release does not add speech-to-text, text-to-speech, image inference, or cloud/OpenAI composition.
+
+## Discord presence uptime
+
+Version 2.3.2 displays cumulative bot uptime and lifetime availability alongside Pi-agent connectivity, for example `Pi connected • Up 12d 4h • 99.99% • !help`.
+
+Tracking begins when 2.3.2 first starts. Every stopped gap counts as downtime, including updates, intentional restarts, crashes, and host outages. The heartbeat state is stored at `/data/presence-uptime.json` with owner-only permissions and contains no credentials. To reset the lifetime measurement, stop the add-on and delete only `/data/presence-uptime.json`, then start the add-on again.
 
 ## Discord behavior
 
