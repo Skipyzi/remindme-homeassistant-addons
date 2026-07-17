@@ -94,7 +94,7 @@ async function main() {
 					},
 				});
 			});
-			startPresenceMonitor(client);
+			await startPresenceMonitor(client);
 		}
 	});
 
