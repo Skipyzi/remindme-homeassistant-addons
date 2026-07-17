@@ -17,6 +17,7 @@ import (
 type fakeProcess struct {
 	mu      sync.Mutex
 	stopped bool
+	exited  bool
 }
 
 func (process *fakeProcess) Stop(time.Duration) error {
@@ -27,6 +28,12 @@ func (process *fakeProcess) Stop(time.Duration) error {
 }
 
 func (process *fakeProcess) Wait() error { return nil }
+
+func (process *fakeProcess) Exited() bool {
+	process.mu.Lock()
+	defer process.mu.Unlock()
+	return process.exited
+}
 
 type fakeLauncher struct {
 	mu       sync.Mutex
@@ -68,6 +75,7 @@ func newTestSupervisor(t *testing.T, probeFailures map[string]error) (*Superviso
 	store := state.Store{Path: filepath.Join(t.TempDir(), "state.json")}
 	supervisor, err := NewSupervisor(Config{
 		Binary: "/app/llama-server.bin", Target: "http://127.0.0.1:8081", ModelDir: t.TempDir(),
+		ReadinessTimeout: 10 * time.Millisecond, ProbeInterval: time.Millisecond,
 	}, launcher, store, func(context.Context) error {
 		return probeFailures[launcher.activeModel()]
 	})
@@ -75,6 +83,63 @@ func newTestSupervisor(t *testing.T, probeFailures map[string]error) (*Superviso
 		t.Fatal(err)
 	}
 	return supervisor, launcher, store
+}
+
+func TestStartRetriesUntilLlamaServerIsReady(t *testing.T) {
+	attempts := 0
+	launcher := &fakeLauncher{starts: map[string]int{}, failures: map[string]error{}}
+	supervisor, err := NewSupervisor(Config{
+		Binary: "/app/llama-server.bin", Target: "http://127.0.0.1:8081", ModelDir: t.TempDir(),
+		ReadinessTimeout: 100 * time.Millisecond, ProbeInterval: time.Millisecond,
+	}, launcher, state.Store{Path: filepath.Join(t.TempDir(), "state.json")}, func(context.Context) error {
+		attempts++
+		if attempts < 3 {
+			return errors.New("connection refused")
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	model := state.Installed{ID: "delayed", Path: filepath.Join(t.TempDir(), "delayed.gguf")}
+	if err := supervisor.Start(context.Background(), model, hardware.Runtime{Context: 4096, Batch: 128, UBatch: 64, Threads: 4}); err != nil {
+		t.Fatal(err)
+	}
+	if attempts != 3 {
+		t.Fatalf("expected three readiness attempts, got %d", attempts)
+	}
+}
+
+func TestReadinessTimeoutReturnsLastProbeError(t *testing.T) {
+	supervisor, err := NewSupervisor(Config{
+		Binary: "/app/llama-server.bin", Target: "http://127.0.0.1:8081", ModelDir: t.TempDir(),
+		ReadinessTimeout: 5 * time.Millisecond, ProbeInterval: time.Millisecond,
+	}, &fakeLauncher{starts: map[string]int{}, failures: map[string]error{}}, state.Store{Path: filepath.Join(t.TempDir(), "state.json")}, func(context.Context) error {
+		return errors.New("connection refused")
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = supervisor.probeWithTimeout(context.Background(), &fakeProcess{})
+	if err == nil || !strings.Contains(err.Error(), "readiness timeout") || !strings.Contains(err.Error(), "connection refused") {
+		t.Fatalf("unexpected timeout error: %v", err)
+	}
+}
+
+func TestReadinessStopsWhenProcessExited(t *testing.T) {
+	supervisor, err := NewSupervisor(Config{
+		Binary: "/app/llama-server.bin", Target: "http://127.0.0.1:8081", ModelDir: t.TempDir(),
+		ReadinessTimeout: time.Second, ProbeInterval: time.Millisecond,
+	}, &fakeLauncher{starts: map[string]int{}, failures: map[string]error{}}, state.Store{Path: filepath.Join(t.TempDir(), "state.json")}, func(context.Context) error {
+		return errors.New("connection refused")
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = supervisor.probeWithTimeout(context.Background(), &fakeProcess{exited: true})
+	if err == nil || !strings.Contains(err.Error(), "llama server exited before readiness") {
+		t.Fatalf("unexpected process-exit error: %v", err)
+	}
 }
 
 func TestActivateRestoresFallbackWhenCandidateProbeFails(t *testing.T) {

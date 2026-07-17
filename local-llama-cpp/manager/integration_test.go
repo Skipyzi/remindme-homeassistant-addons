@@ -77,7 +77,10 @@ func TestInstallProbeFailureRestoresPreviousModel(t *testing.T) {
 	store := state.Store{Path: filepath.Join(t.TempDir(), "state.json")}
 	launcher := &integrationLauncher{starts: map[string]int{}}
 	supervisor, err := managerruntime.NewSupervisor(
-		managerruntime.Config{Binary: "/app/llama-server.bin", Target: "http://127.0.0.1:8081", ModelDir: modelDir},
+		managerruntime.Config{
+			Binary: "/app/llama-server.bin", Target: "http://127.0.0.1:8081", ModelDir: modelDir,
+			ReadinessTimeout: 25 * time.Millisecond, ProbeInterval: time.Millisecond,
+		},
 		launcher,
 		store,
 		func(context.Context) error {

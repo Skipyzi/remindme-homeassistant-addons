@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -28,16 +29,22 @@ const (
 )
 
 type Config struct {
-	Binary   string
-	Target   string
-	ModelDir string
-	Stdout   io.Writer
-	Stderr   io.Writer
+	Binary           string
+	Target           string
+	ModelDir         string
+	Stdout           io.Writer
+	Stderr           io.Writer
+	ReadinessTimeout time.Duration
+	ProbeInterval    time.Duration
 }
 
 type Process interface {
 	Stop(time.Duration) error
 	Wait() error
+}
+
+type ProcessStatus interface {
+	Exited() bool
 }
 
 type Launcher interface {
@@ -72,6 +79,12 @@ func NewSupervisor(config Config, launcher Launcher, store state.Store, probe Pr
 	}
 	if probe == nil {
 		probe = HTTPProbe(target, &http.Client{Timeout: 10 * time.Second})
+	}
+	if config.ReadinessTimeout <= 0 {
+		config.ReadinessTimeout = 120 * time.Second
+	}
+	if config.ProbeInterval <= 0 {
+		config.ProbeInterval = 500 * time.Millisecond
 	}
 	persisted, loadErr := store.Load()
 	if loadErr != nil && persisted.Phase != state.PhaseDegraded {
@@ -124,7 +137,7 @@ func (supervisor *Supervisor) startLocked(ctx context.Context, installed state.I
 	supervisor.process = process
 	supervisor.current = copyInstalled(&installed)
 	supervisor.currentRuntime = runtime
-	if err := supervisor.probeWithTimeout(ctx); err != nil {
+	if err := supervisor.probeWithTimeout(ctx, process); err != nil {
 		_ = process.Stop(5 * time.Second)
 		supervisor.process = nil
 		supervisor.current = nil
@@ -180,7 +193,7 @@ func (supervisor *Supervisor) Activate(ctx context.Context, candidate state.Inst
 		_ = process.Stop(5 * time.Second)
 		return supervisor.rollbackLocked(ctx, previous, previousRuntime, previousFallback, candidate, err)
 	}
-	if err := supervisor.probeWithTimeout(ctx); err != nil {
+	if err := supervisor.probeWithTimeout(ctx, process); err != nil {
 		_ = process.Stop(5 * time.Second)
 		supervisor.process = nil
 		supervisor.current = nil
@@ -210,7 +223,7 @@ func (supervisor *Supervisor) rollbackLocked(ctx context.Context, previous state
 		supervisor.process = process
 		supervisor.current = copyInstalled(&previous)
 		supervisor.currentRuntime = previousRuntime
-		startErr = supervisor.probeWithTimeout(ctx)
+		startErr = supervisor.probeWithTimeout(ctx, process)
 	}
 	if startErr != nil {
 		if process != nil {
@@ -238,10 +251,32 @@ func (supervisor *Supervisor) rollbackLocked(ctx context.Context, previous state
 	return fmt.Errorf("candidate activation failed; previous model restored: %w", cause)
 }
 
-func (supervisor *Supervisor) probeWithTimeout(ctx context.Context) error {
-	probeCtx, cancel := context.WithTimeout(ctx, 120*time.Second)
+func (supervisor *Supervisor) probeWithTimeout(ctx context.Context, process Process) error {
+	probeCtx, cancel := context.WithTimeout(ctx, supervisor.config.ReadinessTimeout)
 	defer cancel()
-	return supervisor.probe(probeCtx)
+	var lastErr error
+	for {
+		if err := supervisor.probe(probeCtx); err == nil {
+			return nil
+		} else {
+			lastErr = err
+		}
+		if status, ok := process.(ProcessStatus); ok && status.Exited() {
+			return fmt.Errorf("llama server exited before readiness: %w", lastErr)
+		}
+		timer := time.NewTimer(supervisor.config.ProbeInterval)
+		select {
+		case <-probeCtx.Done():
+			if !timer.Stop() {
+				<-timer.C
+			}
+			if errors.Is(probeCtx.Err(), context.DeadlineExceeded) {
+				return fmt.Errorf("readiness timeout: %w", lastErr)
+			}
+			return fmt.Errorf("readiness canceled: %w", lastErr)
+		case <-timer.C:
+		}
+	}
 }
 
 func (supervisor *Supervisor) Stop(timeout time.Duration) error {
@@ -383,13 +418,18 @@ func (launcher ExecLauncher) Start(ctx context.Context, binary string, args []st
 		return nil, err
 	}
 	process := &commandProcess{command: command, done: make(chan error, 1)}
-	go func() { process.done <- command.Wait() }()
+	go func() {
+		err := command.Wait()
+		process.exited.Store(true)
+		process.done <- err
+	}()
 	return process, nil
 }
 
 type commandProcess struct {
 	command *exec.Cmd
 	done    chan error
+	exited  atomic.Bool
 }
 
 func (process *commandProcess) Stop(timeout time.Duration) error {
@@ -412,6 +452,10 @@ func (process *commandProcess) Stop(timeout time.Duration) error {
 
 func (process *commandProcess) Wait() error {
 	return normalizeExit(<-process.done)
+}
+
+func (process *commandProcess) Exited() bool {
+	return process.exited.Load()
 }
 
 func normalizeExit(err error) error {
