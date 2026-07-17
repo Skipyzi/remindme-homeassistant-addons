@@ -97,6 +97,7 @@ func main() {
 	server := managerapi.NewServer(managerapi.Dependencies{
 		Catalog: modelCatalog,
 		Token:   pairingStore.Token,
+		Pairing: pairingStore,
 		Facts:   facts, Downloader: downloader, Supervisor: supervisor,
 		ModelDir: configured.models, CredentialPath: credentialPath,
 		CustomCatalogPath: customCatalogPath, InferenceURL: "http://127.0.0.1:8081",

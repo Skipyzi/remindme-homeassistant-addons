@@ -18,6 +18,7 @@ import (
 	"remindme.local/model-manager/internal/catalog"
 	"remindme.local/model-manager/internal/download"
 	"remindme.local/model-manager/internal/hardware"
+	"remindme.local/model-manager/internal/pairing"
 	"remindme.local/model-manager/internal/state"
 )
 
@@ -221,6 +222,64 @@ func TestSafeErrorJSONShape(t *testing.T) {
 	}
 	if len(body) != 3 || body["code"] != "invalid" {
 		t.Fatalf("unexpected body: %#v", body)
+	}
+}
+
+type fakePairing struct {
+	token string
+	err   error
+}
+
+func (fake fakePairing) Exchange(string) (string, error) {
+	return fake.token, fake.err
+}
+
+func TestPairingExchangeIsCodeAuthenticatedAndSinglePurpose(t *testing.T) {
+	dependencies := testDependencies(t, "http://127.0.0.1:1")
+	dependencies.Pairing = fakePairing{token: "manager-secret"}
+	server := NewServer(dependencies)
+	request := httptest.NewRequest(http.MethodPost, "/manager/v1/pair", strings.NewReader(`{"code":"ABC234"}`))
+	response := httptest.NewRecorder()
+	server.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+	if response.Header().Get("Cache-Control") != "no-store" {
+		t.Fatalf("cache-control=%q", response.Header().Get("Cache-Control"))
+	}
+	var body map[string]string
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body["token"] != "manager-secret" {
+		t.Fatalf("body=%v", body)
+	}
+}
+
+func TestPairingErrorsAreIndistinguishableAndRateLimited(t *testing.T) {
+	for _, current := range []struct {
+		name   string
+		err    error
+		status int
+		code   string
+	}{
+		{name: "invalid", err: pairing.ErrInvalidCode, status: http.StatusUnauthorized, code: "pairing_invalid"},
+		{name: "limited", err: pairing.ErrRateLimited, status: http.StatusTooManyRequests, code: "pairing_rate_limited"},
+	} {
+		t.Run(current.name, func(t *testing.T) {
+			dependencies := testDependencies(t, "http://127.0.0.1:1")
+			dependencies.Pairing = fakePairing{err: current.err}
+			server := NewServer(dependencies)
+			request := httptest.NewRequest(http.MethodPost, "/manager/v1/pair", strings.NewReader(`{"code":"WRNG22"}`))
+			response := httptest.NewRecorder()
+			server.ServeHTTP(response, request)
+			if response.Code != current.status {
+				t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+			}
+			if !strings.Contains(response.Body.String(), current.code) || strings.Contains(response.Body.String(), "WRNG22") {
+				t.Fatalf("unsafe body=%s", response.Body.String())
+			}
+		})
 	}
 }
 

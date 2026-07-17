@@ -19,6 +19,7 @@ import (
 	"remindme.local/model-manager/internal/catalog"
 	"remindme.local/model-manager/internal/download"
 	"remindme.local/model-manager/internal/hardware"
+	"remindme.local/model-manager/internal/pairing"
 	"remindme.local/model-manager/internal/state"
 )
 
@@ -36,9 +37,14 @@ type ModelSupervisor interface {
 	Prune(state.State) error
 }
 
+type PairingExchanger interface {
+	Exchange(string) (string, error)
+}
+
 type Dependencies struct {
 	Catalog           catalog.Catalog
 	Token             func() string
+	Pairing           PairingExchanger
 	Facts             func() (hardware.Facts, error)
 	Downloader        ModelDownloader
 	Supervisor        ModelSupervisor
@@ -86,8 +92,13 @@ type credentials struct {
 	HuggingFaceToken string `json:"huggingFaceToken"`
 }
 
+type pairingRequest struct {
+	Code string `json:"code"`
+}
+
 var modelIDPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9.-]{0,127}$`)
 var huggingFaceTokenPattern = regexp.MustCompile(`^hf_[A-Za-z0-9_]{20,}$`)
+var pairingCodePattern = regexp.MustCompile(`^[A-HJ-NP-Z2-9]{6}$`)
 
 func NewServer(dependencies Dependencies) *Server {
 	if dependencies.Now == nil {
@@ -119,6 +130,7 @@ func (server *Server) ServeHTTP(response http.ResponseWriter, request *http.Requ
 }
 
 func (server *Server) registerRoutes() {
+	server.manager.HandleFunc("POST /manager/v1/pair", server.pair)
 	server.manager.Handle("GET /manager/v1/status", server.auth(http.HandlerFunc(server.status)))
 	server.manager.Handle("GET /manager/v1/catalog", server.auth(http.HandlerFunc(server.listCatalog)))
 	server.manager.Handle("POST /manager/v1/preflight", server.auth(http.HandlerFunc(server.preflight)))
@@ -129,6 +141,35 @@ func (server *Server) registerRoutes() {
 	server.manager.Handle("POST /manager/v1/catalog/custom", server.auth(http.HandlerFunc(server.addCustom)))
 	server.manager.Handle("PUT /manager/v1/credentials/huggingface", server.auth(http.HandlerFunc(server.saveCredentials)))
 	server.manager.Handle("GET /manager/v1/events", server.auth(http.HandlerFunc(server.streamEvents)))
+}
+
+func (server *Server) pair(response http.ResponseWriter, request *http.Request) {
+	response.Header().Set("Cache-Control", "no-store")
+	var body pairingRequest
+	if !decodeJSON(response, request, &body) || !pairingCodePattern.MatchString(body.Code) {
+		if body.Code != "" && !pairingCodePattern.MatchString(body.Code) {
+			writeError(response, http.StatusBadRequest, APIError{Code: "invalid_request", Message: "Pairing request is invalid."})
+		}
+		return
+	}
+	if server.dependencies.Pairing == nil {
+		writeError(response, http.StatusServiceUnavailable, APIError{Code: "pairing_unavailable", Message: "Model manager pairing is unavailable.", Retryable: true})
+		return
+	}
+	token, err := server.dependencies.Pairing.Exchange(body.Code)
+	if errors.Is(err, pairing.ErrRateLimited) {
+		writeError(response, http.StatusTooManyRequests, APIError{Code: "pairing_rate_limited", Message: "Pairing attempts exceeded. Restart the llama.cpp add-on for a new code.", Retryable: true})
+		return
+	}
+	if errors.Is(err, pairing.ErrInvalidCode) {
+		writeError(response, http.StatusUnauthorized, APIError{Code: "pairing_invalid", Message: "Pairing code is invalid or expired."})
+		return
+	}
+	if err != nil || token == "" {
+		writeError(response, http.StatusServiceUnavailable, APIError{Code: "pairing_unavailable", Message: "Model manager pairing is unavailable.", Retryable: true})
+		return
+	}
+	writeJSON(response, http.StatusOK, map[string]string{"token": token})
 }
 
 func (server *Server) auth(next http.Handler) http.Handler {
