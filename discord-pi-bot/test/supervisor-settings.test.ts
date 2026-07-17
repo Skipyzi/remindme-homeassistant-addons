@@ -42,7 +42,7 @@ test("loads rendered live options and redacts secrets", async () => {
 	assert.equal(JSON.stringify(loaded).includes("discord-secret"), false);
 });
 
-test("save fetches, validates, persists complete options, then reloads", async () => {
+test("save persists complete options without privileged preflight, then reloads", async () => {
 	const calls: Array<{ url: string; method: string; body?: unknown }> = [];
 	let stored = { ...baseOptions };
 	const client = new SupervisorSettingsClient(
@@ -51,11 +51,13 @@ test("save fetches, validates, persists complete options, then reloads", async (
 		async (input, init = {}) => {
 			const url = String(input);
 			const method = init.method || "GET";
-			const body = init.body ? JSON.parse(String(init.body)) : undefined;
+			const body = init.body
+				? await new Response(init.body).json()
+				: undefined;
 			calls.push({ url, method, body });
 			if (url.endsWith("/options/config")) return envelope(stored);
 			if (url.endsWith("/options/validate"))
-				return envelope({ valid: true, message: "", pwned: false });
+				throw new Error("self token must not call privileged validation");
 			if (url.endsWith("/options")) {
 				stored = body.options;
 				return envelope({});
@@ -71,14 +73,9 @@ test("save fetches, validates, persists complete options, then reloads", async (
 	});
 	assert.deepEqual(
 		calls.map((call) => `${call.method} ${call.url.split("/addons/self")[1]}`),
-		[
-			"GET /options/config",
-			"POST /options/validate",
-			"POST /options",
-			"GET /options/config",
-		],
+		["GET /options/config", "POST /options", "GET /options/config"],
 	);
-	const posted = calls[2].body as { options: Record<string, unknown> };
+	const posted = calls[1].body as { options: Record<string, unknown> };
 	assert.equal(posted.options.future_option, "preserved");
 	assert.equal(posted.options.discord_token, "discord-secret");
 	assert.equal(posted.options.local_llm_context_size, 4096);
@@ -104,26 +101,42 @@ test("stale revision returns conflict before validation or persistence", async (
 	assert.equal(calls.length, 1);
 });
 
-test("Supervisor validation failures remain 422 with safe detail", async () => {
+test("Supervisor write-time validation failures remain 422 with safe detail", async () => {
 	const seedClient = new SupervisorSettingsClient(
 		"http://supervisor",
 		"token",
 		async () => envelope(baseOptions),
 	);
 	const current = await seedClient.load();
+	const calls: string[] = [];
 	const client = new SupervisorSettingsClient(
 		"http://supervisor",
 		"token",
-		async (input) =>
-			String(input).endsWith("/options/config")
-				? envelope(baseOptions)
-				: envelope({ valid: false, message: "context size is invalid" }),
+		async (input) => {
+			const url = String(input);
+			calls.push(url);
+			if (url.endsWith("/options/config")) return envelope(baseOptions);
+			if (url.endsWith("/options/validate"))
+				throw new Error("self token must not call privileged validation");
+			return Response.json(
+				{
+					result: "error",
+					message: "Invalid list for option 'local_llm_context_size'",
+				},
+				{ status: 400 },
+			);
+		},
 	);
 	await assert.rejects(
 		client.save(current.revision, { ownerId: "new" }),
 		(error: unknown) =>
 			error instanceof SupervisorSettingsError &&
+			error.code === "configuration_invalid" &&
 			error.status === 422 &&
-			/context size/.test(error.message),
+			/local_llm_context_size/.test(error.message),
+	);
+	assert.deepEqual(
+		calls.map((url) => url.split("/addons/self")[1]),
+		["/options/config", "/options"],
 	);
 });

@@ -39,7 +39,11 @@ export class SupervisorSettingsClient {
 		private readonly requestFetch: FetchLike = fetch,
 	) {}
 
-	private async request(path: string, init: RequestInit = {}): Promise<unknown> {
+	private async request(
+		path: string,
+		init: RequestInit = {},
+		validationWrite = false,
+	): Promise<unknown> {
 		let response: Response;
 		try {
 			response = await this.requestFetch(`${this.baseUrl}${path}`, {
@@ -71,6 +75,12 @@ export class SupervisorSettingsClient {
 		}
 		if (!response.ok) {
 			const message = safeSupervisorMessage(body);
+			if (validationWrite && response.status === 400)
+				throw new SupervisorSettingsError(
+					"configuration_invalid",
+					message || "Supervisor rejected the add-on configuration.",
+					422,
+				);
 			throw new SupervisorSettingsError(
 				"supervisor_unavailable",
 				message || `Supervisor returned HTTP ${response.status}.`,
@@ -144,29 +154,14 @@ export class SupervisorSettingsClient {
 				throw new SupervisorSettingsError(error.code, error.message, 400);
 			throw error;
 		}
-		const validation = await this.request("/addons/self/options/validate", {
-			method: "POST",
-			body: JSON.stringify(merged),
-		});
-		if (
-			!validation ||
-			typeof validation !== "object" ||
-			(validation as { valid?: unknown }).valid !== true
-		) {
-			const message =
-				validation && typeof validation === "object"
-					? String((validation as { message?: unknown }).message || "")
-					: "";
-			throw new SupervisorSettingsError(
-				"configuration_invalid",
-				message || "Supervisor rejected the add-on configuration.",
-				422,
-			);
-		}
-		await this.request("/addons/self/options", {
-			method: "POST",
-			body: JSON.stringify({ options: merged }),
-		});
+		await this.request(
+			"/addons/self/options",
+			{
+				method: "POST",
+				body: JSON.stringify({ options: merged }),
+			},
+			true,
+		);
 		const loaded = await this.load();
 		return { ...loaded, restartRequired: true };
 	}
