@@ -382,46 +382,109 @@
         <section class="settings-card" @click.outside="settingsOpen=false">
           <div class="kicker">Terminal settings</div>
           <h2>Shape the console</h2>
-          <div class="settings-grid">
+          <div class="settings-grid addon-settings-grid">
             <label
-              >Performance profile<select
-                x-model="profile"
-                @change="thinking=profile"
-              >
-                <template x-for="preset in thinkingProfiles" :key="preset.id"
-                  ><option
-                    :value="preset.id"
-                    x-text="`${preset.name}${preset.recommended ? ' · recommended' : ''}`"
-                  ></option
-                ></template></select></label
-            ><label
-              >Model endpoint<input
-                x-model="settings.localLlmUrl"
-                type="url" /></label
-            ><label
-              >Model name<input x-model="settings.model" type="text" /></label
-            ><label
-              >Exa API key<input
+              >Discord bot token
+              <span
+                class="configured-badge"
+                x-text="settings.discordTokenConfigured ? 'configured' : 'not configured'"
+              ></span>
+              <input
+                x-model="settings.discordToken"
+                type="password"
+                autocomplete="new-password"
+                placeholder="Leave blank to preserve current token"
+            /></label>
+            <label
+              >Discord owner ID
+              <input x-model="settings.ownerId" type="text" inputmode="numeric"
+            /></label>
+            <label
+              >Pi agent webhook URL
+              <input x-model="settings.piAgentWebhookUrl" type="url"
+            /></label>
+            <label class="settings-toggle"
+              ><span>Local LLM enabled</span
+              ><input type="checkbox" x-model="settings.localLlmEnabled"
+            /></label>
+            <label
+              >Local model endpoint
+              <input x-model="settings.localLlmUrl" type="url"
+            /></label>
+            <label
+              >Local model identifier
+              <input x-model="settings.localLlmModel" type="text"
+            /></label>
+            <label
+              >Context size
+              <input
+                x-model.number="settings.localLlmContextSize"
+                type="number"
+                min="1024"
+                max="32768"
+                step="256"
+            /></label>
+            <label class="settings-toggle"
+              ><span>Vision capability override</span
+              ><input type="checkbox" x-model="settings.localLlmVision"
+            /></label>
+            <label class="settings-toggle"
+              ><span>Managed model vault enabled</span
+              ><input type="checkbox" x-model="settings.modelManagerEnabled"
+            /></label>
+            <label
+              >Model manager URL
+              <input x-model="settings.modelManagerUrl" type="url"
+            /></label>
+            <label
+              >Exa API key
+              <span
+                class="configured-badge"
+                x-text="settings.exaApiKeyConfigured ? 'configured' : 'not configured'"
+              ></span>
+              <input
                 x-model="settings.exaApiKey"
                 type="password"
-                placeholder="Leave unchanged" /></label
-            ><label
-              >Home Assistant mobile notification target<input
+                autocomplete="new-password"
+                placeholder="Leave blank to preserve current key"
+            /></label>
+            <label
+              >Home Assistant notification target
+              <input
                 x-model="settings.notifyTarget"
                 type="text"
-                placeholder="notify.mobile_app_phone" /></label
-            ><label
-              >Glow intensity<input
-                type="range"
-                min="0"
-                max="100"
-                x-model="glow"
-                @input="document.documentElement.style.setProperty('--glow', glow / 100)" /></label
-            ><label
-              ><span>CRT scanlines</span
-              ><input type="checkbox" x-model="scanlines"
+                placeholder="notify.mobile_app_phone"
             /></label>
           </div>
+          <details class="console-preferences">
+            <summary>Console preferences</summary>
+            <div class="settings-grid">
+              <label
+                >Performance profile<select
+                  x-model="profile"
+                  @change="thinking=profile"
+                >
+                  <template x-for="preset in thinkingProfiles" :key="preset.id"
+                    ><option
+                      :value="preset.id"
+                      x-text="`${preset.name}${preset.recommended ? ' · recommended' : ''}`"
+                    ></option
+                  ></template></select
+              ></label>
+              <label
+                >Glow intensity<input
+                  type="range"
+                  min="0"
+                  max="100"
+                  x-model="glow"
+                  @input="document.documentElement.style.setProperty('--glow', glow / 100)"
+              /></label>
+              <label class="settings-toggle"
+                ><span>CRT scanlines</span
+                ><input type="checkbox" x-model="scanlines"
+              /></label>
+            </div>
+          </details>
           <section class="cookbook" x-show="settings.hardwareProfile">
             <div class="kicker">Hardware cookbook</div>
             <h3 x-text="settings.hardwareProfile?.name"></h3>

@@ -47,9 +47,22 @@ function harness() {
 		scanlines: true,
 		glow: 55,
 		settingsMessage: "",
+		settingsRevision: "",
+		settingsBaseline: {},
+		settingsRestartRequired: false,
 		settings: {
+			discordTokenConfigured: false,
+			discordToken: "",
+			ownerId: "",
+			piAgentWebhookUrl: "",
+			localLlmEnabled: true,
 			localLlmUrl: "",
-			model: "",
+			localLlmModel: "",
+			localLlmContextSize: 8192,
+			localLlmVision: false,
+			modelManagerEnabled: true,
+			modelManagerUrl: "",
+			exaApiKeyConfigured: false,
 			exaApiKey: "",
 			notifyTarget: "",
 			hardwareProfile: null,
@@ -134,20 +147,20 @@ function harness() {
 				.catch(() => {
 					this.offline = true;
 				});
-			fetch("./api/settings")
-				.then((r) => r.json())
-				.then((d) => {
-					this.settings.localLlmUrl = d.localLlmUrl;
-					this.settings.model = d.model;
-					this.settings.notifyTarget = d.notifyTarget
-						? `notify.${d.notifyTarget.replace(/^notify\./, "")}`
-						: "";
-					this.settings.hardwareProfile = d.hardwareProfile;
-					this.modelManagerEnabled = Boolean(d.modelManagerEnabled);
+			fetch("./api/settings", { cache: "no-store" })
+				.then(async (r) => {
+					const payload = await r.json();
+					if (!r.ok) throw new Error(payload.error?.message || "Settings unavailable");
+					return payload;
+				})
+				.then((payload) => {
+					this.applySettingsPayload(payload);
 					if (this.modelManagerEnabled)
 						window.RemindMeModelCookbook.load(this);
 				})
-				.catch(() => {});
+				.catch((error) => {
+					this.settingsMessage = error.message;
+				});
 		},
 		persist() {
 			localStorage.setItem(
@@ -413,18 +426,75 @@ function harness() {
 		modelProgressPercent() {
 			return window.RemindMeModelCookbook.progressPercent(this.modelOperation);
 		},
+		applySettingsPayload(payload) {
+			const live = payload.settings || {};
+			this.settingsRevision = payload.revision || "";
+			this.settings = {
+				...this.settings,
+				...live,
+				discordToken: "",
+				exaApiKey: "",
+				notifyTarget: live.notifyTarget
+					? `notify.${String(live.notifyTarget).replace(/^notify\./, "")}`
+					: "",
+				hardwareProfile: payload.hardwareProfile || this.settings.hardwareProfile,
+			};
+			this.modelManagerEnabled = Boolean(this.settings.modelManagerEnabled);
+			this.settingsBaseline = {
+				ownerId: this.settings.ownerId,
+				piAgentWebhookUrl: this.settings.piAgentWebhookUrl,
+				localLlmEnabled: this.settings.localLlmEnabled,
+				localLlmUrl: this.settings.localLlmUrl,
+				localLlmModel: this.settings.localLlmModel,
+				localLlmContextSize: Number(this.settings.localLlmContextSize),
+				localLlmVision: this.settings.localLlmVision,
+				modelManagerEnabled: this.settings.modelManagerEnabled,
+				modelManagerUrl: this.settings.modelManagerUrl,
+				notifyTarget: this.settings.notifyTarget,
+			};
+		},
+		settingsChanges() {
+			const changes = {};
+			for (const field of Object.keys(this.settingsBaseline)) {
+				const value =
+					field === "localLlmContextSize"
+						? Number(this.settings[field])
+						: this.settings[field];
+				if (value !== this.settingsBaseline[field]) changes[field] = value;
+			}
+			if (this.settings.discordToken) changes.discordToken = this.settings.discordToken;
+			if (this.settings.exaApiKey) changes.exaApiKey = this.settings.exaApiKey;
+			return changes;
+		},
 		async saveSettings() {
 			this.settingsMessage = "Saving…";
+			const changes = this.settingsChanges();
+			if (!Object.keys(changes).length) {
+				this.settingsMessage = "No configuration changes to save.";
+				return;
+			}
 			try {
 				const r = await fetch("./api/settings", {
 					method: "POST",
 					headers: { "Content-Type": "application/json" },
-					body: JSON.stringify(this.settings),
+					body: JSON.stringify({
+						revision: this.settingsRevision,
+						changes,
+					}),
 				});
 				const payload = await r.json().catch(() => ({}));
-				this.settingsMessage = r.ok
-					? "Saved. Restart the add-on to apply connection changes."
-					: `Save failed: ${payload.error || `HTTP ${r.status}`}`;
+				if (!r.ok) {
+					if (payload.error?.code === "configuration_changed")
+						throw new Error("Configuration changed elsewhere. Reload settings before saving.");
+					throw new Error(payload.error?.message || `HTTP ${r.status}`);
+				}
+				this.applySettingsPayload(payload);
+				this.settings.discordToken = "";
+				this.settings.exaApiKey = "";
+				this.settingsRestartRequired = Boolean(payload.restartRequired);
+				this.settingsMessage = this.settingsRestartRequired
+					? "Saved. Restart the add-on to apply changes."
+					: "Saved.";
 			} catch (error) {
 				this.settingsMessage = `Save failed: ${error.message}`;
 			}

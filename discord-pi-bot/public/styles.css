@@ -1396,6 +1396,47 @@ textarea::-webkit-scrollbar-thumb {
 		padding: 18px;
 	}
 }
+.addon-settings-grid {
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.configured-badge {
+	width: fit-content;
+	border: 1px solid rgba(72, 215, 196, 0.35);
+	padding: 2px 5px;
+	color: var(--turquoise-neon);
+	font: 8px ui-monospace, Consolas, monospace;
+	text-transform: uppercase;
+}
+.settings-grid .settings-toggle {
+	grid-template-columns: minmax(0, 1fr) auto;
+	align-items: center;
+	border: 1px solid var(--line);
+	padding: 10px;
+}
+.settings-grid .settings-toggle input {
+	width: 18px;
+	height: 18px;
+	padding: 0;
+}
+.console-preferences {
+	margin-top: 14px;
+	border-top: 1px solid var(--line);
+	padding-top: 12px;
+}
+.console-preferences summary {
+	cursor: pointer;
+	color: var(--casino-amber);
+	font: 10px ui-monospace, Consolas, monospace;
+	text-transform: uppercase;
+}
+.console-preferences .settings-grid {
+	margin-top: 12px;
+}
+@media (max-width: 700px) {
+	.addon-settings-grid {
+		grid-template-columns: 1fr;
+	}
+}
 @media (prefers-reduced-motion: reduce) {
 	.model-progress i {
 		transition: none;
