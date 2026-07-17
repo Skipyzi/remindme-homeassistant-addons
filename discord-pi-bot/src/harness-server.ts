@@ -27,12 +27,11 @@ import {
 	type EntityAction,
 } from "./harness/entityActions";
 import { ConversationStore } from "./harness/conversations";
+import { recommendHardwareProfile } from "./harness/settings";
 import {
-	mergeAddonOptions,
-	publicSettings,
-	recommendHardwareProfile,
-	validateLocalModelUrl,
-} from "./harness/settings";
+	SupervisorSettingsClient,
+	SupervisorSettingsError,
+} from "./harness/supervisorSettings";
 import { allowedToolNames, toolCallKey } from "./harness/intentRouting";
 import {
 	getThinkingProfile,
@@ -57,6 +56,10 @@ const port = Number(process.env.HARNESS_PORT || 8090);
 const supervisorToken = process.env.SUPERVISOR_TOKEN || "";
 const homeAssistantUrl = "http://supervisor/core/api";
 const supervisorUrl = "http://supervisor";
+const supervisorSettings = new SupervisorSettingsClient(
+	supervisorUrl,
+	supervisorToken,
+);
 const pendingActions = new Map<
 	string,
 	{
@@ -116,11 +119,19 @@ app.post("/api/tokenize", async (request, response) => {
 		});
 	}
 });
-app.get("/api/settings", (_request, response) => {
-	response.json({
-		...publicSettings(process.env),
-		hardwareProfile: recommendHardwareProfile(os.totalmem(), os.cpus().length),
-	});
+app.get("/api/settings", async (_request, response) => {
+	try {
+		const loaded = await supervisorSettings.load();
+		response.set("Cache-Control", "no-store").json({
+			...loaded,
+			hardwareProfile: recommendHardwareProfile(
+				os.totalmem(),
+				os.cpus().length,
+			),
+		});
+	} catch (error) {
+		sendSettingsError(response, error);
+	}
 });
 app.get("/api/models", async (_request, response) => {
 	await proxyModelManager(response, "/catalog");
@@ -227,37 +238,32 @@ app.get("/api/models/events", async (request, response) => {
 	}
 });
 app.post("/api/settings", async (request, response) => {
-	const values = request.body || {};
-	const options: Record<string, unknown> = {};
-	try {
-		if (typeof values.localLlmUrl === "string")
-			options.local_llm_url = validateLocalModelUrl(values.localLlmUrl);
-	} catch (error) {
+	const revision =
+		typeof request.body?.revision === "string" ? request.body.revision : "";
+	if (!revision || !request.body?.changes) {
 		response.status(400).json({
-			error: error instanceof Error ? error.message : "Invalid model endpoint",
+			error: {
+				code: "invalid_settings",
+				message: "A settings revision and changes object are required.",
+				retryable: false,
+			},
 		});
-		return;
-	}
-	if (typeof values.model === "string") options.local_llm_model = values.model;
-	if (typeof values.exaApiKey === "string" && values.exaApiKey)
-		options.exa_api_key = values.exaApiKey;
-	if (typeof values.notifyTarget === "string")
-		options.ha_notify_target = values.notifyTarget.replace(/^notify\./, "");
-	if (!Object.keys(options).length) {
-		response.status(400).json({ error: "No settings supplied" });
 		return;
 	}
 	try {
-		const current = await supervisorRequest("/addons/self/info");
-		const mergedOptions = mergeAddonOptions(current, options);
-		const result = await supervisorRequest("/addons/self/options", "POST", {
-			options: mergedOptions,
+		const saved = await supervisorSettings.save(
+			revision,
+			request.body.changes,
+		);
+		response.json({
+			...saved,
+			hardwareProfile: recommendHardwareProfile(
+				os.totalmem(),
+				os.cpus().length,
+			),
 		});
-		response.json({ saved: true, result });
 	} catch (error) {
-		response.status(502).json({
-			error: error instanceof Error ? error.message : "Unable to save settings",
-		});
+		sendSettingsError(response, error);
 	}
 });
 app.get("/api/entities/:id", async (request, response) => {
@@ -943,6 +949,26 @@ async function proxyModelManager(
 	} catch (error) {
 		sendModelManagerError(response, error);
 	}
+}
+
+function sendSettingsError(response: Response, error: unknown) {
+	if (error instanceof SupervisorSettingsError) {
+		response.status(error.status).json({
+			error: {
+				code: error.code,
+				message: error.message,
+				retryable: error.retryable,
+			},
+		});
+		return;
+	}
+	response.status(502).json({
+		error: {
+			code: "supervisor_unavailable",
+			message: "Home Assistant Supervisor is unavailable.",
+			retryable: true,
+		},
+	});
 }
 
 function sendModelManagerError(response: Response, error: unknown) {
