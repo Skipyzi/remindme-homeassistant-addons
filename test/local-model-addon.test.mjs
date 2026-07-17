@@ -36,10 +36,11 @@ test("startup delegates JSON parsing to the Go manager", () => {
 });
 
 test("release packages secure direct pairing without sibling privileges", () => {
-	assert.match(remindMeConfig, /version: "2\.3\.0"/);
-	assert.match(config, /version: "1\.9\.0"/);
+	assert.match(remindMeConfig, /version: "2\.3\.1"/);
+	assert.match(config, /version: "1\.9\.1"/);
 	assert.doesNotMatch(remindMeConfig, /hassio_role:\s*(manager|admin)/);
 	assert.doesNotMatch(remindMeServer, /\/addons\/\$\{.*\}\/options/);
+	assert.doesNotMatch(remindMeServer, /\/addons\/self\/options\/validate/);
 	assert.match(remindMeRun, /MODEL_MANAGER_TOKEN_PATH=\/data\/model-manager-token/);
 	assert.match(
 		remindMeRun,
@@ -61,5 +62,8 @@ test("legacy manager token is migration-only and pairing is documented", () => {
 	}
 	assert.match(remindMeReadme, /configuration changed|conflict/i);
 	assert.match(remindMeReadme, /restart/i);
+	assert.match(remindMeReadme, /loopback|127\.0\.0\.1/i);
+	assert.match(remindMeReadme, /native.*Configuration|Configuration.*native/i);
 	assert.match(llamaReadme, /legacy.*manager_token|manager_token.*legacy/i);
+	assert.match(llamaReadme, /preserv.*unknown|unknown.*preserv/i);
 });

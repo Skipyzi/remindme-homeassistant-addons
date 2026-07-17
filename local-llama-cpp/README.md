@@ -4,7 +4,7 @@ ARM64 llama.cpp appliance for RemindMe with hardware-aware Hugging Face GGUF dow
 
 ## Managed model lifecycle
 
-Version 1.9.0 runs a small static model manager in front of `llama-server`:
+Version 1.9.1 runs a small static model manager in front of `llama-server`:
 
 - The OpenAI-compatible API remains at port `8080`, including `/v1/chat/completions`.
 - The active model continues serving while a candidate downloads and verifies.
@@ -34,6 +34,8 @@ reasoning_mode: auto
 ```
 
 On first startup without manager state, the add-on matches `hf_repo` and `hf_file` to the curated catalog, downloads the model into `/data/models`, and records crash-safe state under `/data/model-manager`. A valid `model_path` is preserved as a legacy local model.
+
+Version 1.9.1 preserves unknown repository and filename choices instead of silently replacing them. Startup remains degraded until the operator restores a curated tuple or installs a model through Hardware Cookbook, while the manager catalog and pairing APIs remain available. The add-on log reports the non-secret configured tuple and exact recovery guidance; it never logs the Hugging Face token.
 
 `hf_token` is retained only for migration. Configure Hugging Face access from RemindMe afterward. Gated models such as Gemma also require accepting their licence on Hugging Face.
 

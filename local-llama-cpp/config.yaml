@@ -1,5 +1,5 @@
 name: Local llama.cpp
-version: "1.9.0"
+version: "1.9.1"
 slug: local_llama_cpp
 description: Local OpenAI-compatible llama.cpp server with Hugging Face model downloads
 arch:
