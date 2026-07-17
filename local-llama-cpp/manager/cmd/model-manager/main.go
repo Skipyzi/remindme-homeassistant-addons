@@ -170,7 +170,7 @@ func recoverOrBootstrap(ctx context.Context, configured paths, modelCatalog cata
 	}
 	variant, ok := findConfiguredVariant(options, modelCatalog)
 	if !ok {
-		log.Printf("startup degraded: configured Hugging Face model is not in the curated catalog")
+		log.Printf("startup degraded: %s", unknownVariantDiagnostic(options))
 		return
 	}
 	factsValue, err := facts()
@@ -224,6 +224,16 @@ func findConfiguredVariant(options addonOptions, modelCatalog catalog.Catalog) (
 		}
 	}
 	return catalog.Variant{}, false
+}
+
+func unknownVariantDiagnostic(options addonOptions) string {
+	return fmt.Sprintf(
+		"configured Hugging Face model repo=%q file=%q is not in the curated catalog; configuration was preserved. To recover, set repo=%q and file=%q, or pair RemindMe and install a model through Hardware Cookbook",
+		options.HFRepo,
+		options.HFFile,
+		"Qwen/Qwen3-1.7B-GGUF",
+		"Qwen3-1.7B-Q8_0.gguf",
+	)
 }
 
 func runtimeFor(installed state.Installed, modelCatalog catalog.Catalog, facts func() (hardware.Facts, error)) hardware.Runtime {
