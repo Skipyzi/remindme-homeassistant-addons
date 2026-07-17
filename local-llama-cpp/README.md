@@ -4,17 +4,20 @@ ARM64 llama.cpp appliance for RemindMe with hardware-aware Hugging Face GGUF dow
 
 ## Managed model lifecycle
 
-Version 1.9.1 runs a small static model manager in front of `llama-server`:
+Version 1.9.2 runs a small static model manager in front of `llama-server`:
 
 - The OpenAI-compatible API remains at port `8080`, including `/v1/chat/completions`.
 - The active model continues serving while a candidate downloads and verifies.
 - Completed downloads are checked for exact byte size, GGUF header, and SHA-256 when supplied by the curated catalog.
 - Activation requires both llama.cpp `/health` and a deterministic completion probe.
+- Startup retries transient readiness failures for up to 120 seconds while large models load.
 - A failed candidate restores the previous healthy model automatically.
 - The active model and one previous successful fallback are protected from removal.
 - Interrupted `.partial` downloads can resume.
 
 Use the **Hardware Cookbook** in the RemindMe sidebar to install or switch models. At startup, the add-on log prints a short-lived six-character pairing code. Enter it in RemindMe's Local model vault. The code is single-use, expires, and is rate-limited; the protected manager token returned by the direct exchange never enters browser state.
+
+The manager starts `llama-server` internally on `127.0.0.1:8081`. This loopback address is intentional because both processes share the same add-on container. Version 1.9.2 retries health and completion readiness every 500 milliseconds for up to 120 seconds instead of treating the first connection refusal during model loading as a startup failure.
 
 ## Initial configuration and migration
 

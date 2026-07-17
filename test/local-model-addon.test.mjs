@@ -37,7 +37,7 @@ test("startup delegates JSON parsing to the Go manager", () => {
 
 test("release packages secure direct pairing without sibling privileges", () => {
 	assert.match(remindMeConfig, /version: "2\.3\.1"/);
-	assert.match(config, /version: "1\.9\.1"/);
+	assert.match(config, /version: "1\.9\.2"/);
 	assert.doesNotMatch(remindMeConfig, /hassio_role:\s*(manager|admin)/);
 	assert.doesNotMatch(remindMeServer, /\/addons\/\$\{.*\}\/options/);
 	assert.doesNotMatch(remindMeServer, /\/addons\/self\/options\/validate/);
@@ -66,4 +66,10 @@ test("legacy manager token is migration-only and pairing is documented", () => {
 	assert.match(remindMeReadme, /native.*Configuration|Configuration.*native/i);
 	assert.match(llamaReadme, /legacy.*manager_token|manager_token.*legacy/i);
 	assert.match(llamaReadme, /preserv.*unknown|unknown.*preserv/i);
+});
+
+test("llama startup waits for internal server readiness", () => {
+	assert.match(llamaReadme, /120 seconds/i);
+	assert.match(llamaReadme, /127\.0\.0\.1:8081/);
+	assert.match(llamaReadme, /retry|retries/i);
 });
