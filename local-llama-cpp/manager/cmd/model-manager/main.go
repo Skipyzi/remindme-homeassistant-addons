@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -19,6 +20,7 @@ import (
 	"remindme.local/model-manager/internal/catalog"
 	"remindme.local/model-manager/internal/download"
 	"remindme.local/model-manager/internal/hardware"
+	"remindme.local/model-manager/internal/pairing"
 	managerruntime "remindme.local/model-manager/internal/runtime"
 	"remindme.local/model-manager/internal/state"
 )
@@ -64,8 +66,26 @@ func main() {
 		log.Fatal(err)
 	}
 	downloader := download.Downloader{ModelDir: configured.models}
-	credentialPath := filepath.Join(filepath.Dir(configured.state), "credentials.json")
-	customCatalogPath := filepath.Join(filepath.Dir(configured.state), "catalog.json")
+	dataDirectory := filepath.Dir(configured.state)
+	credentialPath := filepath.Join(dataDirectory, "credentials.json")
+	customCatalogPath := filepath.Join(dataDirectory, "catalog.json")
+	tokenPath := filepath.Join(dataDirectory, "manager-token")
+	pairingStatePath := filepath.Join(dataDirectory, "pairing.json")
+	options, optionsErr := readOptions(configured.options)
+	if optionsErr == nil {
+		if err := pairing.ImportLegacyToken(tokenPath, options.ManagerToken); err != nil {
+			log.Fatal(err)
+		}
+	}
+	pairingStore, err := pairing.NewStore(tokenPath, pairingStatePath, time.Now, rand.Reader)
+	if err != nil {
+		log.Fatal(err)
+	}
+	pairingCode, pairingExpiry, err := pairingStore.Generate()
+	if err != nil {
+		log.Fatal(err)
+	}
+	log.Printf("RemindMe pairing code: %s (expires %s)", pairingCode, pairingExpiry.Format(time.RFC3339))
 	facts := func() (hardware.Facts, error) {
 		result, factsErr := hardware.ReadFacts(configured.models)
 		if factsErr != nil {
@@ -76,14 +96,8 @@ func main() {
 	}
 	server := managerapi.NewServer(managerapi.Dependencies{
 		Catalog: modelCatalog,
-		Token: func() string {
-			options, readErr := readOptions(configured.options)
-			if readErr != nil {
-				return ""
-			}
-			return options.ManagerToken
-		},
-		Facts: facts, Downloader: downloader, Supervisor: supervisor,
+		Token:   pairingStore.Token,
+		Facts:   facts, Downloader: downloader, Supervisor: supervisor,
 		ModelDir: configured.models, CredentialPath: credentialPath,
 		CustomCatalogPath: customCatalogPath, InferenceURL: "http://127.0.0.1:8081",
 	})
