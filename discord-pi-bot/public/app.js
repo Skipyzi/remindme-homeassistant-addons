@@ -41,32 +41,12 @@ function harness() {
 		profile: localStorage.getItem("remindme.profile") || "fast",
 		busy: false,
 		settingsOpen: false,
+		modelsOpen: false,
 		historyOpen: false,
 		boardOpen: false,
 		offline: false,
 		scanlines: true,
 		glow: 55,
-		settingsMessage: "",
-		settingsRevision: "",
-		settingsBaseline: {},
-		settingsRestartRequired: false,
-		settings: {
-			discordTokenConfigured: false,
-			discordToken: "",
-			ownerId: "",
-			piAgentWebhookUrl: "",
-			localLlmEnabled: true,
-			localLlmUrl: "",
-			localLlmModel: "",
-			localLlmContextSize: 8192,
-			localLlmVision: false,
-			modelManagerEnabled: true,
-			modelManagerUrl: "",
-			exaApiKeyConfigured: false,
-			exaApiKey: "",
-			notifyTarget: "",
-			hardwareProfile: null,
-		},
 		...window.RemindMeModelCookbook.state(),
 		modelBadge: "LOCAL • QWEN",
 		sessionLabel: "ready // private network",
@@ -121,10 +101,18 @@ function harness() {
 		init() {
 			this.restore();
 			this.scanlines = localStorage.getItem("remindme.scanlines") !== "0";
+			this.glow = Number(localStorage.getItem("remindme.glow") || 55);
+			document.documentElement.style.setProperty("--glow", this.glow / 100);
 			this.$watch("thinking", (value) => {
 				this.profile = value;
 				localStorage.setItem("remindme.profile", value);
 			});
+			this.$watch("glow", (value) =>
+				localStorage.setItem("remindme.glow", String(value)),
+			);
+			this.$watch("scanlines", (value) =>
+				localStorage.setItem("remindme.scanlines", value ? "1" : "0"),
+			);
 			this.$watch("draft", () => window.RemindMeComposer.measure(this));
 			window.RemindMeComposer.measure(this, 0);
 			window.RemindMeConversations.load(this).catch(() => {});
@@ -147,20 +135,7 @@ function harness() {
 				.catch(() => {
 					this.offline = true;
 				});
-			fetch("./api/settings", { cache: "no-store" })
-				.then(async (r) => {
-					const payload = await r.json();
-					if (!r.ok)
-						throw new Error(payload.error?.message || "Settings unavailable");
-					return payload;
-				})
-				.then((payload) => {
-					this.applySettingsPayload(payload);
-					if (this.modelManagerEnabled) window.RemindMeModelCookbook.load(this);
-				})
-				.catch((error) => {
-					this.settingsMessage = error.message;
-				});
+			window.RemindMeModelCookbook.load(this);
 		},
 		persist() {
 			localStorage.setItem(
@@ -429,122 +404,6 @@ function harness() {
 		modelProgressPercent() {
 			return window.RemindMeModelCookbook.progressPercent(this.modelOperation);
 		},
-		applySettingsPayload(payload) {
-			const live = payload.settings || {};
-			this.settingsRevision = payload.revision || "";
-			this.settings = {
-				...this.settings,
-				...live,
-				discordToken: "",
-				exaApiKey: "",
-				notifyTarget: live.notifyTarget
-					? `notify.${String(live.notifyTarget).replace(/^notify\./, "")}`
-					: "",
-				hardwareProfile:
-					payload.hardwareProfile || this.settings.hardwareProfile,
-			};
-			this.modelManagerEnabled = Boolean(this.settings.modelManagerEnabled);
-			this.settingsBaseline = {
-				ownerId: this.settings.ownerId,
-				piAgentWebhookUrl: this.settings.piAgentWebhookUrl,
-				localLlmEnabled: this.settings.localLlmEnabled,
-				localLlmUrl: this.settings.localLlmUrl,
-				localLlmModel: this.settings.localLlmModel,
-				localLlmContextSize: Number(this.settings.localLlmContextSize),
-				localLlmVision: this.settings.localLlmVision,
-				modelManagerEnabled: this.settings.modelManagerEnabled,
-				modelManagerUrl: this.settings.modelManagerUrl,
-				notifyTarget: this.settings.notifyTarget,
-			};
-		},
-		settingsChanges() {
-			const changes = {};
-			for (const field of Object.keys(this.settingsBaseline)) {
-				const value =
-					field === "localLlmContextSize"
-						? Number(this.settings[field])
-						: this.settings[field];
-				if (value !== this.settingsBaseline[field]) changes[field] = value;
-			}
-			if (this.settings.discordToken)
-				changes.discordToken = this.settings.discordToken;
-			if (this.settings.exaApiKey) changes.exaApiKey = this.settings.exaApiKey;
-			return changes;
-		},
-		async saveSettings() {
-			this.settingsMessage = "Saving…";
-			const changes = this.settingsChanges();
-			if (!Object.keys(changes).length) {
-				this.settingsMessage = "No configuration changes to save.";
-				return;
-			}
-			try {
-				const r = await fetch("./api/settings", {
-					method: "POST",
-					headers: { "Content-Type": "application/json" },
-					body: JSON.stringify({
-						revision: this.settingsRevision,
-						changes,
-					}),
-				});
-				const payload = await r.json().catch(() => ({}));
-				if (!r.ok) {
-					if (payload.error?.code === "configuration_changed")
-						throw new Error(
-							"Configuration changed elsewhere. Reload settings before saving.",
-						);
-					throw new Error(payload.error?.message || `HTTP ${r.status}`);
-				}
-				this.applySettingsPayload(payload);
-				this.settings.discordToken = "";
-				this.settings.exaApiKey = "";
-				this.settingsRestartRequired = Boolean(payload.restartRequired);
-				this.settingsMessage = this.settingsRestartRequired
-					? "Saved. Restart the add-on to apply changes."
-					: "Saved.";
-			} catch (error) {
-				this.settingsMessage = `Save failed: ${error.message}`;
-			}
-		},
-		async restartSettingsAddon() {
-			if (
-				!window.confirm(
-					"Restart RemindMe now? The terminal will reconnect automatically.",
-				)
-			)
-				return;
-			this.settingsMessage = "Requesting add-on restart…";
-			try {
-				const response = await fetch("./api/settings/restart", {
-					method: "POST",
-				});
-				const payload = await response.json().catch(() => ({}));
-				if (!response.ok)
-					throw new Error(payload.error?.message || `HTTP ${response.status}`);
-				const previousInstanceId = payload.instanceId;
-				this.settingsMessage = "Waiting for the restarted add-on…";
-				await new Promise((resolve) => setTimeout(resolve, 3_000));
-				const deadline = Date.now() + 60_000;
-				while (Date.now() < deadline) {
-					try {
-						const statusResponse = await fetch("./api/status", {
-							cache: "no-store",
-						});
-						if (statusResponse.ok) {
-							const status = await statusResponse.json();
-							if (status.instanceId !== previousInstanceId) {
-								window.location.reload();
-								return;
-							}
-						}
-					} catch (_) {}
-					await new Promise((resolve) => setTimeout(resolve, 2_000));
-				}
-				this.settingsMessage =
-					"The add-on did not return in time. Reopen RemindMe from the sidebar.";
-			} catch (error) {
-				this.settingsMessage = `Restart failed: ${error.message}`;
-			}
-		},
+
 	};
 }

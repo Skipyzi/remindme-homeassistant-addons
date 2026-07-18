@@ -5,8 +5,11 @@ import test from "node:test";
 const html = readFileSync("public/harness.html", "utf8");
 const app = readFileSync("public/app.js", "utf8");
 
-test("settings form mirrors every safe add-on schema field", () => {
-	for (const model of [
+test("settings contains only local harness preferences", () => {
+	for (const field of ["profile", "glow", "scanlines"]) {
+		assert.match(html, new RegExp(field), field);
+	}
+	for (const forbidden of [
 		"discordToken",
 		"ownerId",
 		"piAgentWebhookUrl",
@@ -20,21 +23,13 @@ test("settings form mirrors every safe add-on schema field", () => {
 		"exaApiKey",
 		"notifyTarget",
 	]) {
-		assert.match(html, new RegExp(`settings\\.${model}`), model);
+		assert.doesNotMatch(html, new RegExp(`settings\\.${forbidden}`), forbidden);
 	}
-	assert.match(html, /discordTokenConfigured/);
-	assert.match(html, /exaApiKeyConfigured/);
-});
-
-test("settings save sends revisioned changes and handles conflicts", () => {
-	assert.match(app, /settingsRevision/);
-	assert.match(app, /settingsChanges\(\)/);
-	assert.match(app, /JSON\.stringify\(\{\s*revision:/s);
-	assert.match(app, /configuration_changed/);
-	assert.match(app, /restartRequired/);
-});
-
-test("secret replacement values are cleared after save", () => {
-	assert.match(app, /settings\.discordToken = ""/);
-	assert.match(app, /settings\.exaApiKey = ""/);
+	assert.doesNotMatch(
+		app,
+		/api\/settings|settingsRevision|settingsChanges|saveSettings|restartSettingsAddon/,
+	);
+	for (const key of ["remindme.profile", "remindme.glow", "remindme.scanlines"]) {
+		assert.match(app, new RegExp(`localStorage\\.setItem\\(\\"${key}`), key);
+	}
 });

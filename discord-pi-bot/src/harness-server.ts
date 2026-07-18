@@ -28,12 +28,7 @@ import {
 	type EntityAction,
 } from "./harness/entityActions";
 import { ConversationStore } from "./harness/conversations";
-import { recommendHardwareProfile } from "./harness/settings";
-import {
-	SupervisorSettingsClient,
-	SupervisorSettingsError,
-} from "./harness/supervisorSettings";
-import { RestartController } from "./harness/restart";
+
 import { allowedToolNames, toolCallKey } from "./harness/intentRouting";
 import {
 	getThinkingProfile,
@@ -58,20 +53,7 @@ const app = express();
 const port = Number(process.env.HARNESS_PORT || 8090);
 const supervisorToken = process.env.SUPERVISOR_TOKEN || "";
 const homeAssistantUrl = "http://supervisor/core/api";
-const supervisorUrl = "http://supervisor";
-const supervisorSettings = new SupervisorSettingsClient(
-	supervisorUrl,
-	supervisorToken,
-);
 const instanceId = randomUUID();
-const restartController = new RestartController(
-	async () => {
-		await supervisorRequest("/addons/self/restart", "POST");
-	},
-	350,
-	undefined,
-	() => console.error("Supervisor self-restart failed"),
-);
 const pendingActions = new Map<
 	string,
 	{
@@ -129,20 +111,6 @@ app.post("/api/tokenize", async (request, response) => {
 			exact: false,
 			error: error instanceof Error ? error.message : "Tokenizer unavailable",
 		});
-	}
-});
-app.get("/api/settings", async (_request, response) => {
-	try {
-		const loaded = await supervisorSettings.load();
-		response.set("Cache-Control", "no-store").json({
-			...loaded,
-			hardwareProfile: recommendHardwareProfile(
-				os.totalmem(),
-				os.cpus().length,
-			),
-		});
-	} catch (error) {
-		sendSettingsError(response, error);
 	}
 });
 app.get("/api/models/pairing", async (_request, response) => {
@@ -265,46 +233,6 @@ app.get("/api/models/events", async (request, response) => {
 		if (!response.headersSent) sendModelManagerError(response, error);
 	} finally {
 		if (!response.writableEnded) response.end();
-	}
-});
-app.post("/api/settings", async (request, response) => {
-	const revision =
-		typeof request.body?.revision === "string" ? request.body.revision : "";
-	if (!revision || !request.body?.changes) {
-		response.status(400).json({
-			error: {
-				code: "invalid_settings",
-				message: "A settings revision and changes object are required.",
-				retryable: false,
-			},
-		});
-		return;
-	}
-	try {
-		const saved = await supervisorSettings.save(revision, request.body.changes);
-		response.json({
-			...saved,
-			hardwareProfile: recommendHardwareProfile(
-				os.totalmem(),
-				os.cpus().length,
-			),
-		});
-	} catch (error) {
-		sendSettingsError(response, error);
-	}
-});
-app.post("/api/settings/restart", (_request, response) => {
-	try {
-		restartController.schedule();
-		response.status(202).json({ instanceId });
-	} catch {
-		response.status(409).json({
-			error: {
-				code: "restart_in_progress",
-				message: "An add-on restart is already in progress.",
-				retryable: true,
-			},
-		});
 	}
 });
 app.get("/api/entities/:id", async (request, response) => {
@@ -985,26 +913,6 @@ async function proxyModelManager(
 	}
 }
 
-function sendSettingsError(response: Response, error: unknown) {
-	if (error instanceof SupervisorSettingsError) {
-		response.status(error.status).json({
-			error: {
-				code: error.code,
-				message: error.message,
-				retryable: error.retryable,
-			},
-		});
-		return;
-	}
-	response.status(502).json({
-		error: {
-			code: "supervisor_unavailable",
-			message: "Home Assistant Supervisor is unavailable.",
-			retryable: true,
-		},
-	});
-}
-
 function sendModelManagerError(response: Response, error: unknown) {
 	if (error instanceof ModelManagerError) {
 		response
@@ -1021,24 +929,6 @@ function sendModelManagerError(response: Response, error: unknown) {
 				true,
 			),
 		);
-}
-
-async function supervisorRequest(path: string, method = "GET", body?: unknown) {
-	if (!supervisorToken)
-		throw new Error("Supervisor API access is not configured");
-	const response = await fetch(`${supervisorUrl}${path}`, {
-		method,
-		headers: {
-			Authorization: `Bearer ${supervisorToken}`,
-			"Content-Type": "application/json",
-		},
-		body: body ? JSON.stringify(body) : undefined,
-	});
-	if (!response.ok)
-		throw new Error(
-			`Supervisor returned HTTP ${response.status}: ${await response.text()}`,
-		);
-	return response.json();
 }
 
 async function hassRequest(path: string, method = "GET", body?: unknown) {

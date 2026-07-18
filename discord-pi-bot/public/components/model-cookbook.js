@@ -15,7 +15,7 @@ async function readModelResponse(response) {
 window.RemindMeModelCookbook = {
 	state() {
 		return {
-			modelManagerEnabled: false,
+			modelManagerEnabled: true,
 			modelPairingConfigured: false,
 			pairingCode: "",
 			pairingBusy: false,
@@ -31,7 +31,6 @@ window.RemindMeModelCookbook = {
 	},
 
 	async load(vm) {
-		if (!vm.modelManagerEnabled) return;
 		vm.modelError = "";
 		try {
 			const pairing = await fetch("./api/models/pairing").then(readModelResponse);

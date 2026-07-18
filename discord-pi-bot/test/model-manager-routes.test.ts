@@ -137,6 +137,16 @@ test("model manager routes proxy safely", async (context) => {
 		},
 	);
 
+	await context.test("Supervisor settings routes are absent", async () => {
+		for (const [path, method] of [
+			["/api/settings", "GET"],
+			["/api/settings/restart", "POST"],
+		] as const) {
+			const response = await nativeFetch(`${baseUrl}${path}`, { method });
+			assert.equal(response.status, 404, `${method} ${path}`);
+		}
+	});
+
 	await context.test(
 		"invalid selection is rejected before upstream access",
 		async () => {
