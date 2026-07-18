@@ -19,6 +19,7 @@ import (
 	"remindme.local/model-manager/internal/catalog"
 	"remindme.local/model-manager/internal/download"
 	"remindme.local/model-manager/internal/hardware"
+	"remindme.local/model-manager/internal/optionsyaml"
 	"remindme.local/model-manager/internal/pairing"
 	"remindme.local/model-manager/internal/state"
 )
@@ -41,6 +42,12 @@ type PairingExchanger interface {
 	Exchange(string) (string, error)
 }
 
+type VerificationStore interface {
+	Record(catalog.Variant, string) error
+	Has(catalog.Variant) bool
+	Remove(string) error
+}
+
 type Dependencies struct {
 	Catalog           catalog.Catalog
 	Token             func() string
@@ -48,6 +55,7 @@ type Dependencies struct {
 	Facts             func() (hardware.Facts, error)
 	Downloader        ModelDownloader
 	Supervisor        ModelSupervisor
+	Verified          VerificationStore
 	ModelDir          string
 	CredentialPath    string
 	CustomCatalogPath string
@@ -138,6 +146,7 @@ func (server *Server) registerRoutes() {
 	server.manager.Handle("POST /manager/v1/activate", server.auth(http.HandlerFunc(server.activate)))
 	server.manager.Handle("POST /manager/v1/cancel", server.auth(http.HandlerFunc(server.cancelOperation)))
 	server.manager.Handle("DELETE /manager/v1/models/{id}", server.auth(http.HandlerFunc(server.removeModel)))
+	server.manager.Handle("GET /manager/v1/models/{id}/options.yaml", server.auth(http.HandlerFunc(server.modelOptionsYAML)))
 	server.manager.Handle("POST /manager/v1/catalog/custom", server.auth(http.HandlerFunc(server.addCustom)))
 	server.manager.Handle("PUT /manager/v1/credentials/huggingface", server.auth(http.HandlerFunc(server.saveCredentials)))
 	server.manager.Handle("GET /manager/v1/events", server.auth(http.HandlerFunc(server.streamEvents)))
@@ -216,7 +225,7 @@ func (server *Server) listCatalog(response http.ResponseWriter, _ *http.Request)
 	items := make([]map[string]any, 0, len(variants))
 	for _, variant := range variants {
 		assessment := hardware.Assess(variant, facts, variant.RecommendedContext, false)
-		item := map[string]any{"model": variant.Public(), "assessment": assessment, "installed": server.isInstalled(variant), "active": current.Active != nil && current.Active.ID == variant.ID, "fallback": current.Fallback != nil && current.Fallback.ID == variant.ID}
+		item := map[string]any{"model": variant.Public(), "assessment": assessment, "installed": server.isInstalled(variant), "verified": server.isVerified(variant), "active": current.Active != nil && current.Active.ID == variant.ID, "fallback": current.Fallback != nil && current.Fallback.ID == variant.ID}
 		items = append(items, item)
 	}
 	writeJSON(response, http.StatusOK, map[string]any{"variants": items, "hardware": facts})
@@ -270,6 +279,12 @@ func (server *Server) runInstall(ctx context.Context, variant catalog.Variant) {
 	current.Operation.ModelPath = result.Path
 	_ = server.dependencies.Supervisor.Persist(current)
 	server.events.publish(snapshotFromState(current))
+	if server.dependencies.Verified != nil {
+		if err := server.dependencies.Verified.Record(variant, result.Path); err != nil {
+			server.failOperation(errors.New("verification state write failed"))
+			return
+		}
+	}
 	current = current.CompleteDownload()
 	_ = server.dependencies.Supervisor.Persist(current)
 	server.events.publish(snapshotFromState(current))
@@ -319,6 +334,42 @@ func (server *Server) cancelOperation(response http.ResponseWriter, _ *http.Requ
 	writeJSON(response, http.StatusAccepted, map[string]bool{"cancelled": true})
 }
 
+func (server *Server) modelOptionsYAML(response http.ResponseWriter, request *http.Request) {
+	id := request.PathValue("id")
+	if !modelIDPattern.MatchString(id) {
+		writeError(response, http.StatusBadRequest, APIError{Code: "invalid_model", Message: "Model identifier is invalid."})
+		return
+	}
+	variant, ok := server.findVariant(id)
+	if !ok {
+		writeError(response, http.StatusNotFound, APIError{Code: "model_not_found", Message: "Model was not found."})
+		return
+	}
+	if !server.isVerified(variant) {
+		writeError(response, http.StatusConflict, APIError{Code: "model_not_verified", Message: "Download and verify this model before copying its configuration."})
+		return
+	}
+	facts, err := server.dependencies.Facts()
+	if err != nil {
+		writeError(response, http.StatusServiceUnavailable, APIError{Code: "hardware_unavailable", Message: "Hardware information is unavailable.", Retryable: true})
+		return
+	}
+	assessment := hardware.Assess(variant, facts, variant.RecommendedContext, false)
+	if !assessment.Safe {
+		writeError(response, http.StatusUnprocessableEntity, APIError{Code: assessment.Code, Message: firstWarning(assessment.Warnings)})
+		return
+	}
+	body, err := optionsyaml.Render(variant, assessment.Runtime, filepath.ToSlash(filepath.Join("/data/models", variant.File)))
+	if err != nil {
+		writeError(response, http.StatusInternalServerError, APIError{Code: "options_unavailable", Message: "Model configuration could not be generated."})
+		return
+	}
+	response.Header().Set("Content-Type", "text/yaml; charset=utf-8")
+	response.Header().Set("Cache-Control", "no-store")
+	response.WriteHeader(http.StatusOK)
+	_, _ = response.Write([]byte(body))
+}
+
 func (server *Server) removeModel(response http.ResponseWriter, request *http.Request) {
 	id := request.PathValue("id")
 	if !modelIDPattern.MatchString(id) {
@@ -331,14 +382,20 @@ func (server *Server) removeModel(response http.ResponseWriter, request *http.Re
 		return
 	}
 	current := server.dependencies.Supervisor.State()
-	if (current.Active != nil && current.Active.ID == id) || (current.Fallback != nil && current.Fallback.ID == id) || (current.Operation != nil && current.Operation.VariantID == id) {
-		writeError(response, http.StatusConflict, APIError{Code: "model_protected", Message: "Active, fallback, and in-progress models cannot be removed."})
+	if (current.Active != nil && current.Active.ID == id) || (current.Operation != nil && current.Operation.VariantID == id) {
+		writeError(response, http.StatusConflict, APIError{Code: "model_protected", Message: "Running and in-progress models cannot be removed."})
 		return
 	}
 	path := filepath.Join(server.dependencies.ModelDir, variant.File)
 	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
 		writeError(response, http.StatusInternalServerError, APIError{Code: "remove_failed", Message: "The model could not be removed."})
 		return
+	}
+	if server.dependencies.Verified != nil {
+		if err := server.dependencies.Verified.Remove(id); err != nil {
+			writeError(response, http.StatusInternalServerError, APIError{Code: "remove_failed", Message: "The model verification record could not be removed."})
+			return
+		}
 	}
 	response.WriteHeader(http.StatusNoContent)
 }
@@ -494,6 +551,10 @@ func (server *Server) writeOperationError(response http.ResponseWriter, err erro
 func (server *Server) isInstalled(variant catalog.Variant) bool {
 	_, err := os.Stat(filepath.Join(server.dependencies.ModelDir, variant.File))
 	return err == nil
+}
+
+func (server *Server) isVerified(variant catalog.Variant) bool {
+	return server.dependencies.Verified != nil && server.dependencies.Verified.Has(variant)
 }
 
 func (server *Server) beginMutation(response http.ResponseWriter) bool {

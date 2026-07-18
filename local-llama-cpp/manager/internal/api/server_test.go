@@ -21,6 +21,7 @@ import (
 	"remindme.local/model-manager/internal/hardware"
 	"remindme.local/model-manager/internal/pairing"
 	"remindme.local/model-manager/internal/state"
+	"remindme.local/model-manager/internal/verified"
 )
 
 type fakeDownloader struct {
@@ -49,6 +50,9 @@ func (fake *fakeDownloader) Download(ctx context.Context, variant catalog.Varian
 		}
 	}
 	progress(download.Progress{BytesDone: variant.ExpectedBytes, BytesTotal: variant.ExpectedBytes})
+	if err := os.WriteFile(fake.path, []byte("GGUFtest"), 0o600); err != nil {
+		return download.Result{}, err
+	}
 	return download.Result{Path: fake.path, Bytes: variant.ExpectedBytes}, nil
 }
 
@@ -116,7 +120,7 @@ func testDependencies(t *testing.T, inferenceURL string) Dependencies {
 			return hardware.Facts{TotalRAM: 8 << 30, FreeRAM: 7 << 30, FreeDisk: 20 << 30, CPUCores: 4, Architecture: "arm64"}, nil
 		},
 		Downloader: &fakeDownloader{path: filepath.Join(modelDir, "test.gguf")}, Supervisor: &fakeSupervisor{},
-		ModelDir: modelDir, CredentialPath: filepath.Join(t.TempDir(), "credentials.json"),
+		ModelDir: modelDir, Verified: &verified.Store{Path: filepath.Join(t.TempDir(), "verified.json"), ModelDir: modelDir}, CredentialPath: filepath.Join(t.TempDir(), "credentials.json"),
 		CustomCatalogPath: filepath.Join(t.TempDir(), "custom.json"), InferenceURL: inferenceURL,
 	}
 }
@@ -205,6 +209,69 @@ func TestInstallDownloadsWithoutChangingRuntime(t *testing.T) {
 	}
 	if fake.current.Phase != state.PhaseIdle || fake.current.Operation != nil {
 		t.Fatalf("download did not complete cleanly: %#v", fake.current)
+	}
+}
+
+func TestOptionsYAMLRequiresVerifiedDownload(t *testing.T) {
+	dependencies := testDependencies(t, "http://127.0.0.1:1")
+	server := NewServer(dependencies)
+	request := httptest.NewRequest(http.MethodGet, "/manager/v1/models/test-q4/options.yaml", nil)
+	request.Header.Set("Authorization", "Bearer manager-secret")
+	before := httptest.NewRecorder()
+	server.ServeHTTP(before, request)
+	if before.Code != http.StatusConflict || !strings.Contains(before.Body.String(), "model_not_verified") {
+		t.Fatalf("before status=%d body=%s", before.Code, before.Body.String())
+	}
+
+	install := httptest.NewRequest(http.MethodPost, "/manager/v1/install", strings.NewReader(`{"id":"test-q4"}`))
+	install.Header.Set("Authorization", "Bearer manager-secret")
+	accepted := httptest.NewRecorder()
+	server.ServeHTTP(accepted, install)
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) && dependencies.Supervisor.State().Operation != nil {
+		time.Sleep(time.Millisecond)
+	}
+
+	catalogRequest := httptest.NewRequest(http.MethodGet, "/manager/v1/catalog", nil)
+	catalogRequest.Header.Set("Authorization", "Bearer manager-secret")
+	catalogResponse := httptest.NewRecorder()
+	server.ServeHTTP(catalogResponse, catalogRequest)
+	if !strings.Contains(catalogResponse.Body.String(), `"verified":true`) {
+		t.Fatalf("catalog=%s", catalogResponse.Body.String())
+	}
+
+	afterRequest := httptest.NewRequest(http.MethodGet, "/manager/v1/models/test-q4/options.yaml", nil)
+	afterRequest.Header.Set("Authorization", "Bearer manager-secret")
+	after := httptest.NewRecorder()
+	server.ServeHTTP(after, afterRequest)
+	if after.Code != http.StatusOK || after.Header().Get("Content-Type") != "text/yaml; charset=utf-8" {
+		t.Fatalf("after status=%d headers=%v body=%s", after.Code, after.Header(), after.Body.String())
+	}
+	for _, expected := range []string{`manager_token: ""`, `hf_token: ""`, "model_path: /data/models/test.gguf", "context_size: 4096"} {
+		if !strings.Contains(after.Body.String(), expected) {
+			t.Fatalf("yaml missing %q: %s", expected, after.Body.String())
+		}
+	}
+	if strings.Contains(after.Body.String(), "manager-secret") {
+		t.Fatal("yaml exposed manager token")
+	}
+}
+
+func TestObsoleteFallbackMetadataDoesNotBlockRemoval(t *testing.T) {
+	dependencies := testDependencies(t, "http://127.0.0.1:1")
+	path := filepath.Join(dependencies.ModelDir, "test.gguf")
+	if err := os.WriteFile(path, []byte("GGUFtest"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	fake := dependencies.Supervisor.(*fakeSupervisor)
+	fake.current = state.State{Phase: state.PhaseIdle, Fallback: &state.Installed{ID: "test-q4", Path: path}}
+	server := NewServer(dependencies)
+	request := httptest.NewRequest(http.MethodDelete, "/manager/v1/models/test-q4", nil)
+	request.Header.Set("Authorization", "Bearer manager-secret")
+	response := httptest.NewRecorder()
+	server.ServeHTTP(response, request)
+	if response.Code != http.StatusNoContent {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
 	}
 }
 

@@ -23,6 +23,7 @@ import (
 	"remindme.local/model-manager/internal/pairing"
 	managerruntime "remindme.local/model-manager/internal/runtime"
 	"remindme.local/model-manager/internal/state"
+	"remindme.local/model-manager/internal/verified"
 )
 
 type paths struct {
@@ -94,11 +95,14 @@ func main() {
 		result.RetainedModelBytes = retainedBytes(supervisor.State())
 		return result, nil
 	}
+	verificationStore := &verified.Store{
+		Path: filepath.Join(dataDirectory, "verified-models.json"), ModelDir: configured.models,
+	}
 	server := managerapi.NewServer(managerapi.Dependencies{
 		Catalog: modelCatalog,
 		Token:   pairingStore.Token,
 		Pairing: pairingStore,
-		Facts:   facts, Downloader: downloader, Supervisor: supervisor,
+		Facts:   facts, Downloader: downloader, Supervisor: supervisor, Verified: verificationStore,
 		ModelDir: configured.models, CredentialPath: credentialPath,
 		CustomCatalogPath: customCatalogPath, InferenceURL: "http://127.0.0.1:8081",
 	})
