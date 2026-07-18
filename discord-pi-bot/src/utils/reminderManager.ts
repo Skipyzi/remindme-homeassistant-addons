@@ -118,6 +118,10 @@ export function getReminders(userId: string): Reminder[] {
 		.sort((a, b) => a.time.getTime() - b.time.getTime());
 }
 
+export function getActiveReminderCount(userId: string): number {
+	return userId ? getReminders(userId).length : 0;
+}
+
 export function deleteReminder(id: string, userId: string): boolean {
 	const reminder = reminders.get(id);
 	if (!reminder || reminder.userId !== userId) return false;
