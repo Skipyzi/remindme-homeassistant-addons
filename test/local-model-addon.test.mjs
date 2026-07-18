@@ -7,7 +7,10 @@ const run = readFileSync("local-llama-cpp/run.sh", "utf8");
 const config = readFileSync("local-llama-cpp/config.yaml", "utf8");
 const remindMeConfig = readFileSync("discord-pi-bot/config.yaml", "utf8");
 const remindMeRun = readFileSync("discord-pi-bot/run.sh", "utf8");
-const remindMeServer = readFileSync("discord-pi-bot/src/harness-server.ts", "utf8");
+const remindMeServer = readFileSync(
+	"discord-pi-bot/src/harness-server.ts",
+	"utf8",
+);
 const managerMain = readFileSync(
 	"local-llama-cpp/manager/cmd/model-manager/main.go",
 	"utf8",
@@ -49,10 +52,16 @@ test("release packages secure direct pairing without sibling privileges", () => 
 	assert.doesNotMatch(remindMeConfig, /hassio_role:\s*(manager|admin)/);
 	assert.doesNotMatch(remindMeServer, /\/addons\/\$\{.*\}\/options/);
 	assert.doesNotMatch(remindMeServer, /\/addons\/self\/options\/validate/);
-	assert.doesNotMatch(remindMeServer, /\/api\/settings|\/addons\/self\/restart/);
+	assert.doesNotMatch(
+		remindMeServer,
+		/\/api\/settings|\/addons\/self\/restart/,
+	);
 	assert.doesNotMatch(managerServer, /POST \/manager\/v1\/activate/);
 	assert.doesNotMatch(modelComponent, /api\/models\/activate/);
-	assert.match(remindMeRun, /MODEL_MANAGER_TOKEN_PATH=\/data\/model-manager-token/);
+	assert.match(
+		remindMeRun,
+		/MODEL_MANAGER_TOKEN_PATH=\/data\/model-manager-token/,
+	);
 	assert.match(
 		remindMeRun,
 		/PRESENCE_UPTIME_PATH=\/data\/presence-uptime\.json/,
@@ -85,7 +94,10 @@ test("legacy manager token is migration-only and pairing is documented", () => {
 
 test("RemindMe documents persistent lifetime presence uptime", () => {
 	assert.match(remindMeReadme, /cumulative.*uptime|uptime.*cumulative/i);
-	assert.match(remindMeReadme, /lifetime.*availability|availability.*lifetime/i);
+	assert.match(
+		remindMeReadme,
+		/lifetime.*availability|availability.*lifetime/i,
+	);
 	assert.match(remindMeReadme, /stopped.*downtime|downtime.*stopped/i);
 	assert.match(remindMeReadme, /presence-uptime\.json/);
 	assert.match(remindMeReadme, /Gateway presence/i);
@@ -95,12 +107,18 @@ test("RemindMe documents persistent lifetime presence uptime", () => {
 
 test("manual model workflow is documented", () => {
 	for (const readme of [remindMeReadme, llamaReadme]) {
-		assert.match(readme, /download.*does not.*running model|running model.*does not.*download/i);
+		assert.match(
+			readme,
+			/download.*does not.*running model|running model.*does not.*download/i,
+		);
 		assert.match(readme, /Copy.*YAML|YAML.*copy/i);
 		assert.match(readme, /Configuration/i);
 		assert.match(readme, /restart.*llama\.cpp|llama\.cpp.*restart/i);
 	}
-	assert.match(llamaReadme, /model_path.*authoritative|authoritative.*model_path/i);
+	assert.match(
+		llamaReadme,
+		/model_path.*authoritative|authoritative.*model_path/i,
+	);
 	assert.match(remindMeReadme, /runtime.*model|model.*runtime/i);
 });
 

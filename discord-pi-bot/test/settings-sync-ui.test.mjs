@@ -29,7 +29,11 @@ test("settings contains only local harness preferences", () => {
 		app,
 		/api\/settings|settingsRevision|settingsChanges|saveSettings|restartSettingsAddon/,
 	);
-	for (const key of ["remindme.profile", "remindme.glow", "remindme.scanlines"]) {
+	for (const key of [
+		"remindme.profile",
+		"remindme.glow",
+		"remindme.scanlines",
+	]) {
 		assert.match(app, new RegExp(`localStorage\\.setItem\\(\\"${key}`), key);
 	}
 });

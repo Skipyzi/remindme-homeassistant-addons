@@ -424,217 +424,213 @@
         <section class="settings-card" @click.outside="modelsOpen=false">
           <div class="kicker">Model workbench</div>
           <h2>Local model vault</h2>
-            <div
-              class="model-catalog"
-              data-model-catalog
-              x-show="modelManagerEnabled"
+          <div
+            class="model-catalog"
+            data-model-catalog
+            x-show="modelManagerEnabled"
+          >
+            <header class="model-catalog-head">
+              <div>
+                <div class="kicker">Local model vault</div>
+                <b
+                  x-text="modelStatus?.state?.active?.id ? `Active // ${modelStatus.state.active.id}` : 'No active managed model'"
+                ></b>
+                <small
+                  x-show="modelStatus?.state?.fallback?.id"
+                  x-text="`Fallback // ${modelStatus?.state?.fallback?.id}`"
+                ></small>
+              </div>
+              <button class="ghost" @click="reloadModels()">Refresh</button>
+            </header>
+            <form
+              class="model-pairing"
+              x-show="!modelPairingConfigured"
+              @submit.prevent="pairModelManager()"
             >
-              <header class="model-catalog-head">
-                <div>
-                  <div class="kicker">Local model vault</div>
-                  <b
-                    x-text="modelStatus?.state?.active?.id ? `Active // ${modelStatus.state.active.id}` : 'No active managed model'"
-                  ></b>
-                  <small
-                    x-show="modelStatus?.state?.fallback?.id"
-                    x-text="`Fallback // ${modelStatus?.state?.fallback?.id}`"
-                  ></small>
-                </div>
-                <button class="ghost" @click="reloadModels()">Refresh</button>
-              </header>
-              <form
-                class="model-pairing"
-                x-show="!modelPairingConfigured"
-                @submit.prevent="pairModelManager()"
-              >
-                <b>Direct manager pairing required</b>
-                <p>
-                  Open the llama.cpp add-on log and enter its six-character
-                  code. The code expires and can only be used once.
-                </p>
-                <label
-                  >Six-character code
-                  <input
-                    x-model="pairingCode"
-                    inputmode="text"
-                    maxlength="6"
-                    autocomplete="one-time-code"
-                    spellcheck="false"
-                    placeholder="ABC234"
-                  />
-                </label>
-                <button class="action" type="submit" :disabled="pairingBusy">
-                  <span
-                    x-text="pairingBusy ? 'Pairing…' : 'Pair manager'"
-                  ></span>
-                </button>
-              </form>
-              <div
-                class="model-operation"
-                aria-live="polite"
-                x-show="modelOperation?.phase && modelOperation.phase!=='idle'"
-              >
-                <div>
-                  <b
-                    x-text="(modelOperation?.phase || '').replaceAll('_',' ')"
-                  ></b>
-                  <span
-                    x-text="modelOperation?.bytesTotal ? `${formatModelBytes(modelOperation.bytesDone)} / ${formatModelBytes(modelOperation.bytesTotal)}` : modelOperation?.variantId || ''"
-                  ></span>
-                </div>
-                <div class="model-progress">
-                  <i :style="`width:${modelProgressPercent()}%`"></i>
-                </div>
-                <button
-                  class="ghost"
-                  x-show="modelOperation?.phase==='downloading'"
-                  @click="cancelModelOperation()"
-                >
-                  Cancel download
-                </button>
+              <b>Direct manager pairing required</b>
+              <p>
+                Open the llama.cpp add-on log and enter its six-character code.
+                The code expires and can only be used once.
+              </p>
+              <label
+                >Six-character code
+                <input
+                  x-model="pairingCode"
+                  inputmode="text"
+                  maxlength="6"
+                  autocomplete="one-time-code"
+                  spellcheck="false"
+                  placeholder="ABC234"
+                />
+              </label>
+              <button class="action" type="submit" :disabled="pairingBusy">
+                <span x-text="pairingBusy ? 'Pairing…' : 'Pair manager'"></span>
+              </button>
+            </form>
+            <div
+              class="model-operation"
+              aria-live="polite"
+              x-show="modelOperation?.phase && modelOperation.phase!=='idle'"
+            >
+              <div>
+                <b
+                  x-text="(modelOperation?.phase || '').replaceAll('_',' ')"
+                ></b>
+                <span
+                  x-text="modelOperation?.bytesTotal ? `${formatModelBytes(modelOperation.bytesDone)} / ${formatModelBytes(modelOperation.bytesTotal)}` : modelOperation?.variantId || ''"
+                ></span>
               </div>
-              <p
-                class="model-error"
-                role="alert"
-                x-show="modelError"
-                x-text="modelError"
-              ></p>
-              <div class="model-grid" x-show="modelPairingConfigured">
-                <template
-                  x-for="variant in modelCatalog"
-                  :key="variant.model.id"
-                  ><article
-                    class="model-card"
-                    :class="{active:variant.active,unsafe:!variant.assessment?.safe}"
-                  >
-                    <header>
-                      <div>
-                        <b x-text="variant.model.family"></b>
-                        <small
-                          x-text="`${variant.model.quantization} · ${variant.model.source}`"
-                        ></small>
-                      </div>
-                      <em
-                        :class="variant.model.tier"
-                        x-text="variant.active ? 'Running' : variant.verified ? 'Verified' : modelOperation?.variantId===variant.model.id ? 'Downloading' : 'Available'"
-                      ></em>
-                    </header>
-                    <div class="model-capabilities">
-                      <template
-                        x-for="capability in variant.model.capabilities"
-                        :key="capability"
-                        ><span x-text="capability"></span
-                      ></template>
-                    </div>
-                    <dl>
-                      <div>
-                        <dt>Download</dt>
-                        <dd
-                          x-text="formatModelBytes(variant.model.expectedBytes)"
-                        ></dd>
-                      </div>
-                      <div>
-                        <dt>Memory est.</dt>
-                        <dd
-                          x-text="formatModelBytes(variant.assessment?.requiredRAM)"
-                        ></dd>
-                      </div>
-                      <div>
-                        <dt>Context</dt>
-                        <dd
-                          x-text="variant.assessment?.runtime?.context || variant.model.recommendedContext"
-                        ></dd>
-                      </div>
-                      <div>
-                        <dt>Fit</dt>
-                        <dd
-                          x-text="variant.assessment?.safe ? `${variant.assessment.score}/100` : variant.assessment?.code"
-                        ></dd>
-                      </div>
-                    </dl>
-                    <p
-                      x-show="variant.assessment?.warnings?.length"
-                      x-text="variant.assessment?.warnings?.[0]"
-                    ></p>
-                    <div class="model-actions">
-                      <button
-                        class="action"
-                        x-show="!variant.verified"
-                        :disabled="modelOperationBusy || !variant.assessment?.safe"
-                        @click="downloadModel(variant.model.id)"
-                      >
-                        Download
-                      </button>
-                      <button
-                        class="action"
-                        x-show="variant.verified"
-                        @click="copyModelYaml(variant.model.id)"
-                      >
-                        Copy complete YAML
-                      </button>
-                      <button
-                        class="ghost"
-                        x-show="variant.verified"
-                        @click="downloadModelYaml(variant.model.id)"
-                      >
-                        Download YAML
-                      </button>
-                      <button
-                        class="ghost"
-                        x-show="variant.installed && !variant.active"
-                        :disabled="modelOperationBusy"
-                        @click="removeModel(variant.model.id)"
-                      >
-                        Remove
-                      </button>
-                    </div>
-                  </article></template
-                >
+              <div class="model-progress">
+                <i :style="`width:${modelProgressPercent()}%`"></i>
               </div>
-              <section class="model-yaml" x-show="modelPairingConfigured">
-                <div class="kicker">Manual activation</div>
-                <h3>Native Configuration remains authoritative</h3>
-                <p>
-                  Downloading never changes the running model. After verification,
-                  copy the complete YAML, open the llama.cpp add-on
-                  <b>Configuration</b> YAML editor, replace the options, save, and
-                  restart the llama.cpp add-on.
-                </p>
-                <p class="micro" aria-live="polite" x-text="modelYamlMessage"></p>
-                <pre x-show="modelYaml" x-text="modelYaml"></pre>
-              </section>
-              <details class="model-advanced" x-show="modelPairingConfigured">
-                <summary>Hugging Face access and custom GGUF</summary>
-                <div class="model-advanced-grid">
-                  <label
-                    >Hugging Face token
-                    <input
-                      x-model="hfToken"
-                      type="password"
-                      autocomplete="off"
-                      placeholder="hf_…"
-                  /></label>
-                  <button class="action" @click="saveModelToken()">
-                    Save token server-side
-                  </button>
-                  <label
-                    >Custom repository
-                    <input
-                      x-model="customModel.repo"
-                      placeholder="owner/repository"
-                  /></label>
-                  <label
-                    >Exact GGUF filename
-                    <input
-                      x-model="customModel.file"
-                      placeholder="model-Q4_K_M.gguf"
-                  /></label>
-                  <button class="action" @click="saveCustomModel()">
-                    Add unverified model
-                  </button>
-                </div>
-              </details>
+              <button
+                class="ghost"
+                x-show="modelOperation?.phase==='downloading'"
+                @click="cancelModelOperation()"
+              >
+                Cancel download
+              </button>
             </div>
+            <p
+              class="model-error"
+              role="alert"
+              x-show="modelError"
+              x-text="modelError"
+            ></p>
+            <div class="model-grid" x-show="modelPairingConfigured">
+              <template x-for="variant in modelCatalog" :key="variant.model.id"
+                ><article
+                  class="model-card"
+                  :class="{active:variant.active,unsafe:!variant.assessment?.safe}"
+                >
+                  <header>
+                    <div>
+                      <b x-text="variant.model.family"></b>
+                      <small
+                        x-text="`${variant.model.quantization} · ${variant.model.source}`"
+                      ></small>
+                    </div>
+                    <em
+                      :class="variant.model.tier"
+                      x-text="variant.active ? 'Running' : variant.verified ? 'Verified' : modelOperation?.variantId===variant.model.id ? 'Downloading' : 'Available'"
+                    ></em>
+                  </header>
+                  <div class="model-capabilities">
+                    <template
+                      x-for="capability in variant.model.capabilities"
+                      :key="capability"
+                      ><span x-text="capability"></span
+                    ></template>
+                  </div>
+                  <dl>
+                    <div>
+                      <dt>Download</dt>
+                      <dd
+                        x-text="formatModelBytes(variant.model.expectedBytes)"
+                      ></dd>
+                    </div>
+                    <div>
+                      <dt>Memory est.</dt>
+                      <dd
+                        x-text="formatModelBytes(variant.assessment?.requiredRAM)"
+                      ></dd>
+                    </div>
+                    <div>
+                      <dt>Context</dt>
+                      <dd
+                        x-text="variant.assessment?.runtime?.context || variant.model.recommendedContext"
+                      ></dd>
+                    </div>
+                    <div>
+                      <dt>Fit</dt>
+                      <dd
+                        x-text="variant.assessment?.safe ? `${variant.assessment.score}/100` : variant.assessment?.code"
+                      ></dd>
+                    </div>
+                  </dl>
+                  <p
+                    x-show="variant.assessment?.warnings?.length"
+                    x-text="variant.assessment?.warnings?.[0]"
+                  ></p>
+                  <div class="model-actions">
+                    <button
+                      class="action"
+                      x-show="!variant.verified"
+                      :disabled="modelOperationBusy || !variant.assessment?.safe"
+                      @click="downloadModel(variant.model.id)"
+                    >
+                      Download
+                    </button>
+                    <button
+                      class="action"
+                      x-show="variant.verified"
+                      @click="copyModelYaml(variant.model.id)"
+                    >
+                      Copy complete YAML
+                    </button>
+                    <button
+                      class="ghost"
+                      x-show="variant.verified"
+                      @click="downloadModelYaml(variant.model.id)"
+                    >
+                      Download YAML
+                    </button>
+                    <button
+                      class="ghost"
+                      x-show="variant.installed && !variant.active"
+                      :disabled="modelOperationBusy"
+                      @click="removeModel(variant.model.id)"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                </article></template
+              >
+            </div>
+            <section class="model-yaml" x-show="modelPairingConfigured">
+              <div class="kicker">Manual activation</div>
+              <h3>Native Configuration remains authoritative</h3>
+              <p>
+                Downloading never changes the running model. After verification,
+                copy the complete YAML, open the llama.cpp add-on
+                <b>Configuration</b> YAML editor, replace the options, save, and
+                restart the llama.cpp add-on.
+              </p>
+              <p class="micro" aria-live="polite" x-text="modelYamlMessage"></p>
+              <pre x-show="modelYaml" x-text="modelYaml"></pre>
+            </section>
+            <details class="model-advanced" x-show="modelPairingConfigured">
+              <summary>Hugging Face access and custom GGUF</summary>
+              <div class="model-advanced-grid">
+                <label
+                  >Hugging Face token
+                  <input
+                    x-model="hfToken"
+                    type="password"
+                    autocomplete="off"
+                    placeholder="hf_…"
+                /></label>
+                <button class="action" @click="saveModelToken()">
+                  Save token server-side
+                </button>
+                <label
+                  >Custom repository
+                  <input
+                    x-model="customModel.repo"
+                    placeholder="owner/repository"
+                /></label>
+                <label
+                  >Exact GGUF filename
+                  <input
+                    x-model="customModel.file"
+                    placeholder="model-Q4_K_M.gguf"
+                /></label>
+                <button class="action" @click="saveCustomModel()">
+                  Add unverified model
+                </button>
+              </div>
+            </details>
+          </div>
           <div class="settings-actions">
             <button class="send" @click="modelsOpen=false">Close</button>
           </div>

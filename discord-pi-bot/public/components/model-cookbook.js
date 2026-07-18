@@ -36,7 +36,9 @@ window.RemindMeModelCookbook = {
 	async load(vm) {
 		vm.modelError = "";
 		try {
-			const pairing = await fetch("./api/models/pairing").then(readModelResponse);
+			const pairing = await fetch("./api/models/pairing").then(
+				readModelResponse,
+			);
 			vm.modelPairingConfigured = pairing.configured === true;
 			if (!vm.modelPairingConfigured) return;
 			await Promise.all([this.loadCatalog(vm), this.loadStatus(vm)]);
@@ -49,7 +51,8 @@ window.RemindMeModelCookbook = {
 	async pair(vm) {
 		const code = vm.pairingCode.trim().toUpperCase();
 		if (!/^[A-HJ-NP-Z2-9]{6}$/.test(code)) {
-			vm.modelError = "Enter the six-character code shown by the llama.cpp add-on.";
+			vm.modelError =
+				"Enter the six-character code shown by the llama.cpp add-on.";
 			return;
 		}
 		vm.pairingBusy = true;
@@ -93,7 +96,11 @@ window.RemindMeModelCookbook = {
 				vm.modelError = "Model progress returned malformed data.";
 				return;
 			}
-			if (["idle", "active", "failed", "degraded"].includes(vm.modelOperation.phase)) {
+			if (
+				["idle", "active", "failed", "degraded"].includes(
+					vm.modelOperation.phase,
+				)
+			) {
 				this.loadStatus(vm).catch(() => {});
 				this.loadCatalog(vm).catch(() => {});
 			}
@@ -154,18 +161,24 @@ window.RemindMeModelCookbook = {
 		try {
 			const yaml = await this.loadYaml(vm, id);
 			if (!navigator.clipboard?.writeText)
-				throw new Error("Clipboard access was denied. Use Download YAML instead.");
+				throw new Error(
+					"Clipboard access was denied. Use Download YAML instead.",
+				);
 			await navigator.clipboard.writeText(yaml);
-			vm.modelYamlMessage = "Copied. Paste into the llama.cpp add-on Configuration, save, and restart the llama.cpp add-on.";
+			vm.modelYamlMessage =
+				"Copied. Paste into the llama.cpp add-on Configuration, save, and restart the llama.cpp add-on.";
 		} catch (error) {
-			vm.modelError = error.message || "Clipboard access was denied. Use Download YAML instead.";
+			vm.modelError =
+				error.message ||
+				"Clipboard access was denied. Use Download YAML instead.";
 		}
 	},
 
 	async downloadYaml(vm, id) {
 		vm.modelError = "";
 		try {
-			const yaml = vm.modelYamlId === id ? vm.modelYaml : await this.loadYaml(vm, id);
+			const yaml =
+				vm.modelYamlId === id ? vm.modelYaml : await this.loadYaml(vm, id);
 			const blob = new Blob([yaml], { type: "text/yaml;charset=utf-8" });
 			const url = URL.createObjectURL(blob);
 			const anchor = document.createElement("a");
@@ -173,7 +186,8 @@ window.RemindMeModelCookbook = {
 			anchor.download = `${id}-options.yaml`;
 			anchor.click();
 			URL.revokeObjectURL(url);
-			vm.modelYamlMessage = "Downloaded YAML. Paste it into the llama.cpp add-on Configuration, save, and restart the llama.cpp add-on.";
+			vm.modelYamlMessage =
+				"Downloaded YAML. Paste it into the llama.cpp add-on Configuration, save, and restart the llama.cpp add-on.";
 		} catch (error) {
 			vm.modelError = error.message || "Model configuration download failed.";
 		}

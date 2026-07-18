@@ -172,7 +172,9 @@ export class ModelManagerClient {
 		return body as T;
 	}
 
-	async requestText(path: string): Promise<{ body: string; contentType: string }> {
+	async requestText(
+		path: string,
+	): Promise<{ body: string; contentType: string }> {
 		if (!path.startsWith("/")) throw new Error("Manager path must be absolute");
 		const token = await this.token();
 		let response: Response;
@@ -206,7 +208,8 @@ export class ModelManagerClient {
 		}
 		return {
 			body,
-			contentType: response.headers.get("content-type") || "text/plain; charset=utf-8",
+			contentType:
+				response.headers.get("content-type") || "text/plain; charset=utf-8",
 		};
 	}
 

@@ -51,11 +51,17 @@ test("model manager routes proxy safely", async (context) => {
 		if (url === "http://homeassistant:8080/manager/v1/status") {
 			return Response.json({ activeModel: managerActiveModel });
 		}
-		if (url === "http://homeassistant:8080/manager/v1/models/qwen3-4b-q4/options.yaml") {
+		if (
+			url ===
+			"http://homeassistant:8080/manager/v1/models/qwen3-4b-q4/options.yaml"
+		) {
 			yamlAuthorization = new Headers(init?.headers).get("authorization") || "";
-			return new Response('model_path: /data/models/qwen.gguf\nhf_token: ""\n', {
-				headers: { "content-type": "text/yaml; charset=utf-8" },
-			});
+			return new Response(
+				'model_path: /data/models/qwen.gguf\nhf_token: ""\n',
+				{
+					headers: { "content-type": "text/yaml; charset=utf-8" },
+				},
+			);
 		}
 		if (
 			url === "http://homeassistant:8080/manager/v1/credentials/huggingface"
@@ -86,20 +92,23 @@ test("model manager routes proxy safely", async (context) => {
 		globalThis.fetch = nativeFetch;
 	});
 
-	await context.test("starts unpaired and rejects invalid local codes", async () => {
-		const before = await nativeFetch(`${baseUrl}/api/models/pairing`);
-		assert.deepEqual(await before.json(), { configured: false });
-		const catalog = await nativeFetch(`${baseUrl}/api/models`);
-		assert.equal(catalog.status, 401);
-		assert.equal((await catalog.json()).code, "manager_unpaired");
-		const invalid = await nativeFetch(`${baseUrl}/api/models/pair`, {
-			method: "POST",
-			headers: { "content-type": "application/json" },
-			body: JSON.stringify({ code: "wrong" }),
-		});
-		assert.equal(invalid.status, 400);
-		assert.equal((await invalid.json()).code, "invalid_request");
-	});
+	await context.test(
+		"starts unpaired and rejects invalid local codes",
+		async () => {
+			const before = await nativeFetch(`${baseUrl}/api/models/pairing`);
+			assert.deepEqual(await before.json(), { configured: false });
+			const catalog = await nativeFetch(`${baseUrl}/api/models`);
+			assert.equal(catalog.status, 401);
+			assert.equal((await catalog.json()).code, "manager_unpaired");
+			const invalid = await nativeFetch(`${baseUrl}/api/models/pair`, {
+				method: "POST",
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify({ code: "wrong" }),
+			});
+			assert.equal(invalid.status, 400);
+			assert.equal((await invalid.json()).code, "invalid_request");
+		},
+	);
 
 	await context.test("pairs directly without Supervisor mutation", async () => {
 		const response = await nativeFetch(`${baseUrl}/api/models/pair`, {
@@ -126,11 +135,22 @@ test("model manager routes proxy safely", async (context) => {
 	);
 
 	await context.test("YAML proxy preserves exact safe text", async () => {
-		const response = await nativeFetch(`${baseUrl}/api/models/qwen3-4b-q4/options.yaml`);
+		const response = await nativeFetch(
+			`${baseUrl}/api/models/qwen3-4b-q4/options.yaml`,
+		);
 		assert.equal(response.status, 200);
-		assert.equal(response.headers.get("content-type"), "text/yaml; charset=utf-8");
-		assert.equal(response.headers.get("content-disposition"), 'attachment; filename="qwen3-4b-q4-options.yaml"');
-		assert.equal(await response.text(), 'model_path: /data/models/qwen.gguf\nhf_token: ""\n');
+		assert.equal(
+			response.headers.get("content-type"),
+			"text/yaml; charset=utf-8",
+		);
+		assert.equal(
+			response.headers.get("content-disposition"),
+			'attachment; filename="qwen3-4b-q4-options.yaml"',
+		);
+		assert.equal(
+			await response.text(),
+			'model_path: /data/models/qwen.gguf\nhf_token: ""\n',
+		);
 		assert.equal(yamlAuthorization, `Bearer ${pairedToken}`);
 	});
 
@@ -157,23 +177,30 @@ test("model manager routes proxy safely", async (context) => {
 		},
 	);
 
-	await context.test("runtime status is the only active model authority", async () => {
-		process.env.LOCAL_LLM_MODEL = "stale-configured-model";
-		managerActiveModel = undefined;
-		const unavailable = await nativeFetch(`${baseUrl}/api/status`).then((response) => response.json());
-		assert.equal(unavailable.model, "runtime-unavailable");
-		assert.equal(unavailable.modelName, "Runtime unavailable");
-		managerActiveModel = {
-			id: "qwen3-4b-q4",
-			family: "Qwen3 4B",
-			quantization: "Q4_K_M",
-			recommendedContext: 8192,
-			capabilities: ["chat", "tools"],
-		};
-		const running = await nativeFetch(`${baseUrl}/api/status`).then((response) => response.json());
-		assert.equal(running.model, "qwen3-4b-q4");
-		assert.equal(running.modelName, "Qwen3 4B Q4_K_M");
-	});
+	await context.test(
+		"runtime status is the only active model authority",
+		async () => {
+			process.env.LOCAL_LLM_MODEL = "stale-configured-model";
+			managerActiveModel = undefined;
+			const unavailable = await nativeFetch(`${baseUrl}/api/status`).then(
+				(response) => response.json(),
+			);
+			assert.equal(unavailable.model, "runtime-unavailable");
+			assert.equal(unavailable.modelName, "Runtime unavailable");
+			managerActiveModel = {
+				id: "qwen3-4b-q4",
+				family: "Qwen3 4B",
+				quantization: "Q4_K_M",
+				recommendedContext: 8192,
+				capabilities: ["chat", "tools"],
+			};
+			const running = await nativeFetch(`${baseUrl}/api/status`).then(
+				(response) => response.json(),
+			);
+			assert.equal(running.model, "qwen3-4b-q4");
+			assert.equal(running.modelName, "Qwen3 4B Q4_K_M");
+		},
+	);
 
 	await context.test("Supervisor settings routes are absent", async () => {
 		for (const [path, method] of [

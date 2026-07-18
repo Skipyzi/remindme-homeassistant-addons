@@ -407,6 +407,5 @@ function harness() {
 		modelProgressPercent() {
 			return window.RemindMeModelCookbook.progressPercent(this.modelOperation);
 		},
-
 	};
 }

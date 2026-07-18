@@ -1290,7 +1290,11 @@ textarea::-webkit-scrollbar-thumb {
 	display: grid;
 	gap: 10px;
 	border: 1px solid var(--oxidized-brass);
-	background: linear-gradient(135deg, rgba(112, 66, 27, 0.2), rgba(9, 11, 13, 0.68));
+	background: linear-gradient(
+		135deg,
+		rgba(112, 66, 27, 0.2),
+		rgba(9, 11, 13, 0.68)
+	);
 	padding: 14px;
 }
 .model-pairing p {
@@ -1302,7 +1306,10 @@ textarea::-webkit-scrollbar-thumb {
 	gap: 5px;
 	max-width: 18rem;
 	color: var(--casino-amber);
-	font: 10px ui-monospace, Consolas, monospace;
+	font:
+		10px ui-monospace,
+		Consolas,
+		monospace;
 	letter-spacing: 0.08em;
 	text-transform: uppercase;
 }
@@ -1447,7 +1454,10 @@ textarea::-webkit-scrollbar-thumb {
 	background: var(--ink);
 	padding: 12px;
 	color: var(--text);
-	font: 10px ui-monospace, Consolas, monospace;
+	font:
+		10px ui-monospace,
+		Consolas,
+		monospace;
 }
 .model-advanced-grid {
 	display: grid;
