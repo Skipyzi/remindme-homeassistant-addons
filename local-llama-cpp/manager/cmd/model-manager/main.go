@@ -301,15 +301,21 @@ func retainedBytes(current state.State) int64 {
 
 func saveCredentials(path, token string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return err
+		return fmt.Errorf("create credential directory: %w", err)
 	}
-	data, _ := json.Marshal(map[string]string{"huggingFaceToken": token})
+	data, err := json.Marshal(map[string]string{"huggingFaceToken": token})
+	if err != nil {
+		return fmt.Errorf("encode credentials: %w", err)
+	}
 	temporary := path + ".tmp"
 	if err := os.WriteFile(temporary, data, 0o600); err != nil {
-		return err
+		return fmt.Errorf("write credentials: %w", err)
 	}
 	if err := os.Chmod(temporary, 0o600); err != nil {
-		return err
+		return fmt.Errorf("protect credential permissions: %w", err)
 	}
-	return os.Rename(temporary, path)
+	if err := os.Rename(temporary, path); err != nil {
+		return fmt.Errorf("commit credentials: %w", err)
+	}
+	return nil
 }

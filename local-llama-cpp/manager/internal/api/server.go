@@ -324,8 +324,8 @@ func (server *Server) modelOptionsYAML(response http.ResponseWriter, request *ht
 		writeError(response, http.StatusUnprocessableEntity, APIError{Code: assessment.Code, Message: firstWarning(assessment.Warnings)})
 		return
 	}
-	body, err := optionsyaml.Render(variant, assessment.Runtime, filepath.ToSlash(filepath.Join("/data/models", variant.File)))
-	if err != nil {
+	body, renderErr := optionsyaml.Render(variant, assessment.Runtime, filepath.ToSlash(filepath.Join("/data/models", variant.File)))
+	if renderErr != nil {
 		writeError(response, http.StatusInternalServerError, APIError{Code: "options_unavailable", Message: "Model configuration could not be generated."})
 		return
 	}
@@ -603,20 +603,23 @@ func decodeJSON(response http.ResponseWriter, request *http.Request, destination
 func saveProtectedJSON(path string, value any) error {
 	data, err := json.Marshal(value)
 	if err != nil {
-		return err
+		return fmt.Errorf("encode protected JSON: %w", err)
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return err
+		return fmt.Errorf("create protected JSON directory: %w", err)
 	}
 	temporary := path + ".tmp"
 	if err := os.WriteFile(temporary, data, 0o600); err != nil {
-		return err
+		return fmt.Errorf("write protected JSON: %w", err)
 	}
 	if err := os.Chmod(temporary, 0o600); err != nil {
 		_ = os.Remove(temporary)
-		return err
+		return fmt.Errorf("protect JSON permissions: %w", err)
 	}
-	return os.Rename(temporary, path)
+	if err := os.Rename(temporary, path); err != nil {
+		return fmt.Errorf("commit protected JSON: %w", err)
+	}
+	return nil
 }
 
 func snapshotFromState(current state.State) OperationSnapshot {
