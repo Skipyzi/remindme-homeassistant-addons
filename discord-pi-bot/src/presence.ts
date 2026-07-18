@@ -4,6 +4,7 @@ import {
 	PresenceUptimeTracker,
 	type UptimeSnapshot,
 } from "./presenceUptime";
+import { getActiveReminderCount } from "./utils/reminderManager";
 
 const CHECK_INTERVAL_MS = 60_000;
 let bridgeUrl: URL | undefined;
@@ -42,6 +43,7 @@ interface UptimeTrackerLike {
 interface PresenceMonitorDependencies {
 	tracker?: UptimeTrackerLike;
 	reachable?: () => Promise<boolean>;
+	reminderCount?: () => number | Promise<number>;
 	schedule?: (callback: () => void, intervalMs: number) => NodeJS.Timeout;
 }
 
@@ -55,32 +57,48 @@ export function formatPresenceDuration(totalOnlineMs: number): string {
 	return `${minutes}m`;
 }
 
-export function formatPresenceState(
+export function formatPresenceActivity(
 	connected: boolean,
 	snapshot: UptimeSnapshot,
-): string {
-	const availability = Math.min(
-		100,
-		Math.max(0, snapshot.availabilityPercent),
-	).toFixed(2);
-	const connectivity = connected ? "Pi connected" : "Pi offline";
-	return `${connectivity} • Up ${formatPresenceDuration(snapshot.totalOnlineMs)} • ${availability}% • !help`;
+	reminderCount: number,
+): { name: string; state: string } {
+	const rawAvailability = Number.isFinite(snapshot.availabilityPercent)
+		? snapshot.availabilityPercent
+		: 0;
+	const availability = Math.min(100, Math.max(0, rawAvailability)).toFixed(2);
+	const count = Number.isFinite(reminderCount)
+		? Math.max(0, Math.floor(reminderCount))
+		: 0;
+	return {
+		name: `RemindMe • ${connected ? "Pi connected" : "Pi offline"}`,
+		state: `Up ${formatPresenceDuration(snapshot.totalOnlineMs)} • ${availability}% • ${count} ${count === 1 ? "reminder" : "reminders"}`,
+	};
 }
 
 export async function updatePresence(
 	client: Client,
 	snapshot: UptimeSnapshot,
 	reachable: () => Promise<boolean> = piAgentIsReachable,
+	reminderCount: () => number | Promise<number> = () => {
+		const ownerId = process.env.OWNER_ID || "";
+		return ownerId ? getActiveReminderCount(ownerId) : 0;
+	},
 ): Promise<void> {
 	const connected = await reachable();
-	const state = formatPresenceState(connected, snapshot);
+	let count = 0;
+	try {
+		count = await reminderCount();
+	} catch {
+		console.error("Presence reminder count failed; using zero.");
+	}
+	const activity = formatPresenceActivity(connected, snapshot, count);
 	client.user?.setPresence({
 		status: connected ? "online" : "idle",
 		activities: [
 			{
-				name: state,
+				name: activity.name,
 				type: ActivityType.Watching,
-				state,
+				state: activity.state,
 			},
 		],
 	});
@@ -110,6 +128,7 @@ export async function startPresenceMonitor(
 			},
 		);
 	const reachable = dependencies.reachable || piAgentIsReachable;
+	const reminderCount = dependencies.reminderCount;
 	const schedule = dependencies.schedule || setInterval;
 	let running = false;
 
@@ -126,7 +145,7 @@ export async function startPresenceMonitor(
 					snapshot = processUptimeSnapshot();
 				}
 			}
-			await updatePresence(client, snapshot, reachable);
+			await updatePresence(client, snapshot, reachable, reminderCount);
 		} finally {
 			running = false;
 		}

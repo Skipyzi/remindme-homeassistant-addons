@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { Client } from "discord.js";
 import {
+	formatPresenceActivity,
 	formatPresenceDuration,
-	formatPresenceState,
 	startPresenceMonitor,
 	updatePresence,
 } from "../src/presence.ts";
@@ -34,15 +34,27 @@ test("formats concise uptime durations", () => {
 	);
 });
 
-test("formats connected and offline lifetime availability", () => {
-	const connected = formatPresenceState(true, snapshot);
-	const offline = formatPresenceState(false, {
-		...snapshot,
-		availabilityPercent: 120,
+test("formats health name and bot metrics state", () => {
+	const connected = formatPresenceActivity(true, snapshot, 1);
+	const offline = formatPresenceActivity(
+		false,
+		{ ...snapshot, availabilityPercent: 120 },
+		3,
+	);
+	const invalid = formatPresenceActivity(true, snapshot, Number.NaN);
+	assert.deepEqual(connected, {
+		name: "RemindMe • Pi connected",
+		state: "Up 12d 4h • 99.99% • 1 reminder",
 	});
-	assert.equal(connected, "Pi connected • Up 12d 4h • 99.99% • !help");
-	assert.equal(offline, "Pi offline • Up 12d 4h • 100.00% • !help");
-	assert.equal(connected.length < 128 && offline.length < 128, true);
+	assert.deepEqual(offline, {
+		name: "RemindMe • Pi offline",
+		state: "Up 12d 4h • 100.00% • 3 reminders",
+	});
+	assert.match(invalid.state, /0 reminders$/);
+	for (const activity of [connected, offline, invalid]) {
+		assert.equal(activity.name.length < 128, true);
+		assert.equal(activity.state.length < 128, true);
+	}
 });
 
 test("reachability still controls Discord status", async () => {
@@ -51,15 +63,18 @@ test("reachability still controls Discord status", async () => {
 		fakeClient(calls),
 		snapshot,
 		async () => true,
+		() => 2,
 	);
 	assert.equal(calls[0].status, "online");
-	assert.match(JSON.stringify(calls[0]), /99\.99%/);
+	assert.match(JSON.stringify(calls[0]), /RemindMe • Pi connected/);
+	assert.match(JSON.stringify(calls[0]), /2 reminders/);
 });
 
 test("presence monitor serializes slow heartbeat ticks", async () => {
 	const calls: unknown[] = [];
 	let scheduled: (() => void) | undefined;
 	let sampleCalls = 0;
+	let reminderCountCalls = 0;
 	let releaseSample: (() => void) | undefined;
 	const pending = new Promise<void>((resolve) => {
 		releaseSample = resolve;
@@ -75,12 +90,14 @@ test("presence monitor serializes slow heartbeat ticks", async () => {
 	await startPresenceMonitor(fakeClient(calls), {
 		tracker,
 		reachable: async () => true,
+		reminderCount: () => ++reminderCountCalls,
 		schedule: (callback) => {
 			scheduled = callback;
 			return {} as NodeJS.Timeout;
 		},
 	});
 	assert.equal(calls.length, 1);
+	assert.equal(reminderCountCalls, 1);
 	scheduled?.();
 	scheduled?.();
 	await new Promise((resolve) => setImmediate(resolve));
@@ -90,4 +107,27 @@ test("presence monitor serializes slow heartbeat ticks", async () => {
 	scheduled?.();
 	await new Promise((resolve) => setImmediate(resolve));
 	assert.equal(sampleCalls, 2);
+	assert.equal(reminderCountCalls, 3);
+	assert.match(JSON.stringify(calls.at(-1)), /3 reminders/);
+});
+
+test("reminder count failures fall back to zero", async () => {
+	const calls: Array<Record<string, unknown>> = [];
+	const originalError = console.error;
+	console.error = () => {};
+	try {
+		await updatePresence(
+			fakeClient(calls),
+			snapshot,
+			async () => false,
+			() => {
+				throw new Error("private reminder failure");
+			},
+		);
+	} finally {
+		console.error = originalError;
+	}
+	assert.equal(calls[0].status, "idle");
+	assert.match(JSON.stringify(calls[0]), /0 reminders/);
+	assert.doesNotMatch(JSON.stringify(calls[0]), /private reminder failure/);
 });
