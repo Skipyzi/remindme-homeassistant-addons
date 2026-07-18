@@ -380,11 +380,14 @@ function harness() {
 		async pairModelManager() {
 			return window.RemindMeModelCookbook.pair(this);
 		},
-		async installModel(id) {
-			return window.RemindMeModelCookbook.install(this, id);
+		async downloadModel(id) {
+			return window.RemindMeModelCookbook.download(this, id);
 		},
-		async activateModel(id) {
-			return window.RemindMeModelCookbook.activate(this, id);
+		async copyModelYaml(id) {
+			return window.RemindMeModelCookbook.copyYaml(this, id);
+		},
+		async downloadModelYaml(id) {
+			return window.RemindMeModelCookbook.downloadYaml(this, id);
 		},
 		async cancelModelOperation() {
 			return window.RemindMeModelCookbook.cancel(this);

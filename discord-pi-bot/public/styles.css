@@ -1251,6 +1251,11 @@ textarea::-webkit-scrollbar-thumb {
 	letter-spacing: 0.08em;
 	text-transform: uppercase;
 }
+#models-view .settings-card {
+	width: min(1180px, 100%);
+	max-height: calc(100dvh - 40px);
+	overflow: auto;
+}
 .model-catalog {
 	display: grid;
 	gap: 14px;
@@ -1424,6 +1429,25 @@ textarea::-webkit-scrollbar-thumb {
 	padding: 8px 10px;
 	background: rgba(231, 71, 54, 0.08);
 	color: var(--akira-red) !important;
+}
+.model-yaml {
+	border: 1px solid rgba(72, 215, 196, 0.35);
+	background: rgba(9, 11, 13, 0.62);
+	padding: 14px;
+}
+.model-yaml h3,
+.model-yaml p {
+	margin: 6px 0;
+}
+.model-yaml pre {
+	max-height: 18rem;
+	overflow: auto;
+	white-space: pre;
+	border-left: 3px solid var(--turquoise-neon);
+	background: var(--ink);
+	padding: 12px;
+	color: var(--text);
+	font: 10px ui-monospace, Consolas, monospace;
 }
 .model-advanced-grid {
 	display: grid;

@@ -153,16 +153,30 @@ app.post("/api/models/install", async (request, response) => {
 			.json(safeModelError("invalid_model", "Model selection is invalid."));
 	await proxyModelManager(response, "/install", "POST", body);
 });
-app.post("/api/models/activate", async (request, response) => {
-	const body = modelSelectionBody(request.body);
-	if (!body)
-		return response
-			.status(400)
-			.json(safeModelError("invalid_model", "Model selection is invalid."));
-	await proxyModelManager(response, "/activate", "POST", body);
-});
 app.post("/api/models/cancel", async (_request, response) => {
 	await proxyModelManager(response, "/cancel", "POST", {});
+});
+app.get("/api/models/:id/options.yaml", async (request, response) => {
+	const id = request.params.id;
+	if (!/^[a-z0-9][a-z0-9.-]{0,127}$/.test(id))
+		return response
+			.status(400)
+			.json(safeModelError("invalid_model", "Model identifier is invalid."));
+	try {
+		const result = await (await getModelManagerClient()).requestText(
+			`/models/${encodeURIComponent(id)}/options.yaml`,
+		);
+		response
+			.status(200)
+			.set({
+				"Content-Type": result.contentType,
+				"Content-Disposition": `attachment; filename="${id}-options.yaml"`,
+				"Cache-Control": "no-store",
+			})
+			.send(result.body);
+	} catch (error) {
+		sendModelManagerError(response, error);
+	}
 });
 app.delete("/api/models/:id", async (request, response) => {
 	if (!/^[a-z0-9][a-z0-9.-]{0,127}$/.test(request.params.id))

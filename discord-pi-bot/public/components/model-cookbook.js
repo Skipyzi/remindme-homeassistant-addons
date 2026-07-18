@@ -24,6 +24,9 @@ window.RemindMeModelCookbook = {
 			modelStatus: null,
 			modelOperation: null,
 			modelError: "",
+			modelYaml: "",
+			modelYamlId: "",
+			modelYamlMessage: "",
 			hfToken: "",
 			customModel: { repo: "", file: "" },
 			modelEvents: null,
@@ -90,7 +93,7 @@ window.RemindMeModelCookbook = {
 				vm.modelError = "Model progress returned malformed data.";
 				return;
 			}
-			if (["active", "failed", "degraded"].includes(vm.modelOperation.phase)) {
+			if (["idle", "active", "failed", "degraded"].includes(vm.modelOperation.phase)) {
 				this.loadStatus(vm).catch(() => {});
 				this.loadCatalog(vm).catch(() => {});
 			}
@@ -123,12 +126,57 @@ window.RemindMeModelCookbook = {
 		}
 	},
 
-	install(vm, id) {
+	download(vm, id) {
 		return this.mutate(vm, "./api/models/install", "POST", { id });
 	},
 
-	activate(vm, id) {
-		return this.mutate(vm, "./api/models/activate", "POST", { id });
+	async loadYaml(vm, id) {
+		const response = await fetch(
+			`./api/models/${encodeURIComponent(id)}/options.yaml`,
+		);
+		const body = await response.text();
+		if (!response.ok) {
+			let message = "Model configuration is unavailable.";
+			try {
+				message = JSON.parse(body).message || message;
+			} catch {
+				message = "Model configuration is unavailable.";
+			}
+			throw new Error(message);
+		}
+		vm.modelYaml = body;
+		vm.modelYamlId = id;
+		return body;
+	},
+
+	async copyYaml(vm, id) {
+		vm.modelError = "";
+		try {
+			const yaml = await this.loadYaml(vm, id);
+			if (!navigator.clipboard?.writeText)
+				throw new Error("Clipboard access was denied. Use Download YAML instead.");
+			await navigator.clipboard.writeText(yaml);
+			vm.modelYamlMessage = "Copied. Paste into the llama.cpp add-on Configuration, save, and restart the llama.cpp add-on.";
+		} catch (error) {
+			vm.modelError = error.message || "Clipboard access was denied. Use Download YAML instead.";
+		}
+	},
+
+	async downloadYaml(vm, id) {
+		vm.modelError = "";
+		try {
+			const yaml = vm.modelYamlId === id ? vm.modelYaml : await this.loadYaml(vm, id);
+			const blob = new Blob([yaml], { type: "text/yaml;charset=utf-8" });
+			const url = URL.createObjectURL(blob);
+			const anchor = document.createElement("a");
+			anchor.href = url;
+			anchor.download = `${id}-options.yaml`;
+			anchor.click();
+			URL.revokeObjectURL(url);
+			vm.modelYamlMessage = "Downloaded YAML. Paste it into the llama.cpp add-on Configuration, save, and restart the llama.cpp add-on.";
+		} catch (error) {
+			vm.modelError = error.message || "Model configuration download failed.";
+		}
 	},
 
 	cancel(vm) {

@@ -172,6 +172,44 @@ export class ModelManagerClient {
 		return body as T;
 	}
 
+	async requestText(path: string): Promise<{ body: string; contentType: string }> {
+		if (!path.startsWith("/")) throw new Error("Manager path must be absolute");
+		const token = await this.token();
+		let response: Response;
+		try {
+			response = await this.requestFetch(`${this.baseUrl}${path}`, {
+				headers: { Authorization: `Bearer ${token}` },
+				signal: AbortSignal.timeout(130_000),
+			});
+		} catch {
+			throw new ModelManagerError(
+				"manager_unavailable",
+				"Local model manager is unavailable.",
+				503,
+				true,
+			);
+		}
+		const body = await response.text();
+		if (!response.ok) {
+			let error: ManagerAPIError = {};
+			try {
+				error = JSON.parse(body) as ManagerAPIError;
+			} catch {
+				error = {};
+			}
+			throw new ModelManagerError(
+				error.code || "manager_error",
+				error.message || "Local model operation failed.",
+				response.status,
+				Boolean(error.retryable),
+			);
+		}
+		return {
+			body,
+			contentType: response.headers.get("content-type") || "text/plain; charset=utf-8",
+		};
+	}
+
 	async openEvents(signal: AbortSignal): Promise<Response> {
 		const token = await this.token();
 		const response = await this.requestFetch(`${this.baseUrl}/events`, {

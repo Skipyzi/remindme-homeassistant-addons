@@ -257,6 +257,17 @@ func TestOptionsYAMLRequiresVerifiedDownload(t *testing.T) {
 	}
 }
 
+func TestActivationEndpointIsUnavailable(t *testing.T) {
+	server := NewServer(testDependencies(t, "http://127.0.0.1:1"))
+	request := httptest.NewRequest(http.MethodPost, "/manager/v1/activate", strings.NewReader(`{"id":"test-q4"}`))
+	request.Header.Set("Authorization", "Bearer manager-secret")
+	response := httptest.NewRecorder()
+	server.ServeHTTP(response, request)
+	if response.Code != http.StatusNotFound || strings.Contains(response.Body.String(), "model_not_installed") {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
 func TestObsoleteFallbackMetadataDoesNotBlockRemoval(t *testing.T) {
 	dependencies := testDependencies(t, "http://127.0.0.1:1")
 	path := filepath.Join(dependencies.ModelDir, "test.gguf")

@@ -33,9 +33,6 @@ type ModelSupervisor interface {
 	State() state.State
 	Persist(state.State) error
 	ActiveID() string
-	Start(context.Context, state.Installed, hardware.Runtime) error
-	Activate(context.Context, state.Installed, hardware.Runtime) error
-	Prune(state.State) error
 }
 
 type PairingExchanger interface {
@@ -143,7 +140,6 @@ func (server *Server) registerRoutes() {
 	server.manager.Handle("GET /manager/v1/catalog", server.auth(http.HandlerFunc(server.listCatalog)))
 	server.manager.Handle("POST /manager/v1/preflight", server.auth(http.HandlerFunc(server.preflight)))
 	server.manager.Handle("POST /manager/v1/install", server.auth(http.HandlerFunc(server.install)))
-	server.manager.Handle("POST /manager/v1/activate", server.auth(http.HandlerFunc(server.activate)))
 	server.manager.Handle("POST /manager/v1/cancel", server.auth(http.HandlerFunc(server.cancelOperation)))
 	server.manager.Handle("DELETE /manager/v1/models/{id}", server.auth(http.HandlerFunc(server.removeModel)))
 	server.manager.Handle("GET /manager/v1/models/{id}/options.yaml", server.auth(http.HandlerFunc(server.modelOptionsYAML)))
@@ -288,37 +284,6 @@ func (server *Server) runInstall(ctx context.Context, variant catalog.Variant) {
 	current = current.CompleteDownload()
 	_ = server.dependencies.Supervisor.Persist(current)
 	server.events.publish(snapshotFromState(current))
-}
-
-func (server *Server) activate(response http.ResponseWriter, request *http.Request) {
-	_, variant, _, assessment, ok := server.selection(response, request)
-	if !ok {
-		return
-	}
-	path := filepath.Join(server.dependencies.ModelDir, variant.File)
-	if _, err := os.Stat(path); err != nil {
-		writeError(response, http.StatusNotFound, APIError{Code: "model_not_installed", Message: "Install this model before activating it."})
-		return
-	}
-	if !server.beginMutation(response) {
-		return
-	}
-	operationID := fmt.Sprintf("activate-%d", server.dependencies.Now().UnixNano())
-	ctx, cancel := context.WithCancel(context.Background())
-	server.setCancel(cancel)
-	snapshot := OperationSnapshot{ID: operationID, VariantID: variant.ID, Phase: state.PhaseActivating}
-	server.events.publish(snapshot)
-	writeJSON(response, http.StatusAccepted, map[string]any{"operation": snapshot})
-	go func() {
-		defer server.endMutation()
-		err := server.dependencies.Supervisor.Activate(ctx, state.Installed{ID: variant.ID, Repo: variant.Repo, File: variant.File, Path: path}, assessment.Runtime)
-		current := server.dependencies.Supervisor.State()
-		result := snapshotFromState(current)
-		if err != nil && current.LastError != nil {
-			result.Error = &APIError{Code: current.LastError.Code, Message: current.LastError.Message}
-		}
-		server.events.publish(result)
-	}()
 }
 
 func (server *Server) cancelOperation(response http.ResponseWriter, _ *http.Request) {

@@ -17,6 +17,7 @@ test("model manager routes proxy safely", async (context) => {
 	let pairingBody = "";
 	let managerAuthorization = "";
 	let credentialBody = "";
+	let yamlAuthorization = "";
 	let managerActiveModel: Record<string, unknown> | undefined;
 	const managerCatalog = {
 		variants: [
@@ -49,6 +50,12 @@ test("model manager routes proxy safely", async (context) => {
 		}
 		if (url === "http://homeassistant:8080/manager/v1/status") {
 			return Response.json({ activeModel: managerActiveModel });
+		}
+		if (url === "http://homeassistant:8080/manager/v1/models/qwen3-4b-q4/options.yaml") {
+			yamlAuthorization = new Headers(init?.headers).get("authorization") || "";
+			return new Response('model_path: /data/models/qwen.gguf\nhf_token: ""\n', {
+				headers: { "content-type": "text/yaml; charset=utf-8" },
+			});
 		}
 		if (
 			url === "http://homeassistant:8080/manager/v1/credentials/huggingface"
@@ -117,6 +124,15 @@ test("model manager routes proxy safely", async (context) => {
 			assert.equal(JSON.stringify(body).includes(pairedToken), false);
 		},
 	);
+
+	await context.test("YAML proxy preserves exact safe text", async () => {
+		const response = await nativeFetch(`${baseUrl}/api/models/qwen3-4b-q4/options.yaml`);
+		assert.equal(response.status, 200);
+		assert.equal(response.headers.get("content-type"), "text/yaml; charset=utf-8");
+		assert.equal(response.headers.get("content-disposition"), 'attachment; filename="qwen3-4b-q4-options.yaml"');
+		assert.equal(await response.text(), 'model_path: /data/models/qwen.gguf\nhf_token: ""\n');
+		assert.equal(yamlAuthorization, `Bearer ${pairedToken}`);
+	});
 
 	await context.test(
 		"credential route never echoes the Hugging Face token",
