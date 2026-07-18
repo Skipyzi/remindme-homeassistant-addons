@@ -31,6 +31,11 @@ type Runtime struct {
 	Batch           int    `json:"batch"`
 	UBatch          int    `json:"ubatch"`
 	Threads         int    `json:"threads"`
+	ThreadsBatch    int    `json:"threadsBatch"`
+	CacheReuse      int    `json:"cacheReuse"`
+	Jinja           bool   `json:"jinja"`
+	KVUnified       bool   `json:"kvUnified"`
+	FlashAttention  bool   `json:"flashAttention"`
 	ReasoningFormat string `json:"reasoningFormat"`
 	ReasoningMode   string `json:"reasoningMode"`
 }
@@ -76,6 +81,11 @@ func Assess(variant catalog.Variant, facts Facts, requestedContext int, override
 			Batch:           min(max(profile.Batch, 1), 256),
 			UBatch:          min(max(profile.UBatch, 1), 128),
 			Threads:         min(max(facts.CPUCores, 1), max(profile.Threads, 1)),
+			ThreadsBatch:    min(max(facts.CPUCores, 1), max(profile.Threads, 1)),
+			CacheReuse:      256,
+			Jinja:           true,
+			KVUnified:       true,
+			FlashAttention:  false,
 			ReasoningFormat: profile.ReasoningFormat,
 			ReasoningMode:   profile.ReasoningMode,
 		},

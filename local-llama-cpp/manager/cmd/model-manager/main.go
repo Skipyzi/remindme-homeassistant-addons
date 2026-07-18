@@ -38,8 +38,13 @@ type addonOptions struct {
 	ModelPath       string `json:"model_path"`
 	ContextSize     int    `json:"context_size"`
 	Threads         int    `json:"threads"`
+	ThreadsBatch    int    `json:"threads_batch"`
 	BatchSize       int    `json:"batch_size"`
 	UBatchSize      int    `json:"ubatch_size"`
+	CacheReuse      int    `json:"cache_reuse"`
+	Jinja           bool   `json:"jinja"`
+	KVUnified       bool   `json:"kv_unified"`
+	FlashAttention  bool   `json:"flash_attention"`
 	ReasoningFormat string `json:"reasoning_format"`
 	ReasoningMode   string `json:"reasoning_mode"`
 }
@@ -136,25 +141,6 @@ func parseFlags() paths {
 }
 
 func recoverOrBootstrap(ctx context.Context, configured paths, modelCatalog catalog.Catalog, downloader download.Downloader, supervisor *managerruntime.Supervisor, facts func() (hardware.Facts, error), credentialPath string) {
-	current := supervisor.State()
-	decision := state.Recovery(current, func(path string) bool {
-		_, err := os.Stat(path)
-		return err == nil
-	})
-	if decision.Model != nil {
-		profile := runtimeFor(*decision.Model, modelCatalog, facts)
-		if err := supervisor.Start(ctx, *decision.Model, profile); err != nil {
-			log.Printf("startup degraded: %v", err)
-		}
-		return
-	}
-	if decision.Action == state.ActionResume && current.Active != nil {
-		profile := runtimeFor(*current.Active, modelCatalog, facts)
-		if err := supervisor.Start(ctx, *current.Active, profile); err == nil {
-			log.Printf("active model restored; partial candidate remains resumable")
-			return
-		}
-	}
 	options, err := readOptions(configured.options)
 	if err != nil {
 		log.Printf("startup degraded: %v", err)
@@ -163,18 +149,19 @@ func recoverOrBootstrap(ctx context.Context, configured paths, modelCatalog cata
 	if options.HFToken != "" {
 		_ = saveCredentials(credentialPath, options.HFToken)
 	}
-	if options.ModelPath != "" {
-		if _, statErr := os.Stat(options.ModelPath); statErr == nil {
-			installed := state.Installed{ID: "legacy-local-model", File: filepath.Base(options.ModelPath), Path: options.ModelPath}
-			if err := supervisor.Start(ctx, installed, runtimeFromOptions(options)); err != nil {
-				log.Printf("legacy local model failed: %v", err)
-			}
-			return
-		}
+	installed, variant, err := configuredModel(options, configured.models, modelCatalog)
+	if err != nil {
+		log.Printf("startup degraded: %v", err)
+		return
 	}
-	variant, ok := findConfiguredVariant(options, modelCatalog)
-	if !ok {
-		log.Printf("startup degraded: %s", unknownVariantDiagnostic(options))
+	if _, err := os.Stat(installed.Path); err == nil {
+		if err := supervisor.Start(ctx, installed, runtimeFromOptions(options)); err != nil {
+			log.Printf("configured model failed: %v", err)
+		}
+		return
+	}
+	if variant == nil {
+		log.Printf("startup degraded: configured model file is unavailable")
 		return
 	}
 	factsValue, err := facts()
@@ -182,7 +169,7 @@ func recoverOrBootstrap(ctx context.Context, configured paths, modelCatalog cata
 		log.Printf("startup degraded: %v", err)
 		return
 	}
-	assessment := hardware.Assess(variant, factsValue, options.ContextSize, false)
+	assessment := hardware.Assess(*variant, factsValue, options.ContextSize, false)
 	if !assessment.Safe {
 		log.Printf("startup degraded: model preflight failed: %s", assessment.Code)
 		return
@@ -190,7 +177,7 @@ func recoverOrBootstrap(ctx context.Context, configured paths, modelCatalog cata
 	operation := supervisor.State().Begin(fmt.Sprintf("bootstrap-%d", time.Now().UnixNano()), variant.ID, filepath.Join(configured.models, variant.File+".partial"), variant.ExpectedBytes)
 	operation = operation.Transition(state.PhaseDownloading, 0)
 	_ = supervisor.Persist(operation)
-	result, err := downloader.Download(ctx, variant, options.HFToken, func(progress download.Progress) {
+	result, err := downloader.Download(ctx, *variant, options.HFToken, func(progress download.Progress) {
 		updated := supervisor.State().Transition(state.PhaseDownloading, progress.BytesDone)
 		if updated.Operation != nil {
 			updated.Operation.BytesTotal = progress.BytesTotal
@@ -202,10 +189,39 @@ func recoverOrBootstrap(ctx context.Context, configured paths, modelCatalog cata
 		log.Printf("startup degraded: %v", err)
 		return
 	}
-	installed := state.Installed{ID: variant.ID, Repo: variant.Repo, File: variant.File, Path: result.Path}
-	if err := supervisor.Start(ctx, installed, assessment.Runtime); err != nil {
+	installed.Path = result.Path
+	if err := supervisor.Start(ctx, installed, runtimeFromOptions(options)); err != nil {
 		log.Printf("startup degraded: %v", err)
 	}
+}
+
+func configuredModel(options addonOptions, modelDir string, modelCatalog catalog.Catalog) (state.Installed, *catalog.Variant, error) {
+	if options.ModelPath != "" {
+		modelRoot, err := filepath.EvalSymlinks(modelDir)
+		if err != nil {
+			return state.Installed{}, nil, fmt.Errorf("resolve model directory: %w", err)
+		}
+		selected, err := filepath.EvalSymlinks(options.ModelPath)
+		if err != nil {
+			return state.Installed{}, nil, fmt.Errorf("configured model path is unavailable: %w", err)
+		}
+		relative, err := filepath.Rel(modelRoot, selected)
+		if err != nil || relative == ".." || filepath.IsAbs(relative) || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+			return state.Installed{}, nil, errors.New("configured model path must be inside /data/models")
+		}
+		for index := range modelCatalog.Variants {
+			variant := &modelCatalog.Variants[index]
+			if variant.File == filepath.Base(selected) {
+				return state.Installed{ID: variant.ID, Repo: variant.Repo, File: variant.File, Path: selected}, variant, nil
+			}
+		}
+		return state.Installed{ID: "local-model", File: filepath.Base(selected), Path: selected}, nil, nil
+	}
+	variant, ok := findConfiguredVariant(options, modelCatalog)
+	if !ok {
+		return state.Installed{}, nil, errors.New(unknownVariantDiagnostic(options))
+	}
+	return state.Installed{ID: variant.ID, Repo: variant.Repo, File: variant.File, Path: filepath.Join(modelDir, variant.File)}, &variant, nil
 }
 
 func readOptions(path string) (addonOptions, error) {
@@ -253,9 +269,17 @@ func runtimeFor(installed state.Installed, modelCatalog catalog.Catalog, facts f
 }
 
 func runtimeFromOptions(options addonOptions) hardware.Runtime {
+	threads := max(options.Threads, 1)
+	threadsBatch := options.ThreadsBatch
+	if threadsBatch <= 0 {
+		threadsBatch = threads
+	}
 	return hardware.Runtime{
 		Context: max(options.ContextSize, 4096), Batch: max(options.BatchSize, 128),
-		UBatch: max(options.UBatchSize, 64), Threads: max(options.Threads, 1),
+		UBatch: max(options.UBatchSize, 64), Threads: threads,
+		ThreadsBatch: threadsBatch,
+		CacheReuse:   max(options.CacheReuse, 0), Jinja: options.Jinja,
+		KVUnified: options.KVUnified, FlashAttention: options.FlashAttention,
 		ReasoningFormat: options.ReasoningFormat, ReasoningMode: options.ReasoningMode,
 	}
 }

@@ -179,9 +179,17 @@ func TestActivatePromotesCandidateAndRetainsOldModel(t *testing.T) {
 }
 
 func TestLlamaArgsUseValidatedValuesWithoutShell(t *testing.T) {
-	args := llamaArgs(state.Installed{Path: "/data/models/model.gguf"}, hardware.Runtime{Context: 8192, Batch: 256, UBatch: 128, Threads: 4, ReasoningFormat: "deepseek", ReasoningMode: "auto"})
+	args := llamaArgs(state.Installed{Path: "/data/models/model.gguf"}, hardware.Runtime{
+		Context: 8192, Batch: 256, UBatch: 128, Threads: 4, ThreadsBatch: 3,
+		CacheReuse: 512, Jinja: true, KVUnified: true, FlashAttention: true,
+		ReasoningFormat: "deepseek", ReasoningMode: "auto",
+	})
 	joined := strings.Join(args, " ")
-	for _, expected := range []string{"--model /data/models/model.gguf", "--port 8081", "--ctx-size 8192", "--reasoning-format deepseek", "--reasoning auto"} {
+	for _, expected := range []string{
+		"--model /data/models/model.gguf", "--port 8081", "--ctx-size 8192",
+		"--threads-batch 3", "--cache-reuse 512", "--jinja", "--kv-unified", "--flash-attn",
+		"--reasoning-format deepseek", "--reasoning auto",
+	} {
 		if !strings.Contains(joined, expected) {
 			t.Fatalf("missing %q in %q", expected, joined)
 		}

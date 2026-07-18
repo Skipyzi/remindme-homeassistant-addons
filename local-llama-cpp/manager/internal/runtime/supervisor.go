@@ -292,16 +292,32 @@ func (supervisor *Supervisor) Stop(timeout time.Duration) error {
 }
 
 func llamaArgs(model state.Installed, runtime hardware.Runtime) []string {
+	threadsBatch := runtime.ThreadsBatch
+	if threadsBatch <= 0 {
+		threadsBatch = runtime.Threads
+	}
 	args := []string{
 		"--model", model.Path,
 		"--host", "127.0.0.1",
 		"--port", "8081",
 		"--ctx-size", strconv.Itoa(runtime.Context),
 		"--threads", strconv.Itoa(runtime.Threads),
-		"--threads-batch", strconv.Itoa(runtime.Threads),
+		"--threads-batch", strconv.Itoa(threadsBatch),
 		"--batch-size", strconv.Itoa(runtime.Batch),
 		"--ubatch-size", strconv.Itoa(runtime.UBatch),
-		"--cache-prompt", "--parallel", "1", "--jinja",
+		"--cache-prompt", "--parallel", "1",
+	}
+	if runtime.CacheReuse > 0 {
+		args = append(args, "--cache-reuse", strconv.Itoa(runtime.CacheReuse))
+	}
+	if runtime.Jinja {
+		args = append(args, "--jinja")
+	}
+	if runtime.KVUnified {
+		args = append(args, "--kv-unified")
+	}
+	if runtime.FlashAttention {
+		args = append(args, "--flash-attn", "on")
 	}
 	if runtime.ReasoningFormat != "" && runtime.ReasoningFormat != "none" {
 		args = append(args, "--reasoning-format", runtime.ReasoningFormat)
