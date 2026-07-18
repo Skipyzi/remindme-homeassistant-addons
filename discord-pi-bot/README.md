@@ -1,6 +1,6 @@
 # RemindMe Discord Bot and Home Terminal
 
-Install this add-on after `local-llama-cpp`. Version 2.3.3 expands the Discord bot presence with health, cumulative uptime, lifetime availability, and active reminder count. It retains synchronized settings, direct one-time pairing, Discord chat, Assist tools, Exa search, the Pi bridge, and the Hardware Cookbook.
+Install this add-on after `local-llama-cpp`. Version 2.3.4 replaces Supervisor-mirrored settings and automatic model activation with a reliable manual model workbench. It retains direct one-time pairing, Discord chat, reminders, Assist tools, Exa search, the Pi bridge, persistent presence data, and local model diagnostics.
 
 ## Local endpoints
 
@@ -18,29 +18,34 @@ http://homeassistant:8080/manager/v1
 
 Version 2.3.1 automatically migrates legacy `localhost` and `127.0.0.1` loopback values to these canonical cross-add-on endpoints. Loopback points into the RemindMe container and cannot reach the separate llama.cpp add-on.
 
-Do not expose the manager URL or credentials publicly. On each llama.cpp start, its log prints a short-lived six-character pairing code. Enter that code in **Settings → Hardware cookbook → Local model vault**. The code is single-use, expires, and is rate-limited. RemindMe exchanges it directly with the manager, stores the returned token at `/data/model-manager-token` with owner-only permissions, and never places the code or token in browser persistence. RemindMe does not require Supervisor `manager` or `admin` privileges.
+Do not expose the manager URL or credentials publicly. On each llama.cpp start, its log prints a short-lived six-character pairing code. Open **Models → Local model vault** and enter that code. The code is single-use, expires, and is rate-limited. RemindMe exchanges it directly with the manager, stores the returned token at `/data/model-manager-token` with owner-only permissions, and never places the code or token in browser persistence.
 
-## Synchronized settings
+## Harness-only Settings
 
-Supervisor-rendered add-on options are the canonical configuration. The sidebar reloads live values, mirrors every safe schema field, and exposes only configured/not-configured flags for Discord and Exa secrets. To replace a secret, enter a new value; leaving the replacement blank preserves the configured value. RemindMe writes its complete self-options map directly and relies on Supervisor's atomic validation; it does not call the privileged `/addons/self/options/validate` route.
+The RemindMe **Settings** panel controls only local harness presentation: performance profile, glow intensity, and CRT scanlines. These preferences remain in browser storage. The harness does not read, mirror, write, validate, or restart add-on options through Supervisor.
 
-Saving uses a revision check. If the native Configuration tab changed after the sidebar was opened, RemindMe reports a **configuration changed** conflict instead of overwriting newer values. Reload settings, review the live values, and save again.
+Change Discord, endpoint, integration, and secret options only in Home Assistant's native add-on **Configuration** page. Existing valid `/data/model-manager-token` files remain reusable after upgrade. Preserve both add-ons' `/data` directories when reinstalling or rolling back.
 
-Settings marked as startup-bound are saved without disrupting the current response. Use the explicit **Restart add-on** control when ready; the sidebar waits for a new process instance before reconnecting through ingress.
+## Manual Model Workbench
 
-After upgrading from 2.2.x, existing options remain intact. Existing valid `/data/model-manager-token` files are reused. Otherwise, pair once using the current code from the llama.cpp add-on log. If an older build cannot save from the sidebar, use Home Assistant's native **Configuration** tab to enter the canonical URLs, save, and restart RemindMe. Roll back by reinstalling the previous add-on versions; do not delete either add-on's `/data` directory if you want to preserve models and credentials.
-
-## Hardware Cookbook
-
-Open **Settings → Hardware cookbook** in RemindMe to:
+Open **Models** in RemindMe to:
 
 - Compare curated MiniCPM5 1B, Qwen3 1.7B/4B, Granite 3.3 2B, SmolLM3 3B, Gemma 3 4B, and Phi-4 Mini profiles.
-- See detected RAM, estimated model/KV memory, context, stability, capabilities, and Pi suitability.
-- Download while the active model keeps serving chat.
-- Activate an installed model with health/completion probes.
+- See detected RAM, estimated model/KV memory, context, capabilities, and Pi suitability.
+- Download and checksum-verify a model while the running model remains unchanged.
 - Cancel resumable downloads.
-- Restore the previous model automatically after a failed activation.
-- Keep the active and most recent fallback models protected.
+- Copy or download complete llama.cpp options YAML after verification.
+- Remove files that are neither running nor involved in an active operation.
+
+A download does not change the running model. To switch reliably:
+
+1. Download the model and wait for **Verified**.
+2. Choose **Copy complete YAML** or **Download YAML**.
+3. Open the llama.cpp add-on's native **Configuration** YAML editor.
+4. Replace the options, save, and restart the llama.cpp add-on.
+5. Return to Models and confirm the **Running** badge.
+
+The copied document uses the exact verified `/data/models/<file>.gguf` path and complete runtime values. Its option-level token fields are intentionally empty; protected manager credentials are never copied. RemindMe discovers the actual runtime model for status and response attribution instead of trusting a mirrored model name.
 
 Curated entries have fixed Hugging Face repositories, filenames, byte lengths, and checksums. Custom repositories are marked **unverified**, receive conservative runtime settings, and still require Hugging Face-only URLs and exact `.gguf` filenames.
 
@@ -64,6 +69,8 @@ The token is sent once to the server and stored only in the llama.cpp add-on's p
 This release does not add speech-to-text, text-to-speech, image inference, or cloud/OpenAI composition.
 
 ## Discord presence uptime
+
+RemindMe continues tracking cumulative uptime and lifetime availability across restarts and stopped downtime.
 
 Version 2.3.3 uses Discord's bot-supported Gateway presence fields. Full Social SDK Rich Presence artwork, party data, buttons, and Join actions are not available to bot accounts.
 

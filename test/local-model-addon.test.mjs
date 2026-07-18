@@ -12,6 +12,14 @@ const managerMain = readFileSync(
 	"local-llama-cpp/manager/cmd/model-manager/main.go",
 	"utf8",
 );
+const managerServer = readFileSync(
+	"local-llama-cpp/manager/internal/api/server.go",
+	"utf8",
+);
+const modelComponent = readFileSync(
+	"discord-pi-bot/public/components/model-cookbook.js",
+	"utf8",
+);
 const pairing = readFileSync(
 	"local-llama-cpp/manager/internal/pairing/pairing.go",
 	"utf8",
@@ -36,11 +44,14 @@ test("startup delegates JSON parsing to the Go manager", () => {
 });
 
 test("release packages secure direct pairing without sibling privileges", () => {
-	assert.match(remindMeConfig, /version: "2\.3\.3"/);
-	assert.match(config, /version: "1\.9\.2"/);
+	assert.match(remindMeConfig, /version: "2\.3\.4"/);
+	assert.match(config, /version: "1\.10\.0"/);
 	assert.doesNotMatch(remindMeConfig, /hassio_role:\s*(manager|admin)/);
 	assert.doesNotMatch(remindMeServer, /\/addons\/\$\{.*\}\/options/);
 	assert.doesNotMatch(remindMeServer, /\/addons\/self\/options\/validate/);
+	assert.doesNotMatch(remindMeServer, /\/api\/settings|\/addons\/self\/restart/);
+	assert.doesNotMatch(managerServer, /POST \/manager\/v1\/activate/);
+	assert.doesNotMatch(modelComponent, /api\/models\/activate/);
 	assert.match(remindMeRun, /MODEL_MANAGER_TOKEN_PATH=\/data\/model-manager-token/);
 	assert.match(
 		remindMeRun,
@@ -64,8 +75,8 @@ test("legacy manager token is migration-only and pairing is documented", () => {
 		assert.match(readme, /pair/i);
 		assert.match(readme, /six-character|six character|6-character/i);
 	}
-	assert.match(remindMeReadme, /configuration changed|conflict/i);
-	assert.match(remindMeReadme, /restart/i);
+	assert.match(remindMeReadme, /Settings.*harness|harness.*Settings/i);
+	assert.match(remindMeReadme, /does not.*Supervisor|Supervisor.*does not/i);
 	assert.match(remindMeReadme, /loopback|127\.0\.0\.1/i);
 	assert.match(remindMeReadme, /native.*Configuration|Configuration.*native/i);
 	assert.match(llamaReadme, /legacy.*manager_token|manager_token.*legacy/i);
@@ -80,6 +91,17 @@ test("RemindMe documents persistent lifetime presence uptime", () => {
 	assert.match(remindMeReadme, /Gateway presence/i);
 	assert.match(remindMeReadme, /RemindMe.*Pi connected/i);
 	assert.match(remindMeReadme, /reminders/i);
+});
+
+test("manual model workflow is documented", () => {
+	for (const readme of [remindMeReadme, llamaReadme]) {
+		assert.match(readme, /download.*does not.*running model|running model.*does not.*download/i);
+		assert.match(readme, /Copy.*YAML|YAML.*copy/i);
+		assert.match(readme, /Configuration/i);
+		assert.match(readme, /restart.*llama\.cpp|llama\.cpp.*restart/i);
+	}
+	assert.match(llamaReadme, /model_path.*authoritative|authoritative.*model_path/i);
+	assert.match(remindMeReadme, /runtime.*model|model.*runtime/i);
 });
 
 test("llama startup waits for internal server readiness", () => {
