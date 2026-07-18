@@ -310,11 +310,11 @@ app.get("/api/status", async (_request, response) => {
 		Number(process.env.LOCAL_LLM_CONTEXT_SIZE || 8192);
 	response.set("Cache-Control", "no-store").json({
 		instanceId,
-		model: managed?.id || config.localLlmModel,
+		model: managed?.id || "runtime-unavailable",
 		modelName: managed
 			? `${managed.family} ${managed.quantization}`.trim()
-			: config.localLlmModel,
-		capabilities: managed?.capabilities || ["chat"],
+			: "Runtime unavailable",
+		capabilities: managed?.capabilities || [],
 		llmUrl:
 			process.env.LOCAL_LLM_URL ||
 			"http://homeassistant:8080/v1/chat/completions",
@@ -817,17 +817,16 @@ async function managedActiveModel(): Promise<ManagedActiveModel | undefined> {
 }
 
 async function activeModelMetadata(): Promise<ActiveModelMetadata> {
-	const fallback = {
-		modelId: process.env.LOCAL_LLM_MODEL || config.localLlmModel,
-		modelName: process.env.LOCAL_LLM_MODEL || config.localLlmModel,
-	};
 	const active = await managedActiveModel();
 	return active
 		? {
 				modelId: active.id,
 				modelName: `${active.family} ${active.quantization}`.trim(),
 			}
-		: fallback;
+		: {
+				modelId: "runtime-unavailable",
+				modelName: "Runtime unavailable",
+			};
 }
 
 let modelManagerClientPromise: Promise<ModelManagerClient> | undefined;

@@ -17,6 +17,7 @@ test("model manager routes proxy safely", async (context) => {
 	let pairingBody = "";
 	let managerAuthorization = "";
 	let credentialBody = "";
+	let managerActiveModel: Record<string, unknown> | undefined;
 	const managerCatalog = {
 		variants: [
 			{
@@ -45,6 +46,9 @@ test("model manager routes proxy safely", async (context) => {
 			managerAuthorization =
 				new Headers(init?.headers).get("authorization") || "";
 			return Response.json(managerCatalog);
+		}
+		if (url === "http://homeassistant:8080/manager/v1/status") {
+			return Response.json({ activeModel: managerActiveModel });
 		}
 		if (
 			url === "http://homeassistant:8080/manager/v1/credentials/huggingface"
@@ -136,6 +140,24 @@ test("model manager routes proxy safely", async (context) => {
 			assert.equal(responseText.includes(token), false);
 		},
 	);
+
+	await context.test("runtime status is the only active model authority", async () => {
+		process.env.LOCAL_LLM_MODEL = "stale-configured-model";
+		managerActiveModel = undefined;
+		const unavailable = await nativeFetch(`${baseUrl}/api/status`).then((response) => response.json());
+		assert.equal(unavailable.model, "runtime-unavailable");
+		assert.equal(unavailable.modelName, "Runtime unavailable");
+		managerActiveModel = {
+			id: "qwen3-4b-q4",
+			family: "Qwen3 4B",
+			quantization: "Q4_K_M",
+			recommendedContext: 8192,
+			capabilities: ["chat", "tools"],
+		};
+		const running = await nativeFetch(`${baseUrl}/api/status`).then((response) => response.json());
+		assert.equal(running.model, "qwen3-4b-q4");
+		assert.equal(running.modelName, "Qwen3 4B Q4_K_M");
+	});
 
 	await context.test("Supervisor settings routes are absent", async () => {
 		for (const [path, method] of [
