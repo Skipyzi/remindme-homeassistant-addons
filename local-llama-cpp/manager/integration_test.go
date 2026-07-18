@@ -5,8 +5,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
-	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -56,15 +54,15 @@ func (launcher *integrationLauncher) activeModel() string {
 	return launcher.active
 }
 
-func TestInstallProbeFailureRestoresPreviousModel(t *testing.T) {
-	candidateBytes := []byte("GGUFbroken")
+func TestDownloadLeavesPreviousModelRunning(t *testing.T) {
+	candidateBytes := []byte("GGUFcandidate")
 	candidateHash := sha256.Sum256(candidateBytes)
 	huggingFace := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		if !strings.HasSuffix(request.URL.Path, "/candidate.gguf") {
 			http.NotFound(response, request)
 			return
 		}
-		response.Header().Set("Content-Length", "10")
+		response.Header().Set("Content-Length", "13")
 		_, _ = response.Write(candidateBytes)
 	}))
 	defer huggingFace.Close()
@@ -83,12 +81,7 @@ func TestInstallProbeFailureRestoresPreviousModel(t *testing.T) {
 		},
 		launcher,
 		store,
-		func(context.Context) error {
-			if launcher.activeModel() == "candidate.gguf" {
-				return errors.New("candidate probe failed")
-			}
-			return nil
-		},
+		func(context.Context) error { return nil },
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -133,33 +126,19 @@ func TestInstallProbeFailureRestoresPreviousModel(t *testing.T) {
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
 		current := supervisor.State()
-		if current.Phase == state.PhaseActive && current.LastError != nil {
+		if current.Phase == state.PhaseIdle && current.Operation == nil {
 			if current.Active == nil || current.Active.ID != "stable" {
 				t.Fatalf("active model=%#v", current.Active)
 			}
-			if current.LastError.Code != managerruntime.CodeActivationRolledBack {
-				t.Fatalf("last error=%#v", current.LastError)
+			if launcher.starts["stable.gguf"] != 1 || launcher.starts["candidate.gguf"] != 0 {
+				t.Fatalf("starts=%#v", launcher.starts)
 			}
-			if launcher.starts["stable.gguf"] != 2 {
-				t.Fatalf("stable starts=%d", launcher.starts["stable.gguf"])
-			}
-			statusRequest, _ := http.NewRequest(http.MethodGet, server.URL+"/manager/v1/status", nil)
-			statusRequest.Header.Set("Authorization", "Bearer integration-secret")
-			statusResponse, statusErr := http.DefaultClient.Do(statusRequest)
-			if statusErr != nil {
-				t.Fatal(statusErr)
-			}
-			var statusBody struct {
-				State state.State `json:"state"`
-			}
-			decodeErr := json.NewDecoder(statusResponse.Body).Decode(&statusBody)
-			statusResponse.Body.Close()
-			if decodeErr != nil || statusBody.State.Active == nil || statusBody.State.Active.ID != "stable" {
-				t.Fatalf("status=%#v decode=%v", statusBody, decodeErr)
+			if _, err := os.Stat(filepath.Join(modelDir, "candidate.gguf")); err != nil {
+				t.Fatalf("candidate was not downloaded: %v", err)
 			}
 			return
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
-	t.Fatalf("rollback did not complete: %#v", supervisor.State())
+	t.Fatalf("download did not complete: %#v", supervisor.State())
 }

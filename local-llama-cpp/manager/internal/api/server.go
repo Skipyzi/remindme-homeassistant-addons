@@ -231,7 +231,7 @@ func (server *Server) preflight(response http.ResponseWriter, request *http.Requ
 }
 
 func (server *Server) install(response http.ResponseWriter, request *http.Request) {
-	selection, variant, _, assessment, ok := server.selection(response, request)
+	_, variant, _, _, ok := server.selection(response, request)
 	if !ok {
 		return
 	}
@@ -251,10 +251,10 @@ func (server *Server) install(response http.ResponseWriter, request *http.Reques
 	snapshot := snapshotFromState(current)
 	server.events.publish(snapshot)
 	writeJSON(response, http.StatusAccepted, map[string]any{"operation": snapshot})
-	go server.runInstall(ctx, selection, variant, assessment.Runtime)
+	go server.runInstall(ctx, variant)
 }
 
-func (server *Server) runInstall(ctx context.Context, _ modelSelection, variant catalog.Variant, runtimeProfile hardware.Runtime) {
+func (server *Server) runInstall(ctx context.Context, variant catalog.Variant) {
 	defer server.endMutation()
 	result, err := server.dependencies.Downloader.Download(ctx, variant, server.readCredential(), func(progress download.Progress) {
 		current := server.dependencies.Supervisor.State().Transition(state.PhaseDownloading, progress.BytesDone)
@@ -270,23 +270,9 @@ func (server *Server) runInstall(ctx context.Context, _ modelSelection, variant 
 	current.Operation.ModelPath = result.Path
 	_ = server.dependencies.Supervisor.Persist(current)
 	server.events.publish(snapshotFromState(current))
-	installed := state.Installed{ID: variant.ID, Repo: variant.Repo, File: variant.File, Path: result.Path}
-	if server.dependencies.Supervisor.ActiveID() == "" {
-		err = server.dependencies.Supervisor.Start(ctx, installed, runtimeProfile)
-	} else {
-		err = server.dependencies.Supervisor.Activate(ctx, installed, runtimeProfile)
-	}
-	if err != nil {
-		current = server.dependencies.Supervisor.State()
-		snapshot := snapshotFromState(current)
-		if current.LastError != nil {
-			snapshot.Error = &APIError{Code: current.LastError.Code, Message: current.LastError.Message}
-		}
-		server.events.publish(snapshot)
-		return
-	}
-	_ = server.dependencies.Supervisor.Prune(server.dependencies.Supervisor.State())
-	server.events.publish(snapshotFromState(server.dependencies.Supervisor.State()))
+	current = current.CompleteDownload()
+	_ = server.dependencies.Supervisor.Persist(current)
+	server.events.publish(snapshotFromState(current))
 }
 
 func (server *Server) activate(response http.ResponseWriter, request *http.Request) {

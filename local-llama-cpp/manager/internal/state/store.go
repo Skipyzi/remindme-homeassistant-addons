@@ -174,6 +174,13 @@ func (current State) Transition(phase string, bytesDone int64) State {
 	return current
 }
 
+func (current State) CompleteDownload() State {
+	current.Phase = PhaseIdle
+	current.Operation = nil
+	current.LastError = nil
+	return current
+}
+
 func (current State) Fail(code, message string) State {
 	current.Phase = PhaseFailed
 	now := time.Now().UTC()

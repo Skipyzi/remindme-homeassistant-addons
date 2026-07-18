@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"remindme.local/model-manager/internal/catalog"
 	"remindme.local/model-manager/internal/download"
@@ -52,9 +53,11 @@ func (fake *fakeDownloader) Download(ctx context.Context, variant catalog.Varian
 }
 
 type fakeSupervisor struct {
-	mu      sync.Mutex
-	current state.State
-	active  string
+	mu            sync.Mutex
+	current       state.State
+	active        string
+	startCalls    int
+	activateCalls int
 }
 
 func (fake *fakeSupervisor) State() state.State {
@@ -76,12 +79,18 @@ func (fake *fakeSupervisor) ActiveID() string {
 func (fake *fakeSupervisor) Start(_ context.Context, installed state.Installed, _ hardware.Runtime) error {
 	fake.mu.Lock()
 	defer fake.mu.Unlock()
+	fake.startCalls++
 	fake.active = installed.ID
 	fake.current = fake.current.Succeed(installed)
 	return nil
 }
 func (fake *fakeSupervisor) Activate(_ context.Context, installed state.Installed, _ hardware.Runtime) error {
-	return fake.Start(context.Background(), installed, hardware.Runtime{})
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	fake.activateCalls++
+	fake.active = installed.ID
+	fake.current = fake.current.Succeed(installed)
+	return nil
 }
 func (fake *fakeSupervisor) Prune(state.State) error { return nil }
 
@@ -165,6 +174,37 @@ func TestCredentialWriteReturnsOnlyConfiguredState(t *testing.T) {
 	stored, err := os.ReadFile(dependencies.CredentialPath)
 	if err != nil || !strings.Contains(string(stored), "hf_test_secret_value_123456") {
 		t.Fatalf("credential not stored: %s %v", stored, err)
+	}
+}
+
+func TestInstallDownloadsWithoutChangingRuntime(t *testing.T) {
+	dependencies := testDependencies(t, "http://127.0.0.1:1")
+	fake := dependencies.Supervisor.(*fakeSupervisor)
+	fake.active = "currently-running"
+	fake.current = state.State{Phase: state.PhaseActive, Active: &state.Installed{ID: fake.active, Healthy: true}}
+	server := NewServer(dependencies)
+	request := httptest.NewRequest(http.MethodPost, "/manager/v1/install", strings.NewReader(`{"id":"test-q4"}`))
+	request.Header.Set("Authorization", "Bearer manager-secret")
+	response := httptest.NewRecorder()
+	server.ServeHTTP(response, request)
+	if response.Code != http.StatusAccepted {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		current := fake.State()
+		if current.Operation == nil {
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	if fake.active != "currently-running" || fake.startCalls != 0 || fake.activateCalls != 0 {
+		t.Fatalf("active=%q start=%d activate=%d", fake.active, fake.startCalls, fake.activateCalls)
+	}
+	if fake.current.Phase != state.PhaseIdle || fake.current.Operation != nil {
+		t.Fatalf("download did not complete cleanly: %#v", fake.current)
 	}
 }
 

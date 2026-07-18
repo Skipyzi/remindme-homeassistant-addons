@@ -71,6 +71,15 @@ func TestLoadQuarantinesMalformedState(t *testing.T) {
 	}
 }
 
+func TestCompleteDownloadPreservesActiveModel(t *testing.T) {
+	active := &Installed{ID: "running", Path: "/models/running.gguf", Healthy: true}
+	current := State{Phase: PhaseDownloading, Active: active, Operation: &Operation{ID: "download", VariantID: "candidate"}}
+	completed := current.CompleteDownload()
+	if completed.Phase != PhaseIdle || completed.Operation != nil || completed.Active == nil || completed.Active.ID != "running" {
+		t.Fatalf("unexpected completed state: %#v", completed)
+	}
+}
+
 func TestStateTransitionsPreserveOperationError(t *testing.T) {
 	current := State{Phase: PhaseIdle}.Begin("op", "candidate", "/models/candidate.gguf.partial", 100)
 	current = current.Transition(PhaseDownloading, 20)
