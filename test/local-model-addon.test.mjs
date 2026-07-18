@@ -36,7 +36,7 @@ test("startup delegates JSON parsing to the Go manager", () => {
 });
 
 test("release packages secure direct pairing without sibling privileges", () => {
-	assert.match(remindMeConfig, /version: "2\.3\.2"/);
+	assert.match(remindMeConfig, /version: "2\.3\.3"/);
 	assert.match(config, /version: "1\.9\.2"/);
 	assert.doesNotMatch(remindMeConfig, /hassio_role:\s*(manager|admin)/);
 	assert.doesNotMatch(remindMeServer, /\/addons\/\$\{.*\}\/options/);
@@ -77,6 +77,9 @@ test("RemindMe documents persistent lifetime presence uptime", () => {
 	assert.match(remindMeReadme, /lifetime.*availability|availability.*lifetime/i);
 	assert.match(remindMeReadme, /stopped.*downtime|downtime.*stopped/i);
 	assert.match(remindMeReadme, /presence-uptime\.json/);
+	assert.match(remindMeReadme, /Gateway presence/i);
+	assert.match(remindMeReadme, /RemindMe.*Pi connected/i);
+	assert.match(remindMeReadme, /reminders/i);
 });
 
 test("llama startup waits for internal server readiness", () => {

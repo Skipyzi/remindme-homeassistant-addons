@@ -1,6 +1,6 @@
 # RemindMe Discord Bot and Home Terminal
 
-Install this add-on after `local-llama-cpp`. Version 2.3.2 adds persistent lifetime uptime and availability to the Discord rich presence. It retains synchronized settings, direct one-time pairing, Discord chat, reminders, Assist tools, Exa search, the Pi bridge, and the Hardware Cookbook.
+Install this add-on after `local-llama-cpp`. Version 2.3.3 expands the Discord bot presence with health, cumulative uptime, lifetime availability, and active reminder count. It retains synchronized settings, direct one-time pairing, Discord chat, Assist tools, Exa search, the Pi bridge, and the Hardware Cookbook.
 
 ## Local endpoints
 
@@ -65,7 +65,16 @@ This release does not add speech-to-text, text-to-speech, image inference, or cl
 
 ## Discord presence uptime
 
-Version 2.3.2 displays cumulative bot uptime and lifetime availability alongside Pi-agent connectivity, for example `Pi connected • Up 12d 4h • 99.99% • !help`.
+Version 2.3.3 uses Discord's bot-supported Gateway presence fields. Full Social SDK Rich Presence artwork, party data, buttons, and Join actions are not available to bot accounts.
+
+The activity is split into:
+
+```text
+name:  RemindMe • Pi connected
+state: Up 12d 4h • 99.99% • 3 reminders
+```
+
+The name changes to `RemindMe • Pi offline` when the Pi-agent bridge is unavailable. The state counts active, unnotified reminders for `OWNER_ID`; no reminder content or identity enters the presence.
 
 Tracking begins when 2.3.2 first starts. Every stopped gap counts as downtime, including updates, intentional restarts, crashes, and host outages. The heartbeat state is stored at `/data/presence-uptime.json` with owner-only permissions and contains no credentials. To reset the lifetime measurement, stop the add-on and delete only `/data/presence-uptime.json`, then start the add-on again.
 
