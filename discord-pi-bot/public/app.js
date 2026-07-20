@@ -493,15 +493,36 @@ function harness() {
 	if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
 
 	const CHARS = " .:-=+";
-	const CELL = 12;
+	/* Vertical advance is set by line-height, so rows can use it directly. */
+	const LINE = 12;
 	let cols = 0;
 	let rows = 0;
 	let time = 0;
 	let frame = 0;
 
+	/**
+	 * Measure the real horizontal advance rather than assuming it equals the
+	 * line height. At font-size:12px a monospace glyph advances ~7.2px, plus
+	 * letter-spacing — assuming 12px yields far too few columns and leaves the
+	 * right side of the viewport blank.
+	 */
+	function cellWidth() {
+		const probe = document.createElement("span");
+		const style = getComputedStyle(target);
+		probe.textContent = "0".repeat(100);
+		probe.style.cssText =
+			`position:absolute;visibility:hidden;white-space:pre;` +
+			`font-family:${style.fontFamily};font-size:${style.fontSize};` +
+			`letter-spacing:${style.letterSpacing};`;
+		document.body.appendChild(probe);
+		const width = probe.getBoundingClientRect().width / 100;
+		probe.remove();
+		return width > 0 ? width : 8.2;
+	}
+
 	function resize() {
-		cols = Math.ceil(window.innerWidth / CELL) + 2;
-		rows = Math.ceil(window.innerHeight / CELL) + 2;
+		cols = Math.ceil(window.innerWidth / cellWidth()) + 2;
+		rows = Math.ceil(window.innerHeight / LINE) + 2;
 	}
 
 	function paint() {

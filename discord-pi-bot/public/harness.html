@@ -25,7 +25,9 @@
       x-data="harness()"
       x-init="init()"
     >
-      <aside
+      <div class="screen">
+        <div class="flicker" aria-hidden="true"></div>
+        <aside
         class="rail"
         id="conversation-library"
         :class="{open: historyOpen}"
@@ -112,9 +114,18 @@
                   :open="message.expanded"
                   @toggle="message.expanded=$event.target.open"
                 >
-                  <summary
-                    x-text="message.state==='active' ? '◌ Consulting the house…\n'+recentTrace(message) : thoughtLabel(message)"
-                  ></summary>
+                                    <summary>
+                    <span
+                      class="status"
+                      :class="{warn: message.state==='active'}"
+                    ></span
+                    ><span class="label" x-text="message.state==='active' ? 'Consulting the house&hellip;' : thoughtLabel(message)"></span
+                    ><span
+                      class="tok-badge"
+                      x-show="message.metrics?.thinkingTokens"
+                      x-text="`+${message.metrics?.thinkingTokens} tok`"
+                    ></span>
+                  </summary>
                   <pre
                     x-text="message.text || 'No reasoning trace returned.'"
                   ></pre>
@@ -125,9 +136,18 @@
                   :open="message.expanded"
                   @toggle="message.expanded=$event.target.open"
                 >
-                  <summary
-                    x-text="message.state==='active' ? '◈ '+toolLabel(message) : completedToolLabel(message)"
-                  ></summary>
+                                    <summary>
+                    <span
+                      class="status"
+                      :class="{warn: message.state==='active'}"
+                    ></span
+                    ><span class="label" x-text="message.state==='active' ? toolLabel(message) : completedToolLabel(message)"></span
+                    ><span
+                      class="tok-badge"
+                      x-show="message.metrics?.toolResultTokens"
+                      x-text="`+${message.metrics?.toolResultTokens} tok`"
+                    ></span>
+                  </summary>
                   <div class="tool-ledger">
                     <section
                       x-show="message.arguments && Object.keys(message.arguments).length"
@@ -180,25 +200,32 @@
                 x-show="!message.kind || message.kind==='answer'"
                 x-text="message.text"
               ></span>
-              <footer
-                class="response-metrics"
+              <!-- Gauge line: stats attach under the reply, not a side rail. -->
+              <div
+                class="gauge"
                 x-show="message.kind==='answer' && message.metrics"
               >
-                <span
-                  x-show="message.metrics?.modelName || message.metrics?.modelId"
-                  x-text="message.metrics?.modelName || message.metrics?.modelId"
-                ></span
-                ><span
-                  x-text="`${message.metrics?.outputTokens || 0} tokens`"
-                ></span
-                ><span
-                  x-text="`${formatSpeed(message.metrics?.decodeTokensPerSecond)} decode`"
-                ></span
-                ><span
-                  x-text="`${message.metrics?.firstTokenMs || 0} ms first token`"
-                ></span
-                ><span x-text="formatDuration(message.metrics?.totalMs)"></span>
-              </footer>
+                <div class="ring" aria-hidden="true"></div>
+                <div class="gauge-readout">
+                  <b
+                    x-text="`${message.metrics?.estimated ? '~' : ''}${message.metrics?.outputTokens || 0}`"
+                  ></b>
+                  tok total &middot;
+                  <b
+                    x-text="Number(message.metrics?.decodeTokensPerSecond || 0).toFixed(1)"
+                  ></b>
+                  tok/s &middot;
+                  <b x-text="`${message.metrics?.firstTokenMs || 0}ms`"></b>
+                  first signal
+                  <template x-if="message.metrics?.modelName || message.metrics?.modelId"
+                    ><span
+                      >&middot;
+                      <b
+                        x-text="message.metrics?.modelName || message.metrics?.modelId"
+                      ></b></span
+                  ></template>
+                </div>
+              </div>
               <!--
                 Four card tiers, picked by what you can do with the entity.
                 A result set of 3+ collapses to compact rows regardless.
@@ -553,6 +580,7 @@
           </form>
         </footer>
       </main>
+      </div>
       <aside class="telemetry" id="house-board" :class="{open: boardOpen}">
         <div class="kicker">Live telemetry</div>
         <h2>MODEL INSTRUMENTS</h2>
