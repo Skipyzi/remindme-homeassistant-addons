@@ -40,6 +40,10 @@ function harness() {
 		thinking: localStorage.getItem("remindme.profile") || "fast",
 		profile: localStorage.getItem("remindme.profile") || "fast",
 		busy: false,
+		/* In-chat activity row: shows the turn is alive during the dead air
+		 * before the first phase event, which on a Pi can be many seconds. */
+		activity: null,
+		activityElapsed: 0,
 		settingsOpen: false,
 		skillsOpen: false,
 		skills: [],
@@ -168,6 +172,7 @@ function harness() {
 			};
 			this.messages.push(message);
 			this.persist();
+			this.scrollToBottom();
 			return message;
 		},
 		async newChat() {
@@ -468,10 +473,14 @@ function harness() {
 			);
 			this.add("user", text);
 			this.busy = true;
+			this.startActivity("Working");
+			this.scrollToBottom(true);
+			this.abortController = new AbortController();
 			try {
 				const r = await fetch("./api/chat", {
 					method: "POST",
 					headers: { "Content-Type": "application/json" },
+					signal: this.abortController.signal,
 					body: JSON.stringify({
 						message: text,
 						thinkingMode: this.thinking,
@@ -511,6 +520,16 @@ function harness() {
 								event,
 								data,
 							);
+							this.scrollToBottom();
+							if (event === "phase_start")
+								this.setActivityLabel(
+									data.kind === "thinking" ? "Thinking" : "Working",
+								);
+							if (event === "tool_start")
+								this.setActivityLabel(
+									`Calling ${String(data.name || "tool").replaceAll("_", " ")}`,
+								);
+							if (event === "answer_delta") this.setActivityLabel("Replying");
 							if (event === "phase_metrics") {
 								this.metrics = {
 									inputTokens: data.metrics.inputTokens,
@@ -527,13 +546,57 @@ function harness() {
 					}
 				}
 			} catch (error) {
-				this.add("assistant", "ERROR // " + error.message);
-				this.offline = true;
+				// An abort is a user decision, not a fault: no error, no offline flag.
+				if (error.name === "AbortError") this.add("assistant", "Cancelled.");
+				else {
+					this.add("assistant", "ERROR // " + error.message);
+					this.offline = true;
+				}
 			} finally {
+				this.abortController = null;
+				this.stopActivity();
 				this.busy = false;
 				if (!this.offline) this.attachments = [];
 				this.persist();
 			}
+		},
+		/**
+		 * Keep the newest content in view, but only when the reader is already
+		 * near the bottom — scrolling someone back down while they are reading
+		 * history is worse than letting the throbber sit off-screen.
+		 */
+		scrollToBottom(force = false) {
+			this.$nextTick(() => {
+				const chat = document.getElementById("timeline");
+				if (!chat) return;
+				const distance =
+					chat.scrollHeight - chat.scrollTop - chat.clientHeight;
+				if (force || distance < 140) chat.scrollTop = chat.scrollHeight;
+			});
+		},
+		startActivity(label) {
+			this.activity = { label, startedAt: Date.now() };
+			this.activityElapsed = 0;
+			clearInterval(this.activityTimer);
+			this.activityTimer = setInterval(() => {
+				if (!this.activity) return;
+				this.activityElapsed = (Date.now() - this.activity.startedAt) / 1000;
+			}, 100);
+		},
+		/** Retitle the running activity row without restarting its clock. */
+		setActivityLabel(label) {
+			if (this.activity && this.activity.label !== label)
+				this.activity = { ...this.activity, label };
+		},
+		stopActivity() {
+			if (!this.activity && !this.activityTimer) return;
+			clearInterval(this.activityTimer);
+			this.activityTimer = null;
+			this.activity = null;
+		},
+		/** Abort the in-flight turn. The server sees the stream close. */
+		cancel() {
+			if (this.abortController) this.abortController.abort();
 		},
 		handleTool(data) {
 			if (data.state === "running")

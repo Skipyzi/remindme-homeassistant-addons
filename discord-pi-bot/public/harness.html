@@ -516,6 +516,18 @@
               >
             </article>
           </template>
+          <!-- Activity row: the turn is alive but has not produced a phase
+               yet. Reads like a trace line so it sits in the same rhythm. -->
+          <div class="activity" x-show="activity" x-cloak>
+            <span class="activity-spinner" aria-hidden="true"></span>
+            <span class="activity-label" x-text="activity?.label || 'Working'"
+              >Working</span
+            ><span class="activity-dots" aria-hidden="true">…</span>
+            <span
+              class="activity-elapsed"
+              x-text="`${activityElapsed.toFixed(1)} s`"
+            ></span>
+          </div>
         </section>
         <footer
           class="composer"
@@ -537,8 +549,11 @@
               ></textarea
               ><button
                 class="send"
-                :disabled="busy"
-                x-text="busy ? 'Working…' : 'Send ↑'"
+                :class="{cancel: busy}"
+                type="button"
+                @click="busy ? cancel() : send()"
+                :aria-label="busy ? 'Cancel the current turn' : 'Send message'"
+                x-text="busy ? 'Cancel ✕' : 'Send ↑'"
               ></button>
             </div>
             <div class="attachment-strip" x-show="attachments.length">
