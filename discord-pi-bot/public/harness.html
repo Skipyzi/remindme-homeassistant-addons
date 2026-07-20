@@ -200,32 +200,6 @@
                 x-show="!message.kind || message.kind==='answer'"
                 x-text="message.text"
               ></span>
-              <!-- Gauge line: stats attach under the reply, not a side rail. -->
-              <div
-                class="gauge"
-                x-show="message.kind==='answer' && message.metrics"
-              >
-                <div class="ring" aria-hidden="true"></div>
-                <div class="gauge-readout">
-                  <b
-                    x-text="`${message.metrics?.estimated ? '~' : ''}${message.metrics?.outputTokens || 0}`"
-                  ></b>
-                  tok total &middot;
-                  <b
-                    x-text="Number(message.metrics?.decodeTokensPerSecond || 0).toFixed(1)"
-                  ></b>
-                  tok/s &middot;
-                  <b x-text="`${message.metrics?.firstTokenMs || 0}ms`"></b>
-                  first signal
-                  <template x-if="message.metrics?.modelName || message.metrics?.modelId"
-                    ><span
-                      >&middot;
-                      <b
-                        x-text="message.metrics?.modelName || message.metrics?.modelId"
-                      ></b></span
-                  ></template>
-                </div>
-              </div>
               <!--
                 Four card tiers, picked by what you can do with the entity.
                 A result set of 3+ collapses to compact rows regardless.
@@ -489,6 +463,32 @@
                   ></template></div
               ></template>
               <!-- Destructive confirms read rust, never amber. -->
+              <!-- Gauge line: stats attach under the reply, not a side rail. -->
+              <div
+                class="gauge"
+                x-show="message.kind==='answer' && message.metrics"
+              >
+                <div class="ring" aria-hidden="true"></div>
+                <div class="gauge-readout">
+                  <b
+                    x-text="`${message.metrics?.estimated ? '~' : ''}${message.metrics?.outputTokens || 0}`"
+                  ></b>
+                  tok total &middot;
+                  <b
+                    x-text="Number(message.metrics?.decodeTokensPerSecond || 0).toFixed(1)"
+                  ></b>
+                  tok/s &middot;
+                  <b x-text="`${message.metrics?.firstTokenMs || 0}ms`"></b>
+                  first signal
+                  <template x-if="message.metrics?.modelName || message.metrics?.modelId"
+                    ><span
+                      >&middot;
+                      <b
+                        x-text="message.metrics?.modelName || message.metrics?.modelId"
+                      ></b></span
+                  ></template>
+                </div>
+              </div>
               <template x-if="message.confirm"
                 ><div class="controls">
                   <button

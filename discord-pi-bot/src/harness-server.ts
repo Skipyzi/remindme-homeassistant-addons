@@ -536,6 +536,12 @@ async function runAgent(
 		allowedNames.has(tool.function.name),
 	);
 	const seenToolCalls = new Set<string>();
+	/*
+	 * Entity cards surfaced by tools this turn. They attach to the answer
+	 * rather than to the tool row: a tool call is a mechanism and belongs in
+	 * its disclosure as raw JSON, while the cards ARE the reply.
+	 */
+	const answerCards: unknown[] = [];
 	const messages: Array<Record<string, unknown>> = [
 		{
 			role: "system",
@@ -562,7 +568,12 @@ async function runAgent(
 			activeModel,
 		);
 		if (!result.toolCalls.length) {
-			send("answer", { text: result.text });
+			send("answer", {
+				phaseId,
+				iteration,
+				text: result.text,
+				cards: answerCards,
+			});
 			send("phase_complete", {
 				phaseId,
 				iteration,
@@ -607,6 +618,7 @@ async function runAgent(
 				: await executeTool(call.function.name, args);
 			seenToolCalls.add(callKey);
 			const serialized = JSON.stringify(value.model);
+			if (Array.isArray(value.view)) answerCards.push(...value.view);
 			// What this tool pushes back into the window, tracked separately from
 			// the model's own output so context bloat is attributable per call.
 			const toolMetrics = {
@@ -616,7 +628,7 @@ async function runAgent(
 			send("tool", {
 				name: call.function.name,
 				state: "complete",
-				result: value.view ?? value.model,
+				result: value.model,
 			});
 			send("tool_complete", {
 				phaseId,
@@ -624,7 +636,7 @@ async function runAgent(
 				kind: "tool",
 				state: "complete",
 				name: call.function.name,
-				result: value.view ?? value.model,
+				result: value.model,
 				metrics: toolMetrics,
 			});
 			messages.push({

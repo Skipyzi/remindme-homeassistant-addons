@@ -53,10 +53,51 @@ export function scoreEntity(card: EntityCard, query: string): number {
 	return Math.round((hits / terms.length) * 40);
 }
 
+/**
+ * Per-device configuration and diagnostic knobs. A Zigbee bulb typically
+ * exposes six or more of these ("Identify", "On level", "Power-on behavior",
+ * "Firmware", transition times), and they match the device name just as well
+ * as the bulb itself does. Nobody asks about them by name, so they are
+ * excluded unless a caller opts in — otherwise asking for one lamp returns a
+ * dozen rows and spends the context window on knobs.
+ *
+ * Home Assistant marks these with entity_category in the entity registry, but
+ * /api/states does not expose it, so the domain is the signal available here.
+ */
+const configDomains = new Set([
+	"button",
+	"number",
+	"select",
+	"update",
+	"text",
+	"event",
+	"image",
+	"date",
+	"time",
+	"datetime",
+	"siren",
+]);
+
+/** Domains a person actually asks about, ranked above the rest on ties. */
+const primaryDomains = new Set([
+	"light",
+	"switch",
+	"climate",
+	"cover",
+	"lock",
+	"fan",
+	"media_player",
+	"vacuum",
+	"binary_sensor",
+	"sensor",
+]);
+
 export interface ResolveOptions {
 	query?: string;
 	domain?: string;
 	limit?: number;
+	/** Include per-device config/diagnostic entities. Off by default. */
+	includeConfig?: boolean;
 }
 
 /**
@@ -65,16 +106,33 @@ export interface ResolveOptions {
  */
 export function resolveEntities(
 	cards: EntityCard[],
-	{ query = "", domain = "", limit = 12 }: ResolveOptions = {},
+	{ query = "", domain = "", limit = 12, includeConfig = false }: ResolveOptions = {},
 ): EntityCard[] {
-	const scoped = domain
-		? cards.filter((card) => card.domain === domain)
-		: cards;
+	let scoped = domain ? cards.filter((card) => card.domain === domain) : cards;
+	// An explicit domain request is already specific, so honour it verbatim.
+	if (!includeConfig && !domain)
+		scoped = scoped.filter((card) => !configDomains.has(card.domain));
 	if (!query.trim()) return scoped.slice(0, limit);
-	return scoped
-		.map((card) => ({ card, score: scoreEntity(card, query) }))
+
+	const ranked = scoped
+		.map((card) => ({
+			card,
+			// Nudge primary domains ahead of anything scoring equally.
+			score: scoreEntity(card, query) + (primaryDomains.has(card.domain) ? 5 : 0),
+		}))
 		.filter((entry) => entry.score > 0)
-		.sort((left, right) => right.score - left.score)
+		.sort((left, right) => right.score - left.score);
+	if (!ranked.length) return [];
+
+	/*
+	 * When something matches the query outright, return only the strong
+	 * matches. "pc lamp" should answer with the PC lamp, not also every other
+	 * lamp that happens to share one word.
+	 */
+	const best = ranked[0].score;
+	const cutoff = best >= 80 ? 80 : 0;
+	return ranked
+		.filter((entry) => entry.score >= cutoff)
 		.slice(0, limit)
 		.map((entry) => entry.card);
 }

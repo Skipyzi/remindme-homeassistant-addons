@@ -2230,6 +2230,7 @@ button.send {
  * a gauge line instead (see .gauge). Markup is left in place so this is a
  * one-line revert if the board is ever wanted back. */
 aside.telemetry,
-.mobile-toggle[aria-controls="house-board"] {
+/* Matches the specificity of the responsive rule that reveals this toggle. */
+.topbar .mobile-toggle[aria-controls="house-board"] {
 	display: none;
 }

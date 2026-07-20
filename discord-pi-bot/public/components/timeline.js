@@ -77,8 +77,12 @@
 		}
 		if (event === "tool_complete") {
 			const key = `${phaseId}:tool:${data.name || "tool"}`;
+			/*
+			 * Tool rows show their raw result inside the disclosure. Entity
+			 * cards are not rendered here — they arrive with the answer, so a
+			 * tool call stays a quiet one-line mechanism in the transcript.
+			 */
 			const presentation = {
-				items: Array.isArray(data.result) ? data.result : undefined,
 				confirm: data.result?.confirmation_required ? data.result : undefined,
 			};
 			return upsert(
@@ -127,6 +131,24 @@
 				}),
 			);
 		}
+		if (event === "answer") {
+			// Cards ride with the reply; they are the answer's content.
+			if (!Array.isArray(data.cards) || !data.cards.length) return entries;
+			return upsert(
+				entries,
+				`${phaseId}:answer`,
+				() => ({
+					key: `${phaseId}:answer`,
+					phaseId,
+					kind: "answer",
+					state: "active",
+					text: "",
+					items: data.cards,
+					expanded: true,
+				}),
+				(entry) => ({ ...entry, items: data.cards }),
+			);
+		}
 		if (event === "phase_metrics") {
 			return entries.map((entry) =>
 				entry.phaseId === phaseId ? { ...entry, metrics: data.metrics } : entry,
@@ -139,7 +161,9 @@
 						!(
 							entry.phaseId === phaseId &&
 							(entry.kind === "thinking" || entry.kind === "answer") &&
-							!String(entry.text || "").trim()
+							!String(entry.text || "").trim() &&
+							// An answer whose content is cards has no text to prune on.
+							!(entry.items && entry.items.length)
 						),
 				)
 				.map((entry) =>

@@ -366,6 +366,7 @@ function harness() {
 								"tool_start",
 								"tool_complete",
 								"answer_delta",
+								"answer",
 								"phase_metrics",
 								"phase_complete",
 							].includes(event)
