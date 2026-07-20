@@ -66,6 +66,17 @@
 		return { text: state.toUpperCase(), tone: isActive(entity) ? "on" : "" };
 	}
 
+	/**
+	 * Read-only cards lead with the value as the hero, so repeating it in a
+	 * pill is noise. Show one only when it carries something the hero does
+	 * not — an alert state such as a low battery.
+	 */
+	function showPill(entity) {
+		if (entity.message) return true;
+		if (entity.tier !== "readout") return true;
+		return statePill(entity).tone === "bad";
+	}
+
 	/** Bars are semantic: low battery is rust, moisture is cool, rest is amber. */
 	function fillTone(entity) {
 		const kind = entity.deviceClass;
@@ -162,6 +173,7 @@
 		iconTone,
 		isActive,
 		statePill,
+		showPill,
 		fillTone,
 		barPercent,
 		formatRelative,

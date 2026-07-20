@@ -238,6 +238,9 @@ function harness() {
 		statePill(entity) {
 			return window.RemindMeEntityCards.statePill(entity);
 		},
+		showPill(entity) {
+			return window.RemindMeEntityCards.showPill(entity);
+		},
 		fillTone(entity) {
 			return window.RemindMeEntityCards.fillTone(entity);
 		},

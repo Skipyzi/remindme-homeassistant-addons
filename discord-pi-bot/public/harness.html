@@ -261,6 +261,7 @@
                             </div>
                             <span
                               class="pill"
+                              x-show="showPill(item)"
                               :class="statePill(item).tone"
                               x-text="item.message ? 'SCHEDULED' : statePill(item).text"
                             ></span>

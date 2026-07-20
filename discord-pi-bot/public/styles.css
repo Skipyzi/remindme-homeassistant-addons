@@ -309,7 +309,13 @@ button {
 	border: 1px solid var(--line);
 	padding: 9px 12px;
 	line-height: 1.48;
-	white-space: pre-wrap;
+	/*
+	 * pre-wrap belongs on the text carrier, not the container: as a container
+	 * rule it inherits into every structural child, so the formatting
+	 * whitespace between elements renders as real line boxes and pads out
+	 * cards, disclosures and the composer. See .message > span below.
+	 */
+	white-space: normal;
 	animation: rise 0.24s ease both;
 }
 .message.user {
@@ -804,6 +810,19 @@ summary:focus-visible {
  *   .tier-binary        state pill + dwell time only
  *   .tier-compact       one-line row, used for any result set of 3+
  */
+/*
+ * `.message` sets white-space: pre-wrap so chat text keeps its newlines, and
+ * that inherits into everything below it. Cards are structured markup, not
+ * preformatted text, so the whitespace between their elements would otherwise
+ * render as real line boxes and inflate every block-layout card by ~85px.
+ * (Flex tiers such as .tier-compact were unaffected — flex containers drop
+ * whitespace-only text nodes.) Reset it at the card boundary; descendants that
+ * need nowrap still set it themselves.
+ */
+.entity-stack,
+.entity-card {
+	white-space: normal;
+}
 .entity-stack {
 	display: grid;
 	gap: 10px;
@@ -1516,6 +1535,8 @@ textarea::-webkit-scrollbar-thumb {
 .message > span {
 	display: block;
 	max-width: 100%;
+	/* The one place chat text lives, so the one place newlines must survive. */
+	white-space: pre-wrap;
 }
 .message details,
 .message .entity-stack,
