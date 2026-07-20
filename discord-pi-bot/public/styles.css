@@ -2511,3 +2511,47 @@ aside.telemetry,
 		opacity: 1;
 	}
 }
+
+/* ── Model manager diagnostics ──────────────────────────────────────────*/
+.model-diagnostics {
+	margin: 10px 0 14px;
+}
+.diagnostic-list {
+	display: grid;
+	gap: 4px;
+	margin-top: 10px;
+}
+.diagnostic-row {
+	display: grid;
+	grid-template-columns: 96px 44px minmax(0, 1fr);
+	gap: 8px;
+	align-items: baseline;
+	border-left: 2px solid var(--good);
+	padding: 5px 0 5px 8px;
+	font-size: 10.5px;
+	line-height: 1.5;
+}
+.diagnostic-row.bad {
+	border-left-color: var(--bad);
+}
+.diagnostic-step {
+	color: var(--dim);
+	letter-spacing: 1px;
+	text-transform: uppercase;
+}
+.diagnostic-state {
+	color: var(--good);
+}
+.diagnostic-row.bad .diagnostic-state {
+	color: var(--bad);
+}
+.diagnostic-detail {
+	color: var(--muted);
+	overflow-wrap: anywhere;
+}
+/* Hints span the full row so remedies read as prose, not as a column. */
+.diagnostic-hint {
+	grid-column: 1 / -1;
+	color: var(--amber);
+	padding-top: 2px;
+}

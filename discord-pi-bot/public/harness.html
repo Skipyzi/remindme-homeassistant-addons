@@ -763,6 +763,32 @@
         <section class="settings-card" @click.outside="modelsOpen=false">
           <div class="kicker">Model workbench</div>
           <h2>Local model vault</h2>
+          <!-- Attributes a manager failure to a layer instead of reporting a
+               single opaque "unavailable". -->
+          <div class="model-diagnostics">
+            <button class="chip" @click="runModelDiagnostics()">
+              Diagnose connection
+            </button>
+            <template x-if="modelDiagnostics">
+              <div class="diagnostic-list">
+                <template x-for="check in modelDiagnostics.checks" :key="check.step">
+                  <div class="diagnostic-row" :class="{bad: !check.ok}">
+                    <span class="diagnostic-step" x-text="check.step"></span>
+                    <span
+                      class="diagnostic-state"
+                      x-text="check.ok ? 'PASS' : 'FAIL'"
+                    ></span>
+                    <span class="diagnostic-detail" x-text="check.detail"></span>
+                    <span
+                      class="diagnostic-hint"
+                      x-show="check.hint"
+                      x-text="check.hint"
+                    ></span>
+                  </div>
+                </template>
+              </div>
+            </template>
+          </div>
           <div
             class="model-catalog"
             data-model-catalog

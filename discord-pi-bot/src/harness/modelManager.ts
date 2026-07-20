@@ -30,10 +30,34 @@ export class ModelManagerError extends Error {
 		message: string,
 		public readonly status: number,
 		public readonly retryable = false,
+		/**
+		 * The underlying transport failure, when there was one. Every network
+		 * fault used to collapse into an identical "unavailable" message with
+		 * the cause discarded, which made the manager impossible to diagnose:
+		 * a DNS miss, a refused connection and a timeout all read the same.
+		 */
+		public readonly detail?: string,
 	) {
 		super(message);
 		this.name = "ModelManagerError";
 	}
+}
+
+/** Node nests the useful part of a fetch failure one or two levels down. */
+export function describeTransportError(error: unknown): string {
+	const parts: string[] = [];
+	let current: unknown = error;
+	for (let depth = 0; depth < 3 && current; depth += 1) {
+		if (current instanceof Error) {
+			const code = (current as NodeJS.ErrnoException).code;
+			parts.push(code ? `${current.message} (${code})` : current.message);
+			current = (current as { cause?: unknown }).cause;
+		} else {
+			parts.push(String(current));
+			break;
+		}
+	}
+	return parts.join(" <- ") || "unknown transport failure";
 }
 
 export function deriveManagerUrl(completionUrl: string): string {
@@ -99,12 +123,13 @@ export async function pairModelManager(
 			body: JSON.stringify({ code }),
 			signal: AbortSignal.timeout(15_000),
 		});
-	} catch {
+	} catch (error) {
 		throw new ModelManagerError(
 			"manager_unavailable",
 			"Local model manager is unavailable.",
 			503,
 			true,
+			describeTransportError(error),
 		);
 	}
 	const body = (await response.json().catch(() => ({}))) as ManagerAPIError & {
@@ -152,12 +177,13 @@ export class ModelManagerClient {
 				headers,
 				signal: init.signal || AbortSignal.timeout(130_000),
 			});
-		} catch {
+		} catch (error) {
 			throw new ModelManagerError(
 				"manager_unavailable",
 				"Local model manager is unavailable.",
 				503,
 				true,
+				describeTransportError(error),
 			);
 		}
 		const body = (await response.json().catch(() => ({}))) as ManagerAPIError;
@@ -183,12 +209,13 @@ export class ModelManagerClient {
 				headers: { Authorization: `Bearer ${token}` },
 				signal: AbortSignal.timeout(130_000),
 			});
-		} catch {
+		} catch (error) {
 			throw new ModelManagerError(
 				"manager_unavailable",
 				"Local model manager is unavailable.",
 				503,
 				true,
+				describeTransportError(error),
 			);
 		}
 		const body = await response.text();

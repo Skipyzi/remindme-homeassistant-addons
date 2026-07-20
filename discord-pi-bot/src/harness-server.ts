@@ -31,6 +31,7 @@ import {
 } from "./harness/entityActions";
 import { ConversationStore } from "./harness/conversations";
 import { SkillStore, skillPrompt } from "./harness/skills";
+import { describeTransportError } from "./harness/modelManager";
 
 import { allowedToolNames, toolCallKey } from "./harness/intentRouting";
 import {
@@ -147,6 +148,93 @@ app.post("/api/tokenize", async (request, response) => {
 			error: error instanceof Error ? error.message : "Tokenizer unavailable",
 		});
 	}
+});
+/**
+ * Probe each layer between the harness and the model manager and report them
+ * separately, so "unreachable" can be attributed rather than guessed at.
+ *
+ * The manager owns port 8080 and reverse-proxies anything that is not
+ * /manager/v1/* to llama-server, so working inference already proves the
+ * manager process is up — which is why these are reported apart.
+ */
+app.get("/api/models/diagnostics", async (_request, response) => {
+	const managerUrl = process.env.MODEL_MANAGER_URL || "";
+	const checks: Array<Record<string, unknown>> = [];
+
+	checks.push({
+		step: "enabled",
+		ok: process.env.MODEL_MANAGER_ENABLED === "true",
+		detail: `MODEL_MANAGER_ENABLED=${process.env.MODEL_MANAGER_ENABLED ?? "(unset)"}`,
+		hint: "Set 'model_manager_enabled' in the add-on configuration.",
+	});
+	checks.push({
+		step: "url",
+		ok: Boolean(managerUrl),
+		detail: managerUrl || "(unset)",
+	});
+
+	const paired = await managerPairingConfigured(managerTokenPath());
+	checks.push({
+		step: "paired",
+		ok: paired,
+		detail: paired ? "token present" : `no token at ${managerTokenPath()}`,
+		hint: paired
+			? undefined
+			: "Read the pairing code from the Local llama.cpp add-on log and enter it in Models.",
+	});
+
+	// Unauthenticated probe: a 401 proves the manager is listening and routing.
+	if (managerUrl) {
+		try {
+			const probe = await fetch(`${managerUrl}/status`, {
+				signal: AbortSignal.timeout(4000),
+			});
+			const body = await probe.text().catch(() => "");
+			checks.push({
+				step: "reachable",
+				ok: probe.status === 401 || probe.ok,
+				status: probe.status,
+				detail:
+					probe.status === 401
+						? "manager responded 401 — it is running; this is an auth/pairing issue"
+						: probe.ok
+							? "manager responded without auth (unexpected)"
+							: `unexpected status; body starts: ${body.slice(0, 120)}`,
+				hint:
+					probe.status === 404
+						? "404 suggests the Local llama.cpp add-on predates the model manager. Update it."
+						: undefined,
+			});
+		} catch (error) {
+			checks.push({
+				step: "reachable",
+				ok: false,
+				detail: describeTransportError(error),
+				hint: "Is the Local llama.cpp add-on running, and is port 8080 mapped?",
+			});
+		}
+	}
+
+	// Authenticated call — the one the Models tab actually makes.
+	try {
+		const status = await (await getModelManagerClient()).request("/status");
+		checks.push({ step: "authenticated", ok: true, detail: "status returned", status });
+	} catch (error) {
+		checks.push({
+			step: "authenticated",
+			ok: false,
+			code: error instanceof ModelManagerError ? error.code : "unknown",
+			detail:
+				error instanceof ModelManagerError
+					? error.detail || error.message
+					: String(error),
+		});
+	}
+
+	response.set("Cache-Control", "no-store").json({
+		ok: checks.every((check) => check.ok),
+		checks,
+	});
 });
 app.get("/api/models/pairing", async (_request, response) => {
 	response.set("Cache-Control", "no-store").json({
@@ -1083,11 +1171,16 @@ async function proxyModelManager(
 
 function sendModelManagerError(response: Response, error: unknown) {
 	if (error instanceof ModelManagerError) {
-		response
-			.status(error.status)
-			.json(safeModelError(error.code, error.message, error.retryable));
+		response.status(error.status).json({
+			...safeModelError(error.code, error.message, error.retryable),
+			// errno/hostname only — no token, no user data.
+			detail: error.detail,
+		});
 		return;
 	}
+	// Anything else is a bug rather than a transport fault; say so, and log it
+	// instead of pretending the manager is merely unavailable.
+	console.error("Model manager request failed unexpectedly:", error);
 	response
 		.status(503)
 		.json(

@@ -50,6 +50,7 @@ function harness() {
 		newSkillName: "",
 		newSkillBody: "",
 		skillError: "",
+		modelDiagnostics: null,
 		modelsOpen: false,
 		historyOpen: false,
 		boardOpen: false,
@@ -315,6 +316,21 @@ function harness() {
 				.map((skill) => `${skill.name}: ${skill.instructions}`)
 				.join("\n");
 			return Math.ceil(text.length / 4);
+		},
+		/** Probe each layer to the model manager and show where it breaks. */
+		async runModelDiagnostics() {
+			this.modelDiagnostics = null;
+			try {
+				const response = await fetch("./api/models/diagnostics");
+				this.modelDiagnostics = await response.json();
+			} catch (error) {
+				this.modelDiagnostics = {
+					ok: false,
+					checks: [
+						{ step: "harness", ok: false, detail: String(error.message || error) },
+					],
+				};
+			}
 		},
 		async openSkills() {
 			this.skillsOpen = true;
