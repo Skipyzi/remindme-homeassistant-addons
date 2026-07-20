@@ -41,6 +41,11 @@ function harness() {
 		profile: localStorage.getItem("remindme.profile") || "fast",
 		busy: false,
 		settingsOpen: false,
+		skillsOpen: false,
+		skills: [],
+		newSkillName: "",
+		newSkillBody: "",
+		skillError: "",
 		modelsOpen: false,
 		historyOpen: false,
 		boardOpen: false,
@@ -295,6 +300,129 @@ function harness() {
 				entity.unit,
 			);
 		},
+		get enabledSkillCount() {
+			return this.skills.filter((skill) => skill.enabled).length;
+		},
+		/** Rough cost of what enabled skills add to every request. */
+		get skillTokenCost() {
+			const text = this.skills
+				.filter((skill) => skill.enabled)
+				.map((skill) => `${skill.name}: ${skill.instructions}`)
+				.join("\n");
+			return Math.ceil(text.length / 4);
+		},
+		async openSkills() {
+			this.skillsOpen = true;
+			await this.loadSkills();
+		},
+		async loadSkills() {
+			try {
+				const response = await fetch("./api/skills");
+				this.skills = response.ok ? await response.json() : [];
+			} catch {
+				this.skillError = "Could not load skills.";
+			}
+		},
+		async addSkill() {
+			const name = this.newSkillName.trim();
+			const instructions = this.newSkillBody.trim();
+			if (!name || !instructions) {
+				this.skillError = "A skill needs both a name and instructions.";
+				return;
+			}
+			this.skillError = "";
+			const response = await fetch("./api/skills", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ name, instructions, enabled: true }),
+			});
+			if (!response.ok) {
+				this.skillError = "Could not save the skill.";
+				return;
+			}
+			this.skills.unshift(await response.json());
+			this.newSkillName = "";
+			this.newSkillBody = "";
+		},
+		async updateSkill(skill, values) {
+			const response = await fetch(
+				`./api/skills/${encodeURIComponent(skill.id)}`,
+				{
+					method: "PATCH",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify(values),
+				},
+			);
+			if (!response.ok) {
+				this.skillError = "Could not update the skill.";
+				return;
+			}
+			Object.assign(skill, await response.json());
+		},
+		toggleSkill(skill, enabled) {
+			return this.updateSkill(skill, { enabled });
+		},
+		async deleteSkill(skill) {
+			if (!window.confirm(`Delete the skill "${skill.name}"?`)) return;
+			const response = await fetch(
+				`./api/skills/${encodeURIComponent(skill.id)}`,
+				{ method: "DELETE" },
+			);
+			if (!response.ok && response.status !== 404) {
+				this.skillError = "Could not delete the skill.";
+				return;
+			}
+			this.skills = this.skills.filter((entry) => entry.id !== skill.id);
+		},
+		/**
+		 * Local commands are answered by the console itself and never reach the
+		 * model — no tokens spent listing your own capabilities.
+		 */
+		async runLocalCommand(text) {
+			const command = text.toLowerCase();
+			if (command !== "/tools" && command !== "/help") return false;
+			this.add("user", text);
+			if (command === "/help") {
+				this.add(
+					"assistant",
+					[
+						"Local commands:",
+						"  /tools — list the tools the console can call",
+						"  /help  — this list",
+					].join("\n"),
+				);
+				return true;
+			}
+			try {
+				const response = await fetch("./api/tools");
+				const tools = response.ok ? await response.json() : [];
+				const lines = tools.map((tool) =>
+					[
+						`  ${tool.name}(${(tool.parameters || []).join(", ")})`,
+						`      ${tool.description || ""}`,
+					].join("\n"),
+				);
+				this.add(
+					"assistant",
+					lines.length
+						? [`${tools.length} tools available:`, ...lines].join("\n")
+						: "No tools are currently available.",
+				);
+			} catch {
+				this.add("assistant", "Could not read the tool catalogue.");
+			}
+			return true;
+		},
+		/** Delete a conversation. Confirmed first — it is not recoverable. */
+		async deleteConversation(conversation) {
+			if (
+				!window.confirm(
+					`Delete "${conversation.title || "this conversation"}"? This cannot be undone.`,
+				)
+			)
+				return;
+			await window.RemindMeConversations.remove(this, conversation);
+		},
 		async entityAction(entity, action, value) {
 			const outcome = await window.RemindMeEntities.performEntityAction(
 				entity,
@@ -328,6 +456,13 @@ function harness() {
 			const text = this.draft.trim();
 			if (!text || this.busy) return;
 			this.draft = "";
+			if (await this.runLocalCommand(text)) {
+				this.$nextTick(() =>
+					this.resizeComposer({ target: this.$refs.composerInput }),
+				);
+				this.persist();
+				return;
+			}
 			this.$nextTick(() =>
 				this.resizeComposer({ target: this.$refs.composerInput }),
 			);

@@ -42,23 +42,22 @@
 		monospace;
 }
 
-/*
- * Drop licensed WOFF2 files into public/fonts/ and uncomment to match the
- * mock exactly. The stacks above hold the layout until then — the harness is
- * meant to run with no network, so no CDN @import here.
- *
- * @font-face {
- *   font-family: "Big Shoulders Stencil Text";
- *   src: url("./fonts/big-shoulders-stencil-text-700.woff2") format("woff2");
- *   font-weight: 700;
- *   font-display: swap;
- * }
- * @font-face {
- *   font-family: "Share Tech Mono";
- *   src: url("./fonts/share-tech-mono.woff2") format("woff2");
- *   font-display: swap;
- * }
- */
+/* Self-hosted so the console needs no network. Both faces are SIL OFL 1.1;
+ * see public/fonts/README.md for attribution. Latin subset only. */
+@font-face {
+	font-family: "Big Shoulders Stencil Text";
+	src: url("./fonts/big-shoulders-stencil-text-700.woff2") format("woff2");
+	font-weight: 700;
+	font-style: normal;
+	font-display: swap;
+}
+@font-face {
+	font-family: "Share Tech Mono";
+	src: url("./fonts/share-tech-mono.woff2") format("woff2");
+	font-weight: 400;
+	font-style: normal;
+	font-display: swap;
+}
 * {
 	box-sizing: border-box;
 }
@@ -1299,28 +1298,24 @@ summary:focus-visible {
 	border: 0;
 }
 @media (max-width: 1200px) {
-	.deck {
+	/* The grid moved to .screen when the device shell landed; .deck is the
+	 * case. The house board is retired, so nothing here revives its toggle. */
+	.screen {
 		grid-template-columns: clamp(180px, 21vw, 235px) minmax(0, 1fr);
-	}
-	#house-board {
-		display: none;
-	}
-	.topbar .mobile-toggle[aria-controls="house-board"] {
-		display: inline-flex;
-	}
-	#house-board.open {
-		display: block;
-		position: fixed;
-		z-index: 29;
-		right: 0;
-		top: 72px;
-		bottom: 0;
-		width: min(320px, 88vw);
 	}
 }
 @media (max-width: 850px) {
 	.deck {
+		width: 100%;
+		height: 100vh;
+		height: 100dvh;
+		padding: 0;
+		border-radius: 0;
+		box-shadow: none;
+	}
+	.screen {
 		grid-template-columns: minmax(0, 1fr);
+		border-radius: 0;
 	}
 	#conversation-library {
 		position: fixed;
@@ -2192,19 +2187,7 @@ button.send {
 	max-width: 540px;
 }
 
-@media (max-width: 900px) {
-	.deck {
-		width: 100%;
-		height: 100vh;
-		border-radius: 0;
-		padding: 0;
-		box-shadow: none;
-	}
-	.screen {
-		border-radius: 0;
-		grid-template-columns: minmax(0, 1fr);
-	}
-}
+
 
 /* Role label above each bubble, per the mock. Generated rather than markup
  * so the timeline template stays untouched. */
@@ -2233,4 +2216,176 @@ aside.telemetry,
 /* Matches the specificity of the responsive rule that reveals this toggle. */
 .topbar .mobile-toggle[aria-controls="house-board"] {
 	display: none;
+}
+
+/* Conversation rows: open on the left, delete on the right. The delete only
+ * reads rust on hover so a list of conversations is not a wall of red. */
+.history-row {
+	display: flex;
+	align-items: stretch;
+	gap: 4px;
+}
+.history-row .history-open {
+	flex: 1;
+	min-width: 0;
+	text-align: left;
+}
+.history-delete {
+	flex: none;
+	width: 26px;
+	background: transparent;
+	border: 1px solid transparent;
+	color: var(--muted);
+	font-family: inherit;
+	font-size: 14px;
+	line-height: 1;
+	cursor: pointer;
+}
+.history-delete:hover {
+	border-color: var(--bad);
+	color: var(--bad);
+}
+
+/* ── Skill manager ──────────────────────────────────────────────────────*/
+.skill-list {
+	display: grid;
+	gap: 10px;
+	margin: 12px 0;
+	max-height: 46vh;
+	overflow-y: auto;
+}
+.skill-row {
+	border: 1px solid var(--amber-faint);
+	background: rgba(255, 178, 0, 0.03);
+	padding: 10px;
+}
+/* A disabled skill costs nothing, so it reads as inert. */
+.skill-row.disabled {
+	opacity: 0.55;
+}
+.skill-head {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+.skill-toggle {
+	display: flex;
+	align-items: center;
+	gap: 5px;
+	flex: none;
+	font-size: 10px;
+	letter-spacing: 1px;
+	color: var(--dim);
+	cursor: pointer;
+}
+.skill-toggle input {
+	accent-color: var(--amber);
+}
+.skill-name {
+	flex: 1;
+	min-width: 0;
+	background: transparent;
+	border: 1px solid transparent;
+	color: #f0e6cf;
+	font-family: inherit;
+	font-size: 12px;
+	padding: 4px 6px;
+}
+.skill-name:hover,
+.skill-name:focus {
+	border-color: var(--amber-dim);
+	outline: none;
+}
+.skill-body,
+.skill-new textarea,
+.skill-new input {
+	width: 100%;
+	margin-top: 8px;
+	background: var(--panel-2);
+	border: 1px solid var(--amber-dim);
+	color: var(--text);
+	font-family: inherit;
+	font-size: 11.5px;
+	line-height: 1.6;
+	padding: 8px;
+	resize: vertical;
+}
+.skill-new {
+	border-top: 1px solid var(--amber-faint);
+	padding-top: 12px;
+}
+.settings-note {
+	font-size: 10.5px;
+	letter-spacing: 0.5px;
+	color: var(--muted);
+	margin: 6px 0 0;
+}
+.settings-note b {
+	color: var(--amber);
+	font-weight: normal;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * RESPONSIVE — must stay last in the file.
+ *
+ * Media queries carry no extra specificity, so the base .deck/.screen rules
+ * in the device-shell section above will beat any earlier media block. These
+ * live at the end so they actually win.
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+@media (max-width: 1200px) {
+	.screen {
+		grid-template-columns: clamp(180px, 21vw, 235px) minmax(0, 1fr);
+	}
+}
+
+@media (max-width: 850px) {
+	/* Case goes full-bleed: a bezel on a phone is wasted width. */
+	.deck {
+		width: 100%;
+		max-width: none;
+		height: 100vh;
+		height: 100dvh;
+		padding: 0;
+		border-radius: 0;
+		box-shadow: none;
+	}
+	.screen {
+		border-radius: 0;
+		/* The rail becomes an off-canvas drawer, so it leaves the grid. A
+		 * second column here would strand .main in the narrow first one. */
+		grid-template-columns: minmax(0, 1fr);
+	}
+	.rail {
+		border-right: 0;
+	}
+	.message,
+	.message.tool,
+	.message.thinking,
+	.entity-stack {
+		max-width: 100%;
+	}
+}
+
+@media (max-width: 520px) {
+	.topbar {
+		gap: 8px;
+	}
+	/* Keep the title from colliding with the toggles on narrow screens. */
+	.top-title {
+		font-size: 16px;
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.top-title small {
+		display: none;
+	}
+	.chat {
+		padding: 8px 10px;
+	}
+	.composer {
+		padding-top: 10px;
+	}
 }

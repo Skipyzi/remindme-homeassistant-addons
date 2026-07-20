@@ -30,6 +30,7 @@ import {
 	type EntityAction,
 } from "./harness/entityActions";
 import { ConversationStore } from "./harness/conversations";
+import { SkillStore, skillPrompt } from "./harness/skills";
 
 import { allowedToolNames, toolCallKey } from "./harness/intentRouting";
 import {
@@ -69,9 +70,40 @@ const pendingActions = new Map<
 void loadReminders(async () => {});
 const conversations = new ConversationStore();
 void conversations.load();
+const skills = new SkillStore();
+void skills.load();
 type Send = (event: string, data: unknown) => void;
 
 app.use(express.json({ limit: "64kb" }));
+app.get("/api/skills", (_request, response) => {
+	response.json(skills.list());
+});
+app.post("/api/skills", async (request, response) => {
+	response.status(201).json(await skills.create(request.body || {}));
+});
+app.patch("/api/skills/:id", async (request, response) => {
+	const updated = await skills.update(request.params.id, request.body || {});
+	response
+		.status(updated ? 200 : 404)
+		.json(updated || { error: "Skill not found" });
+});
+app.delete("/api/skills/:id", async (request, response) => {
+	response.status((await skills.delete(request.params.id)) ? 204 : 404).end();
+});
+/* Tool catalogue for the /tools command — names, descriptions and parameter
+ * keys only, so the UI can list capabilities without restating the schema. */
+app.get("/api/tools", (_request, response) => {
+	response.json(
+		tools.map((tool) => ({
+			name: tool.function.name,
+			description: tool.function.description,
+			parameters: Object.keys(
+				(tool.function.parameters as { properties?: Record<string, unknown> })
+					?.properties || {},
+			),
+		})),
+	);
+});
 app.get("/api/conversations", (request, response) => {
 	response.json(
 		conversations.list(
@@ -367,10 +399,13 @@ app.get("/api/status", async (_request, response) => {
 		Number(process.env.LOCAL_LLM_CONTEXT_SIZE || 8192);
 	response.set("Cache-Control", "no-store").json({
 		instanceId,
-		model: managed?.id || "runtime-unavailable",
+		model: managed?.id || config.localLlmModel || "runtime-unavailable",
 		modelName: managed
 			? `${managed.family} ${managed.quantization}`.trim()
-			: "Runtime unavailable",
+			: config.localLlmModel || "Runtime unavailable",
+		/* Whether the manager is driving the endpoint, distinct from whether
+		 * inference works at all. */
+		managed: Boolean(managed),
 		capabilities: managed?.capabilities || [],
 		llmUrl:
 			process.env.LOCAL_LLM_URL ||
@@ -545,8 +580,10 @@ async function runAgent(
 	const messages: Array<Record<string, unknown>> = [
 		{
 			role: "system",
+			// Enabled skills are appended so they bind for the whole turn.
 			content:
-				"You are RemindMe, a concise general and home assistant. Answer directly. Use tools only when needed. Confirm sensitive home actions.",
+				"You are RemindMe, a concise general and home assistant. Answer directly. Use tools only when needed. Confirm sensitive home actions." +
+				skillPrompt(skills.enabled()),
 		},
 		{ role: "user", content: userContent(prompt, attachments) },
 	];
@@ -939,17 +976,26 @@ async function managedActiveModel(): Promise<ManagedActiveModel | undefined> {
 	}
 }
 
+/**
+ * Identify the model actually serving requests.
+ *
+ * The model manager is optional — when it is disabled, or reachable but not
+ * managing this endpoint, inference still runs against LOCAL_LLM_URL with
+ * LOCAL_LLM_MODEL. Reporting "runtime unavailable" in that case was wrong:
+ * it described the manager, not the runtime. Fall back to the configured
+ * model, which is what the requests are actually sent with.
+ */
 async function activeModelMetadata(): Promise<ActiveModelMetadata> {
 	const active = await managedActiveModel();
-	return active
-		? {
-				modelId: active.id,
-				modelName: `${active.family} ${active.quantization}`.trim(),
-			}
-		: {
-				modelId: "runtime-unavailable",
-				modelName: "Runtime unavailable",
-			};
+	if (active)
+		return {
+			modelId: active.id,
+			modelName: `${active.family} ${active.quantization}`.trim(),
+		};
+	const configured = config.localLlmModel;
+	return configured
+		? { modelId: configured, modelName: configured }
+		: { modelId: "runtime-unavailable", modelName: "Runtime unavailable" };
 }
 
 let modelManagerClientPromise: Promise<ModelManagerClient> | undefined;

@@ -42,6 +42,29 @@
 			250,
 		);
 	}
+	/**
+	 * Remove a conversation. Deleting the open one clears the transcript and
+	 * falls through to whatever is left, so the console is never left showing
+	 * messages that belong to a conversation that no longer exists.
+	 */
+	async function remove(app, conversation) {
+		const response = await fetch(
+			`./api/conversations/${encodeURIComponent(conversation.id)}`,
+			{ method: "DELETE" },
+		);
+		if (!response.ok && response.status !== 404) return false;
+		app.conversations = app.conversations.filter(
+			(entry) => entry.id !== conversation.id,
+		);
+		if (app.currentConversationId === conversation.id) {
+			const next = app.conversations[0];
+			app.currentConversationId = next ? next.id : "";
+			if (next) select(app, next);
+			else app.messages = [];
+		}
+		return true;
+	}
+
 	function select(app, conversation) {
 		app.currentConversationId = conversation.id;
 		app.messages = conversation.messages.map((message) => ({
@@ -52,5 +75,5 @@
 		}));
 		app.historyOpen = false;
 	}
-	globalScope.RemindMeConversations = { load, create, save, select };
+	globalScope.RemindMeConversations = { load, create, save, select, remove };
 })(window);

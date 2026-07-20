@@ -48,17 +48,29 @@
             <template
               x-for="conversation in filteredConversations"
               :key="conversation.id"
-              ><button
-                :class="{active:conversation.id===currentConversationId}"
-                @click="selectConversation(conversation)"
-              >
-                <span x-text="conversation.title"></span
-                ><small
-                  x-text="new Date(conversation.updatedAt).toLocaleDateString()"
-                ></small></button
+              ><div class="history-row">
+                <button
+                  class="history-open"
+                  :class="{active:conversation.id===currentConversationId}"
+                  @click="selectConversation(conversation)"
+                >
+                  <span x-text="conversation.title"></span
+                  ><small
+                    x-text="new Date(conversation.updatedAt).toLocaleDateString()"
+                  ></small>
+                </button>
+                <button
+                  class="history-delete"
+                  :aria-label="`Delete ${conversation.title}`"
+                  title="Delete conversation"
+                  @click.stop="deleteConversation(conversation)"
+                >
+                  &times;
+                </button></div
             ></template>
           </div>
           <button @click="clearChat()">Clear conversation</button>
+          <button @click="openSkills()">Skills</button>
           <button @click="modelsOpen=true">Models</button>
           <button @click="settingsOpen=true">Settings</button>
         </nav>
@@ -609,6 +621,82 @@
           ><strong x-text="metrics.thinking || 0"></strong><span> chars</span>
         </div>
       </aside>
+      <!-- Skill manager: named instruction blocks injected into the system
+           prompt when enabled. They cost context every turn, so enabling is
+           explicit and the panel shows the running total. -->
+      <div
+        class="settings"
+        id="skills-view"
+        x-show="skillsOpen"
+        x-cloak
+        @keydown.escape.window="skillsOpen=false"
+      >
+        <section class="settings-card" @click.outside="skillsOpen=false">
+          <div class="kicker">Prompt skills</div>
+          <h2>Teach the console</h2>
+          <p class="settings-note">
+            Enabled skills are added to the system prompt on every turn.
+            <b x-text="`${enabledSkillCount} of ${skills.length} enabled`"></b>
+            <span x-text="`· ~${skillTokenCost} tok per request`"></span>
+          </p>
+
+          <div class="skill-list">
+            <template x-for="skill in skills" :key="skill.id">
+              <div class="skill-row" :class="{disabled: !skill.enabled}">
+                <div class="skill-head">
+                  <label class="skill-toggle"
+                    ><input
+                      type="checkbox"
+                      :checked="skill.enabled"
+                      @change="toggleSkill(skill, $event.target.checked)"
+                    /><span x-text="skill.enabled ? 'ON' : 'OFF'"></span
+                  ></label>
+                  <input
+                    class="skill-name"
+                    :value="skill.name"
+                    @change="updateSkill(skill, {name: $event.target.value})"
+                  />
+                  <button
+                    class="history-delete"
+                    title="Delete skill"
+                    @click="deleteSkill(skill)"
+                  >
+                    &times;
+                  </button>
+                </div>
+                <textarea
+                  class="skill-body"
+                  rows="3"
+                  :value="skill.instructions"
+                  placeholder="Instructions to follow on every reply…"
+                  @change="updateSkill(skill, {instructions: $event.target.value})"
+                ></textarea>
+              </div>
+            </template>
+            <p class="settings-note" x-show="!skills.length">
+              No skills yet. Add one below.
+            </p>
+          </div>
+
+          <div class="skill-new">
+            <input
+              x-model="newSkillName"
+              placeholder="Skill name, e.g. Terse replies"
+            />
+            <textarea
+              x-model="newSkillBody"
+              rows="2"
+              placeholder="What should the console always do?"
+            ></textarea>
+            <button class="action" @click="addSkill()">Add skill</button>
+          </div>
+
+          <p class="settings-note" x-show="skillError" x-text="skillError"></p>
+          <div class="settings-actions">
+            <button class="send" @click="skillsOpen=false">Close</button>
+          </div>
+        </section>
+      </div>
       <div
         class="settings"
         id="settings-view"
