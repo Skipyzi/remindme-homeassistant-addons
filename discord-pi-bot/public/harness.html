@@ -9,6 +9,7 @@
     <script defer src="./components/tools.js"></script>
     <script defer src="./components/composer.js"></script>
     <script defer src="./components/entities.js"></script>
+    <script defer src="./components/entityCards.js"></script>
     <script defer src="./components/conversations.js"></script>
     <script defer src="./components/attachments.js"></script>
     <script defer src="./components/model-cookbook.js"></script>
@@ -17,6 +18,7 @@
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
+    <pre id="ascii" aria-hidden="true"></pre>
     <div
       class="deck"
       :class="{scanlines:scanlines}"
@@ -143,10 +145,19 @@
                       <b>Inference</b>
                       <div class="metric-chips">
                         <span
-                          x-text="`${message.metrics?.inputTokens || 0} in`"
+                          x-text="`${message.metrics?.estimated ? '~' : ''}${message.metrics?.inputTokens || 0} in`"
                         ></span
                         ><span
-                          x-text="`${message.metrics?.outputTokens || 0} out`"
+                          x-text="`${message.metrics?.estimated ? '~' : ''}${message.metrics?.outputTokens || 0} out`"
+                        ></span
+                        ><!-- Tool output fed BACK into the window, counted
+                             separately from the model's own generation so
+                             context bloat is attributable per call. -->
+                        <span
+                          class="chip-context"
+                          x-show="message.metrics?.toolResultTokens"
+                          title="Tool result fed back into context"
+                          x-text="`+${message.metrics?.toolResultTokens} ctx`"
                         ></span
                         ><span
                           x-text="`${formatSpeed(message.metrics?.encodeTokensPerSecond)} encode`"
@@ -188,69 +199,261 @@
                 ></span
                 ><span x-text="formatDuration(message.metrics?.totalMs)"></span>
               </footer>
+              <!--
+                Four card tiers, picked by what you can do with the entity.
+                A result set of 3+ collapses to compact rows regardless.
+              -->
               <template x-if="message.items"
-                ><div class="entity-stack">
+                ><div
+                  class="entity-stack"
+                  :class="{compact: message.items.length>=3}"
+                >
                   <template
                     x-for="item in message.items"
                     :key="item.id || item.entityId"
                     ><section
                       class="entity-card"
-                      :class="{pending:item.pending,applied:item.applied}"
+                      :class="[tierOf(item,message.items.length), {pending:item.pending,applied:item.applied}]"
                     >
-                      <header>
-                        <div>
-                          <b
-                            x-text="item.message ? item.message : item.name"
-                          ></b
-                          ><small
-                            x-text="item.message ? formatTime(item.time) : item.entityId"
-                          ></small>
-                        </div>
-                        <span
-                          class="entity-state"
-                          x-text="item.message ? 'SCHEDULED' : item.state"
-                        ></span>
-                      </header>
-                      <template x-if="item.domain==='light'"
-                        ><div class="entity-controls">
-                          <button
-                            class="action"
-                            @click="entityAction(item,item.state==='on'?'turn_off':'turn_on')"
-                            x-text="item.state==='on'?'Turn off':'Turn on'"
-                          ></button>
-                          <label x-show="item.capabilities?.brightness"
-                            >Intensity
-                            <input
-                              type="range"
-                              min="0"
-                              max="255"
-                              :value="item.brightness || 0"
-                              @change="entityAction(item,'brightness',Number($event.target.value))"
-                          /></label>
-                          <label x-show="item.capabilities?.colorTemperature"
-                            >Warmth
-                            <input
-                              type="range"
-                              min="1000"
-                              max="12000"
-                              :value="item.colorTemperature || 2700"
-                              @change="entityAction(item,'color_temperature',Number($event.target.value))"
-                          /></label>
-                          <label x-show="item.capabilities?.color"
-                            >Color
-                            <input
-                              type="color"
-                              :value="rgbHex(item.rgbColor)"
-                              @change="entityAction(item,'rgb_color',hexRgb($event.target.value))"
-                          /></label></div
+                      <!-- COMPACT — one line, no controls -->
+                      <template x-if="tierOf(item,message.items.length)==='tier-compact'"
+                        ><div style="display:contents">
+                          <svg
+                            class="ico"
+                            :class="iconTone(item)"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.6"
+                            x-html="iconPaths(item)"
+                          ></svg>
+                          <span class="nm" x-text="item.name"></span
+                          ><span
+                            class="val"
+                            :class="{cool: iconTone(item)==='cool', off: !isActive(item)}"
+                            x-text="item.numericState ?? String(item.state).toUpperCase()"
+                          ></span
+                          ><span class="u" x-text="item.unit || '—'"></span></div
                       ></template>
-                      <button
-                        x-show="item.message"
-                        class="action"
-                        @click="deleteReminder(item.id)"
+
+                      <!-- All other tiers share the head -->
+                      <template x-if="tierOf(item,message.items.length)!=='tier-compact'"
+                        ><div style="display:contents">
+                          <header>
+                            <svg
+                              class="ico"
+                              :class="iconTone(item)"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              stroke-width="1.6"
+                              x-html="iconPaths(item)"
+                            ></svg>
+                            <div class="ct">
+                              <div
+                                class="name"
+                                x-text="item.message ? item.message : item.name"
+                              ></div>
+                              <div
+                                class="entity"
+                                x-text="item.message ? formatTime(item.time) : item.entityId"
+                              ></div>
+                            </div>
+                            <span
+                              class="pill"
+                              x-show="showPill(item)"
+                              :class="statePill(item).tone"
+                              x-text="item.message ? 'SCHEDULED' : statePill(item).text"
+                            ></span>
+                          </header>
+
+                          <!-- BINARY — state pill and dwell time only -->
+                          <template
+                            x-if="tierOf(item,message.items.length)==='tier-binary'"
+                            ><div class="card-body">
+                              <div class="meta" x-text="formatDwell(item)"></div></div
+                          ></template>
+
+                          <!-- READ-ONLY SENSOR — value as hero, no actions -->
+                          <template
+                            x-if="tierOf(item,message.items.length)==='tier-readout'"
+                            ><div class="card-body">
+                              <div>
+                                <span
+                                  class="big"
+                                  :class="fillTone(item)==='cool'?'cool':(fillTone(item)==='bad'?'bad':'')"
+                                  x-text="item.numericState ?? item.state"
+                                ></span
+                                ><span class="unit" x-text="item.unit || ''"></span>
+                              </div>
+                              <!-- bounded 0-100 → level → bar -->
+                              <div
+                                class="bar"
+                                style="margin-top: 9px"
+                                x-show="item.measurement==='bar' && barPercent(item)!==null"
+                              >
+                                <div
+                                  class="fill"
+                                  :class="fillTone(item)"
+                                  :style="`width:${barPercent(item) || 0}%`"
+                                ></div>
+                              </div>
+                              <!-- drifting value → trend → sparkline -->
+                              <template x-if="item.measurement==='sparkline'"
+                                ><div x-init="loadSpark(item)">
+                                  <svg
+                                    class="spark"
+                                    viewBox="0 0 200 34"
+                                    preserveAspectRatio="none"
+                                    x-show="item.sparkPoints"
+                                  >
+                                    <polyline
+                                      :points="item.sparkPoints"
+                                      fill="none"
+                                      stroke="currentColor"
+                                      stroke-width="1.4"
+                                      style="color: var(--amber)"
+                                    />
+                                  </svg></div
+                              ></template>
+                              <div
+                                class="meta"
+                                x-text="item.sparkSummary || metaLine(item)"
+                              ></div></div
+                          ></template>
+
+                          <!-- CONTROLLABLE — full card plus an action row -->
+                          <template
+                            x-if="tierOf(item,message.items.length)==='tier-controllable'"
+                            ><div style="display:contents">
+                              <div class="card-body">
+                                <!-- lights: brightness bar + colour temp swatches -->
+                                <template x-if="item.domain==='light'"
+                                  ><div>
+                                    <div
+                                      class="row"
+                                      x-show="item.capabilities?.brightness"
+                                    >
+                                      <span>BRIGHTNESS</span
+                                      ><span x-text="`${barPercent(item) || 0}%`"></span>
+                                    </div>
+                                    <div
+                                      class="bar"
+                                      x-show="item.capabilities?.brightness"
+                                    >
+                                      <div
+                                        class="fill"
+                                        :style="`width:${barPercent(item) || 0}%`"
+                                      ></div>
+                                    </div>
+                                    <div
+                                      class="swatches"
+                                      x-show="item.capabilities?.colorTemperature"
+                                    >
+                                      <template
+                                        x-for="kelvin in [2200,2700,4000,6500]"
+                                        :key="kelvin"
+                                        ><button
+                                          class="sw"
+                                          :style="`background:${kelvinHex(kelvin)}`"
+                                          :title="`${kelvin}K`"
+                                          @click="entityAction(item,'color_temperature',kelvin)"
+                                        ></button
+                                      ></template>
+                                    </div></div
+                                ></template>
+
+                                <!-- climate: target stepper, current vs target in meta -->
+                                <template x-if="item.domain==='climate'"
+                                  ><div class="stepper">
+                                    <button
+                                      class="step-btn"
+                                      @click="stepTemperature(item,-1)"
+                                    >
+                                      −
+                                    </button>
+                                    <div>
+                                      <span
+                                        class="big"
+                                        x-text="item.targetTemperature ?? '—'"
+                                      ></span
+                                      ><span class="unit">° TARGET</span>
+                                    </div>
+                                    <button
+                                      class="step-btn"
+                                      @click="stepTemperature(item,1)"
+                                    >
+                                      +
+                                    </button></div
+                                ></template>
+
+                                <!-- covers: position, not just open/closed -->
+                                <template x-if="item.domain==='cover'"
+                                  ><div>
+                                    <div class="row">
+                                      <span>POSITION</span
+                                      ><span
+                                        x-text="`${item.position ?? 0}% OPEN`"
+                                      ></span>
+                                    </div>
+                                    <div class="bar">
+                                      <div
+                                        class="fill"
+                                        :style="`width:${item.position ?? 0}%`"
+                                      ></div>
+                                    </div></div
+                                ></template>
+
+                                <!-- switches: surface live wattage -->
+                                <template
+                                  x-if="item.domain==='switch' && item.power!=null"
+                                  ><div>
+                                    <div class="row">
+                                      <span>DRAWING NOW</span
+                                      ><span x-text="`${item.power} W`"></span>
+                                    </div>
+                                    <div class="bar">
+                                      <div
+                                        class="fill"
+                                        :style="`width:${Math.min(100,(item.power/1500)*100)}%`"
+                                      ></div>
+                                    </div></div
+                                ></template>
+
+                                <div class="meta" x-text="metaLine(item)"></div>
+                              </div>
+                              <div class="actions">
+                                <button
+                                  class="chip"
+                                  x-show="item.capabilities?.toggle"
+                                  @click="entityAction(item,isActive(item)?'turn_off':'turn_on')"
+                                  x-text="isActive(item)?'TURN OFF':'TURN ON'"
+                                ></button>
+                                <!-- destructive: hovers rust, never amber -->
+                                <button
+                                  class="chip warn"
+                                  x-show="item.capabilities?.lock"
+                                  @click="entityAction(item, item.state==='locked'?'unlock':'lock')"
+                                  x-text="item.state==='locked'?'UNLOCK':'LOCK'"
+                                ></button>
+                                <button
+                                  class="chip warn"
+                                  x-show="item.domain==='cover'"
+                                  @click="entityAction(item,'open_cover')"
+                                >
+                                  OPEN
+                                </button>
+                                <button
+                                  class="chip"
+                                  x-show="item.domain==='cover'"
+                                  @click="entityAction(item,'close_cover')"
+                                >
+                                  CLOSE
+                                </button>
+                              </div></div
+                          ></template>
+                        </div></template
                       >
-                        Delete reminder
-                      </button>
                       <p
                         class="entity-error"
                         x-show="item.error"
@@ -258,10 +461,15 @@
                       ></p></section
                   ></template></div
               ></template>
+              <!-- Destructive confirms read rust, never amber. -->
               <template x-if="message.confirm"
                 ><div class="controls">
-                  <button class="action" @click="confirmAction(message)">
-                    CONFIRM ACTION</button
+                  <button
+                    class="action"
+                    :class="{destructive: message.confirm.destructive}"
+                    @click="confirmAction(message)"
+                    x-text="message.confirm.destructive ? 'CONFIRM — UNSAFE' : 'CONFIRM ACTION'"
+                  ></button
                   ><button class="ghost" @click="cancelAction(message)">
                     CANCEL
                   </button>
