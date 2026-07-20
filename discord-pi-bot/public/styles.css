@@ -1,23 +1,64 @@
+/*
+ * Wrist-console phosphor. Swap --amber and its dim/faint steps to retheme the
+ * whole surface; nothing below hardcodes a phosphor colour.
+ *
+ * Colour is semantic, not decorative:
+ *   amber = live / actionable    cool = cold, moisture
+ *   good  = safe resting state   bad  = attention, destructive
+ */
 :root {
-	--mojave-night: #090b0d;
-	--tobacco-walnut: #211711;
-	--oxidized-brass: #b08a48;
-	--casino-amber: #f2b84b;
-	--turquoise-neon: #48d7c4;
-	--burgundy-velvet: #521f2b;
-	--akira-red: #e74736;
-	--ink: var(--mojave-night);
-	--panel: #17120f;
-	--panel-2: #241915;
-	--line: rgba(176, 138, 72, 0.36);
-	--text: #f4ead7;
-	--muted: #aa9478;
-	--amber: var(--casino-amber);
-	--mint: var(--turquoise-neon);
-	--coral: var(--akira-red);
+	--amber: #ffb200;
+	--amber-dim: #8a5c00;
+	--amber-faint: #5c4416;
+	--case: #2c2f24;
+	--glass: #160f04;
+	--cool: #5fb8d6;
+	--hot: #e0602c;
+	--good: #5cc06a;
+	--bad: #e05a2b;
+
+	--ink: #080704;
+	--panel: #140e05;
+	--panel-2: #1d1408;
+	--line: var(--amber-dim);
+	--text: #e8dcc0;
+	--muted: #8a7d5c;
+	--dim: #c9a34e;
+
+	/* Legacy aliases kept so untouched rules keep resolving. */
+	--mojave-night: var(--ink);
+	--casino-amber: var(--amber);
+	--turquoise-neon: var(--cool);
+	--akira-red: var(--bad);
+	--oxidized-brass: var(--amber-dim);
+	--mint: var(--good);
+	--coral: var(--bad);
 	--violet: #a990c8;
 	--glow: 0.55;
+
+	--display: "Big Shoulders Stencil Text", "Haettenschweiler", "Arial Narrow",
+		Impact, sans-serif;
+	--mono: "Share Tech Mono", ui-monospace, Consolas, "DejaVu Sans Mono",
+		monospace;
 }
+
+/*
+ * Drop licensed WOFF2 files into public/fonts/ and uncomment to match the
+ * mock exactly. The stacks above hold the layout until then — the harness is
+ * meant to run with no network, so no CDN @import here.
+ *
+ * @font-face {
+ *   font-family: "Big Shoulders Stencil Text";
+ *   src: url("./fonts/big-shoulders-stencil-text-700.woff2") format("woff2");
+ *   font-weight: 700;
+ *   font-display: swap;
+ * }
+ * @font-face {
+ *   font-family: "Share Tech Mono";
+ *   src: url("./fonts/share-tech-mono.woff2") format("woff2");
+ *   font-display: swap;
+ * }
+ */
 * {
 	box-sizing: border-box;
 }
@@ -27,7 +68,37 @@ body {
 	min-height: 100%;
 	background: var(--ink);
 	color: var(--text);
-	font-family: "Trebuchet MS", "Segoe UI", system-ui, sans-serif;
+	font-family: var(--mono);
+}
+
+/*
+ * Full-viewport ASCII field. Deliberately subtle: it should read as texture
+ * behind the glass, never as content. Painted by app.js.
+ */
+#ascii {
+	position: fixed;
+	inset: 0;
+	margin: 0;
+	z-index: 0;
+	font-family: var(--mono);
+	font-size: 12px;
+	line-height: 12px;
+	letter-spacing: 1px;
+	color: var(--amber);
+	opacity: 0.1;
+	white-space: pre;
+	overflow: hidden;
+	user-select: none;
+	pointer-events: none;
+}
+@media (prefers-reduced-motion: reduce) {
+	#ascii {
+		display: none;
+	}
+}
+.deck {
+	position: relative;
+	z-index: 1;
 }
 body {
 	overflow: hidden;
@@ -726,15 +797,25 @@ summary:focus-visible {
 .context-track.danger i {
 	background: var(--akira-red);
 }
+/* ── Entity cards ──────────────────────────────────────────────────────────
+ * Four tiers, chosen by what you can DO with the entity, not by its domain:
+ *   .tier-controllable  full card + action row
+ *   .tier-readout       full card, no actions, value as hero
+ *   .tier-binary        state pill + dwell time only
+ *   .tier-compact       one-line row, used for any result set of 3+
+ */
 .entity-stack {
 	display: grid;
 	gap: 10px;
 	margin-top: 14px;
 }
+/* 3+ results collapse to a single stacked column of compact rows. */
+.entity-stack.compact {
+	gap: 6px;
+}
 .entity-card {
-	border: 1px solid var(--line);
-	background: rgba(9, 11, 13, 0.38);
-	padding: 14px;
+	border: 1px solid var(--amber-dim);
+	background: rgba(255, 178, 0, 0.04);
 	transition:
 		opacity 0.18s ease,
 		border-color 0.18s ease,
@@ -745,61 +826,281 @@ summary:focus-visible {
 	pointer-events: none;
 }
 .entity-card.applied {
-	border-color: var(--turquoise-neon);
-	box-shadow: 0 0 16px rgba(72, 215, 196, 0.18);
+	border-color: var(--good);
+	box-shadow: 0 0 16px rgba(92, 192, 106, 0.18);
 }
+
 .entity-card header {
 	display: flex;
-	justify-content: space-between;
-	align-items: start;
-	gap: 12px;
-}
-.entity-card b,
-.entity-card small {
-	display: block;
-}
-.entity-card small {
-	margin-top: 4px;
-	color: var(--muted);
-	font:
-		10px ui-monospace,
-		Consolas,
-		monospace;
-}
-.entity-controls {
-	display: grid;
-	grid-template-columns: auto 1fr 1fr auto;
 	align-items: center;
-	gap: 12px;
-	margin-top: 12px;
+	gap: 10px;
+	padding: 10px 12px;
+	border-bottom: 1px solid var(--amber-faint);
 }
-.entity-controls label {
-	display: grid;
-	gap: 5px;
+.entity-card .ico {
+	width: 24px;
+	height: 24px;
+	flex: none;
+	color: #5a5140;
+}
+.entity-card .ico.live {
+	color: var(--amber);
+	filter: drop-shadow(0 0 4px rgba(255, 178, 0, 0.6));
+}
+.entity-card .ico.cool {
+	color: var(--cool);
+	filter: drop-shadow(0 0 4px rgba(95, 184, 214, 0.5));
+}
+.entity-card .ico.hot {
+	color: var(--hot);
+	filter: drop-shadow(0 0 4px rgba(224, 96, 44, 0.5));
+}
+.entity-card .ct {
+	flex: 1;
+	min-width: 0;
+}
+.entity-card .ct .name {
+	font-size: 12.5px;
+	color: #f0e6cf;
+	overflow-wrap: anywhere;
+}
+.entity-card .ct .entity {
+	font-size: 10px;
 	color: var(--muted);
-	font:
-		10px ui-monospace,
-		Consolas,
-		monospace;
+	overflow-wrap: anywhere;
 }
-.entity-controls input[type="range"] {
-	accent-color: var(--casino-amber);
-	min-width: 80px;
+
+.pill {
+	font-size: 10px;
+	letter-spacing: 1px;
+	padding: 2px 8px;
+	border: 1px solid var(--amber-dim);
+	color: var(--muted);
+	white-space: nowrap;
 }
-.entity-controls input[type="color"] {
-	width: 38px;
-	height: 30px;
+.pill.on {
+	color: var(--glass);
+	background: var(--amber);
+	border-color: var(--amber);
+}
+.pill.good {
+	color: #0e1a0f;
+	background: var(--good);
+	border-color: var(--good);
+}
+.pill.bad {
+	color: #1a0d07;
+	background: var(--bad);
+	border-color: var(--bad);
+}
+
+.entity-card .card-body {
+	padding: 11px 12px;
+}
+.entity-card .row {
+	display: flex;
+	justify-content: space-between;
+	gap: 10px;
+	font-size: 10px;
+	color: var(--dim);
+	letter-spacing: 0.5px;
+	margin-bottom: 6px;
+}
+
+/* Bounded 0-100 values: level is the question, so draw a filled bar. */
+.bar {
+	height: 6px;
+	background: rgba(255, 255, 255, 0.06);
+	border: 1px solid var(--amber-faint);
+}
+.bar .fill {
+	height: 100%;
+	background: var(--amber);
+	box-shadow: 0 0 6px rgba(255, 178, 0, 0.5);
+	transition: width 0.2s ease;
+}
+.bar .fill.cool {
+	background: var(--cool);
+	box-shadow: 0 0 6px rgba(95, 184, 214, 0.5);
+}
+.bar .fill.good {
+	background: var(--good);
+	box-shadow: 0 0 6px rgba(92, 192, 106, 0.5);
+}
+.bar .fill.bad {
+	background: var(--bad);
+	box-shadow: 0 0 6px rgba(224, 90, 43, 0.5);
+}
+
+/* Unbounded drifting values: trend is the question, so draw a sparkline. */
+.spark {
+	display: block;
+	width: 100%;
+	height: 34px;
+	margin-top: 8px;
+}
+
+.big {
+	font-size: 30px;
+	color: var(--amber);
+	line-height: 1;
+	text-shadow: 0 0 10px rgba(255, 178, 0, 0.35);
+}
+.big.cool {
+	color: var(--cool);
+	text-shadow: 0 0 10px rgba(95, 184, 214, 0.35);
+}
+.big.bad {
+	color: var(--bad);
+	text-shadow: 0 0 10px rgba(224, 90, 43, 0.35);
+}
+.unit {
+	font-size: 11px;
+	color: var(--muted);
+	margin-left: 4px;
+}
+/* Every card carries a time reference here. */
+.entity-card .meta {
+	font-size: 10px;
+	color: var(--muted);
+	margin-top: 7px;
+	letter-spacing: 0.5px;
+}
+
+.entity-card .actions {
+	display: flex;
+	gap: 8px;
+	padding: 0 12px 12px;
+	flex-wrap: wrap;
+}
+.chip {
+	flex: 1 1 auto;
 	background: transparent;
-	border: 1px solid var(--line);
+	border: 1px solid var(--amber-dim);
+	color: var(--dim);
+	font-family: inherit;
+	font-size: 10px;
+	letter-spacing: 1px;
+	padding: 7px 8px;
+	cursor: pointer;
 }
+.chip:hover {
+	border-color: var(--amber);
+	color: var(--amber);
+}
+/* Destructive actions hover rust, never amber. */
+.chip.warn:hover {
+	border-color: var(--bad);
+	color: var(--bad);
+}
+.chip:disabled {
+	opacity: 0.4;
+	cursor: default;
+}
+
+.stepper {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+}
+.step-btn {
+	width: 26px;
+	height: 26px;
+	flex: none;
+	border: 1px solid var(--amber-dim);
+	background: transparent;
+	color: var(--amber);
+	font-family: inherit;
+	font-size: 14px;
+	line-height: 1;
+	cursor: pointer;
+}
+.step-btn:hover {
+	background: var(--amber);
+	color: var(--glass);
+}
+.swatches {
+	display: flex;
+	gap: 6px;
+	margin-top: 9px;
+}
+.sw {
+	width: 20px;
+	height: 20px;
+	border: 1px solid var(--amber-faint);
+	cursor: pointer;
+	padding: 0;
+}
+.sw:hover {
+	border-color: var(--amber);
+}
+
+/* Binary tier: no body padding beyond the dwell line. */
+.entity-card.tier-binary .card-body {
+	padding: 9px 12px;
+}
+
+/* Compact tier: one line per entity. */
+.entity-card.tier-compact {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	padding: 9px 12px;
+	border-color: var(--amber-faint);
+	background: rgba(255, 178, 0, 0.03);
+}
+.entity-card.tier-compact .ico {
+	width: 18px;
+	height: 18px;
+}
+.entity-card.tier-compact .nm {
+	flex: 1;
+	font-size: 11.5px;
+	color: #d8cdae;
+	min-width: 0;
+	overflow-wrap: anywhere;
+}
+.entity-card.tier-compact .val {
+	font-size: 14px;
+	color: var(--amber);
+	white-space: nowrap;
+}
+.entity-card.tier-compact .val.cool {
+	color: var(--cool);
+}
+.entity-card.tier-compact .val.off {
+	color: var(--muted);
+}
+.entity-card.tier-compact .u {
+	font-size: 10px;
+	color: var(--muted);
+	white-space: nowrap;
+}
+
 .entity-error {
-	color: var(--akira-red);
+	color: var(--bad);
 	font-size: 12px;
-	margin: 10px 0 0;
+	margin: 0;
+	padding: 0 12px 10px;
+}
+/* Context fed back by a tool, distinct from the model's own token spend. */
+.chip-context {
+	color: var(--cool);
+	border-color: rgba(95, 184, 214, 0.4);
+}
+
+/* Anything that opens the house reads rust, at rest and on hover. */
+.action.destructive {
+	border-color: var(--bad);
+	color: var(--bad);
+}
+.action.destructive:hover {
+	background: var(--bad);
+	color: var(--glass);
 }
 @media (max-width: 700px) {
-	.entity-controls {
-		grid-template-columns: 1fr;
+	.entity-card .actions {
+		flex-direction: column;
 	}
 }
 .history-search {
@@ -1093,11 +1394,14 @@ summary:focus-visible {
 	gap: 6px;
 	margin-top: 7px;
 }
-.entity-card {
+.entity-card header {
+	padding: 8px 10px;
+}
+.entity-card .card-body {
 	padding: 9px 10px;
 }
-.entity-controls {
-	margin-top: 7px;
+.entity-card .actions {
+	padding: 0 10px 10px;
 }
 .composer {
 	padding-block: 7px;
@@ -1202,14 +1506,28 @@ textarea::-webkit-scrollbar-thumb {
 }
 /* Timeline cards must overflow the scrollport, never shrink inside it. */
 .message {
-  flex:0 0 auto;
-  min-width:0;
-  contain:layout paint;
-  overflow:hidden;
-  overflow-wrap:anywhere;
-  word-break:normal;
+	flex: 0 0 auto;
+	min-width: 0;
+	contain: layout paint;
+	overflow: hidden;
+	overflow-wrap: anywhere;
+	word-break: normal;
 }
-.message > span { display:block; max-width:100%; }
-.message details,.message .entity-stack,.message .entity-card { min-width:0; max-width:100%; }
-.message pre,.message code { overflow-wrap:anywhere; word-break:break-word; }
-.entity-stack { width:min(100%,72ch); }
+.message > span {
+	display: block;
+	max-width: 100%;
+}
+.message details,
+.message .entity-stack,
+.message .entity-card {
+	min-width: 0;
+	max-width: 100%;
+}
+.message pre,
+.message code {
+	overflow-wrap: anywhere;
+	word-break: break-word;
+}
+.entity-stack {
+	width: min(100%, 72ch);
+}

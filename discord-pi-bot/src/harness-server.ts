@@ -11,6 +11,7 @@ import {
 import {
 	createPhaseId,
 	createToolCall,
+	estimateTokens,
 	normalizePhaseMetrics,
 	reasoningText,
 	routeThinkTags,
@@ -21,6 +22,7 @@ import {
 import { createSseSender } from "./harness/sse";
 import { measureTokenUsage, tokenizerUrl } from "./harness/tokenizer";
 import { normalizeEntity, type HassEntity } from "./harness/entities";
+import { compactEntity, resolveEntities } from "./harness/entityResolver";
 import {
 	validateEntityAction,
 	type EntityAction,
@@ -55,6 +57,7 @@ const pendingActions = new Map<
 		service: string;
 		entityId: string;
 		serviceData: Record<string, unknown>;
+		destructive: boolean;
 	}
 >();
 void loadReminders(async () => {});
@@ -155,6 +158,45 @@ app.get("/api/entities/:id", async (request, response) => {
 	}
 	response.json(normalizeEntity(result as HassEntity));
 });
+/**
+ * Numeric history for one entity, used to draw sparklines. Fetched lazily by
+ * the card rather than during the turn, so a slow recorder query never blocks
+ * the model's reply. Never enters the context window.
+ */
+app.get("/api/entities/:id/history", async (request, response) => {
+	const entityId = request.params.id;
+	if (!/^[a-z0-9_]+\.[a-z0-9_]+$/.test(entityId)) {
+		response.status(400).json({ error: "Invalid entity ID" });
+		return;
+	}
+	const hours = Math.min(
+		48,
+		Math.max(1, Number(request.query.hours) || 6),
+	);
+	const start = new Date(Date.now() - hours * 3_600_000).toISOString();
+	const result = await hassRequest(
+		`/history/period/${encodeURIComponent(start)}?filter_entity_id=${encodeURIComponent(
+			entityId,
+		)}&minimal_response&no_attributes`,
+	);
+	if (!Array.isArray(result) || !Array.isArray(result[0])) {
+		response.json({ points: [], hours });
+		return;
+	}
+	const points = (result[0] as Array<{ state?: string; last_changed?: string }>)
+		.map((entry) => ({
+			value: Number(entry.state),
+			at: entry.last_changed,
+		}))
+		.filter((point) => Number.isFinite(point.value));
+	// Cap the series so a chatty sensor cannot ship thousands of points to a
+	// 34px-tall sparkline.
+	const stride = Math.max(1, Math.ceil(points.length / 120));
+	response.json({
+		points: points.filter((_, index) => index % stride === 0),
+		hours,
+	});
+});
 app.post("/api/entities/action", async (request, response) => {
 	const entityId =
 		typeof request.body?.entityId === "string" ? request.body.entityId : "";
@@ -174,6 +216,7 @@ app.post("/api/entities/action", async (request, response) => {
 			response.json({
 				confirmation_required: true,
 				token,
+				destructive: validated.destructive,
 				message: `Confirm ${validated.service} for ${validated.entityId}`,
 			});
 			return;
@@ -315,10 +358,16 @@ const tools = [
 		function: {
 			name: "list_entities",
 			description:
-				"List Home Assistant entities, optionally filtered by domain such as light or sensor.",
+				"Find Home Assistant entities by plain-language name, e.g. 'kitchen light'. Optionally narrow by domain such as light or sensor. Returns the closest matches only.",
 			parameters: {
 				type: "object",
-				properties: { domain: { type: "string" } },
+				properties: {
+					query: {
+						type: "string",
+						description: "Plain-language name, room, or partial match.",
+					},
+					domain: { type: "string" },
+				},
 			},
 		},
 	},
@@ -439,14 +488,21 @@ async function runAgent(
 				call.function.name,
 				call.function.arguments || "{}",
 			);
-			const value = seenToolCalls.has(callKey)
-				? { error: "Duplicate tool call suppressed" }
+			const value: ToolResult = seenToolCalls.has(callKey)
+				? { model: { error: "Duplicate tool call suppressed" } }
 				: await executeTool(call.function.name, args);
 			seenToolCalls.add(callKey);
+			const serialized = JSON.stringify(value.model);
+			// What this tool pushes back into the window, tracked separately from
+			// the model's own output so context bloat is attributable per call.
+			const toolMetrics = {
+				...result.metrics,
+				toolResultTokens: estimateTokens(serialized),
+			};
 			send("tool", {
 				name: call.function.name,
 				state: "complete",
-				result: value,
+				result: value.view ?? value.model,
 			});
 			send("tool_complete", {
 				phaseId,
@@ -454,13 +510,13 @@ async function runAgent(
 				kind: "tool",
 				state: "complete",
 				name: call.function.name,
-				result: value,
-				metrics: result.metrics,
+				result: value.view ?? value.model,
+				metrics: toolMetrics,
 			});
 			messages.push({
 				role: "tool",
 				tool_call_id: call.id,
-				content: JSON.stringify(value),
+				content: serialized,
 			});
 		}
 		send("phase_complete", {
@@ -601,9 +657,8 @@ async function streamModel(
 		timings,
 		firstTokenAt ? firstTokenAt - started : elapsed,
 		elapsed,
-		thinking.length,
+		{ answer: text, thinking },
 	);
-	if (!metrics.outputTokens) metrics.outputTokens = text.length;
 	send("metrics", {
 		inputTokens: metrics.inputTokens,
 		outputTokens: metrics.outputTokens,
@@ -628,9 +683,12 @@ function getLocalLlmUrl(): URL {
 			process.env.LOCAL_LLM_URL ||
 				"http://homeassistant:8080/v1/chat/completions",
 		);
+		// Must match the allowlist in localLlm.ts — both gate the same endpoint.
 		if (
 			url.protocol !== "http:" ||
-			!["homeassistant", "localhost", "127.0.0.1"].includes(url.hostname)
+			!["homeassistant", "localhost", "127.0.0.1", "::1", "local-llama-cpp"].includes(
+				url.hostname,
+			)
 		)
 			throw new Error("LOCAL_LLM_URL must target the local model");
 		return url;
@@ -640,22 +698,47 @@ function getLocalLlmUrl(): URL {
 	}
 }
 
+/**
+ * Tool results are split in two: `model` is the trimmed payload that enters the
+ * context window, `view` is the rich payload the UI renders as cards. Keeping
+ * them separate is what stops an entity listing from eating the whole window.
+ */
+interface ToolResult {
+	model: unknown;
+	view?: unknown;
+}
+
 async function executeTool(
 	name: string,
 	args: Record<string, unknown>,
-): Promise<unknown> {
-	if (name === "get_entity_state")
-		return hassRequest(`/states/${encodeURIComponent(String(args.entity_id))}`);
+): Promise<ToolResult> {
+	if (name === "get_entity_state") {
+		const state = await hassRequest(
+			`/states/${encodeURIComponent(String(args.entity_id))}`,
+		);
+		if (!state || typeof state !== "object" || !("entity_id" in state))
+			return { model: state };
+		const card = normalizeEntity(state as HassEntity);
+		return { model: compactEntity(card), view: [card] };
+	}
 	if (name === "list_entities") {
 		const states = await hassRequest("/states");
-		if (!Array.isArray(states)) return states;
-		const domain = typeof args.domain === "string" ? args.domain : "";
-		return states
-			.filter(
-				(item) => !domain || String(item.entity_id).startsWith(`${domain}.`),
-			)
-			.slice(0, 50)
-			.map((item) => normalizeEntity(item as HassEntity));
+		if (!Array.isArray(states)) return { model: states };
+		const cards = resolveEntities(
+			states.map((item) => normalizeEntity(item as HassEntity)),
+			{
+				query: typeof args.query === "string" ? args.query : "",
+				domain: typeof args.domain === "string" ? args.domain : "",
+			},
+		);
+		if (!cards.length)
+			return {
+				model: {
+					matches: [],
+					hint: "No entity matched. Try a broader query or omit it.",
+				},
+			};
+		return { model: cards.map(compactEntity), view: cards };
 	}
 	if (name === "control_entity") {
 		const token = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -673,22 +756,36 @@ async function executeTool(
 			!/^[a-z0-9_]+$/.test(service) ||
 			!/^[a-z0-9_]+\.[a-z0-9_]+$/.test(entityId)
 		)
-			return { error: "Invalid entity action" };
-		pendingActions.set(token, { domain, service, entityId, serviceData });
-		return {
+			return { model: { error: "Invalid entity action" } };
+		const destructive = service === "unlock" || service === "open_cover";
+		pendingActions.set(token, {
+			domain,
+			service,
+			entityId,
+			serviceData,
+			destructive,
+		});
+		const confirmation = {
 			confirmation_required: true,
 			token,
+			destructive,
 			message: `Confirm ${domain}.${service} for ${entityId}`,
 		};
+		return { model: confirmation, view: confirmation };
 	}
-	if (name === "list_reminders")
-		return getReminders(process.env.OWNER_ID || "").map((item) => ({
+	if (name === "list_reminders") {
+		const reminders = getReminders(process.env.OWNER_ID || "").map((item) => ({
 			id: item.id,
 			message: item.message,
 			time: item.time.toISOString(),
 		}));
-	if (name === "web_search") return exaSearch(String(args.query));
-	return { error: `Unknown tool: ${name}` };
+		return { model: reminders, view: reminders };
+	}
+	if (name === "web_search") {
+		const results = await exaSearch(String(args.query));
+		return { model: results };
+	}
+	return { model: { error: `Unknown tool: ${name}` } };
 }
 
 async function supervisorRequest(path: string, method = "GET", body?: unknown) {
