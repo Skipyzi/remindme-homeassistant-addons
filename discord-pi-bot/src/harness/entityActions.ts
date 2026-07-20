@@ -6,14 +6,7 @@ export type EntityAction =
 	| "toggle"
 	| "brightness"
 	| "color_temperature"
-	| "rgb_color"
-	| "set_position"
-	| "open_cover"
-	| "close_cover"
-	| "set_temperature"
-	| "lock"
-	| "unlock"
-	| "set_fan_speed";
+	| "rgb_color";
 
 export interface ValidatedEntityAction {
 	domain: string;
@@ -21,8 +14,6 @@ export interface ValidatedEntityAction {
 	entityId: string;
 	serviceData: Record<string, unknown>;
 	requiresConfirmation: boolean;
-	/** Destructive actions render rust and are called out on the confirm step. */
-	destructive: boolean;
 }
 
 const sensitiveDomains = new Set([
@@ -31,15 +22,7 @@ const sensitiveDomains = new Set([
 	"cover",
 	"valve",
 ]);
-const immediateDomains = new Set([
-	"light",
-	"switch",
-	"fan",
-	"media_player",
-	"climate",
-]);
-/** Actions that reduce physical security, regardless of domain. */
-const destructiveActions = new Set(["unlock", "open_cover"]);
+const immediateDomains = new Set(["light", "switch", "fan", "media_player"]);
 
 function boundedNumber(
 	value: unknown,
@@ -62,8 +45,7 @@ export function validateEntityAction(
 		throw new Error("Invalid entity ID");
 	if (!entity.available) throw new Error(`${entity.name} is unavailable`);
 	const serviceData: Record<string, unknown> = {};
-	let service: string = action;
-
+	let service = action;
 	if (["turn_on", "turn_off", "toggle"].includes(action)) {
 		if (!entity.capabilities.toggle)
 			throw new Error(`${entity.name} cannot be toggled`);
@@ -83,49 +65,24 @@ export function validateEntityAction(
 			"Color temperature",
 		);
 	} else if (action === "rgb_color") {
-		if (!entity.capabilities.color || !Array.isArray(value) || value.length !== 3)
+		if (
+			!entity.capabilities.color ||
+			!Array.isArray(value) ||
+			value.length !== 3
+		)
 			throw new Error(`${entity.name} has no RGB color control`);
 		service = "turn_on";
 		serviceData.rgb_color = value.map((component) =>
 			boundedNumber(component, 0, 255, "RGB component"),
 		);
-	} else if (action === "set_position") {
-		if (!entity.capabilities.position)
-			throw new Error(`${entity.name} has no position control`);
-		service = "set_cover_position";
-		serviceData.position = boundedNumber(value, 0, 100, "Position");
-	} else if (action === "open_cover" || action === "close_cover") {
-		if (entity.domain !== "cover")
-			throw new Error(`${entity.name} is not a cover`);
-	} else if (action === "set_temperature") {
-		if (!entity.capabilities.targetTemperature)
-			throw new Error(`${entity.name} has no target temperature`);
-		serviceData.temperature = boundedNumber(
-			value,
-			entity.minTemperature ?? 4,
-			entity.maxTemperature ?? 35,
-			"Target temperature",
-		);
-	} else if (action === "lock" || action === "unlock") {
-		if (!entity.capabilities.lock) throw new Error(`${entity.name} is not a lock`);
-	} else if (action === "set_fan_speed") {
-		if (entity.domain !== "fan") throw new Error(`${entity.name} is not a fan`);
-		service = "set_percentage";
-		serviceData.percentage = boundedNumber(value, 0, 100, "Fan speed");
 	}
-
-	const destructive = destructiveActions.has(action);
 	return {
 		domain: entity.domain,
 		service,
 		entityId: entity.entityId,
 		serviceData,
-		// Anything that opens the house, plus any domain we do not explicitly
-		// treat as safe to fire immediately.
 		requiresConfirmation:
-			destructive ||
 			sensitiveDomains.has(entity.domain) ||
 			!immediateDomains.has(entity.domain),
-		destructive,
 	};
 }
