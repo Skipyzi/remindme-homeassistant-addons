@@ -224,6 +224,74 @@ function harness() {
 				Number.parseInt(hex.slice(offset, offset + 2), 16),
 			);
 		},
+		// ── Entity card helpers ───────────────────────────────────────────────
+		// Thin pass-throughs so the markup can stay declarative.
+		iconPaths(entity) {
+			return window.RemindMeEntityCards.iconPaths(entity);
+		},
+		iconTone(entity) {
+			return window.RemindMeEntityCards.iconTone(entity);
+		},
+		isActive(entity) {
+			return window.RemindMeEntityCards.isActive(entity);
+		},
+		statePill(entity) {
+			return window.RemindMeEntityCards.statePill(entity);
+		},
+		fillTone(entity) {
+			return window.RemindMeEntityCards.fillTone(entity);
+		},
+		barPercent(entity) {
+			return window.RemindMeEntityCards.barPercent(entity);
+		},
+		formatDwell(entity) {
+			return window.RemindMeEntityCards.formatDwell(entity);
+		},
+		metaLine(entity) {
+			if (entity.message) return "SCHEDULED REMINDER";
+			return window.RemindMeEntityCards.metaLine(entity);
+		},
+		/**
+		 * Card shape for one item. Three or more results in a set collapse to
+		 * compact rows no matter what the individual entities are.
+		 */
+		tierOf(entity, setSize) {
+			if (entity.message) return "tier-controllable";
+			if (setSize >= 3) return "tier-compact";
+			return `tier-${entity.tier || "readout"}`;
+		},
+		/** Approximate warm-to-cool blackbody swatch for a colour temperature. */
+		kelvinHex(kelvin) {
+			const table = {
+				2200: "#ff7a3c",
+				2700: "#ffb200",
+				4000: "#ffd9a0",
+				6500: "#9fd8f0",
+			};
+			return table[kelvin] || "#ffb200";
+		},
+		stepTemperature(entity, direction) {
+			const step = entity.temperatureStep || 0.5;
+			const current = entity.targetTemperature ?? entity.currentTemperature ?? 20;
+			this.entityAction(entity, "set_temperature", current + step * direction);
+		},
+		/**
+		 * Sparklines need real history, so it is fetched per card after the card
+		 * mounts rather than during the turn.
+		 */
+		async loadSpark(entity) {
+			if (entity.sparkLoaded) return;
+			entity.sparkLoaded = true;
+			const history = await window.RemindMeEntityCards.loadHistory(entity);
+			if (!history || !history.points?.length) return;
+			entity.sparkPoints = window.RemindMeEntityCards.sparklinePoints(
+				history.points,
+			);
+			entity.sparkSummary = window.RemindMeEntityCards.summarizeTrend(
+				history.points,
+				entity.unit,
+			);
+		},
 		async entityAction(entity, action, value) {
 			const outcome = await window.RemindMeEntities.performEntityAction(
 				entity,
@@ -409,3 +477,65 @@ function harness() {
 		},
 	};
 }
+
+/*
+ * Full-viewport ASCII field: layered sine waves, no radial ripple term.
+ * Deliberately subtle — " .:-=+" only, low opacity, slow time step. Skipped
+ * entirely under prefers-reduced-motion, and paused when the tab is hidden so
+ * it costs nothing on a Pi that is also running inference.
+ */
+(function asciiField() {
+	const target = document.getElementById("ascii");
+	if (!target) return;
+	if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+
+	const CHARS = " .:-=+";
+	const CELL = 12;
+	let cols = 0;
+	let rows = 0;
+	let time = 0;
+	let frame = 0;
+
+	function resize() {
+		cols = Math.ceil(window.innerWidth / CELL) + 2;
+		rows = Math.ceil(window.innerHeight / CELL) + 2;
+	}
+
+	function paint() {
+		time += 0.014;
+		let out = "";
+		for (let y = 0; y < rows; y += 1) {
+			let line = "";
+			for (let x = 0; x < cols; x += 1) {
+				const value =
+					Math.sin(x * 0.13 + time) +
+					Math.sin(y * 0.09 - time * 0.8) +
+					Math.sin((x + y) * 0.05 + time * 0.4);
+				const normalized = (value + 3) / 6;
+				const index = Math.max(
+					0,
+					Math.min(CHARS.length - 1, Math.floor(normalized * CHARS.length)),
+				);
+				line += CHARS[index];
+			}
+			out += `${line}\n`;
+		}
+		target.textContent = out;
+		frame = requestAnimationFrame(paint);
+	}
+
+	function start() {
+		if (!frame) frame = requestAnimationFrame(paint);
+	}
+	function stop() {
+		if (frame) cancelAnimationFrame(frame);
+		frame = 0;
+	}
+
+	resize();
+	window.addEventListener("resize", resize);
+	document.addEventListener("visibilitychange", () =>
+		document.hidden ? stop() : start(),
+	);
+	start();
+})();
