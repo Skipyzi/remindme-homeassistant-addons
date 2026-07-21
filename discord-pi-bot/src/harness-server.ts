@@ -501,17 +501,24 @@ app.get("/api/entities/:id/history", async (request, response) => {
 		response.json({ points: [], hours });
 		return;
 	}
-	const points = (result[0] as Array<{ state?: string; last_changed?: string }>)
-		.map((entry) => ({
-			value: Number(entry.state),
-			at: entry.last_changed,
-		}))
+	const raw = result[0] as Array<{ state?: string; last_changed?: string }>;
+	const points = raw
+		.map((entry) => ({ value: Number(entry.state), at: entry.last_changed }))
 		.filter((point) => Number.isFinite(point.value));
+	/*
+	 * Non-numeric states are dropped from `points` but kept here: a binary
+	 * sensor's history is "on"/"off", and the card meta wants to count today's
+	 * events and find when it last changed the other way.
+	 */
+	const changes = raw
+		.filter((entry) => typeof entry.state === "string" && entry.last_changed)
+		.map((entry) => ({ state: entry.state as string, at: entry.last_changed }));
 	// Cap the series so a chatty sensor cannot ship thousands of points to a
-	// 34px-tall sparkline.
+	// 34px-tall sparkline. Changes are already sparse by nature.
 	const stride = Math.max(1, Math.ceil(points.length / 120));
 	response.json({
 		points: points.filter((_, index) => index % stride === 0),
+		changes: changes.slice(-200),
 		hours,
 	});
 });

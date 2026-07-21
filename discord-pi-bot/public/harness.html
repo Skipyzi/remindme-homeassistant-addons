@@ -291,14 +291,17 @@
                           <!-- BINARY — state pill and dwell time only -->
                           <template
                             x-if="tierOf(item,message.items.length)==='tier-binary'"
-                            ><div class="card-body">
-                              <div class="meta" x-text="formatDwell(item)"></div></div
+                            ><div class="card-body" x-init="loadSpark(item)">
+                              <div
+                                class="meta"
+                                x-text="item.sparkSummary ? `${formatDwell(item)} · ${item.sparkSummary}` : formatDwell(item)"
+                              ></div></div
                           ></template>
 
                           <!-- READ-ONLY SENSOR — value as hero, no actions -->
                           <template
                             x-if="tierOf(item,message.items.length)==='tier-readout'"
-                            ><div class="card-body">
+                            ><div class="card-body" x-init="loadSpark(item)">
                               <div>
                                 <span
                                   class="big"
@@ -321,7 +324,7 @@
                               </div>
                               <!-- drifting value → trend → sparkline -->
                               <template x-if="item.measurement==='sparkline'"
-                                ><div x-init="loadSpark(item)">
+                                ><div>
                                   <svg
                                     class="spark"
                                     viewBox="0 0 200 34"
@@ -527,6 +530,14 @@
                                 >
                                   SPEED UP
                                 </button>
+                                <!-- One-tap setback, the adjustment you reach
+                                     for without opening the stepper. -->
+                                <button
+                                  class="chip"
+                                  x-show="item.capabilities?.targetTemperature"
+                                  @click="entityAction(item,'set_temperature',setbackTarget(item))"
+                                  x-text="`SET ${setbackTarget(item)}°`"
+                                ></button>
                                 <button
                                   class="chip"
                                   x-show="item.domain==='climate' && item.state!=='off'"

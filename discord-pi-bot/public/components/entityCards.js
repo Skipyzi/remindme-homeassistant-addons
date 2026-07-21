@@ -168,8 +168,13 @@
 		}
 		if (entity.domain === "fan" && entity.oscillating)
 			return `OSCILLATING · ${when}`;
-		if (entity.domain === "switch" && entity.power != null)
-			return `DRAWING ${entity.power} W · ${when}`;
+		if (entity.domain === "switch" && entity.power != null) {
+			// How long it has been running is derivable from lastChanged alone.
+			const running = isActive(entity) && entity.lastChanged
+				? ` · ON FOR ${compactDuration(Date.now() - new Date(entity.lastChanged).getTime())}`
+				: "";
+			return `DRAWING ${entity.power} W${running}`;
+		}
 		return when ? `LAST CHANGED — ${when}` : "NO STATE HISTORY";
 	}
 
@@ -192,13 +197,101 @@
 			.join(" ");
 	}
 
-	function summarizeTrend(points, unit) {
+	/**
+	 * Group thousands explicitly. toLocaleString() follows the host locale, so
+	 * on a German-configured Pi it renders 3180 as "3.180" — a decimal point
+	 * to an English-language reader.
+	 */
+	function groupThousands(value) {
+		const rounded = Math.round(Number(value) || 0);
+		return String(rounded).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+	}
+
+	function clockTime(iso) {
+		const date = new Date(iso);
+		return Number.isFinite(date.getTime())
+			? `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`
+			: "";
+	}
+
+	function compactDuration(ms) {
+		const minutes = Math.max(0, Math.round(ms / 60000));
+		if (minutes < 60) return `${minutes} MIN`;
+		const hours = Math.floor(minutes / 60);
+		return minutes % 60 ? `${hours}H ${minutes % 60}M` : `${hours}H`;
+	}
+
+	/**
+	 * Peak and when it happened. For power the headline is not the number now
+	 * but the worst it has been, which is what the mock reports.
+	 */
+	function summarizePeak(points, unit) {
+		if (!points || !points.length) return "";
+		const peak = points.reduce((a, b) => (b.value > a.value ? b : a));
+		const when = clockTime(peak.at);
+		const value = peak.value >= 1000 ? groupThousands(peak.value) : peak.value;
+		return `PEAK ${value}${unit ? ` ${unit}` : ""}${when ? ` AT ${when}` : ""}`;
+	}
+
+	/**
+	 * How long the series has sat above a threshold, counted back from the
+	 * latest reading. Humidity that has been high for twenty minutes is a
+	 * different fact from humidity that is high right now.
+	 */
+	function summarizeThreshold(points, threshold, unit) {
+		if (!points || points.length < 2) return "";
+		const last = points[points.length - 1];
+		if (last.value <= threshold) return "";
+		let since = last.at;
+		for (let index = points.length - 1; index >= 0; index -= 1) {
+			if (points[index].value <= threshold) break;
+			since = points[index].at;
+		}
+		const elapsed = Date.now() - new Date(since).getTime();
+		if (!Number.isFinite(elapsed) || elapsed < 60000) return "";
+		return `ABOVE ${threshold}${unit || ""} FOR ${compactDuration(elapsed)}`;
+	}
+
+	/** Drift across the whole window — the question a battery card asks. */
+	function summarizeDrift(points, unit, windowLabel) {
+		if (!points || points.length < 2) return "";
+		const delta = points[points.length - 1].value - points[0].value;
+		if (Math.abs(delta) < 1) return "";
+		const direction = delta < 0 ? "DROPPED" : "ROSE";
+		return `${direction} ${Math.abs(Math.round(delta))}${unit || ""} IN ${windowLabel}`;
+	}
+
+	/**
+	 * Binary sensors: how many times it fired today, and when it was last in
+	 * the other state. Dwell alone does not tell you it has been busy.
+	 */
+	function summarizeEvents(changes, activeState = "on") {
+		if (!changes || !changes.length) return "";
+		const startOfDay = new Date();
+		startOfDay.setHours(0, 0, 0, 0);
+		const today = changes.filter(
+			(change) =>
+				change.state === activeState && new Date(change.at) >= startOfDay,
+		);
+		const parts = [];
+		if (today.length) parts.push(`${today.length} EVENTS TODAY`);
+		const lastActive = [...changes]
+			.reverse()
+			.find((change) => change.state === activeState);
+		if (lastActive && !today.length) {
+			const when = clockTime(lastActive.at);
+			if (when) parts.push(`LAST AT ${when}`);
+		}
+		return parts.join(" · ");
+	}
+
+	function summarizeTrend(points, unit, windowLabel) {
 		if (!points || points.length < 2) return "";
 		const values = points.map((point) => point.value);
 		const delta = values[values.length - 1] - values[0];
 		const sign = delta >= 0 ? "+" : "";
 		const suffix = unit ? `${unit}` : "";
-		return `${sign}${delta.toFixed(1)}${suffix} OVER WINDOW · MIN ${Math.min(
+		return `${sign}${delta.toFixed(1)}${suffix} OVER ${windowLabel || "WINDOW"} · MIN ${Math.min(
 			...values,
 		).toFixed(1)} · MAX ${Math.max(...values).toFixed(1)}`;
 	}
@@ -231,6 +324,13 @@
 		metaLine,
 		sparklinePoints,
 		summarizeTrend,
+		summarizePeak,
+		summarizeThreshold,
+		summarizeDrift,
+		summarizeEvents,
+		compactDuration,
+		clockTime,
+		groupThousands,
 		loadHistory,
 	};
 	globalScope.RemindMeEntityCards = api;
