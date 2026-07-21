@@ -21,16 +21,16 @@ SECRET = pathlib.Path("/data/secret_key")
 
 def load_options() -> dict:
     try:
-        return json.loads(OPTIONS.read_text())
+        return json.loads(OPTIONS.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return {}
 
 
 def secret_key() -> str:
     if not SECRET.exists():
-        SECRET.write_text(secrets.token_hex(32))
+        SECRET.write_text(secrets.token_hex(32), encoding="utf-8")
         SECRET.chmod(0o600)
-    return SECRET.read_text().strip()
+    return SECRET.read_text(encoding="utf-8").strip()
 
 
 def main() -> None:
@@ -59,6 +59,21 @@ def main() -> None:
         "  formats:",
         "    - html",
         "    - json",
+        # Turn off engines that cannot work on this box, so they stop failing
+        # to load on every start and stop being queried on every search.
+        # use_default_settings merges these by name, leaving every other
+        # engine at its default. Delete an entry to bring that engine back.
+        "engines:",
+        # ahmia and torch search Tor onion services and need a Tor proxy.
+        "  - name: ahmia",
+        "    disabled: true",
+        "  - name: torch",
+        "    disabled: true",
+        # Wikidata's SPARQL endpoint returns 403 to datacenter/self-hosted
+        # IPs, so its infobox never initialises here. Web results are
+        # unaffected; this only drops the Wikidata info panel.
+        "  - name: wikidata",
+        "    disabled: true",
         "",
     ]
 
@@ -66,7 +81,7 @@ def main() -> None:
         os.environ.get("__SEARXNG_SETTINGS_PATH", "/etc/searxng/settings.yml")
     )
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text("\n".join(lines))
+    target.write_text("\n".join(lines), encoding="utf-8")
     print(f"[searxng] wrote {target} (instance: {instance_name!r})")
 
 

@@ -48,6 +48,13 @@ sessions survive a restart.
   turn requests away. Do not expose it directly to the public internet.
 - **Pinning.** The image tracks `searxng:latest` and updates when the add-on
   is rebuilt. To pin a version, change the `FROM` line in the `Dockerfile`.
+- **Disabled engines.** `ahmia` and `torch` search Tor onion services and
+  need a Tor proxy; `wikidata`'s infobox endpoint returns 403 to self-hosted
+  IPs. All three are turned off so they stop failing on every start — web
+  results are unaffected. Re-enable one by removing its entry from
+  `gen-settings.py`.
+- **`missing config file: limiter.toml`** in the log is expected and
+  harmless: the limiter is off, so the file it looks for is not needed.
 
 ## Pointing RemindMe at it
 
