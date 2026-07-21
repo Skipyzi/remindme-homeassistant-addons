@@ -1576,6 +1576,163 @@ textarea::-webkit-scrollbar-thumb {
 	max-height: calc(100dvh - 40px);
 	overflow: auto;
 }
+
+/* ── Inference endpoint picker ───────────────────────────────────────── */
+.settings-copy {
+	margin: 4px 0 12px;
+	max-width: 60ch;
+	color: var(--muted);
+	font-size: 11.5px;
+	line-height: 1.5;
+}
+.endpoint-divider {
+	margin-top: 22px;
+	padding-top: 16px;
+	border-top: 1px solid var(--line);
+}
+.endpoint-list {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	margin-bottom: 10px;
+}
+.endpoint-row {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	width: 100%;
+	padding: 0;
+	background: rgba(255, 178, 0, 0.03);
+	border: 1px solid var(--amber-faint);
+	color: var(--text);
+	text-align: left;
+	cursor: pointer;
+}
+.endpoint-row.active {
+	border-color: var(--amber);
+	background: rgba(255, 178, 0, 0.09);
+}
+.endpoint-pick {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	flex: 1;
+	min-width: 0;
+	padding: 9px 11px;
+	background: none;
+	border: 0;
+	color: inherit;
+	text-align: left;
+	cursor: pointer;
+}
+.endpoint-row:not(.active) > .endpoint-pick,
+button.endpoint-row:not(.active) {
+	padding: 9px 11px;
+}
+.endpoint-dot {
+	flex: none;
+	width: 9px;
+	height: 9px;
+	border-radius: 50%;
+	border: 1px solid var(--amber-dim);
+}
+.endpoint-row.active .endpoint-dot {
+	background: var(--amber);
+	border-color: var(--amber);
+	box-shadow: 0 0 8px rgba(255, 178, 0, 0.6);
+}
+.endpoint-name {
+	flex: none;
+	font-size: 12px;
+	letter-spacing: 0.4px;
+}
+.endpoint-model {
+	margin-left: auto;
+	overflow: hidden;
+	color: var(--muted);
+	font-size: 10.5px;
+	white-space: nowrap;
+	text-overflow: ellipsis;
+}
+.endpoint-key {
+	margin-left: 5px;
+}
+.endpoint-edit {
+	flex: none;
+	align-self: stretch;
+	padding: 0 12px;
+	background: none;
+	border: 0;
+	border-left: 1px solid var(--amber-faint);
+	color: var(--dim);
+	font-size: 9px;
+	letter-spacing: 1.2px;
+	cursor: pointer;
+}
+.endpoint-edit:hover {
+	color: var(--amber);
+}
+.endpoint-editor {
+	margin: 12px 0;
+	padding: 12px;
+	border: 1px solid var(--amber-dim);
+	background: rgba(0, 0, 0, 0.22);
+}
+.endpoint-field {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	margin-bottom: 9px;
+	color: var(--muted);
+	font-size: 9.5px;
+	letter-spacing: 1px;
+	text-transform: uppercase;
+}
+.endpoint-field input {
+	padding: 8px 10px;
+	background: var(--panel);
+	border: 1px solid var(--line);
+	color: var(--text);
+	font-family: inherit;
+	font-size: 12px;
+	letter-spacing: normal;
+	text-transform: none;
+}
+.endpoint-field input:focus-visible {
+	outline: none;
+	border-color: var(--amber);
+}
+.endpoint-toggle {
+	display: block;
+	margin: 4px 0 10px;
+	color: var(--text);
+	font-size: 11px;
+}
+.endpoint-toggle small {
+	color: var(--muted);
+}
+.endpoint-error {
+	margin-bottom: 8px;
+	color: var(--bad);
+	font-size: 11px;
+}
+.endpoint-result {
+	margin-bottom: 8px;
+	padding: 7px 9px;
+	border: 1px solid var(--good);
+	color: var(--good);
+	font-size: 11px;
+	overflow-wrap: anywhere;
+}
+.endpoint-result.bad {
+	border-color: var(--bad);
+	color: var(--bad);
+}
+.endpoint-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+}
 .model-catalog {
 	display: grid;
 	gap: 14px;

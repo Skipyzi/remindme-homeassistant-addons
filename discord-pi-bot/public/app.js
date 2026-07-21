@@ -80,6 +80,13 @@ function harness() {
 		artifactSaving: false,
 		/** What the frame last reported: a compile error, or nothing. */
 		artifactStatus: "",
+		/** Inference endpoints: the switchable list of where the model runs. */
+		endpoints: [],
+		endpointActiveId: "",
+		endpointDraft: null,
+		endpointError: "",
+		endpointTest: null,
+		endpointBusy: false,
 		tokenUsage: {
 			exact: false,
 			promptTokens: 0,
@@ -144,26 +151,9 @@ function harness() {
 			this.$watch("draft", () => window.RemindMeComposer.measure(this));
 			window.RemindMeComposer.measure(this, 0);
 			window.RemindMeConversations.load(this).catch(() => {});
-			fetch("./api/status")
-				.then((r) => r.json())
-				.then((d) => {
-					this.modelBadge = "LOCAL • " + (d.modelName || d.model);
-					this.visionEnabled = Boolean(d.vision);
-					if (Array.isArray(d.profiles) && d.profiles.length) {
-						this.thinkingProfiles = d.profiles;
-						if (!d.profiles.some((preset) => preset.id === this.thinking)) {
-							this.thinking =
-								d.profiles.find((preset) => preset.recommended)?.id || "fast";
-							this.profile = this.thinking;
-						}
-					}
-					if (d.hardware)
-						this.hardware = `${d.hardware.architecture} / ${d.hardware.cpuCores} cores`;
-				})
-				.catch(() => {
-					this.offline = true;
-				});
+			this.refreshStatus();
 			window.RemindMeModelCookbook.load(this);
+			window.RemindMeEndpoints.load(this);
 			this.startSystemPolling();
 			/*
 			 * The artifact frame reports what happened when it ran. It holds
@@ -177,6 +167,57 @@ function harness() {
 				if (typeof event.data?.artifactStatus === "string")
 					this.artifactStatus = event.data.artifactStatus;
 			});
+		},
+		/**
+		 * Pull the model badge, capabilities and thinking profiles from the
+		 * server. Re-runnable, so switching endpoints refreshes the badge
+		 * without a reload — a custom endpoint reports its own name and model.
+		 */
+		refreshStatus() {
+			return fetch("./api/status")
+				.then((r) => r.json())
+				.then((d) => {
+					const custom = this.endpointActiveId;
+					this.modelBadge =
+						(custom ? "" : "LOCAL • ") + (d.modelName || d.model);
+					this.visionEnabled = Boolean(d.vision);
+					if (Array.isArray(d.profiles) && d.profiles.length) {
+						this.thinkingProfiles = d.profiles;
+						if (!d.profiles.some((preset) => preset.id === this.thinking)) {
+							this.thinking =
+								d.profiles.find((preset) => preset.recommended)?.id || "fast";
+							this.profile = this.thinking;
+						}
+					}
+					if (d.hardware)
+						this.hardware = `${d.hardware.architecture} / ${d.hardware.cpuCores} cores`;
+					this.offline = false;
+				})
+				.catch(() => {
+					this.offline = true;
+				});
+		},
+		/* ── Inference endpoints ──────────────────────────────────────── */
+		editEndpoint(endpoint) {
+			window.RemindMeEndpoints.edit(this, endpoint);
+		},
+		newEndpoint() {
+			window.RemindMeEndpoints.edit(this, null);
+		},
+		cancelEndpoint() {
+			window.RemindMeEndpoints.cancel(this);
+		},
+		saveEndpoint() {
+			return window.RemindMeEndpoints.save(this);
+		},
+		deleteEndpoint(endpoint) {
+			return window.RemindMeEndpoints.remove(this, endpoint);
+		},
+		activateEndpoint(id) {
+			return window.RemindMeEndpoints.activate(this, id);
+		},
+		testEndpoint() {
+			return window.RemindMeEndpoints.test(this);
 		},
 		persist() {
 			localStorage.setItem(

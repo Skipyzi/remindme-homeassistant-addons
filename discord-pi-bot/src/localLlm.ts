@@ -1,40 +1,33 @@
 import { config } from "./config";
+import { EndpointStore } from "./harness/endpoints";
 
-function getLocalLlmUrl(): URL {
-	try {
-		const url = new URL(config.localLlmUrl);
-		const allowedHosts = new Set([
-			"localhost",
-			"127.0.0.1",
-			"::1",
-			"local-llama-cpp",
-		]);
-		if (!allowedHosts.has(url.hostname) || url.protocol !== "http:") {
-			throw new Error(
-				"URL must use HTTP and target the local llama.cpp service",
-			);
-		}
-		return url;
-	} catch (error) {
-		console.error("Invalid LOCAL_LLM_URL:", error);
-		throw new Error("Invalid LOCAL_LLM_URL");
-	}
-}
+/*
+ * The bot process shares the console's endpoint list through the same file,
+ * so a reminder parsed at 3am uses whatever endpoint the console is pointed
+ * at. Loaded lazily and re-read each call: the console may have switched
+ * endpoints since the bot started, and this is called rarely enough that a
+ * file read per call costs nothing.
+ */
+const endpoints = new EndpointStore();
 
 export async function askLocalLlm(prompt: string): Promise<string> {
-	const localLlmUrl = getLocalLlmUrl();
+	await endpoints.load();
+	const endpoint = endpoints.resolve({
+		url: config.localLlmUrl,
+		model: config.localLlmModel,
+	});
 	const controller = new AbortController();
 	const timeout = setTimeout(
 		() => controller.abort(),
 		config.localLlmTimeoutMs,
 	);
 	try {
-		const response = await fetch(localLlmUrl, {
+		const response = await fetch(endpoint.url, {
 			method: "POST",
-			headers: { "Content-Type": "application/json" },
+			headers: endpoint.headers,
 			signal: controller.signal,
 			body: JSON.stringify({
-				model: config.localLlmModel,
+				model: endpoint.model,
 				messages: [{ role: "user", content: prompt }],
 				temperature: 0.7,
 				stream: false,

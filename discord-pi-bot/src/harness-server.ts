@@ -40,6 +40,7 @@ import { readSystemStats } from "./harness/systemStats";
 import { ArtifactStore, toDocument } from "./harness/artifacts";
 import { applyEdit, isEditFailure, modelView } from "./harness/artifactEdit";
 import { partialStringField } from "./harness/streamingJson";
+import { EndpointStore, validateEndpointUrl } from "./harness/endpoints";
 import { parseReminder, describeWhen } from "./harness/reminderParser";
 import {
 	McpServerStore,
@@ -97,7 +98,17 @@ const artifacts = new ArtifactStore();
 void artifacts.load();
 const mcpServers = new McpServerStore();
 void mcpServers.load();
+const endpoints = new EndpointStore();
+void endpoints.load();
 type Send = (event: string, data: unknown) => void;
+
+/** The endpoint every request resolves against, custom or the local default. */
+function resolveEndpoint() {
+	return endpoints.resolve({
+		url: process.env.LOCAL_LLM_URL || "http://homeassistant:8080/v1/chat/completions",
+		model: config.localLlmModel,
+	});
+}
 
 /*
  * A chat request carries the conversation so far, and a transcript with a
@@ -156,6 +167,84 @@ app.post("/api/mcp/:id/test", async (request, response) => {
 		response.status(502).json({
 			ok: false,
 			error: error instanceof Error ? error.message : "Could not reach server",
+		});
+	}
+});
+/* Inference endpoints: the switchable list of where the model runs. */
+app.get("/api/endpoints", (_request, response) => {
+	response.json(endpoints.config());
+});
+app.post("/api/endpoints", async (request, response) => {
+	try {
+		response.status(201).json(await endpoints.create(request.body || {}));
+	} catch (error) {
+		response.status(400).json({
+			error: error instanceof Error ? error.message : "Invalid endpoint",
+		});
+	}
+});
+app.patch("/api/endpoints/:id", async (request, response) => {
+	try {
+		const updated = await endpoints.update(request.params.id, request.body || {});
+		if (!updated) return response.status(404).json({ error: "Not found" });
+		response.json(updated);
+	} catch (error) {
+		response.status(400).json({
+			error: error instanceof Error ? error.message : "Invalid endpoint",
+		});
+	}
+});
+app.delete("/api/endpoints/:id", async (request, response) => {
+	response.status((await endpoints.delete(request.params.id)) ? 204 : 404).end();
+});
+/* Empty id in the body restores the local default. */
+app.post("/api/endpoints/active", async (request, response) => {
+	const id = typeof request.body?.id === "string" ? request.body.id : "";
+	if (!(await endpoints.setActive(id)))
+		return response.status(404).json({ error: "No such endpoint" });
+	response.json(endpoints.config());
+});
+/*
+ * A one-message round trip to prove an endpoint answers before it is
+ * trusted with a turn. Tests the record as saved, including its key, so a
+ * bad URL or a rejected key is caught here rather than mid-conversation.
+ */
+app.post("/api/endpoints/:id/test", async (request, response) => {
+	const endpoint = endpoints.get(request.params.id);
+	if (!endpoint) return response.status(404).json({ error: "Not found" });
+	try {
+		const headers: Record<string, string> = { "Content-Type": "application/json" };
+		if (endpoint.apiKey) headers.Authorization = `Bearer ${endpoint.apiKey}`;
+		const probe = await fetch(new URL(endpoint.url), {
+			method: "POST",
+			headers,
+			body: JSON.stringify({
+				model: endpoint.model,
+				messages: [{ role: "user", content: "Reply with the single word: ok" }],
+				max_tokens: 5,
+				stream: false,
+			}),
+			signal: AbortSignal.timeout(15_000),
+		});
+		if (!probe.ok) {
+			const detail = (await probe.text()).slice(0, 200);
+			return response.status(502).json({
+				ok: false,
+				error: `HTTP ${probe.status}: ${detail}`,
+			});
+		}
+		const data = (await probe.json()) as {
+			choices?: Array<{ message?: { content?: string } }>;
+		};
+		const reply = data.choices?.[0]?.message?.content;
+		response.json({
+			ok: true,
+			reply: typeof reply === "string" ? reply.slice(0, 120) : "(no text)",
+		});
+	} catch (error) {
+		response.status(502).json({
+			ok: false,
+			error: error instanceof Error ? error.message : "Could not reach endpoint",
 		});
 	}
 });
@@ -315,6 +404,16 @@ app.post("/api/tokenize", async (request, response) => {
 	const messages = Array.isArray(request.body?.messages)
 		? request.body.messages.slice(-100)
 		: [];
+	/*
+	 * Exact counts come from llama.cpp's /tokenize, which a custom or
+	 * OpenAI-style endpoint does not offer. When one is active, say the
+	 * count is inexact and let the client fall back to its estimate rather
+	 * than tokenising against the wrong model.
+	 */
+	if (endpoints.active()) {
+		response.json({ exact: false });
+		return;
+	}
 	try {
 		const usage = await measureTokenUsage(
 			tokenizerUrl(getLocalLlmUrl()),
@@ -701,16 +800,24 @@ app.delete("/api/reminders/:id", async (_request, response) => {
 	response.status(deleted ? 204 : 404).end();
 });
 app.get("/api/status", async (_request, response) => {
-	const managed = await managedActiveModel();
+	/*
+	 * A custom endpoint runs its own model, so the local model manager's
+	 * view does not apply — the badge and profiles come from the endpoint
+	 * instead. The manager is only consulted when inference is local.
+	 */
+	const activeEndpoint = endpoints.active();
+	const managed = activeEndpoint ? undefined : await managedActiveModel();
 	const contextSize =
 		managed?.recommendedContext ||
 		Number(process.env.LOCAL_LLM_CONTEXT_SIZE || 8192);
 	response.set("Cache-Control", "no-store").json({
 		instanceId,
-		model: managed?.id || config.localLlmModel || "runtime-unavailable",
-		modelName: managed
-			? `${managed.family} ${managed.quantization}`.trim()
-			: config.localLlmModel || "Runtime unavailable",
+		model: activeEndpoint?.model || managed?.id || config.localLlmModel || "runtime-unavailable",
+		modelName: activeEndpoint
+			? `${activeEndpoint.name} · ${activeEndpoint.model}`
+			: managed
+				? `${managed.family} ${managed.quantization}`.trim()
+				: config.localLlmModel || "Runtime unavailable",
 		/* Whether the manager is driving the endpoint, distinct from whether
 		 * inference works at all. */
 		managed: Boolean(managed),
@@ -1287,30 +1394,38 @@ async function streamModel(
 		os.totalmem(),
 		Number(process.env.LOCAL_LLM_CONTEXT_SIZE || 8192),
 	);
+	const endpoint = resolveEndpoint();
 	const requestBody: Record<string, unknown> = {
-		model: config.localLlmModel,
+		model: endpoint.model,
 		messages,
 		stream: true,
 		max_tokens: thinkingProfile.maxTokens,
-		chat_template_kwargs: { enable_thinking: thinkingMode !== "fast" },
-		reasoning_format: thinkingMode === "fast" ? "none" : "deepseek",
-		reasoning: thinkingMode === "fast" ? "off" : "on",
-		reasoning_budget: thinkingProfile.reasoningBudget,
 	};
+	/*
+	 * The reasoning controls are llama.cpp extensions. A plain OpenAI-style
+	 * server rejects unknown fields with a 400, so they go only to an
+	 * endpoint that understands them.
+	 */
+	if (!endpoint.openaiCompat) {
+		requestBody.chat_template_kwargs = { enable_thinking: thinkingMode !== "fast" };
+		requestBody.reasoning_format = thinkingMode === "fast" ? "none" : "deepseek";
+		requestBody.reasoning = thinkingMode === "fast" ? "off" : "on";
+		requestBody.reasoning_budget = thinkingProfile.reasoningBudget;
+	}
 	if (requestTools.length) {
 		requestBody.tools = requestTools;
 		requestBody.tool_choice = "auto";
 	}
-	const response = await fetch(getLocalLlmUrl(), {
+	const response = await fetch(endpoint.url, {
 		method: "POST",
-		headers: { "Content-Type": "application/json" },
+		headers: endpoint.headers,
 		body: JSON.stringify(requestBody),
 	});
 	if (!response.ok)
 		throw new Error(
-			`llama.cpp returned HTTP ${response.status}: ${await response.text()}`,
+			`${endpoint.label} endpoint returned HTTP ${response.status}: ${await response.text()}`,
 		);
-	if (!response.body) throw new Error("llama.cpp returned no stream");
+	if (!response.body) throw new Error("The endpoint returned no stream");
 	let buffer = "";
 	let text = "";
 	let thinking = "";

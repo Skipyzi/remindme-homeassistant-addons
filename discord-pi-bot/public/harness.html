@@ -18,6 +18,7 @@
     <script defer src="./components/commands.js"></script>
     <script defer src="./components/entityControls.js"></script>
     <script defer src="./components/conversations.js"></script>
+    <script defer src="./components/endpoints.js"></script>
     <script defer src="./components/attachments.js"></script>
     <script defer src="./components/model-cookbook.js"></script>
     <script defer src="./app.js"></script>
@@ -1078,7 +1079,138 @@
       >
         <section class="settings-card" @click.outside="modelsOpen=false">
           <div class="kicker">Model workbench</div>
-          <h2>Local model vault</h2>
+          <h2>Inference endpoint</h2>
+          <p class="settings-copy">
+            Where the model runs. The local llama.cpp is the default; point at
+            a stronger box on your network or an OpenAI-compatible API to run
+            faster than a Pi can.
+          </p>
+          <div class="endpoint-list">
+            <!-- The built-in local model is always the first choice. -->
+            <button
+              class="endpoint-row"
+              :class="{active: !endpointActiveId}"
+              @click="activateEndpoint('')"
+            >
+              <span class="endpoint-dot" aria-hidden="true"></span>
+              <span class="endpoint-name">Local llama.cpp</span>
+              <span class="endpoint-model">on this device</span>
+            </button>
+            <template x-for="endpoint in endpoints" :key="endpoint.id">
+              <div
+                class="endpoint-row"
+                :class="{active: endpoint.id===endpointActiveId}"
+              >
+                <button
+                  class="endpoint-pick"
+                  @click="activateEndpoint(endpoint.id)"
+                >
+                  <span class="endpoint-dot" aria-hidden="true"></span>
+                  <span class="endpoint-name" x-text="endpoint.name"></span>
+                  <span class="endpoint-model">
+                    <span x-text="endpoint.model || 'default model'"></span
+                    ><span x-show="endpoint.hasKey" class="endpoint-key" title="API key set">🔑</span>
+                  </span>
+                </button>
+                <button
+                  class="endpoint-edit"
+                  aria-label="Edit endpoint"
+                  @click="editEndpoint(endpoint)"
+                >
+                  EDIT
+                </button>
+              </div>
+            </template>
+          </div>
+          <button
+            class="chip"
+            x-show="!endpointDraft"
+            @click="newEndpoint()"
+          >
+            ＋ Add endpoint
+          </button>
+
+          <!-- Editor for a new or existing endpoint. -->
+          <div class="endpoint-editor" x-show="endpointDraft" x-cloak>
+            <template x-if="endpointDraft">
+              <div>
+                <label class="endpoint-field"
+                  >Name<input
+                    x-model="endpointDraft.name"
+                    placeholder="Studio box"
+                /></label>
+                <label class="endpoint-field"
+                  >URL<input
+                    x-model="endpointDraft.url"
+                    placeholder="http://192.168.1.40:8080/v1/chat/completions"
+                    spellcheck="false"
+                /></label>
+                <label class="endpoint-field"
+                  >Model<input
+                    x-model="endpointDraft.model"
+                    placeholder="qwen2.5-7b"
+                    spellcheck="false"
+                /></label>
+                <label class="endpoint-field"
+                  >API key
+                  <input
+                    type="password"
+                    autocomplete="off"
+                    x-model="endpointDraft.apiKey"
+                    :placeholder="endpointDraft.hasKey ? '•••••• (leave blank to keep)' : 'optional'"
+                  />
+                </label>
+                <label class="endpoint-toggle">
+                  <input type="checkbox" x-model="endpointDraft.openaiCompat" />
+                  OpenAI-compatible
+                  <small
+                    >— send only standard fields (turn off for llama.cpp's
+                    thinking controls)</small
+                  >
+                </label>
+                <div class="endpoint-error" x-show="endpointError" x-text="endpointError"></div>
+                <div
+                  class="endpoint-result"
+                  x-show="endpointTest"
+                  x-cloak
+                  :class="{bad: endpointTest && !endpointTest.ok}"
+                >
+                  <template x-if="endpointTest?.ok"
+                    ><span
+                      >Replied: <b x-text="endpointTest.reply"></b></span
+                  ></template>
+                  <template x-if="endpointTest && !endpointTest.ok"
+                    ><span x-text="endpointTest.error"></span
+                  ></template>
+                </div>
+                <div class="endpoint-actions">
+                  <button
+                    class="chip"
+                    :disabled="endpointBusy"
+                    @click="testEndpoint()"
+                    x-text="endpointBusy ? 'WORKING' : 'TEST'"
+                  ></button>
+                  <button
+                    class="chip"
+                    :disabled="endpointBusy"
+                    @click="saveEndpoint()"
+                  >
+                    SAVE
+                  </button>
+                  <button
+                    class="chip warn"
+                    x-show="endpointDraft.id"
+                    @click="deleteEndpoint(endpointDraft); cancelEndpoint()"
+                  >
+                    DELETE
+                  </button>
+                  <button class="chip" @click="cancelEndpoint()">CANCEL</button>
+                </div>
+              </div>
+            </template>
+          </div>
+
+          <h2 class="endpoint-divider">Local model vault</h2>
           <!-- Attributes a manager failure to a layer instead of reporting a
                single opaque "unavailable". -->
           <div class="model-diagnostics">
