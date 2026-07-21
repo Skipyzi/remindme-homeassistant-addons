@@ -2968,3 +2968,130 @@ h6.rt-h {
 .host-value.hot {
 	color: var(--bad);
 }
+
+/* ── Artifacts ──────────────────────────────────────────────────────────
+ * The pane is a third column, not an overlay: opening a document should
+ * narrow the conversation, not hide it, so you can read what was said
+ * about the thing while looking at the thing.
+ */
+.screen.with-artifact {
+	grid-template-columns: 210px minmax(0, 1fr) minmax(0, 1fr);
+}
+.artifact-pane {
+	display: flex;
+	flex-direction: column;
+	min-width: 0;
+	border-left: 1px solid var(--amber-dim);
+	background: rgba(0, 0, 0, 0.22);
+}
+.artifact-head {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 10px;
+	padding: 10px 12px;
+	border-bottom: 1px solid var(--amber-faint);
+}
+.artifact-heading {
+	display: flex;
+	align-items: baseline;
+	gap: 8px;
+	min-width: 0;
+}
+.artifact-heading b {
+	color: #f0e6cf;
+	font-size: 12.5px;
+	font-weight: normal;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.artifact-kind {
+	flex: none;
+	font-size: 9px;
+	letter-spacing: 1.5px;
+	text-transform: uppercase;
+	color: var(--muted);
+	border: 1px solid var(--amber-faint);
+	padding: 1px 5px;
+}
+.artifact-actions {
+	display: flex;
+	gap: 6px;
+	flex: none;
+}
+.artifact-actions .chip {
+	flex: none;
+}
+.artifact-stage {
+	flex: 1;
+	min-height: 0;
+	overflow: auto;
+}
+/* White canvas would be wrong here; the document sets its own ground. */
+.artifact-frame {
+	width: 100%;
+	height: 100%;
+	min-height: 320px;
+	border: 0;
+	display: block;
+	background: var(--glass);
+}
+.artifact-text {
+	padding: 12px;
+	font-size: 12px;
+	line-height: 1.6;
+}
+
+/* The card in the transcript: a handle, not the document. */
+.artifact-card {
+	display: flex;
+	align-items: center;
+	gap: 9px;
+	width: 100%;
+	margin-top: 8px;
+	padding: 9px 11px;
+	background: rgba(255, 178, 0, 0.05);
+	border: 1px solid var(--amber-dim);
+	color: var(--dim);
+	font-family: inherit;
+	font-size: 11.5px;
+	text-align: left;
+	cursor: pointer;
+}
+.artifact-card:hover {
+	border-color: var(--amber);
+	color: var(--amber);
+}
+.artifact-card .artifact-title {
+	flex: 1;
+	min-width: 0;
+	color: #f0e6cf;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.artifact-card .artifact-open {
+	flex: none;
+	font-size: 9.5px;
+	letter-spacing: 1.5px;
+	color: var(--amber);
+}
+
+/* Too narrow to sit side by side: the pane takes the screen instead. */
+@media (max-width: 1100px) {
+	.screen.with-artifact {
+		grid-template-columns: 210px minmax(0, 1fr);
+	}
+	.artifact-pane {
+		position: absolute;
+		inset: 0 0 0 210px;
+		z-index: 20;
+		background: var(--glass);
+	}
+}
+@media (max-width: 850px) {
+	.artifact-pane {
+		inset: 0;
+	}
+}

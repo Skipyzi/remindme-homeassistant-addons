@@ -103,6 +103,8 @@
 			 */
 			const presentation = {
 				confirm: data.result?.confirmation_required ? data.result : undefined,
+				// An artifact surfaces as a card on the row that produced it.
+				artifact: data.result?.artifact,
 			};
 			return upsert(
 				entries,

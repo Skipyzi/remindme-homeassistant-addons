@@ -35,6 +35,7 @@ export REMINDER_DATA_PATH=/data/reminders.json
 export CONVERSATION_DATA_PATH=/data/conversations.json
 export SKILL_DATA_PATH=/data/skills.json
 export MCP_DATA_PATH=/data/mcp.json
+export ARTIFACT_DATA_PATH=/data/artifacts.json
 export PRESENCE_UPTIME_PATH=/data/presence-uptime.json
 
 node /app/dist/harness-server.js &

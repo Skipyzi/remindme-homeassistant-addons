@@ -5,6 +5,9 @@ const reminderTerms =
 const webTerms =
 	/\b(search (?:the )?web|look (?:it )?up|latest|news|online|internet|weather forecast|source|sources)\b/i;
 
+const artifactTerms =
+	/(draw|chart|graph|diagram|plot|render|visuali[sz]e|artifact|page|dashboard|svg|html|mock ?up|write (?:me )?an? (?:app|page|script|program))/i;
+
 export function allowedToolNames(prompt: string): Set<string> {
 	const allowed = new Set<string>();
 	if (homeTerms.test(prompt)) {
@@ -14,6 +17,7 @@ export function allowedToolNames(prompt: string): Set<string> {
 	}
 	if (reminderTerms.test(prompt)) allowed.add("list_reminders");
 	if (webTerms.test(prompt)) allowed.add("web_search");
+	if (artifactTerms.test(prompt)) allowed.add("create_artifact");
 	return allowed;
 }
 

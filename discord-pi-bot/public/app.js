@@ -69,6 +69,8 @@ function harness() {
 		hardware: "raspberry pi profile",
 		metrics: {},
 		system: null,
+		artifactOpen: false,
+		currentArtifact: null,
 		tokenUsage: {
 			exact: false,
 			promptTokens: 0,
@@ -233,6 +235,56 @@ function harness() {
 				window.RemindMeRichText.render(element, text);
 			else if (window.RemindMeMath) window.RemindMeMath.render(element, text);
 			else element.textContent = String(text || "");
+		},
+		async openArtifact(id) {
+			try {
+				const response = await fetch(`./api/artifacts/${encodeURIComponent(id)}`);
+				if (!response.ok) return;
+				this.currentArtifact = await response.json();
+				this.artifactOpen = true;
+			} catch {
+				/* nothing to show */
+			}
+		},
+		/** Markdown and code artifacts go through the same rich-text renderer. */
+		renderArtifactBody(element, artifact) {
+			if (!element || !artifact) return;
+			const fence = "```";
+			const body =
+				artifact.kind === "code"
+					? [fence + (artifact.language || ""), artifact.content, fence].join(
+							String.fromCharCode(10),
+						)
+					: artifact.content;
+			this.renderMessageText(element, body);
+		},
+		downloadArtifact() {
+			const artifact = this.currentArtifact;
+			if (!artifact) return;
+			const extension =
+				artifact.kind === "html"
+					? "html"
+					: artifact.kind === "svg"
+						? "svg"
+						: artifact.kind === "markdown"
+							? "md"
+							: artifact.language || "txt";
+			const blob = new Blob([artifact.content], { type: "text/plain" });
+			const url = URL.createObjectURL(blob);
+			const link = document.createElement("a");
+			link.href = url;
+			link.download = `${artifact.title.replace(/[^\w.-]+/g, "-")}.${extension}`;
+			link.click();
+			URL.revokeObjectURL(url);
+		},
+		async deleteArtifact() {
+			const artifact = this.currentArtifact;
+			if (!artifact || !window.confirm(`Delete "${artifact.title}"?`)) return;
+			await fetch(`./api/artifacts/${encodeURIComponent(artifact.id)}`, {
+				method: "DELETE",
+			});
+			this.artifactOpen = false;
+			this.currentArtifact = null;
 		},
 		formatBytes(value) {
 			const bytes = Number(value || 0);
