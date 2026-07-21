@@ -33,6 +33,23 @@
 		return conversation.id;
 	}
 
+	/** Update fields on a conversation and return the server's copy. */
+	async function patch(id, values) {
+		try {
+			const response = await fetch(
+				`./api/conversations/${encodeURIComponent(id)}`,
+				{
+					method: "PATCH",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify(values),
+				},
+			);
+			return response.ok ? await response.json() : null;
+		} catch {
+			return null;
+		}
+	}
+
 	function save(app) {
 		if (!app.currentConversationId) return;
 		clearTimeout(saveTimer);
@@ -135,5 +152,5 @@
 		app.currentConversationId = fresh.id;
 		app.messages = toMessages(fresh);
 	}
-	globalScope.RemindMeConversations = { load, create, ensure, save, select, remove };
+	globalScope.RemindMeConversations = { load, create, ensure, patch, save, select, remove };
 })(window);

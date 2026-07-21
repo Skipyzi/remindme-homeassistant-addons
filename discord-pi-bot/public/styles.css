@@ -3095,3 +3095,68 @@ h6.rt-h {
 		inset: 0;
 	}
 }
+
+/* ── Conversation cards ─────────────────────────────────────────────────*/
+.history-title {
+	display: flex;
+	align-items: baseline;
+	gap: 5px;
+	min-width: 0;
+}
+.history-pin-mark {
+	flex: none;
+	font-style: normal;
+	font-size: 8px;
+	color: var(--amber);
+}
+.history-meta {
+	display: flex;
+	gap: 8px;
+	color: var(--muted);
+}
+.history-preview {
+	color: var(--muted);
+	opacity: 0.75;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	max-width: 100%;
+}
+.history-controls {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	flex: none;
+}
+.history-pin {
+	width: 24px;
+	padding: 0;
+	background: transparent;
+	border: 1px solid transparent;
+	color: var(--muted);
+	font-family: inherit;
+	font-size: 9px;
+	letter-spacing: 0;
+	cursor: pointer;
+	opacity: 0;
+	transition: opacity 0.12s ease;
+}
+/* A pinned row keeps its control visible: the state has to be legible
+ * without hovering, or pinning looks like it did nothing. */
+.history-pin.on,
+.history-row:hover .history-pin,
+.history-pin:focus-visible {
+	opacity: 1;
+}
+.history-pin.on {
+	color: var(--amber);
+}
+.history-pin:hover {
+	border-color: var(--amber);
+	color: var(--amber);
+}
+@media (hover: none) {
+	.history-pin {
+		opacity: 1;
+	}
+}

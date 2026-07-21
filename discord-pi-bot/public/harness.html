@@ -59,19 +59,45 @@
                   :class="{active:conversation.id===currentConversationId}"
                   @click="selectConversation(conversation)"
                 >
-                  <span x-text="conversation.title"></span
-                  ><small
-                    x-text="new Date(conversation.updatedAt).toLocaleDateString()"
+                  <span class="history-title"
+                    ><i
+                      class="history-pin-mark"
+                      x-show="conversation.pinned"
+                      aria-hidden="true"
+                      >◆</i
+                    ><span x-text="conversation.title"></span
+                  ></span>
+                  <!-- Enough to tell two conversations apart at a glance:
+                       when it last moved, how long it ran, how it opened. -->
+                  <small class="history-meta">
+                    <span x-text="conversationWhen(conversation)"></span
+                    ><span x-text="conversationSize(conversation)"></span>
+                  </small>
+                  <small
+                    class="history-preview"
+                    x-show="conversationPreview(conversation)"
+                    x-text="conversationPreview(conversation)"
                   ></small>
                 </button>
-                <button
-                  class="history-delete"
-                  :aria-label="`Delete ${conversation.title}`"
-                  title="Delete conversation"
-                  @click.stop="deleteConversation(conversation)"
-                >
-                  &times;
-                </button></div
+                <div class="history-controls">
+                  <button
+                    class="history-pin"
+                    :class="{on: conversation.pinned}"
+                    :aria-label="conversation.pinned ? 'Unpin' : 'Pin'"
+                    :title="conversation.pinned ? 'Unpin' : 'Pin to top'"
+                    @click.stop="togglePin(conversation)"
+                  >
+                    ◆
+                  </button>
+                  <button
+                    class="history-delete"
+                    :aria-label="`Delete ${conversation.title}`"
+                    title="Delete conversation"
+                    @click.stop="deleteConversation(conversation)"
+                  >
+                    &times;
+                  </button>
+                </div></div
             ></template>
           </div>
           <button @click="clearChat()">Clear conversation</button>

@@ -193,6 +193,52 @@ function harness() {
 		selectConversation(conversation) {
 			return window.RemindMeConversations.select(this, conversation);
 		},
+		/** Pin to the top. The store already sorts pinned first. */
+		async togglePin(conversation) {
+			const pinned = !conversation.pinned;
+			conversation.pinned = pinned;
+			const saved = await window.RemindMeConversations.patch(conversation.id, {
+				pinned,
+			});
+			if (!saved) {
+				conversation.pinned = !pinned;
+				return;
+			}
+			Object.assign(conversation, saved);
+			// Re-sort locally so the row moves without waiting for a reload.
+			this.conversations = [...this.conversations].sort(
+				(a, b) =>
+					Number(Boolean(b.pinned)) - Number(Boolean(a.pinned)) ||
+					String(b.updatedAt).localeCompare(String(a.updatedAt)),
+			);
+		},
+		/** Relative age, so the list reads without doing date arithmetic. */
+		conversationWhen(conversation) {
+			const then = new Date(conversation.updatedAt).getTime();
+			if (!Number.isFinite(then)) return "";
+			const minutes = Math.floor((Date.now() - then) / 60000);
+			if (minutes < 1) return "just now";
+			if (minutes < 60) return `${minutes}m ago`;
+			const hours = Math.floor(minutes / 60);
+			if (hours < 24) return `${hours}h ago`;
+			const days = Math.floor(hours / 24);
+			return days < 7
+				? `${days}d ago`
+				: new Date(conversation.updatedAt).toLocaleDateString();
+		},
+		conversationSize(conversation) {
+			const count = (conversation.messages || []).length;
+			return count ? `${count} msg` : "empty";
+		},
+		/** The opening line — the fastest way to recognise a conversation. */
+		conversationPreview(conversation) {
+			const first = (conversation.messages || []).find(
+				(message) => message.role === "user" && message.text?.trim(),
+			);
+			if (!first) return "";
+			const text = first.text.replace(/\s+/g, " ").trim();
+			return text.length > 64 ? `${text.slice(0, 64)}…` : text;
+		},
 		clearChat() {
 			this.messages = [];
 			this.persist();
