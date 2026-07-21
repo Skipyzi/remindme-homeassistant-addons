@@ -115,12 +115,59 @@
 		return `${label} FOR ${since}`;
 	}
 
+	/**
+	 * Name a fan speed the way a person would: the device's preset if it has
+	 * one, otherwise the step out of however many steps it actually supports.
+	 * "2 of 3" beats "66%" when the hardware only has three settings.
+	 */
+	function fanSpeedLabel(entity) {
+		const percentage = Number(entity.fanPercentage || 0);
+		const step = Number(entity.fanStep || 0);
+		const preset = entity.presetMode
+			? String(entity.presetMode).toUpperCase()
+			: "";
+		if (step > 0 && step < 100) {
+			const steps = Math.round(100 / step);
+			const current = Math.round(percentage / step);
+			return `${preset || `${percentage}%`} · ${current} OF ${steps}`;
+		}
+		return preset ? `${preset} · ${percentage}%` : `${percentage}%`;
+	}
+
+	/** Next speed up, clamped to the device's own step and ceiling. */
+	function nextFanSpeed(entity) {
+		const step = Number(entity.fanStep) > 0 ? Number(entity.fanStep) : 25;
+		return Math.min(100, Math.round(Number(entity.fanPercentage || 0) + step));
+	}
+
+	/**
+	 * Trailing value on a compact row — the number that makes the state
+	 * meaningful (a light's brightness, a sensor's unit).
+	 */
+	function compactDetail(entity) {
+		if (entity.domain === "light" && isActive(entity)) {
+			const percent = barPercent(entity);
+			if (percent !== null) return `${percent}%`;
+		}
+		if (entity.domain === "fan" && entity.fanPercentage != null)
+			return `${entity.fanPercentage}%`;
+		if (entity.domain === "cover" && entity.position != null)
+			return `${entity.position}% OPEN`;
+		return entity.unit || "—";
+	}
+
 	function metaLine(entity) {
 		const when = formatRelative(entity.lastChanged);
-		if (entity.domain === "climate" && entity.currentTemperature != null)
+		if (entity.domain === "climate" && entity.currentTemperature != null) {
+			const doing = entity.hvacAction
+				? ` · ${String(entity.hvacAction).toUpperCase()}`
+				: "";
 			return `CURRENTLY ${entity.currentTemperature}° · TARGET ${
 				entity.targetTemperature ?? "—"
-			}° · ${when}`;
+			}°${doing} · ${when}`;
+		}
+		if (entity.domain === "fan" && entity.oscillating)
+			return `OSCILLATING · ${when}`;
 		if (entity.domain === "switch" && entity.power != null)
 			return `DRAWING ${entity.power} W · ${when}`;
 		return when ? `LAST CHANGED — ${when}` : "NO STATE HISTORY";
@@ -174,6 +221,9 @@
 		isActive,
 		statePill,
 		showPill,
+		fanSpeedLabel,
+		nextFanSpeed,
+		compactDetail,
 		fillTone,
 		barPercent,
 		formatRelative,

@@ -13,7 +13,8 @@ export type EntityAction =
 	| "set_temperature"
 	| "lock"
 	| "unlock"
-	| "set_fan_speed";
+	| "set_fan_speed"
+	| "set_hvac_mode";
 
 export interface ValidatedEntityAction {
 	domain: string;
@@ -108,6 +109,15 @@ export function validateEntityAction(
 		);
 	} else if (action === "lock" || action === "unlock") {
 		if (!entity.capabilities.lock) throw new Error(`${entity.name} is not a lock`);
+	} else if (action === "set_hvac_mode") {
+		if (entity.domain !== "climate")
+			throw new Error(`${entity.name} is not a thermostat`);
+		// Only the modes every climate entity understands; anything device
+		// specific belongs behind a capability check.
+		const mode = String(value);
+		if (!["off", "heat", "cool", "auto", "heat_cool"].includes(mode))
+			throw new Error("Unsupported HVAC mode");
+		serviceData.hvac_mode = mode;
 	} else if (action === "set_fan_speed") {
 		if (entity.domain !== "fan") throw new Error(`${entity.name} is not a fan`);
 		service = "set_percentage";

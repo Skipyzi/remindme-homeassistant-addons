@@ -250,7 +250,7 @@
                             :class="{cool: iconTone(item)==='cool', off: !isActive(item)}"
                             x-text="item.numericState ?? String(item.state).toUpperCase()"
                           ></span
-                          ><span class="u" x-text="item.unit || '—'"></span></div
+                          ><span class="u" x-text="compactDetail(item)"></span></div
                       ></template>
 
                       <!-- All other tiers share the head -->
@@ -421,6 +421,39 @@
                                     </div></div
                                 ></template>
 
+                                <!-- fans: speed as a named step, not a bare on/off -->
+                                <template
+                                  x-if="item.domain==='fan' && item.fanPercentage!=null"
+                                  ><div>
+                                    <div class="row">
+                                      <span>SPEED</span
+                                      ><span x-text="fanSpeedLabel(item)"></span>
+                                    </div>
+                                    <div class="bar">
+                                      <div
+                                        class="fill"
+                                        :style="`width:${item.fanPercentage || 0}%`"
+                                      ></div>
+                                    </div></div
+                                ></template>
+
+                                <!-- locks report their own battery -->
+                                <template
+                                  x-if="item.domain==='lock' && item.batteryLevel!=null"
+                                  ><div>
+                                    <div class="row">
+                                      <span>BATTERY</span
+                                      ><span x-text="`${item.batteryLevel}%`"></span>
+                                    </div>
+                                    <div class="bar">
+                                      <div
+                                        class="fill"
+                                        :class="item.batteryLevel<=20?'bad':'good'"
+                                        :style="`width:${item.batteryLevel}%`"
+                                      ></div>
+                                    </div></div
+                                ></template>
+
                                 <!-- switches: surface live wattage -->
                                 <template
                                   x-if="item.domain==='switch' && item.power!=null"
@@ -466,6 +499,36 @@
                                   @click="entityAction(item,'close_cover')"
                                 >
                                   CLOSE
+                                </button>
+                                <!-- Secondary actions: the one adjustment you
+                                     reach for, without opening a control. -->
+                                <button
+                                  class="chip"
+                                  x-show="item.capabilities?.brightness && isActive(item)"
+                                  @click="entityAction(item,'brightness',Math.round(255*0.3))"
+                                >
+                                  DIM 30%
+                                </button>
+                                <button
+                                  class="chip"
+                                  x-show="item.capabilities?.position"
+                                  @click="entityAction(item,'set_position',50)"
+                                >
+                                  OPEN 50%
+                                </button>
+                                <button
+                                  class="chip"
+                                  x-show="item.domain==='fan' && item.fanPercentage!=null"
+                                  @click="stepFanSpeed(item)"
+                                >
+                                  SPEED UP
+                                </button>
+                                <button
+                                  class="chip"
+                                  x-show="item.domain==='climate' && item.state!=='off'"
+                                  @click="entityAction(item,'set_hvac_mode','off')"
+                                >
+                                  TURN OFF
                                 </button>
                               </div></div
                           ></template>

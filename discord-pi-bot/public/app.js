@@ -256,6 +256,19 @@ function harness() {
 		showPill(entity) {
 			return window.RemindMeEntityCards.showPill(entity);
 		},
+		fanSpeedLabel(entity) {
+			return window.RemindMeEntityCards.fanSpeedLabel(entity);
+		},
+		compactDetail(entity) {
+			return window.RemindMeEntityCards.compactDetail(entity);
+		},
+		stepFanSpeed(entity) {
+			return this.entityAction(
+				entity,
+				"set_fan_speed",
+				window.RemindMeEntityCards.nextFanSpeed(entity),
+			);
+		},
 		fillTone(entity) {
 			return window.RemindMeEntityCards.fillTone(entity);
 		},

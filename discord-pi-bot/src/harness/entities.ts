@@ -47,6 +47,15 @@ export interface EntityCard {
 	temperatureStep?: number;
 	/** switch: live draw, surfaced instead of a bare on/off */
 	power?: number;
+	/** fan: 0-100 with the step the device actually honours */
+	fanPercentage?: number;
+	fanStep?: number;
+	presetMode?: string;
+	oscillating?: boolean;
+	/** climate: what it is doing now, distinct from the mode it is set to */
+	hvacAction?: string;
+	/** lock/sensor-bearing devices: reported battery level */
+	batteryLevel?: number;
 	numericState?: number;
 	unit?: string;
 	attributes: Record<string, unknown>;
@@ -110,6 +119,21 @@ export function normalizeEntity(entity: HassEntity): EntityCard {
 		maxTemperature: numberAttribute(attributes, "max_temp"),
 		temperatureStep: numberAttribute(attributes, "target_temp_step"),
 		power: numberAttribute(attributes, "current_power_w", "power"),
+		fanPercentage: numberAttribute(attributes, "percentage"),
+		fanStep: numberAttribute(attributes, "percentage_step"),
+		presetMode:
+			typeof attributes.preset_mode === "string"
+				? attributes.preset_mode
+				: undefined,
+		oscillating:
+			typeof attributes.oscillating === "boolean"
+				? attributes.oscillating
+				: undefined,
+		hvacAction:
+			typeof attributes.hvac_action === "string"
+				? attributes.hvac_action
+				: undefined,
+		batteryLevel: numberAttribute(attributes, "battery_level", "battery"),
 		numericState: Number.isFinite(numeric) && entity.state.trim() ? numeric : undefined,
 		unit:
 			typeof attributes.unit_of_measurement === "string"
