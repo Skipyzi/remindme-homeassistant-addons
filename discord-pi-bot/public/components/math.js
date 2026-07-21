@@ -21,6 +21,30 @@
 		{ open: "$", close: "$", display: false },
 	];
 
+	// A backslash command, a script, a group or a relation is a strong signal.
+	const MATH_SIGNAL = /[\\^_{}=]/;
+	// Bare symbols the way models write them inline: $G$, $c$, $R_s$.
+	const BARE_SYMBOL = /^[A-Za-z][A-Za-z0-9]{0,2}$/;
+	// A price: digits with no maths anywhere in sight.
+	const CURRENCY = /^\d/;
+
+	/**
+	 * Decide whether `$…$` holds maths or money.
+	 *
+	 * Requiring the content to hug the delimiters was wrong: models routinely
+	 * write "$ G $" and "$ R = 2GM/c^2 $" with spaces inside, and every one
+	 * of those was dropped to plain text. Judge the content instead.
+	 */
+	function looksLikeMath(body) {
+		const trimmed = body.trim();
+		if (!trimmed) return false;
+		if (MATH_SIGNAL.test(trimmed)) return true;
+		if (BARE_SYMBOL.test(trimmed)) return true;
+		if (CURRENCY.test(trimmed)) return false;
+		// An expression with an operator, short enough not to be a sentence.
+		return trimmed.length <= 40 && /[+\-*/<>]/.test(trimmed);
+	}
+
 	/**
 	 * Split text into literal and maths segments. Hand-scanned rather than
 	 * regex'd because `$` is ambiguous — "$5 and $7" is money, not maths.
@@ -49,10 +73,8 @@
 				continue;
 			}
 			const body = source.slice(from, closeAt);
-			// A single `$` only opens maths when it hugs its content, which is
-			// what separates `$x$` from a price range.
-			const hugging = !/^\s|\s$/.test(body);
-			if (!body.trim() || (match.open === "$" && !hugging)) {
+			// Display delimiters are unambiguous; a lone `$` is judged on content.
+			if (!body.trim() || (match.open === "$" && !looksLikeMath(body))) {
 				literal += source[index];
 				index += 1;
 				continue;
@@ -106,7 +128,7 @@
 		}
 	}
 
-	const api = { render, segment, hasMath };
+	const api = { render, segment, hasMath, looksLikeMath };
 	globalScope.RemindMeMath = api;
 	if (typeof module !== "undefined" && module.exports) module.exports = api;
 })(typeof window !== "undefined" ? window : globalThis);
