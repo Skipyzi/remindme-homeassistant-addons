@@ -154,7 +154,23 @@
 
 		const pre = document.createElement("pre");
 		const element = document.createElement("code");
-		element.textContent = code;
+		const highlighter = globalScope.RemindMeHighlight;
+		if (highlighter && highlighter.isSupported(language)) {
+			// Tokens, not markup: each span gets textContent, so highlighted
+			// code is still incapable of carrying an element.
+			for (const token of highlighter.tokenize(code, language)) {
+				if (token.type === "plain") {
+					element.appendChild(document.createTextNode(token.value));
+					continue;
+				}
+				const span = document.createElement("span");
+				span.className = `tok-${token.type}`;
+				span.textContent = token.value;
+				element.appendChild(span);
+			}
+		} else {
+			element.textContent = code;
+		}
 		pre.appendChild(element);
 		wrapper.append(head, pre);
 		return wrapper;

@@ -2781,3 +2781,67 @@ h6.rt-h {
 	font-style: italic;
 	color: inherit;
 }
+
+/* Syntax tokens. Muted deliberately: code sits inside an amber console, so
+ * a full rainbow would fight the surface it lives on. */
+.tok-keyword {
+	color: #ff9d4d;
+}
+.tok-string {
+	color: var(--good);
+}
+.tok-comment {
+	color: var(--muted);
+	font-style: italic;
+}
+.tok-number {
+	color: var(--cool);
+}
+.tok-function {
+	color: #f6e7c4;
+}
+.tok-punct {
+	color: var(--dim);
+}
+
+/* ── Tool and thinking disclosures: containment ─────────────────────────
+ * The ledger is a grid, and grid children default to min-width:auto, so a
+ * long line of JSON refuses to shrink and pushes the whole block past the
+ * bubble. Combined with the indent these blocks carry, the result spilled
+ * out of the card entirely.
+ */
+.message details > pre,
+.message .tool-ledger {
+	box-sizing: border-box;
+	max-width: 100%;
+	min-width: 0;
+	overflow: hidden;
+}
+.message .tool-ledger > *,
+.message .tool-ledger section,
+.message .tool-ledger .tool-row {
+	min-width: 0;
+	max-width: 100%;
+}
+/* Long values wrap instead of scrolling sideways: a nested horizontal
+ * scrollbar inside an already narrow bubble is worse than a taller block. */
+.message .tool-ledger pre,
+.message details > pre {
+	max-width: 100%;
+	overflow-x: hidden;
+	overflow-y: auto;
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+	word-break: normal;
+}
+.message .tool-row code {
+	min-width: 0;
+	overflow-wrap: anywhere;
+}
+/* Chips wrap rather than widening the row. */
+.message .metric-chips {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 4px;
+	min-width: 0;
+}
