@@ -1,4 +1,12 @@
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import {
+	mkdir,
+	open,
+	readFile,
+	rename,
+	rm,
+	stat,
+	writeFile,
+} from "node:fs/promises";
 import { dirname } from "node:path";
 
 /**
@@ -76,12 +84,7 @@ async function writeAll(list: Reminder[]): Promise<void> {
 	await rename(temporary, dataPath);
 }
 
-/*
- * One change at a time within this process. Two processes can still
- * interleave a read and a write, but reminders are created a handful of
- * times a day and the window is a couple of milliseconds wide — worth
- * naming rather than worth a lock file on an SD card.
- */
+/* One change at a time within this process. */
 let queue: Promise<unknown> = Promise.resolve();
 
 function serialise<T>(task: () => Promise<T>): Promise<T> {
@@ -90,13 +93,98 @@ function serialise<T>(task: () => Promise<T>): Promise<T> {
 	return run;
 }
 
+const lockPath = `${dataPath}.lock`;
+/** A held lock older than this belongs to a process that is gone. */
+const LOCK_STALE_MS = 10_000;
+const LOCK_POLL_MS = 25;
+/** Long enough to outlast any honest read-modify-write on an SD card. */
+const LOCK_TIMEOUT_MS = 5_000;
+
+const delay = (ms: number) => new Promise((done) => setTimeout(done, ms));
+
+function isExists(error: unknown): boolean {
+	return (
+		typeof error === "object" &&
+		error !== null &&
+		"code" in error &&
+		(error as { code?: string }).code === "EEXIST"
+	);
+}
+
+/** Age of the held lock, or null if it has since been released. */
+async function lockAge(): Promise<number | null> {
+	try {
+		return Date.now() - (await stat(lockPath)).mtimeMs;
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * Take the cross-process lock, and hand back the release.
+ *
+ * `open(..., "wx")` fails if the file exists, and that failure is atomic —
+ * which is the whole mechanism. The rest is about not deadlocking: a
+ * process killed mid-write leaves its lock behind, so a lock older than
+ * LOCK_STALE_MS is broken rather than waited on. Without that, one bad
+ * shutdown would stop every reminder from ever being written again.
+ */
+async function acquireLock(): Promise<() => Promise<void>> {
+	const deadline = Date.now() + LOCK_TIMEOUT_MS;
+	let forced = false;
+	for (;;) {
+		try {
+			const handle = await open(lockPath, "wx");
+			await handle.writeFile(String(process.pid));
+			await handle.close();
+			return async () => {
+				await rm(lockPath, { force: true });
+			};
+		} catch (error) {
+			if (!isExists(error)) throw error;
+			const age = await lockAge();
+			if (age === null) continue; // released while we looked; race for it
+			if (age > LOCK_STALE_MS) {
+				console.warn(
+					`Breaking a stale reminder lock held for ${Math.round(age)}ms.`,
+				);
+				await rm(lockPath, { force: true });
+				continue;
+			}
+			if (Date.now() < deadline) {
+				await delay(LOCK_POLL_MS);
+				continue;
+			}
+			/*
+			 * Past the deadline but the lock is not old enough to be stale:
+			 * something is holding it far longer than any write should take.
+			 * Break it once, and if that still does not get us in, give up
+			 * rather than spin — the caller can report a failure.
+			 */
+			if (forced) throw new Error("Could not acquire the reminder lock");
+			forced = true;
+			await rm(lockPath, { force: true });
+		}
+	}
+}
+
+/*
+ * Reads do not lock. Writes land by rename, which is atomic, so a reader
+ * sees either the previous list or the next one and never a partial file.
+ */
 async function mutate<T>(
 	change: (list: Reminder[]) => { list: Reminder[]; result: T },
 ): Promise<T> {
 	return serialise(async () => {
-		const { list, result } = change(await readAll());
-		await writeAll(list);
-		return result;
+		await mkdir(dirname(dataPath), { recursive: true });
+		const release = await acquireLock();
+		try {
+			const { list, result } = change(await readAll());
+			await writeAll(list);
+			return result;
+		} finally {
+			await release();
+		}
 	});
 }
 
