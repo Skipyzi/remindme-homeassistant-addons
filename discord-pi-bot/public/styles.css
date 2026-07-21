@@ -2845,3 +2845,9 @@ h6.rt-h {
 	gap: 4px;
 	min-width: 0;
 }
+
+/* The open conversation is not a target: it cannot be re-opened, so it
+ * should not invite the click that used to blank the transcript. */
+.history-list .history-open.active {
+	cursor: default;
+}

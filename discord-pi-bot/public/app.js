@@ -181,7 +181,7 @@ function harness() {
 			this.add("assistant", "Fresh channel. What are we checking?");
 		},
 		selectConversation(conversation) {
-			window.RemindMeConversations.select(this, conversation);
+			return window.RemindMeConversations.select(this, conversation);
 		},
 		clearChat() {
 			this.messages = [];

@@ -57,7 +57,23 @@
 							})),
 						}),
 					},
-				),
+				)
+					.then((response) => (response.ok ? response.json() : null))
+					.then((saved) => {
+						if (!saved) return;
+						/*
+						 * Fold the server's copy back into the sidebar. Without
+						 * this the cached entry kept its placeholder title and an
+						 * empty message list forever, so the sidebar never showed
+						 * the auto-generated name — and selecting that entry
+						 * overwrote the live transcript with nothing.
+						 */
+						const cached = app.conversations.find(
+							(entry) => entry.id === saved.id,
+						);
+						if (cached) Object.assign(cached, saved);
+					})
+					.catch(() => {}),
 			250,
 		);
 	}
@@ -84,15 +100,40 @@
 		return true;
 	}
 
-	function select(app, conversation) {
-		app.currentConversationId = conversation.id;
-		app.messages = conversation.messages.map((message) => ({
+	function toMessages(conversation) {
+		return (conversation.messages || []).map((message) => ({
 			id: message.id,
 			type: message.role === "user" ? "user" : "assistant",
 			text: message.text,
 			...message.metadata,
 		}));
+	}
+
+	/**
+	 * Open a conversation.
+	 *
+	 * Selecting the one already open is a no-op: it used to reload from the
+	 * cached copy, and while a chat is in progress that copy is behind, so
+	 * clicking the highlighted row wiped the transcript on screen. Switching
+	 * to a different conversation refetches rather than trusting the cache,
+	 * for the same reason.
+	 */
+	async function select(app, conversation) {
 		app.historyOpen = false;
+		if (conversation.id === app.currentConversationId) return;
+		let fresh = conversation;
+		try {
+			const response = await fetch("./api/conversations");
+			if (response.ok) {
+				const all = await response.json();
+				app.conversations = all;
+				fresh = all.find((entry) => entry.id === conversation.id) || conversation;
+			}
+		} catch {
+			/* Offline: the cached copy is all there is. */
+		}
+		app.currentConversationId = fresh.id;
+		app.messages = toMessages(fresh);
 	}
 	globalScope.RemindMeConversations = { load, create, ensure, save, select, remove };
 })(window);
