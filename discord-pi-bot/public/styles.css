@@ -2465,7 +2465,11 @@ aside.telemetry,
  * wrapped title. Give the row real structure instead: title and date stack
  * on the left, delete keeps a fixed gutter on the right.
  */
+/* A single track that cannot exceed the rail. The rows hold nowrap text, and
+ * an `auto` track sizes to its content's min-content width — one long title
+ * would otherwise widen the whole list past the rail's edge. */
 .history-list {
+	grid-template-columns: minmax(0, 1fr);
 	gap: 6px;
 	padding-right: 2px;
 	overflow-x: hidden;
@@ -2473,21 +2477,21 @@ aside.telemetry,
 .history-row {
 	align-items: stretch;
 	gap: 2px;
+	min-width: 0;
 }
+/* Stretch, not flex-start: the lines fill the card so their own ellipsis
+ * rules have a width to clip against. */
 .history-list .history-open {
 	display: flex;
 	flex-direction: column;
-	align-items: flex-start;
+	align-items: stretch;
 	justify-content: center;
-	gap: 3px;
-	padding: 9px 8px 9px 10px;
+	gap: 1px;
+	padding: 7px 8px 7px 9px;
 	letter-spacing: 0.6px;
 	line-height: 1.35;
+	/* Two lines already clear this; it only guards the touch target. */
 	min-height: 44px;
-	overflow-wrap: anywhere;
-}
-.history-list .history-open span {
-	font-size: 11.5px;
 }
 .history-list small {
 	font-size: 9px;
@@ -3102,6 +3106,19 @@ h6.rt-h {
 	align-items: baseline;
 	gap: 5px;
 	min-width: 0;
+	font-size: 11.5px;
+}
+/* Two lines at most. Titles are arbitrary user text in a ~200px rail: one
+ * line clips them to nothing readable, unbounded lines are what made these
+ * cards grow. `anywhere` keeps a long unbroken token from setting a
+ * min-content width the rail cannot honour. */
+.history-title > span {
+	display: -webkit-box;
+	-webkit-line-clamp: 2;
+	-webkit-box-orient: vertical;
+	min-width: 0;
+	overflow: hidden;
+	overflow-wrap: anywhere;
 }
 .history-pin-mark {
 	flex: none;
@@ -3112,15 +3129,16 @@ h6.rt-h {
 .history-meta {
 	display: flex;
 	gap: 8px;
+	min-width: 0;
 	color: var(--muted);
 }
 .history-preview {
+	min-width: 0;
 	color: var(--muted);
 	opacity: 0.75;
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
-	max-width: 100%;
 }
 .history-controls {
 	display: flex;

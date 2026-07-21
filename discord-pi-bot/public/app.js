@@ -230,13 +230,24 @@ function harness() {
 			const count = (conversation.messages || []).length;
 			return count ? `${count} msg` : "empty";
 		},
-		/** The opening line — the fastest way to recognise a conversation. */
+		/**
+		 * The opening line — the fastest way to recognise a conversation.
+		 *
+		 * Dropped when it only restates the title. An auto-named conversation
+		 * takes its title from this same first message, so showing both spends
+		 * a third of the card on a duplicate; the preview earns its line only
+		 * once the title has diverged, which is when it is worth reading.
+		 */
 		conversationPreview(conversation) {
 			const first = (conversation.messages || []).find(
 				(message) => message.role === "user" && message.text?.trim(),
 			);
 			if (!first) return "";
 			const text = first.text.replace(/\s+/g, " ").trim();
+			const stem = (value) =>
+				value.toLowerCase().replace(/[…\s.,;:!?-]+$/, "");
+			const title = stem(String(conversation.title || ""));
+			if (title && stem(text).startsWith(title)) return "";
 			return text.length > 64 ? `${text.slice(0, 64)}…` : text;
 		},
 		clearChat() {
