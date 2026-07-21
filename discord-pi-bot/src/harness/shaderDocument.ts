@@ -1,3 +1,5 @@
+import { FRAME_RUNTIME, buildFrame, encodeForScript } from "./frameShell";
+
 /**
  * Runnable documents for shader artifacts.
  *
@@ -11,72 +13,13 @@
  * gets it wrong often, and a black rectangle says nothing about why.
  */
 
-/** Escaping every `<` keeps the source from closing the script tag. */
-function encodeForScript(source: string): string {
-	return JSON.stringify(source).replace(/</g, "\\u003c");
-}
-
-const SHADER_STYLE = `html,body{margin:0;height:100%;background:#160f04;
-color:#e8dcc0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
-canvas{display:block;width:100%;height:100%}
-/* After the canvas rule and marked important: an author-level display
- * beats the user agent's [hidden] whatever its specificity, so without
- * this the canvas stayed full height over a failed compile and pushed the
- * error text out of the frame. */
-[hidden]{display:none!important}
-pre{margin:0;padding:12px;font-size:11.5px;line-height:1.5;color:#ffb200;
-white-space:pre-wrap;overflow-wrap:anywhere}
-pre b{display:block;margin-bottom:6px;color:#8a7d5c;font-weight:normal;
-letter-spacing:1.2px;text-transform:uppercase;font-size:9px}`;
-
-function shell(body: string, script: string): string {
-	return (
-		`<!doctype html><html><head><meta charset="utf-8">` +
-		`<style>${SHADER_STYLE}</style></head><body>${body}` +
-		`<script>${script}</script></body></html>`
-	);
-}
-
-/* Shared by both shells: a canvas, an error pane, and the report helper. */
-const STAGE = `<canvas id="stage"></canvas><pre id="log" hidden></pre>`;
-
-const REPORT = `
-const stage = document.getElementById("stage");
-const log = document.getElementById("log");
-function report(title, detail) {
-  log.hidden = false;
-  stage.hidden = true;
-  log.innerHTML = "";
-  const heading = document.createElement("b");
-  heading.textContent = title;
-  log.append(heading, document.createTextNode(detail));
-}
-function fitCanvas() {
-  const ratio = Math.min(window.devicePixelRatio || 1, 2);
-  const width = Math.max(1, Math.floor(stage.clientWidth * ratio));
-  const height = Math.max(1, Math.floor(stage.clientHeight * ratio));
-  if (stage.width !== width || stage.height !== height) {
-    stage.width = width;
-    stage.height = height;
-    return true;
-  }
-  return false;
-}
-const pointer = { x: 0, y: 0 };
-stage.addEventListener("pointermove", (event) => {
-  const box = stage.getBoundingClientRect();
-  pointer.x = (event.clientX - box.left) / Math.max(1, box.width);
-  pointer.y = 1 - (event.clientY - box.top) / Math.max(1, box.height);
-});
-`;
-
 /**
  * GLSL, accepting both conventions a model is likely to have seen: a
  * Shadertoy `mainImage`, or a plain fragment shader with its own `main`.
  */
 const GLSL_RUNNER = `
 const source = __SOURCE__;
-${REPORT}
+${FRAME_RUNTIME}
 const gl = stage.getContext("webgl2", { antialias: false });
 if (!gl) {
   report("unavailable", "WebGL2 is not available in this browser.");
@@ -176,7 +119,7 @@ const WGSL_PREAMBLE = `struct Uniforms {
 const WGSL_RUNNER = `
 const source = __SOURCE__;
 const preamble = __PREAMBLE__;
-${REPORT}
+${FRAME_RUNTIME}
 (async () => {
   if (!navigator.gpu) {
     report(
@@ -284,15 +227,14 @@ ${REPORT}
 `;
 
 export function glslDocument(source: string): string {
-	return shell(STAGE, GLSL_RUNNER.replace("__SOURCE__", encodeForScript(source)));
+	return buildFrame([GLSL_RUNNER.replace("__SOURCE__", encodeForScript(source))]);
 }
 
 export function wgslDocument(source: string): string {
-	return shell(
-		STAGE,
+	return buildFrame([
 		WGSL_RUNNER.replace("__SOURCE__", encodeForScript(source)).replace(
 			"__PREAMBLE__",
 			encodeForScript(WGSL_PREAMBLE),
 		),
-	);
+	]);
 }

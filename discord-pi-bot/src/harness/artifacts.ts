@@ -2,6 +2,7 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { randomUUID } from "node:crypto";
 import { glslDocument, wgslDocument } from "./shaderDocument";
+import { luaDocument, threeDocument } from "./runtimeDocument";
 
 /**
  * Artifacts: self-contained documents the model writes and the console
@@ -22,7 +23,9 @@ export type ArtifactKind =
 	| "markdown"
 	| "code"
 	| "glsl"
-	| "wgsl";
+	| "wgsl"
+	| "three"
+	| "lua";
 
 export interface Artifact {
 	id: string;
@@ -45,6 +48,8 @@ const KINDS: ArtifactKind[] = [
 	"code",
 	"glsl",
 	"wgsl",
+	"three",
+	"lua",
 ];
 
 export function normalizeKind(value: unknown): ArtifactKind {
@@ -168,5 +173,7 @@ export function toDocument(artifact: Artifact): string {
 	 * shell supplies the canvas, the uniforms and the error pane. */
 	if (artifact.kind === "glsl") return glslDocument(artifact.content);
 	if (artifact.kind === "wgsl") return wgslDocument(artifact.content);
+	if (artifact.kind === "three") return threeDocument(artifact.content);
+	if (artifact.kind === "lua") return luaDocument(artifact.content);
 	return "";
 }

@@ -26,6 +26,12 @@
 		css: "important media supports keyframes import charset font-face",
 		go: "break case chan const continue default defer else fallthrough for func go goto if import interface map package range return select struct switch type var nil true false",
 		rust: "as async await break const continue crate dyn else enum extern false fn for if impl in let loop match mod move mut pub ref return self static struct super trait true type unsafe use where while",
+		glsl:
+			"attribute const uniform varying layout centroid flat smooth in out inout void bool int uint float double vec2 vec3 vec4 ivec2 ivec3 ivec4 bvec2 bvec3 bvec4 mat2 mat3 mat4 sampler2D samplerCube if else for while do break continue return discard struct precision highp mediump lowp true false",
+		wgsl:
+			"fn let var const struct return if else for while loop break continue discard switch case default override alias true false f32 i32 u32 bool vec2f vec3f vec4f vec2 vec3 vec4 mat2x2 mat3x3 mat4x4 array atomic ptr sampler texture_2d",
+		lua:
+			"and break do else elseif end false for function goto if in local nil not or repeat return then true until while self",
 		sql: "select from where group by order having insert update delete into values join left right inner outer on as and or not null limit offset create table drop alter index",
 	};
 
@@ -44,6 +50,9 @@
 		shell: "bash",
 		zsh: "bash",
 		console: "bash",
+		frag: "glsl",
+		shader: "glsl",
+		three: "javascript",
 		yml: "yaml",
 		rs: "rust",
 		golang: "go",
@@ -61,6 +70,9 @@
 		yaml: { line: "#", block: null },
 		sql: { line: "--", block: ["/*", "*/"] },
 		json: { line: null, block: null },
+		glsl: { line: "//", block: ["/*", "*/"] },
+		wgsl: { line: "//", block: ["/*", "*/"] },
+		lua: { line: "--", block: ["--[[", "]]"] },
 	};
 
 	const MARKUP = new Set(["html", "xml", "svg", "vue", "xhtml"]);

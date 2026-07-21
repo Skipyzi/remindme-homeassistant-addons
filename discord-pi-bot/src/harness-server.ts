@@ -241,6 +241,22 @@ app.delete("/api/artifacts/:id", async (request, response) => {
  * runs in an opaque origin with no reach into the console or the Home
  * Assistant session.
  */
+/*
+ * The Lua interpreter compiles through the Function constructor, so its
+ * document needs 'unsafe-eval' where the others do not. This is a smaller
+ * grant than it reads as: the frame already runs whatever inline script
+ * the model wrote, in an opaque origin with no network, so eval adds no
+ * capability it did not already have — the sandbox, not the eval ban, is
+ * what contains it. The grant is scoped to the one kind that needs it so
+ * an HTML artifact stays on the strict policy.
+ */
+const SCRIPT_EVAL_KINDS = new Set(["lua"]);
+function artifactCsp(kind: string): string {
+	const script = SCRIPT_EVAL_KINDS.has(kind)
+		? "script-src 'unsafe-inline' 'unsafe-eval'"
+		: "script-src 'unsafe-inline'";
+	return `default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; ${script}; frame-ancestors 'self'`;
+}
 app.get("/api/artifacts/:id/document", (request, response) => {
 	const artifact = artifacts.get(request.params.id);
 	if (!artifact || !toDocument(artifact))
@@ -249,8 +265,7 @@ app.get("/api/artifacts/:id/document", (request, response) => {
 		.status(200)
 		.set({
 			"Content-Type": "text/html; charset=utf-8",
-			"Content-Security-Policy":
-				"default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; script-src 'unsafe-inline'; frame-ancestors 'self'",
+			"Content-Security-Policy": artifactCsp(artifact.kind),
 			"X-Content-Type-Options": "nosniff",
 			"Cache-Control": "no-store",
 		})
@@ -900,9 +915,9 @@ const tools = [
 					title: { type: "string" },
 					kind: {
 						type: "string",
-						enum: ["html", "svg", "markdown", "code", "glsl", "wgsl"],
+						enum: ["html", "svg", "markdown", "code", "glsl", "wgsl", "three", "lua"],
 						description:
-							"Use glsl for a WebGL2 fragment shader: write either a Shadertoy-style 'void mainImage(out vec4 fragColor, in vec2 fragCoord)' or a plain 'void main()'. iResolution, iTime, iTimeDelta, iFrame and iMouse are declared for you; do not write a #version line. Use wgsl for a WebGPU shader: define '@fragment fn fs_main(@builtin(position) pos: vec4f) -> @location(0) vec4f'. The vertex stage and a uniform block 'U' with resolution, time, timeDelta, mouse and frame are supplied.",
+							"Use three for a 3D scene: write only scene code against the supplied THREE, scene, camera and renderer, and optionally define update(delta, elapsed) to animate — do not create a renderer or a resize handler. Use lua for a Lua program; print() writes to the frame. Use glsl for a WebGL2 fragment shader: write either a Shadertoy-style 'void mainImage(out vec4 fragColor, in vec2 fragCoord)' or a plain 'void main()'. iResolution, iTime, iTimeDelta, iFrame and iMouse are declared for you; do not write a #version line. Use wgsl for a WebGPU shader: define '@fragment fn fs_main(@builtin(position) pos: vec4f) -> @location(0) vec4f'. The vertex stage and a uniform block 'U' with resolution, time, timeDelta, mouse and frame are supplied.",
 					},
 					language: { type: "string" },
 					content: { type: "string" },

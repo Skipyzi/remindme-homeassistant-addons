@@ -78,6 +78,8 @@ function harness() {
 		/** The source view is an editor; this is what is in it. */
 		artifactSource: "",
 		artifactSaving: false,
+		/** What the frame last reported: a compile error, or nothing. */
+		artifactStatus: "",
 		tokenUsage: {
 			exact: false,
 			promptTokens: 0,
@@ -163,6 +165,18 @@ function harness() {
 				});
 			window.RemindMeModelCookbook.load(this);
 			this.startSystemPolling();
+			/*
+			 * The artifact frame reports what happened when it ran. It holds
+			 * an opaque origin, so `event.origin` is the string "null" and
+			 * proves nothing — the frame's own window is the identity that
+			 * can be checked.
+			 */
+			window.addEventListener("message", (event) => {
+				const frame = document.querySelector(".artifact-frame");
+				if (!frame || event.source !== frame.contentWindow) return;
+				if (typeof event.data?.artifactStatus === "string")
+					this.artifactStatus = event.data.artifactStatus;
+			});
 		},
 		persist() {
 			localStorage.setItem(
@@ -387,6 +401,39 @@ function harness() {
 			this.artifactStreaming = false;
 			await this.openArtifact(artifact.id);
 		},
+		/* ── Source editor ────────────────────────────────────────────── */
+		editorPaint(element) {
+			window.RemindMeEditor.paint(
+				element,
+				this.artifactSource,
+				window.RemindMeEditor.languageFor(this.currentArtifact),
+			);
+		},
+		editorGutter() {
+			return window.RemindMeEditor.gutterText(this.artifactSource);
+		},
+		editorKey(event) {
+			if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
+				event.preventDefault();
+				this.applyArtifactEdit();
+				return;
+			}
+			if (window.RemindMeEditor.handleKey(event, event.target))
+				// setRangeText bypasses the input event x-model listens for.
+				this.artifactSource = event.target.value;
+		},
+		editorScroll(event) {
+			window.RemindMeEditor.syncScroll(event.target);
+		},
+		/** Line and column, so an error's line number can be found. */
+		editorPosition() {
+			const field = document.querySelector("textarea.editor-text");
+			if (!field) return "";
+			const upto = field.value.slice(0, field.selectionStart);
+			const line = upto.split("\n").length;
+			const column = upto.length - upto.lastIndexOf("\n");
+			return `ln ${line} col ${column}`;
+		},
 		/** True when the editor holds something the stored document does not. */
 		artifactDirty() {
 			return (
@@ -417,6 +464,8 @@ function harness() {
 				if (!response.ok) return;
 				this.currentArtifact = await response.json();
 				this.artifactSource = this.currentArtifact.content || "";
+				// Last run's complaint belongs to the last revision.
+				this.artifactStatus = "";
 				this.artifactView = "preview";
 			} catch {
 				/* Leave the edit in the box rather than losing it. */
@@ -430,7 +479,7 @@ function harness() {
 				this.artifactView === "preview" &&
 				!this.artifactStreaming &&
 				Boolean(this.currentArtifact?.id) &&
-				["html", "svg", "glsl", "wgsl"].includes(this.currentArtifact?.kind)
+				["html", "svg", "glsl", "wgsl", "three", "lua"].includes(this.currentArtifact?.kind)
 			);
 		},
 		/**
@@ -464,6 +513,8 @@ function harness() {
 				markdown: "md",
 				glsl: "glsl",
 				wgsl: "wgsl",
+				three: "js",
+				lua: "lua",
 			};
 			const extension =
 				EXTENSIONS[artifact.kind] || artifact.language || "txt";

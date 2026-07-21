@@ -13,6 +13,7 @@
     <script defer src="./vendor/katex.min.js"></script>
     <script defer src="./components/math.js"></script>
     <script defer src="./components/highlight.js"></script>
+    <script defer src="./components/editor.js"></script>
     <script defer src="./components/richtext.js"></script>
     <script defer src="./components/commands.js"></script>
     <script defer src="./components/entityControls.js"></script>
@@ -1432,20 +1433,50 @@
             -->
             <template x-if="artifactView==='source' && !artifactStreaming && currentArtifact"
               ><div class="artifact-editor">
-                <textarea
-                  class="artifact-source"
-                  spellcheck="false"
-                  aria-label="Artifact source"
-                  x-model="artifactSource"
-                  @keydown.ctrl.enter.prevent="applyArtifactEdit()"
-                  @keydown.meta.enter.prevent="applyArtifactEdit()"
-                ></textarea>
+                <div class="editor-body">
+                  <!-- Line numbers, scrolled to follow the text beside them. -->
+                  <pre
+                    class="editor-gutter"
+                    aria-hidden="true"
+                    x-text="editorGutter()"
+                  ></pre>
+                  <div class="editor-input">
+                    <!--
+                      The painted layer sits behind a textarea whose own text
+                      is transparent. The textarea keeps focus, selection,
+                      undo and IME; this only supplies colour, so the two must
+                      share font, padding and wrapping exactly.
+                    -->
+                    <pre
+                      class="editor-highlight"
+                      aria-hidden="true"
+                      x-effect="editorPaint($el)"
+                    ></pre>
+                    <textarea
+                      class="editor-text"
+                      spellcheck="false"
+                      autocapitalize="off"
+                      autocomplete="off"
+                      wrap="off"
+                      aria-label="Artifact source"
+                      x-model="artifactSource"
+                      @keydown="editorKey($event)"
+                      @scroll="editorScroll($event)"
+                    ></textarea>
+                  </div>
+                </div>
+                <!-- What the frame said last time this ran. -->
+                <div class="artifact-problem" x-show="artifactStatus" x-cloak>
+                  <b>from the frame</b>
+                  <span x-text="artifactStatus"></span>
+                </div>
                 <div class="artifact-editbar">
+                  <span class="editor-where" x-text="editorPosition()"></span>
                   <span
                     class="artifact-dirty"
                     x-show="artifactDirty()"
                     x-cloak
-                    >unsaved</span
+                    >unsaved &middot; ctrl+enter</span
                   >
                   <button
                     class="chip"
