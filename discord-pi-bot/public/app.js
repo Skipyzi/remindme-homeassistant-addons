@@ -189,13 +189,26 @@ function harness() {
 		 * and what the request carries cannot drift apart.
 		 */
 		modelHistory() {
+			/*
+			 * Two vocabularies describe a row. Locally added messages carry a
+			 * `type`; rows built by the timeline as a reply streams carry a
+			 * `kind` and no type at all. Reading only `type` silently dropped
+			 * every streamed reply, so the model was sent the questions and
+			 * none of its own answers.
+			 */
+			const roleOf = (message) => {
+				if (message.type === "user") return "user";
+				if (message.type === "assistant" || message.kind === "answer")
+					return "assistant";
+				// Thinking and tool rows are working notes, not the conversation.
+				return "";
+			};
 			return this.messages
-				.filter(
-					(message) =>
-						(message.type === "user" || message.type === "assistant") &&
-						message.text?.trim(),
-				)
-				.map((message) => ({ role: message.type, content: message.text }));
+				.map((message) => ({
+					role: roleOf(message),
+					content: message.text,
+				}))
+				.filter((turn) => turn.role && turn.content?.trim());
 		},
 		add(type, text, extra = {}) {
 			const message = {

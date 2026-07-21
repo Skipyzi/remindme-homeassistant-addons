@@ -66,10 +66,30 @@
 								role: message.type === "user" ? "user" : "assistant",
 								text: message.text || "",
 								createdAt: new Date().toISOString(),
+								/*
+								 * Everything a timeline row needs to be itself again.
+								 * Only kind, state and metrics used to survive, so a
+								 * reopened conversation showed rows that knew they
+								 * were tool calls but had lost the tool's name, its
+								 * request and its result — a disclosure labelled
+								 * "Tool" wrapped around nothing.
+								 *
+								 * `expanded` is deliberately not kept: a reopened
+								 * conversation should read as a summary, and the
+								 * rows open on click as they always did.
+								 */
 								metadata: {
 									kind: message.kind,
 									state: message.state,
 									metrics: message.metrics,
+									key: message.key,
+									phaseId: message.phaseId,
+									name: message.name,
+									arguments: message.arguments,
+									result: message.result,
+									items: message.items,
+									cards: message.cards,
+									artifact: message.artifact,
 								},
 							})),
 						}),
@@ -117,13 +137,33 @@
 		return true;
 	}
 
+	/**
+	 * Rebuild the transcript from a stored conversation.
+	 *
+	 * `type` and `kind` are not two names for one thing: the row is styled
+	 * by whichever it has, and a `type` wins. Stamping "assistant" onto
+	 * every non-user row therefore dressed restored tool and thinking rows
+	 * as console replies — a bubble drawn around a disclosure that was
+	 * still rendering itself as a tool call inside it.
+	 *
+	 * A row that knows its kind already knows what it is.
+	 */
 	function toMessages(conversation) {
-		return (conversation.messages || []).map((message) => ({
-			id: message.id,
-			type: message.role === "user" ? "user" : "assistant",
-			text: message.text,
-			...message.metadata,
-		}));
+		return (conversation.messages || []).map((message) => {
+			const metadata = message.metadata || {};
+			const restored = { id: message.id, text: message.text, ...metadata };
+			if (message.role === "user") restored.type = "user";
+			else if (!metadata.kind) restored.type = "assistant";
+			/*
+			 * Explicitly false, never absent. `:open` on a <details> is left
+			 * untouched when its expression is undefined, and Alpine reuses
+			 * DOM nodes between renders — so a row restored into an element
+			 * that had been open stayed open, which is how a reopened
+			 * conversation came back with every disclosure hanging out.
+			 */
+			restored.expanded = false;
+			return restored;
+		});
 	}
 
 	/**

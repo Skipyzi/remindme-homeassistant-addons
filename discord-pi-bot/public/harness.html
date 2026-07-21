@@ -195,9 +195,19 @@
             x-for="message in messages"
             :key="message.id || message.key"
           >
+            <!--
+              Object syntax, not an array holding an object: Alpine joins an
+              array's entries as strings, so the conditional was landing in
+              the class list as "[object Object]" and `settled` never applied
+              — finished tool and thinking rows kept their spinner turning
+              and never dimmed back.
+            -->
             <article
               class="message"
-              :class="[message.type || message.kind, {settled: message.state==='complete' && (message.kind==='thinking' || message.kind==='tool')}]"
+              :class="{
+                [message.type || message.kind || 'answer']: true,
+                settled: message.state==='complete' && (message.kind==='thinking' || message.kind==='tool'),
+              }"
             >
               <template x-if="message.kind==='thinking'">
                 <details
@@ -245,7 +255,7 @@
                       <b>Request</b
                       ><template
                         x-for="(value,key) in message.arguments"
-                        :key="message.key+key"
+                        :key="(message.key || message.id) + key"
                         ><div class="tool-row">
                           <span x-text="key.replaceAll('_',' ')"></span
                           ><code x-text="formatValue(value)"></code></div
