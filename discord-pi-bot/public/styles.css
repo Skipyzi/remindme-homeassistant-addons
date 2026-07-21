@@ -3160,3 +3160,36 @@ h6.rt-h {
 		opacity: 1;
 	}
 }
+
+/* ── Reminder confirmation ──────────────────────────────────────────────
+ * Shaped like an entity card because it is the same idea: state the
+ * console understood, shown before anything is committed.
+ */
+.reminder-card {
+	margin-top: 8px;
+	border: 1px solid var(--amber-dim);
+	background: rgba(255, 178, 0, 0.04);
+	max-width: 540px;
+}
+.reminder-card header {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	padding: 10px 12px;
+	border-bottom: 1px solid var(--amber-faint);
+}
+.reminder-card .card-body {
+	padding: 10px 12px;
+}
+.reminder-card .actions {
+	display: flex;
+	gap: 8px;
+	padding: 0 12px 12px;
+}
+/* The one guess worth admitting to, since it is the one that goes wrong. */
+.reminder-assumption {
+	margin-top: 6px;
+	font-size: 10px;
+	letter-spacing: 0.5px;
+	color: var(--amber);
+}

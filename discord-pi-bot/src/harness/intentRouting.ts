@@ -15,7 +15,10 @@ export function allowedToolNames(prompt: string): Set<string> {
 		allowed.add("list_entities");
 		allowed.add("control_entity");
 	}
-	if (reminderTerms.test(prompt)) allowed.add("list_reminders");
+	if (reminderTerms.test(prompt)) {
+		allowed.add("list_reminders");
+		allowed.add("create_reminder");
+	}
 	if (webTerms.test(prompt)) allowed.add("web_search");
 	if (artifactTerms.test(prompt)) allowed.add("create_artifact");
 	return allowed;

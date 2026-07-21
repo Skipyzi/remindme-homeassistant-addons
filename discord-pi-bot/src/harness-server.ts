@@ -8,6 +8,7 @@ import {
 	deleteReminder,
 	getReminders,
 	loadReminders,
+	setReminder,
 } from "./utils/reminderManager";
 import {
 	createPhaseId,
@@ -33,6 +34,7 @@ import { ConversationStore } from "./harness/conversations";
 import { SkillStore, skillPrompt } from "./harness/skills";
 import { readSystemStats } from "./harness/systemStats";
 import { ArtifactStore, toDocument } from "./harness/artifacts";
+import { parseReminder, describeWhen } from "./harness/reminderParser";
 import {
 	McpServerStore,
 	callTool as callMcpTool,
@@ -70,6 +72,7 @@ const port = Number(process.env.HARNESS_PORT || 8090);
 const supervisorToken = process.env.SUPERVISOR_TOKEN || "";
 const homeAssistantUrl = "http://supervisor/core/api";
 const instanceId = randomUUID();
+const pendingReminders = new Map<string, { message: string; at: string }>();
 const pendingActions = new Map<
 	string,
 	{
@@ -662,6 +665,33 @@ app.get("/", (_request, response) =>
 app.post("/api/confirm", async (request, response) => {
 	const token =
 		typeof request.body?.token === "string" ? request.body.token : "";
+	const reminder = pendingReminders.get(token);
+	if (reminder) {
+		pendingReminders.delete(token);
+		/*
+		 * The manager schedules by delay, so the absolute time is converted
+		 * here. Delivery is the bot process's job — it owns the Discord client
+		 * and the notify target — so this hands off rather than duplicating it.
+		 */
+		const delayMinutes = Math.max(
+			0,
+			(new Date(reminder.at).getTime() - Date.now()) / 60_000,
+		);
+		const created = setReminder(
+			reminder.message,
+			delayMinutes,
+			process.env.OWNER_ID || "",
+			"",
+			async () => {},
+		);
+		response.json({
+			scheduled: true,
+			id: created?.id,
+			message: reminder.message,
+			at: reminder.at,
+		});
+		return;
+	}
 	const action = pendingActions.get(token);
 	if (!action) {
 		response.status(404).json({ error: "Action expired or not found" });
@@ -776,6 +806,24 @@ const tools = [
 			name: "list_reminders",
 			description: "List reminders belonging to the configured Discord owner.",
 			parameters: { type: "object", properties: {} },
+		},
+	},
+	{
+		type: "function",
+		function: {
+			name: "create_reminder",
+			description:
+				"Schedule a reminder. Pass the user's own wording, including the time — 'check the mail at 5' — and it is parsed here. Always confirmed before it is set.",
+			parameters: {
+				type: "object",
+				properties: {
+					request: {
+						type: "string",
+						description: "The reminder in the user's words, with its timing.",
+					},
+				},
+				required: ["request"],
+			},
 		},
 	},
 	{
@@ -1239,6 +1287,37 @@ async function executeTool(
 			time: item.time.toISOString(),
 		}));
 		return { model: reminders, view: reminders };
+	}
+	if (name === "create_reminder") {
+		const parsed = parseReminder(String(args.request || ""));
+		if (!parsed.at)
+			return {
+				model: {
+					error: "No time found in that request. Ask the user when.",
+					message: parsed.message,
+				},
+			};
+		/*
+		 * Held for confirmation rather than set outright. The parse is a
+		 * reading of ambiguous words — "at 5" is a guess about the evening —
+		 * and a reminder set for the wrong half of the day is worse than one
+		 * that took an extra tap.
+		 */
+		const token = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+		pendingReminders.set(token, {
+			message: parsed.message,
+			at: parsed.at.toISOString(),
+		});
+		const confirmation = {
+			confirmation_required: true,
+			kind: "reminder",
+			token,
+			message: parsed.message,
+			at: parsed.at.toISOString(),
+			when: describeWhen(parsed.at),
+			assumedEvening: parsed.assumedEvening,
+		};
+		return { model: { awaiting_confirmation: true, when: confirmation.when }, view: confirmation };
 	}
 	if (name === "create_artifact") {
 		const artifact = await artifacts.create({

@@ -655,7 +655,49 @@
                   ></template>
                 </div>
               </div>
-              <template x-if="message.confirm"
+              <!-- A reminder shows what was understood before it is set: the
+                   time is a reading of ambiguous words, so it is worth seeing
+                   before agreeing to it. -->
+              <template x-if="message.confirm?.kind === 'reminder'"
+                ><div class="reminder-card">
+                  <header>
+                    <svg
+                      class="ico live"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="1.6"
+                    >
+                      <circle cx="12" cy="13" r="8" />
+                      <path d="M12 9v4l3 2M9 2h6" />
+                    </svg>
+                    <div class="ct">
+                      <div class="name" x-text="message.confirm.message"></div>
+                      <div class="entity" x-text="message.confirm.when"></div>
+                    </div>
+                    <span class="pill">PENDING</span>
+                  </header>
+                  <div class="card-body">
+                    <div class="meta" x-text="formatTime(message.confirm.at)"></div>
+                    <div
+                      class="reminder-assumption"
+                      x-show="message.confirm.assumedEvening"
+                    >
+                      Read as evening. Say "am" if you meant the morning.
+                    </div>
+                  </div>
+                  <div class="actions">
+                    <button class="chip" @click="confirmAction(message)">
+                      SET REMINDER
+                    </button>
+                    <button class="chip warn" @click="cancelAction(message)">
+                      CANCEL
+                    </button>
+                  </div>
+                </div></template
+              >
+              <template
+                x-if="message.confirm && message.confirm.kind !== 'reminder'"
                 ><div class="controls">
                   <button
                     class="action"
