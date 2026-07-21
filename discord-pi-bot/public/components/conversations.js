@@ -14,6 +14,25 @@
 		app.currentConversationId = conversation.id;
 		app.messages = [];
 	}
+	/**
+	 * Guarantee somewhere to save to.
+	 *
+	 * A fresh install has no conversations, so nothing set currentConversationId
+	 * and save() bailed on every keystroke — the first chat was only ever
+	 * persisted once you happened to click "New chat", which created the second.
+	 * Unlike create(), this keeps whatever is already on screen: it is adopting
+	 * the conversation in progress, not starting a new one.
+	 */
+	async function ensure(app) {
+		if (app.currentConversationId) return app.currentConversationId;
+		const response = await fetch("./api/conversations", { method: "POST" });
+		if (!response.ok) return "";
+		const conversation = await response.json();
+		app.conversations.unshift(conversation);
+		app.currentConversationId = conversation.id;
+		return conversation.id;
+	}
+
 	function save(app) {
 		if (!app.currentConversationId) return;
 		clearTimeout(saveTimer);
@@ -75,5 +94,5 @@
 		}));
 		app.historyOpen = false;
 	}
-	globalScope.RemindMeConversations = { load, create, save, select, remove };
+	globalScope.RemindMeConversations = { load, create, ensure, save, select, remove };
 })(window);

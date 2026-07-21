@@ -504,6 +504,9 @@ function harness() {
 			this.$nextTick(() =>
 				this.resizeComposer({ target: this.$refs.composerInput }),
 			);
+			// Adopt or create a conversation before the first message lands, so
+			// there is always somewhere for save() to write.
+			await window.RemindMeConversations.ensure(this);
 			this.add("user", text);
 			this.busy = true;
 			this.startActivity("Working");
