@@ -215,6 +215,10 @@ function harness() {
 				? `${(milliseconds / 60_000).toFixed(1)} min`
 				: `${(milliseconds / 1_000).toFixed(1)} s`;
 		},
+		/** Render message text, converting any LaTeX to MathML. */
+		renderMessageText(element, text) {
+			window.RemindMeMath.render(element, text);
+		},
 		formatValue(value) {
 			if (value === null || value === undefined) return "—";
 			if (typeof value === "object") return JSON.stringify(value, null, 2);

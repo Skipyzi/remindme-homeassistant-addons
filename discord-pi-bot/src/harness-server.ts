@@ -31,7 +31,10 @@ import {
 } from "./harness/entityActions";
 import { ConversationStore } from "./harness/conversations";
 import { SkillStore, skillPrompt } from "./harness/skills";
-import { describeTransportError } from "./harness/modelManager";
+import {
+	describeTransportError,
+	invalidateManagerToken,
+} from "./harness/modelManager";
 
 import { allowedToolNames, toolCallKey } from "./harness/intentRouting";
 import {
@@ -161,11 +164,15 @@ app.get("/api/models/diagnostics", async (_request, response) => {
 	const managerUrl = process.env.MODEL_MANAGER_URL || "";
 	const checks: Array<Record<string, unknown>> = [];
 
+	const enabled = process.env.MODEL_MANAGER_ENABLED === "true";
 	checks.push({
 		step: "enabled",
-		ok: process.env.MODEL_MANAGER_ENABLED === "true",
+		ok: enabled,
 		detail: `MODEL_MANAGER_ENABLED=${process.env.MODEL_MANAGER_ENABLED ?? "(unset)"}`,
-		hint: "Set 'model_manager_enabled' in the add-on configuration.",
+		// A hint is a remedy, so it only belongs on a failing check.
+		hint: enabled
+			? undefined
+			: "Set 'model_manager_enabled' in the add-on configuration.",
 	});
 	checks.push({
 		step: "url",
@@ -220,14 +227,20 @@ app.get("/api/models/diagnostics", async (_request, response) => {
 		const status = await (await getModelManagerClient()).request("/status");
 		checks.push({ step: "authenticated", ok: true, detail: "status returned", status });
 	} catch (error) {
+		const code = error instanceof ModelManagerError ? error.code : "unknown";
+		const rejected =
+			error instanceof ModelManagerError && error.status === 401 && paired;
 		checks.push({
 			step: "authenticated",
 			ok: false,
-			code: error instanceof ModelManagerError ? error.code : "unknown",
+			code,
 			detail:
 				error instanceof ModelManagerError
 					? error.detail || error.message
 					: String(error),
+			hint: rejected
+				? "The stored token is no longer accepted — the add-ons keep separate /data, so reinstalling Local llama.cpp regenerates its token. Re-pair with a fresh code from its log."
+				: undefined,
 		});
 	}
 
@@ -1139,11 +1152,27 @@ async function getModelManagerClient(): Promise<ModelManagerClient> {
 			401,
 		);
 	if (!modelManagerClientPromise) {
-		modelManagerClientPromise = Promise.resolve(
-			new ModelManagerClient(modelManagerUrl(), () =>
-				readManagerToken(managerTokenPath()),
-			),
-		);
+		try {
+			modelManagerClientPromise = Promise.resolve(
+				new ModelManagerClient(modelManagerUrl(), () =>
+					readManagerToken(managerTokenPath()),
+				),
+			);
+		} catch (error) {
+			/*
+			 * The endpoint allowlist rejected the configured URL. That is a
+			 * configuration fault, not a transport one — reporting it as
+			 * "unavailable" sends you looking for a network problem that is
+			 * not there.
+			 */
+			throw new ModelManagerError(
+				"manager_misconfigured",
+				error instanceof Error ? error.message : "Manager endpoint is invalid.",
+				500,
+				false,
+				`MODEL_MANAGER_URL=${process.env.MODEL_MANAGER_URL ?? "(unset)"}`,
+			);
+		}
 	}
 	return modelManagerClientPromise;
 }
@@ -1165,8 +1194,25 @@ async function proxyModelManager(
 		if (method === "DELETE") response.status(204).end();
 		else response.json(result);
 	} catch (error) {
+		await forgetRejectedPairing(error);
 		sendModelManagerError(response, error);
 	}
+}
+
+/**
+ * A 401 from the manager means the stored token is dead, not that the request
+ * was malformed. Drop it so the Models tab falls back to the pairing form and
+ * the user can recover with a fresh code.
+ */
+async function forgetRejectedPairing(error: unknown): Promise<void> {
+	if (!(error instanceof ModelManagerError) || error.status !== 401) return;
+	if (error.code === "manager_unpaired" || error.code === "manager_disabled")
+		return;
+	await invalidateManagerToken(managerTokenPath());
+	modelManagerClientPromise = undefined;
+	console.warn(
+		"Model manager rejected the stored token; pairing cleared so it can be re-established.",
+	);
 }
 
 function sendModelManagerError(response: Response, error: unknown) {

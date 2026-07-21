@@ -10,6 +10,8 @@
     <script defer src="./components/composer.js"></script>
     <script defer src="./components/entities.js"></script>
     <script defer src="./components/entityCards.js"></script>
+    <script defer src="./vendor/katex.min.js"></script>
+    <script defer src="./components/math.js"></script>
     <script defer src="./components/conversations.js"></script>
     <script defer src="./components/attachments.js"></script>
     <script defer src="./components/model-cookbook.js"></script>
@@ -208,9 +210,11 @@
                   </div>
                 </details>
               </template>
+              <!-- x-effect re-renders as the reply streams; LaTeX is turned
+                   into MathML, everything else stays a text node. -->
               <span
                 x-show="!message.kind || message.kind==='answer'"
-                x-text="message.text"
+                x-effect="renderMessageText($el, message.text)"
               ></span>
               <!--
                 Four card tiers, picked by what you can do with the entity.

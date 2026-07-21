@@ -2555,3 +2555,35 @@ aside.telemetry,
 	color: var(--amber);
 	padding-top: 2px;
 }
+
+/* ── Maths ──────────────────────────────────────────────────────────────
+ * KaTeX renders to MathML, so the browser's own maths font does the work
+ * and no KaTeX web fonts are shipped. Only sizing and spacing here.
+ */
+.math-display {
+	display: block;
+	overflow-x: auto;
+	overflow-y: hidden;
+	margin: 8px 0;
+	padding: 2px 0;
+	text-align: center;
+	/* Long equations scroll inside the bubble rather than widening it. */
+	max-width: 100%;
+}
+.math-inline {
+	display: inline-block;
+	vertical-align: baseline;
+}
+.math-display math,
+.math-inline math {
+	color: var(--amber);
+	font-size: 1.08em;
+}
+.math-display math {
+	font-size: 1.2em;
+}
+/* KaTeX marks unparseable input; show it as rust rather than silently wrong. */
+.katex-error {
+	color: var(--bad) !important;
+	font-family: var(--mono);
+}

@@ -71,6 +71,20 @@ export async function readManagerToken(secretPath: string): Promise<string> {
 	return token;
 }
 
+/**
+ * Forget a token the manager no longer accepts.
+ *
+ * The two add-ons keep separate /data volumes, so reinstalling or resetting
+ * Local llama.cpp regenerates its token while the harness keeps the old one.
+ * Without this the harness reports itself paired forever and every call 401s
+ * with no way back: the pairing form only appears when no token exists.
+ */
+export async function invalidateManagerToken(
+	secretPath: string,
+): Promise<void> {
+	await unlink(secretPath).catch(() => {});
+}
+
 export async function managerPairingConfigured(
 	secretPath: string,
 ): Promise<boolean> {
