@@ -27,6 +27,7 @@ case "$MODEL_MANAGER_URL" in
 esac
 export MODEL_MANAGER_URL
 export MODEL_MANAGER_TOKEN_PATH=/data/model-manager-token
+export SEARXNG_URL="$(get_option searxng_url)"
 export EXA_API_KEY="$(get_option exa_api_key)"
 export HA_NOTIFY_TARGET="$(get_option ha_notify_target)"
 # Only /data is a persisted volume. Anything defaulting to ./data lands in

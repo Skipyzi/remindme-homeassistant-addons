@@ -58,6 +58,13 @@ sessions survive a restart.
 
 ## Pointing RemindMe at it
 
-Once SearXNG is running, the RemindMe add-on can use it for `web_search`
-instead of Exa by pointing at `http://searxng:8080`. See the RemindMe
-add-on for its `web_search` configuration.
+Once SearXNG is running, set the RemindMe add-on's **`searxng_url`** option to:
+
+```
+http://searxng:8080
+```
+
+That makes `web_search` query this instance first. If you also have an Exa
+key set, Exa stays on as a fallback for when SearXNG is unreachable or
+returns nothing; if you don't, SearXNG is the only provider. Leaving
+`searxng_url` blank keeps the previous Exa-only behaviour.

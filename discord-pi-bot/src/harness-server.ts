@@ -1097,7 +1097,8 @@ const tools = [
 		type: "function",
 		function: {
 			name: "web_search",
-			description: "Search the public web using Exa.",
+			description:
+				"Search the public web for current information and return the top results.",
 			parameters: {
 				type: "object",
 				properties: { query: { type: "string" } },
@@ -1807,8 +1808,7 @@ async function executeTool(
 		};
 	}
 	if (name === "web_search") {
-		const results = await exaSearch(String(args.query));
-		return { model: results };
+		return { model: await webSearch(String(args.query)) };
 	}
 	return { model: { error: `Unknown tool: ${name}` } };
 }
@@ -2028,6 +2028,87 @@ async function exaSearch(query: string) {
 	});
 	if (!response.ok) return { error: `Exa returned HTTP ${response.status}` };
 	return response.json();
+}
+
+/** The configured SearXNG base URL, or undefined when the option is blank. */
+function getSearxngUrl(): URL | undefined {
+	const raw = process.env.SEARXNG_URL?.trim();
+	if (!raw) return undefined;
+	try {
+		const url = new URL(raw);
+		return url.protocol === "http:" || url.protocol === "https:"
+			? url
+			: undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+/**
+ * Search a self-hosted SearXNG instance through its JSON API.
+ *
+ * Results are trimmed to a handful, each with its snippet cut short: the
+ * model reads these out of the same small window it is answering in, so a
+ * page of raw hits would cost more than it is worth.
+ */
+async function searxngSearch(base: URL, query: string) {
+	// Resolve /search against the base's path, so a SearXNG behind a subpath
+	// still works. A trailing slash keeps URL() from dropping the last segment.
+	const search = new URL("search", base.toString().replace(/\/*$/, "/"));
+	search.searchParams.set("q", query);
+	search.searchParams.set("format", "json");
+	const response = await fetch(search, {
+		headers: { Accept: "application/json" },
+		signal: AbortSignal.timeout(10_000),
+	});
+	if (!response.ok)
+		return { error: `SearXNG returned HTTP ${response.status}` };
+	const data = (await response.json()) as {
+		results?: Array<{ title?: string; url?: string; content?: string }>;
+		answers?: unknown[];
+	};
+	const results = (data.results || []).slice(0, 6).map((result) => ({
+		title: result.title || "",
+		url: result.url || "",
+		snippet: (result.content || "").replace(/\s+/g, " ").trim().slice(0, 300),
+	}));
+	return {
+		source: "searxng",
+		results,
+		answers: (data.answers || []).slice(0, 3),
+	};
+}
+
+/**
+ * Web search, SearXNG first and Exa as an optional fallback.
+ *
+ * When a SearXNG instance is configured it answers; Exa steps in only if
+ * SearXNG is unreachable or returns nothing, and only when a key is set.
+ * With neither configured the model is told plainly, rather than left to
+ * guess why a search returned an error.
+ */
+async function webSearch(query: string) {
+	const searxng = getSearxngUrl();
+	const hasExa = Boolean(process.env.EXA_API_KEY);
+	if (searxng) {
+		try {
+			const result = await searxngSearch(searxng, query);
+			if (!("error" in result) && result.results.length) return result;
+			if (hasExa) return await exaSearch(query);
+			return result;
+		} catch (error) {
+			if (hasExa) return await exaSearch(query);
+			return {
+				error:
+					error instanceof Error ? error.message : "SearXNG search failed",
+			};
+		}
+	}
+	if (hasExa) return await exaSearch(query);
+	return {
+		error:
+			"No web search is configured. Set searxng_url or exa_api_key in the add-on options.",
+	};
 }
 
 /*
