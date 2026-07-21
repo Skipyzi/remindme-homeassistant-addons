@@ -299,9 +299,12 @@
                 </details>
               </template>
               <!-- x-effect re-renders as the reply streams; LaTeX is turned
-                   into MathML, everything else stays a text node. -->
+                   into MathML, everything else stays a text node.
+                   Shown for anything that is not a thinking or tool
+                   disclosure, so a row with an unexpected kind still shows
+                   its text rather than rendering as a silent empty bubble. -->
               <span
-                x-show="message.kind==='user' || message.kind==='answer'"
+                x-show="!['thinking','tool'].includes(message.kind)"
                 x-effect="renderMessageText($el, message.text)"
               ></span>
               <!--

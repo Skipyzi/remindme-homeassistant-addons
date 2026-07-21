@@ -18,7 +18,7 @@
 			blurb: "this list",
 			async run(app) {
 				app.add(
-					"assistant",
+					"answer",
 					[
 						"Local commands — answered here, no tokens spent:",
 						table(COMMANDS.map((c) => [c.usage, c.blurb])),
@@ -35,7 +35,7 @@
 				const tools = response.ok ? await response.json() : [];
 				if (!tools.length) return app.add("answer", "No tools available.");
 				app.add(
-					"assistant",
+					"answer",
 					[
 						`${tools.length} tools available:`,
 						"",
@@ -88,7 +88,7 @@
 				}
 				if (!found)
 					return app.add(
-						"assistant",
+						"answer",
 						"No code block found in this conversation to make an artifact from.",
 					);
 				const language = (found[1] || "").toLowerCase();
@@ -143,7 +143,7 @@
 				const reminders = response.ok ? await response.json() : [];
 				if (!reminders.length) return app.add("answer", "No reminders set.");
 				app.add(
-					"assistant",
+					"answer",
 					[
 						`${reminders.length} reminder(s):`,
 						...reminders.map(
@@ -162,7 +162,7 @@
 				const skills = response.ok ? await response.json() : [];
 				const on = skills.filter((skill) => skill.enabled);
 				app.add(
-					"assistant",
+					"answer",
 					[
 						`${on.length} of ${skills.length} skills enabled.`,
 						...skills.map(
@@ -182,7 +182,7 @@
 				const usage = app.tokenUsage || {};
 				const metrics = app.metrics || {};
 				app.add(
-					"assistant",
+					"answer",
 					[
 						"Context:",
 						`- window: ${usage.contextCapacity || "?"} tokens`,
@@ -202,7 +202,7 @@
 				const response = await fetch("./api/models/diagnostics");
 				const report = await response.json();
 				app.add(
-					"assistant",
+					"answer",
 					[
 						`Model manager: ${report.ok ? "healthy" : "**not healthy**"}`,
 						"",
