@@ -1,0 +1,29 @@
+name: SearXNG
+version: "1.0.0"
+slug: searxng
+description: Self-hosted, privacy-respecting metasearch engine with a JSON API
+url: https://github.com/skipyzi/remindme-homeassistant-addons
+arch:
+  - aarch64
+  - amd64
+startup: services
+boot: auto
+init: false
+# No ingress: SearXNG builds absolute asset URLs and does not follow Home
+# Assistant's dynamic ingress subpath, so the panel would load without its
+# styles. It is reached by port instead — on the LAN through the mapped
+# host port, and by other add-ons at http://searxng:8080.
+ports:
+  8080/tcp: 8181
+ports_description:
+  8080/tcp: SearXNG web UI and JSON search API
+map:
+  - type: data
+    read_only: false
+    path: /data
+options:
+  instance_name: RemindMe Search
+  base_url: ""
+schema:
+  instance_name: str
+  base_url: str?
