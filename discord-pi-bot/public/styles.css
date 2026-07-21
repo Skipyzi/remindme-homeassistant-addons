@@ -2587,3 +2587,43 @@ aside.telemetry,
 	color: var(--bad) !important;
 	font-family: var(--mono);
 }
+
+/* ── Trace markers ──────────────────────────────────────────────────────
+ * Three older rules painted this pseudo-element: a spinning ring for
+ * thinking/tool rows and a diamond once settled, both outranking the
+ * caret on specificity. The ring kept spinning on finished steps, and it
+ * duplicated the status dot beside it.
+ *
+ * One marker only: a caret that points at its content and turns when the
+ * row is open. Motion belongs to the activity throbber, which is the only
+ * thing that should imply work in progress.
+ */
+.message.thinking summary::before,
+.message.tool summary::before,
+.message.settled summary::before {
+	content: "▸";
+	display: inline-block;
+	width: auto;
+	height: auto;
+	margin-right: 0;
+	border: 0;
+	border-radius: 0;
+	background: none;
+	box-shadow: none;
+	animation: none;
+	color: var(--amber-dim);
+	font-size: 10px;
+	transition: transform 0.15s ease;
+}
+.message details[open] summary::before {
+	transform: rotate(90deg);
+	color: var(--amber);
+}
+
+/* The gauge only appears on a finished reply, so its ring should read as
+ * complete rather than as a paused progress indicator. */
+.gauge .ring {
+	border-color: var(--amber-dim);
+	border-top-color: var(--amber-dim);
+	box-shadow: inset 0 0 0 1px rgba(255, 178, 0, 0.12);
+}
