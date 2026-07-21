@@ -3111,13 +3111,34 @@ body.resizing .artifact-frame {
 	border: 1px solid var(--amber-faint);
 	padding: 1px 5px;
 }
+/*
+ * One row, one height. Three things worked against that: the view toggle
+ * is styled for the light card, where it sits below a label rather than
+ * beside chips; the toggle and the chips set different type and padding;
+ * and the conditional wrapper around SAVE/DELETE was a flex child of its
+ * own, so those two shared none of the row's spacing.
+ */
 .artifact-actions {
 	display: flex;
+	align-items: center;
 	gap: 6px;
 	flex: none;
 }
-.artifact-actions .chip {
+/* The wrapper exists for x-if, not for layout — let its buttons through. */
+.artifact-actions > span {
+	display: contents;
+}
+.artifact-actions .mode-toggle {
+	margin-top: 0;
+}
+.artifact-actions .chip,
+.artifact-actions .mode-toggle button {
 	flex: none;
+	padding: 6px 9px;
+	font-size: 9.5px;
+	letter-spacing: 1.2px;
+	/* Fixed, so a glyph like ✕ cannot set a taller box than the words. */
+	line-height: 1;
 }
 .artifact-stage {
 	flex: 1;
