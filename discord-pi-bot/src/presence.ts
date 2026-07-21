@@ -4,7 +4,7 @@ import {
 	PresenceUptimeTracker,
 	type UptimeSnapshot,
 } from "./presenceUptime";
-import { getActiveReminderCount } from "./utils/reminderManager";
+import { countReminders } from "./utils/reminderManager";
 
 const CHECK_INTERVAL_MS = 60_000;
 let bridgeUrl: URL | undefined;
@@ -81,7 +81,7 @@ export async function updatePresence(
 	reachable: () => Promise<boolean> = piAgentIsReachable,
 	reminderCount: () => number | Promise<number> = () => {
 		const ownerId = process.env.OWNER_ID || "";
-		return ownerId ? getActiveReminderCount(ownerId) : 0;
+		return ownerId ? countReminders(ownerId) : 0;
 	},
 ): Promise<void> {
 	const connected = await reachable();

@@ -5,10 +5,9 @@ import os from "node:os";
 import { resolve } from "node:path";
 import { config } from "./config";
 import {
+	addReminder,
 	deleteReminder,
-	getReminders,
-	loadReminders,
-	setReminder,
+	listReminders,
 } from "./utils/reminderManager";
 import {
 	createPhaseId,
@@ -90,7 +89,6 @@ const pendingActions = new Map<
 		destructive: boolean;
 	}
 >();
-void loadReminders(async () => {});
 const conversations = new ConversationStore();
 void conversations.load();
 const skills = new SkillStore();
@@ -647,17 +645,18 @@ app.post("/api/entities/action", async (request, response) => {
 		});
 	}
 });
-app.get("/api/reminders", (_request, response) => {
+app.get("/api/reminders", async (_request, response) => {
+	const reminders = await listReminders(process.env.OWNER_ID || "");
 	response.json(
-		getReminders(process.env.OWNER_ID || "").map((item) => ({
+		reminders.map((item) => ({
 			id: item.id,
 			message: item.message,
 			time: item.time.toISOString(),
 		})),
 	);
 });
-app.delete("/api/reminders/:id", (_request, response) => {
-	const deleted = deleteReminder(
+app.delete("/api/reminders/:id", async (_request, response) => {
+	const deleted = await deleteReminder(
 		_request.params.id,
 		process.env.OWNER_ID || "",
 	);
@@ -713,12 +712,11 @@ app.post("/api/confirm", async (request, response) => {
 			0,
 			(new Date(reminder.at).getTime() - Date.now()) / 60_000,
 		);
-		const created = setReminder(
+		const created = await addReminder(
 			reminder.message,
 			delayMinutes,
 			process.env.OWNER_ID || "",
 			"",
-			async () => {},
 		);
 		response.json({
 			scheduled: true,
@@ -1504,7 +1502,7 @@ async function executeTool(
 		return { model: confirmation, view: confirmation };
 	}
 	if (name === "list_reminders") {
-		const reminders = getReminders(process.env.OWNER_ID || "").map((item) => ({
+		const reminders = (await listReminders(process.env.OWNER_ID || "")).map((item) => ({
 			id: item.id,
 			message: item.message,
 			time: item.time.toISOString(),

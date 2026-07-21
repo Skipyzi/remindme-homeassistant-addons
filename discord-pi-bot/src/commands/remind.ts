@@ -8,10 +8,9 @@ import {
 import { askLocalLlm } from "../localLlm";
 import { config } from "../config";
 import {
+	addReminder,
 	deleteReminder,
-	getReminders,
-	setReminder,
-	type Reminder,
+	listReminders,
 } from "../utils/reminderManager";
 
 function reminderButtons(id: string, userId: string) {
@@ -162,14 +161,16 @@ export async function handleRemindCommand(
 		return;
 	}
 
-	const reminder = setReminder(
+	/*
+	 * No handler here. Delivery belongs to the scheduler in the bot process,
+	 * which reaches Home Assistant and the phone as well as this channel —
+	 * a reply from here would have been the Discord half only.
+	 */
+	const reminder = await addReminder(
 		parsed.text,
 		parsed.delayMs / 60_000,
 		message.author.id,
 		message.channel.id,
-		async (due: Reminder): Promise<void> => {
-			await message.reply(`⏰ <@${due.userId}>, reminder: **${due.message}**`);
-		},
 	);
 	const timestamp = Math.floor(reminder.time.getTime() / 1000);
 	const card = new EmbedBuilder()
@@ -199,7 +200,7 @@ export async function handleRemindList(message: Message): Promise<void> {
 		);
 		return;
 	}
-	const reminders = getReminders(message.author.id);
+	const reminders = await listReminders(message.author.id);
 	if (!reminders.length) {
 		await message.reply("You have no active reminders.");
 		return;
@@ -223,7 +224,7 @@ export async function handleReminderDeleteButton(
 		});
 		return;
 	}
-	if (!deleteReminder(id, userId)) {
+	if (!(await deleteReminder(id, userId))) {
 		await interaction.reply({
 			content: "That reminder no longer exists.",
 			ephemeral: true,
@@ -241,7 +242,7 @@ export async function handleRemindDelete(message: Message): Promise<void> {
 		.replace(/^!(?:remindme|remind)\s+delete\s*/i, "")
 		.trim();
 	await message.reply(
-		deleteReminder(id, message.author.id)
+		(await deleteReminder(id, message.author.id))
 			? "✅ Reminder deleted."
 			: "❌ Reminder not found.",
 	);

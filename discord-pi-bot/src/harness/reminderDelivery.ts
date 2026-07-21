@@ -21,7 +21,12 @@ export function deliveryTargets(
 	return {
 		homeAssistant: isOwner ? "pending" : "skipped",
 		mobile: isOwner ? "pending" : "skipped",
-		discord: "pending",
+		/*
+		 * A reminder set in the console has no channel to answer in. That is
+		 * not a failed delivery — treating it as one left the reminder
+		 * retrying against an empty channel id once a minute, for ever.
+		 */
+		discord: reminder.channelId ? "pending" : "skipped",
 	};
 }
 

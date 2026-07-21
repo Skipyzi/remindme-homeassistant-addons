@@ -4,9 +4,9 @@ import { config, validateConfig } from "./config";
 import { setupCommands } from "./commands";
 import { setupAIChat } from "./chat";
 import { setupPiBridge } from "./piBridge";
-import { loadReminders, startPeriodicCleanup } from "./utils/reminderManager";
+import { startReminderScheduler } from "./utils/reminderManager";
 import { startPresenceMonitor } from "./presence";
-import { deliverReminder } from "./harness/reminderDelivery";
+import { deliverReminder, deliveryTargets } from "./harness/reminderDelivery";
 
 async function main() {
 	// Validate configuration
@@ -38,16 +38,20 @@ async function main() {
 	// Set up pi agent bridge
 	setupPiBridge();
 
-	// Start periodic cleanup
-	startPeriodicCleanup();
-
 	// Login
 	client.login(config.token);
 
 	client.once("clientReady", async () => {
 		if (client.user) {
 			console.log(`Logged in as ${client.user.tag}`);
-			await loadReminders(async (reminder) => {
+			/*
+			 * One handler for every reminder, whoever created it. The
+			 * !remindme command used to carry its own, which only replied in
+			 * the channel — so the same reminder reached Home Assistant and
+			 * the phone or did not, depending on whether the bot happened to
+			 * restart before it came due.
+			 */
+			startReminderScheduler(async (reminder) => {
 				const callHomeAssistant = async (
 					service: string,
 					data: Record<string, unknown>,
@@ -92,7 +96,18 @@ async function main() {
 							`⏰ <@${reminder.userId}>, reminder: **${reminder.message}**`,
 						);
 					},
-				});
+				},
+				/*
+				 * Resume from what was already delivered. Without this a retry
+				 * starts every channel afresh, so one unreachable Discord
+				 * channel meant a fresh Home Assistant notification and phone
+				 * push every minute for as long as it stayed unreachable.
+				 */
+				{
+					...deliveryTargets(reminder, process.env.OWNER_ID || ""),
+					...(reminder.deliveryStatus || {}),
+				},
+			);
 			});
 			await startPresenceMonitor(client);
 		}
