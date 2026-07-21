@@ -93,13 +93,27 @@
 					);
 				const language = (found[1] || "").toLowerCase();
 				const content = found[2];
-				const kind = ["html", "htm", "xhtml"].includes(language)
-					? "html"
-					: language === "svg"
-						? "svg"
-						: language === "markdown" || language === "md"
-							? "markdown"
-							: "code";
+				/*
+				 * A fenced block's language names what it is, so a ```glsl block
+				 * becomes a runnable shader rather than a wall of highlighted
+				 * text. Anything not runnable stays `code`.
+				 */
+				const KINDS = {
+					html: "html",
+					htm: "html",
+					xhtml: "html",
+					svg: "svg",
+					markdown: "markdown",
+					md: "markdown",
+					glsl: "glsl",
+					frag: "glsl",
+					shader: "glsl",
+					wgsl: "wgsl",
+					lua: "lua",
+					three: "three",
+					threejs: "three",
+				};
+				const kind = KINDS[language] || "code";
 				const response = await fetch("./api/artifacts", {
 					method: "POST",
 					headers: { "Content-Type": "application/json" },

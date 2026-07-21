@@ -14,8 +14,16 @@ import { FRAME_RUNTIME, buildFrame, encodeForScript } from "./frameShell";
  */
 
 /**
- * GLSL, accepting both conventions a model is likely to have seen: a
- * Shadertoy `mainImage`, or a plain fragment shader with its own `main`.
+ * GLSL, accepting the three shapes a model actually writes: a Shadertoy
+ * mainImage, a modern GLSL ES 3.00 main with its own out, and — the one a
+ * small model reaches for most, because it dominates the training data —
+ * an old GLSL ES 1.00 main writing gl_FragColor.
+ *
+ * The common uniform names are supplied under both conventions
+ * (iResolution and resolution, iTime and time, iMouse and mouse), and any
+ * the shader declares for itself are left to it and still fed each frame.
+ * That is what lets a shader that says `uniform float time;` and divides
+ * by an undeclared `resolution` run without being rewritten.
  */
 const GLSL_RUNNER = `
 const source = __SOURCE__;
@@ -24,28 +32,66 @@ const gl = stage.getContext("webgl2", { antialias: false });
 if (!gl) {
   report("unavailable", "WebGL2 is not available in this browser.");
 } else {
+  const versionStripped = /^\\s*#version/.test(source) ? 1 : 0;
   const stripped = source.replace(/^\\s*#version[^\\n]*\\n/, "");
   const shadertoy = /\\bmainImage\\s*\\(/.test(stripped);
+  /* gl_FragColor, varying, texture2D and attribute are GLSL ES 1.00 and
+   * gone from 3.00. A shader using any of them is written for 1.00, whatever
+   * #version line the model put on top. */
+  const es1 =
+    !shadertoy &&
+    /(gl_FragColor|gl_FragData|\\bvarying\\b|\\btexture2D\\b|\\btextureCube\\b|\\battribute\\b)/.test(stripped);
   const declaresOut = /\\bout\\s+vec4\\b/.test(stripped);
-  const preamble =
-    "#version 300 es\\nprecision highp float;\\n" +
-    "uniform vec3 iResolution;\\nuniform float iTime;\\n" +
-    "uniform float iTimeDelta;\\nuniform int iFrame;\\nuniform vec4 iMouse;\\n";
-  /* The wrapper's own output is named apart from anything the shader is
-   * likely to declare, so a Shadertoy paste and a hand-written main can
-   * both compile against the same preamble. */
-  const fragmentSource = shadertoy
-    ? preamble + "out vec4 remindmeColor;\\n" + stripped +
-      "\\nvoid main(){ vec4 c = vec4(0.0,0.0,0.0,1.0);" +
-      " mainImage(c, gl_FragCoord.xy); remindmeColor = c; }\\n"
-    : preamble + (declaresOut ? "" : "out vec4 fragColor;\\n") + stripped;
-  const vertexSource =
-    "#version 300 es\\nvoid main(){ vec2 p = vec2((gl_VertexID << 1) & 2," +
-    " gl_VertexID & 2); gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0); }";
 
-  /* Line numbers come back counted from the preamble; shift them so they
-   * point at the line the author actually wrote. */
-  const offset = preamble.split("\\n").length - 1 + (shadertoy ? 1 : declaresOut ? 0 : 1);
+  /* name, type, and how to feed it. Fed by name every frame, so a uniform
+   * the shader declared itself is set too — getUniformLocation finds it. */
+  const STD = [
+    ["iResolution", "vec3", (loc, c) => gl.uniform3f(loc, c.w, c.h, 1)],
+    ["resolution", "vec2", (loc, c) => gl.uniform2f(loc, c.w, c.h)],
+    ["iTime", "float", (loc, c) => gl.uniform1f(loc, c.t)],
+    ["time", "float", (loc, c) => gl.uniform1f(loc, c.t)],
+    ["iTimeDelta", "float", (loc, c) => gl.uniform1f(loc, c.dt)],
+    ["iMouse", "vec4", (loc, c) => gl.uniform4f(loc, c.mx, c.my, 0, 0)],
+    ["mouse", "vec2", (loc, c) => gl.uniform2f(loc, c.mx, c.my)],
+    ["iFrame", "int", (loc, c) => gl.uniform1i(loc, c.frame)],
+  ];
+  /* Declare only the ones the shader did not, so a redeclaration cannot
+   * make a valid shader fail to compile. */
+  const declared = (name) =>
+    new RegExp("\\\\buniform\\\\b[^;]*\\\\b" + name + "\\\\b").test(stripped);
+  const uniformDecls = STD.filter(([name]) => !declared(name))
+    .map(([name, type]) => "uniform " + type + " " + name + ";")
+    .join("\\n");
+
+  const header = es1
+    ? "precision highp float;\\n" + uniformDecls + "\\n"
+    : "#version 300 es\\nprecision highp float;\\n" + uniformDecls + "\\n";
+  let extraLines = 0;
+  let fragmentSource;
+  if (shadertoy) {
+    fragmentSource =
+      header + "out vec4 remindmeFragColor;\\n" + stripped +
+      "\\nvoid main(){ vec4 c = vec4(0.0,0.0,0.0,1.0);" +
+      " mainImage(c, gl_FragCoord.xy); remindmeFragColor = c; }\\n";
+    extraLines = 1;
+  } else if (es1) {
+    fragmentSource = header + stripped;
+  } else {
+    fragmentSource = header + (declaresOut ? "" : "out vec4 fragColor;\\n") + stripped;
+    extraLines = declaresOut ? 0 : 1;
+  }
+
+  /* Vertex stage: 3.00 can build the triangle from gl_VertexID, but 1.00
+   * has no such thing, so that path feeds a real position attribute. */
+  const vertexSource = es1
+    ? "attribute vec2 position;\\nvoid main(){ gl_Position = vec4(position, 0.0, 1.0); }"
+    : "#version 300 es\\nvoid main(){ vec2 p = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2); gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0); }";
+
+  /* A reported line is counted in the compiled source; map it back onto the
+   * line the author sees, accounting for the header, any wrapper line, and
+   * the #version line that was stripped off the top. */
+  const headerLines = header.split("\\n").length - 1;
+  const offset = headerLines + extraLines - versionStripped;
   function compile(type, text, shiftLines) {
     const shader = gl.createShader(type);
     gl.shaderSource(shader, text);
@@ -67,24 +113,30 @@ if (!gl) {
     if (!gl.getProgramParameter(program, gl.LINK_STATUS))
       throw new Error(gl.getProgramInfoLog(program) || "Link failed");
     gl.useProgram(program);
-    const uniform = (name) => gl.getUniformLocation(program, name);
-    const uResolution = uniform("iResolution");
-    const uTime = uniform("iTime");
-    const uDelta = uniform("iTimeDelta");
-    const uFrame = uniform("iFrame");
-    const uMouse = uniform("iMouse");
+    if (es1) {
+      /* A fullscreen triangle for the 1.00 vertex stage's attribute. */
+      const buffer = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+      const location = gl.getAttribLocation(program, "position");
+      gl.enableVertexAttribArray(location);
+      gl.vertexAttribPointer(location, 2, gl.FLOAT, false, 0, 0);
+    }
+    /* Resolve each standard uniform once; unused ones return null and are
+     * skipped, so nothing has to know which the shader actually reads. */
+    const bound = STD.map(([name, , set]) => [gl.getUniformLocation(program, name), set]);
     const started = performance.now();
     let previous = started;
     let frame = 0;
     const draw = (now) => {
       fitCanvas();
       gl.viewport(0, 0, stage.width, stage.height);
-      if (uResolution) gl.uniform3f(uResolution, stage.width, stage.height, 1);
-      if (uTime) gl.uniform1f(uTime, (now - started) / 1000);
-      if (uDelta) gl.uniform1f(uDelta, (now - previous) / 1000);
-      if (uFrame) gl.uniform1i(uFrame, frame);
-      if (uMouse)
-        gl.uniform4f(uMouse, pointer.x * stage.width, pointer.y * stage.height, 0, 0);
+      const context = {
+        w: stage.width, h: stage.height,
+        t: (now - started) / 1000, dt: (now - previous) / 1000,
+        mx: pointer.x * stage.width, my: pointer.y * stage.height, frame,
+      };
+      for (const [location, set] of bound) if (location) set(location, context);
       gl.drawArrays(gl.TRIANGLES, 0, 3);
       previous = now;
       frame += 1;
