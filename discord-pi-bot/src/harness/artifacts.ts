@@ -1,6 +1,7 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { randomUUID } from "node:crypto";
+import { glslDocument, wgslDocument } from "./shaderDocument";
 
 /**
  * Artifacts: self-contained documents the model writes and the console
@@ -15,7 +16,13 @@ import { randomUUID } from "node:crypto";
  * sandbox entirely, which is why they are never combined.
  */
 
-export type ArtifactKind = "html" | "svg" | "markdown" | "code";
+export type ArtifactKind =
+	| "html"
+	| "svg"
+	| "markdown"
+	| "code"
+	| "glsl"
+	| "wgsl";
 
 export interface Artifact {
 	id: string;
@@ -31,7 +38,14 @@ export interface Artifact {
 /** Big enough for a real page, small enough not to fill a Pi's disk. */
 export const MAX_ARTIFACT_BYTES = 128_000;
 
-const KINDS: ArtifactKind[] = ["html", "svg", "markdown", "code"];
+const KINDS: ArtifactKind[] = [
+	"html",
+	"svg",
+	"markdown",
+	"code",
+	"glsl",
+	"wgsl",
+];
 
 export function normalizeKind(value: unknown): ArtifactKind {
 	const kind = String(value || "").toLowerCase();
@@ -150,5 +164,9 @@ export function toDocument(artifact: Artifact): string {
 			: shell(artifact.content);
 	}
 	if (artifact.kind === "svg") return shell(artifact.content);
+	/* Shaders are compiled by the GPU driver inside the same frame; the
+	 * shell supplies the canvas, the uniforms and the error pane. */
+	if (artifact.kind === "glsl") return glslDocument(artifact.content);
+	if (artifact.kind === "wgsl") return wgslDocument(artifact.content);
 	return "";
 }

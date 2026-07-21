@@ -75,6 +75,9 @@ function harness() {
 		artifactView: "preview",
 		/** True while the model is still writing the document on the bench. */
 		artifactStreaming: false,
+		/** The source view is an editor; this is what is in it. */
+		artifactSource: "",
+		artifactSaving: false,
 		tokenUsage: {
 			exact: false,
 			promptTokens: 0,
@@ -342,6 +345,7 @@ function harness() {
 				const response = await fetch(`./api/artifacts/${encodeURIComponent(id)}`);
 				if (!response.ok) return;
 				this.currentArtifact = await response.json();
+				this.artifactSource = this.currentArtifact.content || "";
 				this.artifactStreaming = false;
 				this.artifactView = "preview";
 				this.artifactOpen = true;
@@ -383,13 +387,50 @@ function harness() {
 			this.artifactStreaming = false;
 			await this.openArtifact(artifact.id);
 		},
+		/** True when the editor holds something the stored document does not. */
+		artifactDirty() {
+			return (
+				!this.artifactStreaming &&
+				Boolean(this.currentArtifact?.id) &&
+				this.artifactSource !== (this.currentArtifact?.content ?? "")
+			);
+		},
+		/**
+		 * Save the edited source and show the result.
+		 *
+		 * The frame is keyed on the document's revision, so replacing
+		 * currentArtifact with the server's copy is what makes the preview
+		 * reload — a shader recompiles the moment this returns.
+		 */
+		async applyArtifactEdit() {
+			if (!this.artifactDirty() || this.artifactSaving) return;
+			this.artifactSaving = true;
+			try {
+				const response = await fetch(
+					`./api/artifacts/${encodeURIComponent(this.currentArtifact.id)}`,
+					{
+						method: "PATCH",
+						headers: { "Content-Type": "application/json" },
+						body: JSON.stringify({ content: this.artifactSource }),
+					},
+				);
+				if (!response.ok) return;
+				this.currentArtifact = await response.json();
+				this.artifactSource = this.currentArtifact.content || "";
+				this.artifactView = "preview";
+			} catch {
+				/* Leave the edit in the box rather than losing it. */
+			} finally {
+				this.artifactSaving = false;
+			}
+		},
 		/** Rendered documents get a frame; everything else is read as text. */
 		artifactIsFramed() {
 			return (
 				this.artifactView === "preview" &&
 				!this.artifactStreaming &&
 				Boolean(this.currentArtifact?.id) &&
-				["html", "svg"].includes(this.currentArtifact?.kind)
+				["html", "svg", "glsl", "wgsl"].includes(this.currentArtifact?.kind)
 			);
 		},
 		/**
@@ -417,14 +458,15 @@ function harness() {
 		downloadArtifact() {
 			const artifact = this.currentArtifact;
 			if (!artifact) return;
+			const EXTENSIONS = {
+				html: "html",
+				svg: "svg",
+				markdown: "md",
+				glsl: "glsl",
+				wgsl: "wgsl",
+			};
 			const extension =
-				artifact.kind === "html"
-					? "html"
-					: artifact.kind === "svg"
-						? "svg"
-						: artifact.kind === "markdown"
-							? "md"
-							: artifact.language || "txt";
+				EXTENSIONS[artifact.kind] || artifact.language || "txt";
 			const blob = new Blob([artifact.content], { type: "text/plain" });
 			const url = URL.createObjectURL(blob);
 			const link = document.createElement("a");

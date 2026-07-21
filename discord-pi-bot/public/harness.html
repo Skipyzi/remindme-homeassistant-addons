@@ -1416,16 +1416,51 @@
               ></div
             ></template>
             <!--
-              The document as text, and the only view available while it is
-              still arriving. `x-text` rather than the rich-text renderer:
-              this is what the model actually wrote, markup and all.
+              While the model is writing, the source is a read-only trace:
+              there is nothing to edit yet and the text is still moving.
             -->
-            <template x-if="artifactView==='source' && currentArtifact"
+            <template x-if="artifactView==='source' && artifactStreaming"
               ><pre
-                class="artifact-source"
-                :class="{writing: artifactStreaming}"
-                x-text="currentArtifact.content"
+                class="artifact-source writing"
+                x-text="currentArtifact?.content"
               ></pre
+            ></template>
+            <!--
+              Once it has settled the same view is an editor. Ctrl/Cmd+Enter
+              applies, which for a shader means it recompiles where you can
+              see it.
+            -->
+            <template x-if="artifactView==='source' && !artifactStreaming && currentArtifact"
+              ><div class="artifact-editor">
+                <textarea
+                  class="artifact-source"
+                  spellcheck="false"
+                  aria-label="Artifact source"
+                  x-model="artifactSource"
+                  @keydown.ctrl.enter.prevent="applyArtifactEdit()"
+                  @keydown.meta.enter.prevent="applyArtifactEdit()"
+                ></textarea>
+                <div class="artifact-editbar">
+                  <span
+                    class="artifact-dirty"
+                    x-show="artifactDirty()"
+                    x-cloak
+                    >unsaved</span
+                  >
+                  <button
+                    class="chip"
+                    :disabled="!artifactDirty() || artifactSaving"
+                    @click="applyArtifactEdit()"
+                    x-text="artifactSaving ? 'APPLYING' : 'APPLY'"
+                  ></button>
+                  <button
+                    class="chip"
+                    :disabled="!artifactDirty()"
+                    @click="artifactSource = currentArtifact.content || ''"
+                  >
+                    REVERT
+                  </button>
+                </div></div
             ></template>
           </div>
         </aside>

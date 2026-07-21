@@ -206,6 +206,29 @@ app.get("/api/artifacts/:id", (request, response) => {
 	const artifact = artifacts.get(request.params.id);
 	response.status(artifact ? 200 : 404).json(artifact || { error: "Not found" });
 });
+/*
+ * Editing by hand, from the console's source view. The model reaches the
+ * same store through edit_artifact and rewrite_artifact; this is the other
+ * half of that, so a shader can be nudged a constant at a time without
+ * asking a 1.7B to find the line.
+ */
+app.patch("/api/artifacts/:id", async (request, response) => {
+	const content = request.body?.content;
+	const title = request.body?.title;
+	if (typeof content !== "string" && typeof title !== "string") {
+		response.status(400).json({ error: "content or title is required" });
+		return;
+	}
+	const updated = await artifacts.update(request.params.id, {
+		...(typeof content === "string" ? { content } : {}),
+		...(typeof title === "string" ? { title } : {}),
+	});
+	if (!updated) {
+		response.status(404).json({ error: "Not found" });
+		return;
+	}
+	response.json(updated);
+});
 app.delete("/api/artifacts/:id", async (request, response) => {
 	response.status((await artifacts.delete(request.params.id)) ? 204 : 404).end();
 });
@@ -870,14 +893,16 @@ const tools = [
 		function: {
 			name: "create_artifact",
 			description:
-				"Create a rendered document the user can view: an HTML page, an SVG diagram, a markdown note, or a code file. Use for anything worth keeping or looking at, rather than pasting it into the reply.",
+				"Create a rendered document the user can view: an HTML page, an SVG diagram, a markdown note, a code file, or a shader that runs on the viewer's GPU. Use for anything worth keeping or looking at, rather than pasting it into the reply.",
 			parameters: {
 				type: "object",
 				properties: {
 					title: { type: "string" },
 					kind: {
 						type: "string",
-						enum: ["html", "svg", "markdown", "code"],
+						enum: ["html", "svg", "markdown", "code", "glsl", "wgsl"],
+						description:
+							"Use glsl for a WebGL2 fragment shader: write either a Shadertoy-style 'void mainImage(out vec4 fragColor, in vec2 fragCoord)' or a plain 'void main()'. iResolution, iTime, iTimeDelta, iFrame and iMouse are declared for you; do not write a #version line. Use wgsl for a WebGPU shader: define '@fragment fn fs_main(@builtin(position) pos: vec4f) -> @location(0) vec4f'. The vertex stage and a uniform block 'U' with resolution, time, timeDelta, mouse and frame are supplied.",
 					},
 					language: { type: "string" },
 					content: { type: "string" },

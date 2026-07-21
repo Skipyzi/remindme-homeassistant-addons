@@ -3173,6 +3173,59 @@ body.resizing .artifact-frame {
 	white-space: pre-wrap;
 	overflow-wrap: anywhere;
 }
+/* The editing form of the same view: the textarea takes the room, the bar
+ * sits under it so APPLY is always reachable without scrolling the code. */
+.artifact-editor {
+	display: flex;
+	flex-direction: column;
+	height: 100%;
+	min-height: 0;
+}
+/* The composer's textarea rules size to their content and cap at 160px,
+ * which is right for a chat box and wrong for a document — opt out of all
+ * three or the editor never grows past the first few lines. */
+textarea.artifact-source {
+	flex: 1;
+	height: auto;
+	min-height: 160px;
+	max-height: none;
+	field-sizing: fixed;
+	overflow-y: auto;
+	background: none;
+	border: 0;
+	resize: none;
+	outline: none;
+}
+textarea.artifact-source:focus-visible {
+	box-shadow: inset 0 0 0 1px var(--amber-dim);
+}
+.artifact-editbar {
+	display: flex;
+	align-items: center;
+	justify-content: flex-end;
+	gap: 6px;
+	flex: none;
+	padding: 8px 10px;
+	border-top: 1px solid var(--amber-faint);
+}
+.artifact-editbar .chip {
+	flex: none;
+	padding: 6px 9px;
+	font-size: 9.5px;
+	line-height: 1;
+	letter-spacing: 1.2px;
+}
+.artifact-editbar .chip[disabled] {
+	opacity: 0.4;
+	cursor: default;
+}
+.artifact-dirty {
+	margin-right: auto;
+	color: var(--amber);
+	font-size: 9px;
+	letter-spacing: 1.4px;
+	text-transform: uppercase;
+}
 /* A cursor on the last character, so a slow write still looks alive. */
 .artifact-source.writing::after {
 	content: "";
