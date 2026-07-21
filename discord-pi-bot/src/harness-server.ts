@@ -32,6 +32,7 @@ import {
 import { ConversationStore } from "./harness/conversations";
 import { SkillStore, skillPrompt } from "./harness/skills";
 import { readSystemStats } from "./harness/systemStats";
+import { ArtifactStore, toDocument } from "./harness/artifacts";
 import {
 	McpServerStore,
 	callTool as callMcpTool,
@@ -84,6 +85,8 @@ const conversations = new ConversationStore();
 void conversations.load();
 const skills = new SkillStore();
 void skills.load();
+const artifacts = new ArtifactStore();
+void artifacts.load();
 const mcpServers = new McpServerStore();
 void mcpServers.load();
 type Send = (event: string, data: unknown) => void;
@@ -159,6 +162,40 @@ app.delete("/api/skills/:id", async (request, response) => {
  * keys only, so the UI can list capabilities without restating the schema. */
 /* Host telemetry for the rail. Polled, so it is deliberately cheap: reading
  * one sysfs file and differencing CPU counters. */
+app.get("/api/artifacts", (_request, response) => {
+	response.json(artifacts.list());
+});
+app.get("/api/artifacts/:id", (request, response) => {
+	const artifact = artifacts.get(request.params.id);
+	response.status(artifact ? 200 : 404).json(artifact || { error: "Not found" });
+});
+app.delete("/api/artifacts/:id", async (request, response) => {
+	response.status((await artifacts.delete(request.params.id)) ? 204 : 404).end();
+});
+/*
+ * The rendered document, served for the sandboxed frame.
+ *
+ * Delivered on its own URL rather than through srcdoc so the browser applies
+ * the response CSP, and marked to be framed only by this add-on. The frame
+ * carries sandbox="allow-scripts" without allow-same-origin, so this document
+ * runs in an opaque origin with no reach into the console or the Home
+ * Assistant session.
+ */
+app.get("/api/artifacts/:id/document", (request, response) => {
+	const artifact = artifacts.get(request.params.id);
+	if (!artifact || !toDocument(artifact))
+		return response.status(404).type("text/plain").send("Not found");
+	response
+		.status(200)
+		.set({
+			"Content-Type": "text/html; charset=utf-8",
+			"Content-Security-Policy":
+				"default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; script-src 'unsafe-inline'; frame-ancestors 'self'",
+			"X-Content-Type-Options": "nosniff",
+			"Cache-Control": "no-store",
+		})
+		.send(toDocument(artifact));
+});
 app.get("/api/system", async (_request, response) => {
 	response.set("Cache-Control", "no-store").json(await readSystemStats());
 });
@@ -618,7 +655,9 @@ app.get("/api/status", async (_request, response) => {
 	});
 });
 app.get("/", (_request, response) =>
-	response.sendFile("harness.html", { root: "public" }),
+	response
+		.set("Cache-Control", "no-cache, must-revalidate")
+		.sendFile("harness.html", { root: "public" }),
 );
 app.post("/api/confirm", async (request, response) => {
 	const token =
@@ -737,6 +776,27 @@ const tools = [
 			name: "list_reminders",
 			description: "List reminders belonging to the configured Discord owner.",
 			parameters: { type: "object", properties: {} },
+		},
+	},
+	{
+		type: "function",
+		function: {
+			name: "create_artifact",
+			description:
+				"Create a rendered document the user can view: an HTML page, an SVG diagram, a markdown note, or a code file. Use for anything worth keeping or looking at, rather than pasting it into the reply.",
+			parameters: {
+				type: "object",
+				properties: {
+					title: { type: "string" },
+					kind: {
+						type: "string",
+						enum: ["html", "svg", "markdown", "code"],
+					},
+					language: { type: "string" },
+					content: { type: "string" },
+				},
+				required: ["title", "kind", "content"],
+			},
 		},
 	},
 	{
@@ -1180,6 +1240,27 @@ async function executeTool(
 		}));
 		return { model: reminders, view: reminders };
 	}
+	if (name === "create_artifact") {
+		const artifact = await artifacts.create({
+			title: String(args.title || "Untitled"),
+			kind: args.kind as never,
+			language: args.language ? String(args.language) : undefined,
+			content: String(args.content || ""),
+		});
+		/*
+		 * The model gets a receipt, not the document. Echoing the content back
+		 * would double its cost in a window it just spent writing it into.
+		 */
+		return {
+			model: {
+				created: true,
+				id: artifact.id,
+				title: artifact.title,
+				kind: artifact.kind,
+			},
+			view: { artifact: { ...artifact, content: undefined } },
+		};
+	}
 	if (name === "web_search") {
 		const results = await exaSearch(String(args.query));
 		return { model: results };
@@ -1404,7 +1485,24 @@ async function exaSearch(query: string) {
 	return response.json();
 }
 
-app.use(express.static(resolve(process.cwd(), "public")));
+/*
+ * Revalidate every asset on every load.
+ *
+ * express.static sends ETag and Last-Modified but no Cache-Control, so
+ * browsers fall back to heuristic freshness and can keep serving an old
+ * app.js against freshly updated HTML. The result is a half-updated console
+ * where the markup calls methods the cached script does not have — every
+ * handler on the page fails at once. ETags still make this cheap: unchanged
+ * files answer 304.
+ */
+app.use(
+	express.static(resolve(process.cwd(), "public"), {
+		etag: true,
+		lastModified: true,
+		setHeaders: (response) =>
+			response.setHeader("Cache-Control", "no-cache, must-revalidate"),
+	}),
+);
 app.use((_request, response) => {
 	response.status(404).type("text/plain").send("Not found");
 });
