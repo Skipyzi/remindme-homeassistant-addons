@@ -63,7 +63,7 @@
 						body: JSON.stringify({
 							messages: app.messages.map((message) => ({
 								id: message.id || message.key,
-								role: message.type === "user" ? "user" : "assistant",
+								role: message.kind === "user" ? "user" : "assistant",
 								text: message.text || "",
 								createdAt: new Date().toISOString(),
 								/*
@@ -138,22 +138,24 @@
 	}
 
 	/**
-	 * Rebuild the transcript from a stored conversation.
-	 *
-	 * `type` and `kind` are not two names for one thing: the row is styled
-	 * by whichever it has, and a `type` wins. Stamping "assistant" onto
-	 * every non-user row therefore dressed restored tool and thinking rows
-	 * as console replies — a bubble drawn around a disclosure that was
-	 * still rendering itself as a tool call inside it.
-	 *
-	 * A row that knows its kind already knows what it is.
+	 * What a stored row is, for anything written before `kind` was the only
+	 * word for it. Older rows carry a `type` of "assistant", or nothing at
+	 * all beyond the role the store keeps.
 	 */
+	function kindOf(message) {
+		const metadata = message.metadata || {};
+		if (metadata.kind) return metadata.kind;
+		if (message.role === "user" || message.type === "user") return "user";
+		return "answer";
+	}
+
+	/** Rebuild the transcript from a stored conversation. */
 	function toMessages(conversation) {
-		return (conversation.messages || []).map((message) => {
-			const metadata = message.metadata || {};
-			const restored = { id: message.id, text: message.text, ...metadata };
-			if (message.role === "user") restored.type = "user";
-			else if (!metadata.kind) restored.type = "assistant";
+		return (conversation.messages || []).map((message) => ({
+			id: message.id,
+			text: message.text,
+			...(message.metadata || {}),
+			kind: kindOf(message),
 			/*
 			 * Explicitly false, never absent. `:open` on a <details> is left
 			 * untouched when its expression is undefined, and Alpine reuses
@@ -161,9 +163,8 @@
 			 * that had been open stayed open, which is how a reopened
 			 * conversation came back with every disclosure hanging out.
 			 */
-			restored.expanded = false;
-			return restored;
-		});
+			expanded: false,
+		}));
 	}
 
 	/**
@@ -192,5 +193,14 @@
 		app.currentConversationId = fresh.id;
 		app.messages = toMessages(fresh);
 	}
-	globalScope.RemindMeConversations = { load, create, ensure, patch, save, select, remove };
+	globalScope.RemindMeConversations = {
+		load,
+		create,
+		ensure,
+		patch,
+		save,
+		select,
+		remove,
+		kindOf,
+	};
 })(window);

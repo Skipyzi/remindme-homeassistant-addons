@@ -175,7 +175,16 @@ function harness() {
 				const saved = JSON.parse(
 					localStorage.getItem("remindme.history") || "[]",
 				);
-				if (Array.isArray(saved)) this.messages = saved;
+				if (!Array.isArray(saved)) return;
+				/*
+				 * Transcripts saved before `kind` was the only word for what a
+				 * row is still carry a `type`. Carry them over rather than
+				 * leaving the last conversation to come back unstyled.
+				 */
+				this.messages = saved.map(({ type, ...message }) => ({
+					...message,
+					kind: message.kind || (type === "assistant" ? "answer" : type),
+				}));
 			} catch (_) {}
 		},
 		/**
@@ -189,31 +198,30 @@ function harness() {
 		 * and what the request carries cannot drift apart.
 		 */
 		modelHistory() {
-			/*
-			 * Two vocabularies describe a row. Locally added messages carry a
-			 * `type`; rows built by the timeline as a reply streams carry a
-			 * `kind` and no type at all. Reading only `type` silently dropped
-			 * every streamed reply, so the model was sent the questions and
-			 * none of its own answers.
-			 */
-			const roleOf = (message) => {
-				if (message.type === "user") return "user";
-				if (message.type === "assistant" || message.kind === "answer")
-					return "assistant";
-				// Thinking and tool rows are working notes, not the conversation.
-				return "";
-			};
+			// Thinking and tool rows are working notes, not the conversation.
+			const ROLES = { user: "user", answer: "assistant" };
 			return this.messages
 				.map((message) => ({
-					role: roleOf(message),
+					role: ROLES[message.kind],
 					content: message.text,
 				}))
 				.filter((turn) => turn.role && turn.content?.trim());
 		},
-		add(type, text, extra = {}) {
+		/**
+		 * Add a row to the transcript.
+		 *
+		 * `kind` is the only word for what a row is: user, answer, thinking
+		 * or tool. There used to be a second one — `type` — set here while
+		 * the streaming timeline set `kind`, and every place that had to ask
+		 * what a row was had to know both. Rows were styled by whichever
+		 * they had, which dressed restored tool calls as replies, and the
+		 * transcript sent to the model read only `type`, which meant it was
+		 * sent the questions and none of the answers.
+		 */
+		add(kind, text, extra = {}) {
 			const message = {
 				id: `${Date.now()}-${Math.random()}`,
-				type,
+				kind,
 				text,
 				...extra,
 			};
@@ -224,7 +232,7 @@ function harness() {
 		},
 		async newChat() {
 			await window.RemindMeConversations.create(this);
-			this.add("assistant", "Fresh channel. What are we checking?");
+			this.add("answer", "Fresh channel. What are we checking?");
 		},
 		selectConversation(conversation) {
 			return window.RemindMeConversations.select(this, conversation);
@@ -1157,9 +1165,9 @@ function harness() {
 				}
 			} catch (error) {
 				// An abort is a user decision, not a fault: no error, no offline flag.
-				if (error.name === "AbortError") this.add("assistant", "Cancelled.");
+				if (error.name === "AbortError") this.add("answer", "Cancelled.");
 				else {
-					this.add("assistant", "ERROR // " + error.message);
+					this.add("answer", "ERROR // " + error.message);
 					this.offline = true;
 				}
 			} finally {
@@ -1227,7 +1235,7 @@ function harness() {
 					confirm: data.result,
 				});
 			else if (Array.isArray(data.result))
-				this.add("assistant", "", {
+				this.add("answer", "", {
 					label: data.name,
 					items: data.result,
 				});

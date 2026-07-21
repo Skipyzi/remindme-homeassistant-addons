@@ -205,7 +205,7 @@
             <article
               class="message"
               :class="{
-                [message.type || message.kind || 'answer']: true,
+                [message.kind || 'answer']: true,
                 settled: message.state==='complete' && (message.kind==='thinking' || message.kind==='tool'),
               }"
             >
@@ -299,7 +299,7 @@
               <!-- x-effect re-renders as the reply streams; LaTeX is turned
                    into MathML, everything else stays a text node. -->
               <span
-                x-show="!message.kind || message.kind==='answer'"
+                x-show="message.kind==='user' || message.kind==='answer'"
                 x-effect="renderMessageText($el, message.text)"
               ></span>
               <!--

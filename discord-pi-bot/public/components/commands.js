@@ -33,7 +33,7 @@
 			async run(app) {
 				const response = await fetch("./api/tools");
 				const tools = response.ok ? await response.json() : [];
-				if (!tools.length) return app.add("assistant", "No tools available.");
+				if (!tools.length) return app.add("answer", "No tools available.");
 				app.add(
 					"assistant",
 					[
@@ -55,17 +55,17 @@
 			blurb: "look up devices, no model turn",
 			async run(app, argument) {
 				if (!argument)
-					return app.add("assistant", "Usage: `/entities kitchen light`");
+					return app.add("answer", "Usage: `/entities kitchen light`");
 				const response = await fetch(
 					`./api/entities?query=${encodeURIComponent(argument)}`,
 				);
 				if (!response.ok)
-					return app.add("assistant", "Home Assistant is unavailable.");
+					return app.add("answer", "Home Assistant is unavailable.");
 				const cards = await response.json();
 				if (!cards.length)
-					return app.add("assistant", `Nothing matched \`${argument}\`.`);
+					return app.add("answer", `Nothing matched \`${argument}\`.`);
 				// Rendered as cards, exactly as a tool result would be.
-				app.add("assistant", `${cards.length} match${cards.length > 1 ? "es" : ""}:`, {
+				app.add("answer", `${cards.length} match${cards.length > 1 ? "es" : ""}:`, {
 					kind: "answer",
 					items: cards,
 				});
@@ -111,9 +111,9 @@
 					}),
 				});
 				if (!response.ok)
-					return app.add("assistant", "Could not create the artifact.");
+					return app.add("answer", "Could not create the artifact.");
 				const artifact = await response.json();
-				app.add("assistant", `Made an artifact from the last ${language || "code"} block.`, {
+				app.add("answer", `Made an artifact from the last ${language || "code"} block.`, {
 					kind: "answer",
 					artifact,
 				});
@@ -127,7 +127,7 @@
 			async run(app) {
 				const response = await fetch("./api/reminders");
 				const reminders = response.ok ? await response.json() : [];
-				if (!reminders.length) return app.add("assistant", "No reminders set.");
+				if (!reminders.length) return app.add("answer", "No reminders set.");
 				app.add(
 					"assistant",
 					[
@@ -237,7 +237,7 @@
 		try {
 			await command.run(app, rest.join(" ").trim());
 		} catch (error) {
-			app.add("assistant", `\`${word}\` failed: ${error.message || error}`);
+			app.add("answer", `\`${word}\` failed: ${error.message || error}`);
 		}
 		return true;
 	}
