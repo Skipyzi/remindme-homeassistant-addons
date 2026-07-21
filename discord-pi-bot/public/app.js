@@ -448,13 +448,218 @@ function harness() {
 		},
 		/** Approximate warm-to-cool blackbody swatch for a colour temperature. */
 		kelvinHex(kelvin) {
-			const table = {
-				2200: "#ff7a3c",
-				2700: "#ffb200",
-				4000: "#ffd9a0",
-				6500: "#9fd8f0",
+			return window.RemindMeEntityControls.kelvinHex(kelvin);
+		},
+		/*
+		 * ── Card controls ────────────────────────────────────────────────
+		 * A slider reads from the entity until you touch it, then from the
+		 * draft. Without that the knob would snap back under your finger on
+		 * every state push and land wherever the round trip left it.
+		 */
+		controlDraft: {},
+		lightModes: {},
+		/*
+		 * ── The bench ────────────────────────────────────────────────────
+		 * How much of the bench the artifact takes, 0-1, or null for the
+		 * default split. A ratio rather than a pixel width, so a resized
+		 * window keeps the proportion the user chose instead of stranding
+		 * one case at a size that no longer fits.
+		 */
+		benchSplit: null,
+		startBenchDrag(event) {
+			const bench = document.querySelector(".workbench");
+			if (!bench) return;
+			const box = bench.getBoundingClientRect();
+			const set = (clientX) => {
+				const ratio = (box.right - clientX) / box.width;
+				this.benchSplit = Math.min(0.75, Math.max(0.2, ratio));
 			};
-			return table[kelvin] || "#ffb200";
+			set(event.clientX);
+			/* On the window for the same reason the card sliders are: the
+			 * pointer spends the whole drag away from the divider. */
+			const move = (moveEvent) => set(moveEvent.clientX);
+			const done = () => {
+				window.removeEventListener("pointermove", move);
+				window.removeEventListener("pointerup", done);
+				window.removeEventListener("pointercancel", done);
+				document.body.classList.remove("resizing");
+			};
+			document.body.classList.add("resizing");
+			window.addEventListener("pointermove", move);
+			window.addEventListener("pointerup", done);
+			window.addEventListener("pointercancel", done);
+		},
+		nudgeBench(direction) {
+			const current = this.benchSplit ?? this.defaultBenchSplit();
+			this.benchSplit = Math.min(
+				0.75,
+				Math.max(0.2, current - direction * 0.02),
+			);
+		},
+		/** Matches the flex-grow the stylesheet gives the artifact case. */
+		defaultBenchSplit() {
+			return 0.38;
+		},
+		controlKey(entity, channel) {
+			return `${entity.entityId}:${channel}`;
+		},
+		/**
+		 * Which sliders a card gets. Driven by what the device reports it can
+		 * do, so a dimmable-only bulb never shows a colour control it would
+		 * refuse, and a colour bulb shows one mood at a time.
+		 */
+		controlChannels(entity) {
+			const can = entity.capabilities || {};
+			if (entity.domain === "light") {
+				const channels = can.brightness ? ["brightness"] : [];
+				const colorMode = this.lightMode(entity) === "color";
+				if (can.colorTemperature && (!can.color || !colorMode))
+					channels.push("kelvin");
+				if (can.color && (colorMode || !can.colorTemperature))
+					channels.push("hue", "saturation");
+				return channels;
+			}
+			if (entity.domain === "cover" && can.position) return ["position"];
+			if (entity.domain === "fan" && entity.fanPercentage != null)
+				return ["speed"];
+			return [];
+		},
+		channelLabel(channel) {
+			return window.RemindMeEntityControls.CHANNELS[channel].label;
+		},
+		channelMin(entity, channel) {
+			return window.RemindMeEntityControls.bound(channel, "min", entity);
+		},
+		channelMax(entity, channel) {
+			return window.RemindMeEntityControls.bound(channel, "max", entity);
+		},
+		controlValue(entity, channel) {
+			const key = this.controlKey(entity, channel);
+			if (key in this.controlDraft) return this.controlDraft[key];
+			return window.RemindMeEntityControls.CHANNELS[channel].read(entity);
+		},
+		controlLabel(entity, channel) {
+			return window.RemindMeEntityControls.CHANNELS[channel].format(
+				this.controlValue(entity, channel),
+				entity,
+			);
+		},
+		controlPercent(entity, channel) {
+			return window.RemindMeEntityControls.percentOf(
+				this.controlValue(entity, channel),
+				channel,
+				entity,
+			);
+		},
+		controlTrack(entity, channel) {
+			return window.RemindMeEntityControls.trackGradient(channel, entity, {
+				hue: this.controlValue(entity, "hue"),
+				saturation: this.controlValue(entity, "saturation"),
+			});
+		},
+		/**
+		 * Drag, or click anywhere on the track. The draft follows the pointer
+		 * so the bar moves under the finger; the service call goes out once,
+		 * on release, rather than flooding Home Assistant mid-gesture.
+		 */
+		startControlDrag(event, entity, channel) {
+			const track = event.currentTarget;
+			const key = this.controlKey(entity, channel);
+			const controls = window.RemindMeEntityControls;
+			const set = (clientX) => {
+				this.controlDraft[key] = controls.valueFromPointer(
+					track,
+					clientX,
+					channel,
+					entity,
+				);
+			};
+			set(event.clientX);
+			/*
+			 * The window, not the track: a drag that leaves the six-pixel
+			 * groove is still the same drag, and it has to keep tracking even
+			 * when the pointer ends up over the card, the transcript or
+			 * outside the document entirely.
+			 */
+			const move = (moveEvent) => set(moveEvent.clientX);
+			const done = () => {
+				window.removeEventListener("pointermove", move);
+				window.removeEventListener("pointerup", done);
+				window.removeEventListener("pointercancel", done);
+				this.commitControl(entity, channel);
+			};
+			window.addEventListener("pointermove", move);
+			window.addEventListener("pointerup", done);
+			window.addEventListener("pointercancel", done);
+		},
+		/** Keyboard is the same control: a slider nobody can tab to is a bar. */
+		nudgeControl(event, entity, channel, direction) {
+			event.preventDefault();
+			const controls = window.RemindMeEntityControls;
+			const step = controls.bound(channel, "step", entity) || 1;
+			const min = controls.bound(channel, "min", entity);
+			const max = controls.bound(channel, "max", entity);
+			const next = this.controlValue(entity, channel) + step * direction;
+			this.controlDraft[this.controlKey(entity, channel)] = Math.min(
+				max,
+				Math.max(min, next),
+			);
+			this.commitControl(entity, channel);
+		},
+		async commitControl(entity, channel) {
+			const key = this.controlKey(entity, channel);
+			const value = this.controlDraft[key];
+			if (value === undefined) return;
+			const controls = window.RemindMeEntityControls;
+			const draft = {
+				hue: this.controlValue(entity, "hue"),
+				saturation: this.controlValue(entity, "saturation"),
+			};
+			const [action, payload] = controls.CHANNELS[channel].commit(
+				value,
+				entity,
+				draft,
+			);
+			/*
+			 * Write the value onto the entity before dropping the draft. The
+			 * bulb takes a moment to answer and the state push behind it takes
+			 * longer; without this the knob would spring back to the old
+			 * reading and then jump forward once the round trip landed.
+			 */
+			controls.CHANNELS[channel].apply(entity, value, draft);
+			delete this.controlDraft[key];
+			await this.entityAction(entity, action, payload);
+		},
+		/**
+		 * Warm and colour are one bulb in two moods, and it cannot be in both.
+		 * The mode is read from what the light is doing, until you say
+		 * otherwise on this card.
+		 */
+		lightMode(entity) {
+			const chosen = this.lightModes[entity.entityId];
+			if (chosen) return chosen;
+			return window.RemindMeEntityControls.isColorMode(entity)
+				? "color"
+				: "warm";
+		},
+		setLightMode(entity, mode) {
+			this.lightModes[entity.entityId] = mode;
+			/* Switching mode is itself the instruction: put the light there. */
+			if (mode === "warm")
+				return this.entityAction(
+					entity,
+					"color_temperature",
+					Math.round(this.controlValue(entity, "kelvin")),
+				);
+			return this.entityAction(
+				entity,
+				"rgb_color",
+				window.RemindMeEntityControls.hsvToRgb(
+					this.controlValue(entity, "hue"),
+					this.controlValue(entity, "saturation"),
+					100,
+				),
+			);
 		},
 		stepTemperature(entity, direction) {
 			const step = entity.temperatureStep || 0.5;

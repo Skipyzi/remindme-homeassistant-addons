@@ -15,6 +15,7 @@
     <script defer src="./components/highlight.js"></script>
     <script defer src="./components/richtext.js"></script>
     <script defer src="./components/commands.js"></script>
+    <script defer src="./components/entityControls.js"></script>
     <script defer src="./components/conversations.js"></script>
     <script defer src="./components/attachments.js"></script>
     <script defer src="./components/model-cookbook.js"></script>
@@ -35,7 +36,11 @@
       x-data="harness()"
       x-init="init()"
     >
-      <div class="deck" :class="{scanlines:scanlines}">
+      <div
+        class="deck"
+        :class="{scanlines:scanlines}"
+        :style="benchSplit ? `flex-grow:${(1 - benchSplit).toFixed(3)}` : ''"
+      >
         <div class="screen">
         <div class="flicker" aria-hidden="true"></div>
         <aside
@@ -418,39 +423,65 @@
                             x-if="tierOf(item,message.items.length)==='tier-controllable'"
                             ><div style="display:contents">
                               <div class="card-body">
-                                <!-- lights: brightness bar + colour temp swatches -->
-                                <template x-if="item.domain==='light'"
-                                  ><div>
-                                    <div
-                                      class="row"
-                                      x-show="item.capabilities?.brightness"
-                                    >
-                                      <span>BRIGHTNESS</span
-                                      ><span x-text="`${barPercent(item) || 0}%`"></span>
+                                <!-- One bulb, two moods: warm white or a
+                                     colour. It cannot be in both, so the card
+                                     offers one set of controls at a time
+                                     rather than stacking them. -->
+                                <div
+                                  class="mode-toggle"
+                                  x-show="item.domain==='light' && item.capabilities?.colorTemperature && item.capabilities?.color"
+                                >
+                                  <button
+                                    :class="{on: lightMode(item)==='warm'}"
+                                    @click="setLightMode(item,'warm')"
+                                  >
+                                    WARM
+                                  </button>
+                                  <button
+                                    :class="{on: lightMode(item)==='color'}"
+                                    @click="setLightMode(item,'color')"
+                                  >
+                                    COLOUR
+                                  </button>
+                                </div>
+
+                                <!-- Every adjustable channel this thing has,
+                                     as a slider you can drag, click or tab to.
+                                     A bar you cannot move is a readout. -->
+                                <template
+                                  x-for="channel in controlChannels(item)"
+                                  :key="channel"
+                                  ><div class="slider-control">
+                                    <div class="row">
+                                      <span x-text="channelLabel(channel)"></span
+                                      ><span
+                                        x-text="controlLabel(item,channel)"
+                                      ></span>
                                     </div>
                                     <div
-                                      class="bar"
-                                      x-show="item.capabilities?.brightness"
+                                      class="slider"
+                                      role="slider"
+                                      tabindex="0"
+                                      :aria-label="channelLabel(channel)"
+                                      :aria-valuenow="Math.round(controlValue(item,channel))"
+                                      :aria-valuemin="channelMin(item,channel)"
+                                      :aria-valuemax="channelMax(item,channel)"
+                                      :class="{tinted: !!controlTrack(item,channel)}"
+                                      :style="controlTrack(item,channel) ? `background-image:${controlTrack(item,channel)}` : ''"
+                                      @pointerdown.prevent="startControlDrag($event,item,channel)"
+                                      @keydown.arrow-left="nudgeControl($event,item,channel,-1)"
+                                      @keydown.arrow-down="nudgeControl($event,item,channel,-1)"
+                                      @keydown.arrow-right="nudgeControl($event,item,channel,1)"
+                                      @keydown.arrow-up="nudgeControl($event,item,channel,1)"
                                     >
                                       <div
-                                        class="fill"
-                                        :style="`width:${barPercent(item) || 0}%`"
+                                        class="slider-fill"
+                                        :style="`width:${controlPercent(item,channel)}%`"
                                       ></div>
-                                    </div>
-                                    <div
-                                      class="swatches"
-                                      x-show="item.capabilities?.colorTemperature"
-                                    >
-                                      <template
-                                        x-for="kelvin in [2200,2700,4000,6500]"
-                                        :key="kelvin"
-                                        ><button
-                                          class="sw"
-                                          :style="`background:${kelvinHex(kelvin)}`"
-                                          :title="`${kelvin}K`"
-                                          @click="entityAction(item,'color_temperature',kelvin)"
-                                        ></button
-                                      ></template>
+                                      <i
+                                        class="slider-knob"
+                                        :style="`left:${controlPercent(item,channel)}%`"
+                                      ></i>
                                     </div></div
                                 ></template>
 
@@ -476,39 +507,6 @@
                                     >
                                       +
                                     </button></div
-                                ></template>
-
-                                <!-- covers: position, not just open/closed -->
-                                <template x-if="item.domain==='cover'"
-                                  ><div>
-                                    <div class="row">
-                                      <span>POSITION</span
-                                      ><span
-                                        x-text="`${item.position ?? 0}% OPEN`"
-                                      ></span>
-                                    </div>
-                                    <div class="bar">
-                                      <div
-                                        class="fill"
-                                        :style="`width:${item.position ?? 0}%`"
-                                      ></div>
-                                    </div></div
-                                ></template>
-
-                                <!-- fans: speed as a named step, not a bare on/off -->
-                                <template
-                                  x-if="item.domain==='fan' && item.fanPercentage!=null"
-                                  ><div>
-                                    <div class="row">
-                                      <span>SPEED</span
-                                      ><span x-text="fanSpeedLabel(item)"></span>
-                                    </div>
-                                    <div class="bar">
-                                      <div
-                                        class="fill"
-                                        :style="`width:${item.fanPercentage || 0}%`"
-                                      ></div>
-                                    </div></div
                                 ></template>
 
                                 <!-- locks report their own battery -->
@@ -574,22 +572,10 @@
                                 >
                                   CLOSE
                                 </button>
-                                <!-- Secondary actions: the one adjustment you
-                                     reach for, without opening a control. -->
-                                <button
-                                  class="chip"
-                                  x-show="item.capabilities?.brightness && isActive(item)"
-                                  @click="entityAction(item,'brightness',Math.round(255*0.3))"
-                                >
-                                  DIM 30%
-                                </button>
-                                <button
-                                  class="chip"
-                                  x-show="item.capabilities?.position"
-                                  @click="entityAction(item,'set_position',50)"
-                                >
-                                  OPEN 50%
-                                </button>
+                                <!-- Brightness and position are sliders on the
+                                     card now, so the fixed-amount chips they
+                                     stood in for are gone. -->
+
                                 <button
                                   class="chip"
                                   x-show="item.domain==='fan' && item.fanPercentage!=null"
@@ -1312,6 +1298,25 @@
       </div>
     </div>
     <!--
+      The bench divider. Drags the split between the two cases; double-click
+      returns them to the default. It only exists while both cases are out,
+      and the split is a ratio rather than a pixel width so the bench stays
+      responsive when the window changes.
+    -->
+    <div
+      class="bench-grip"
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="Resize the artifact"
+      tabindex="0"
+      x-show="artifactOpen"
+      x-cloak
+      @pointerdown.prevent="startBenchDrag($event)"
+      @dblclick="benchSplit = null"
+      @keydown.arrow-left.prevent="nudgeBench(-1)"
+      @keydown.arrow-right.prevent="nudgeBench(1)"
+    ></div>
+    <!--
       The artifact's own case. Same bezel and glass as the console so the two
       read as a matched pair on the bench.
 
@@ -1324,6 +1329,7 @@
     <div
       class="deck artifact-deck"
       :class="{scanlines:scanlines}"
+      :style="benchSplit ? `flex-grow:${benchSplit}` : ''"
       x-show="artifactOpen"
       x-cloak
     >

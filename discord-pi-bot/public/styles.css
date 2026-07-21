@@ -2989,19 +2989,69 @@ h6.rt-h {
 	padding: 0 12px;
 }
 /* Alone, the console keeps the width it always had. With the artifact out
- * it gives up half the bench, and both cases share the space evenly. */
+ * the two share the bench — the console keeps the larger half, since the
+ * conversation is still the thing being worked in.
+ *
+ * The grow factors sum to 1, so they distribute the bench exactly and the
+ * drag handle can override them with a pair that also sums to 1. Basis
+ * stays 0 and the split stays a ratio, so resizing the window keeps the
+ * proportion instead of stranding a case at a stale pixel width. */
 .workbench > .deck {
 	flex: 0 1 auto;
 	width: 94%;
 }
 .workbench.with-artifact > .deck {
-	flex: 1 1 0;
+	flex: 0.62 1 0;
 	width: auto;
 	min-width: 0;
 	max-width: none;
 }
+.workbench.with-artifact > .artifact-deck {
+	flex: 0.38 1 0;
+}
 .artifact-deck {
 	min-width: 0;
+}
+
+/* The bench divider. Wider than it looks: the visible line is a hairline,
+ * the grab area either side of it is not. */
+.bench-grip {
+	flex: none;
+	align-self: stretch;
+	width: 10px;
+	margin: 0 -6px;
+	background: none;
+	border: 0;
+	cursor: col-resize;
+	touch-action: none;
+	z-index: 2;
+}
+.bench-grip::before {
+	content: "";
+	display: block;
+	width: 2px;
+	height: 42px;
+	margin: calc(50% - 21px) auto 0;
+	background: var(--amber-dim);
+	transition: background 0.15s ease;
+}
+.bench-grip:hover::before,
+.bench-grip:focus-visible::before,
+body.resizing .bench-grip::before {
+	background: var(--amber);
+	box-shadow: 0 0 8px rgba(255, 178, 0, 0.6);
+}
+.bench-grip:focus-visible {
+	outline: none;
+}
+/* While dragging, the pointer belongs to the divider: no text selection,
+ * and no iframe swallowing the pointer stream mid-gesture. */
+body.resizing {
+	cursor: col-resize;
+	user-select: none;
+}
+body.resizing .artifact-frame {
+	pointer-events: none;
 }
 .artifact-screen {
 	grid-template-columns: minmax(0, 1fr);
@@ -3017,6 +3067,13 @@ h6.rt-h {
 @media (max-width: 1000px) {
 	.workbench.with-artifact > .deck:not(.artifact-deck) {
 		display: none;
+	}
+	/* Nothing left to divide, and the split no longer applies. */
+	.bench-grip {
+		display: none !important;
+	}
+	.workbench.with-artifact > .artifact-deck {
+		flex: 1 1 auto !important;
 	}
 }
 .artifact-head {
@@ -3129,6 +3186,104 @@ h6.rt-h {
 	.artifact-pane {
 		inset: 0;
 	}
+}
+
+/* ── Card controls ──────────────────────────────────────────────────────
+ * A bar you cannot move is a readout. These are the same shape as the
+ * readout bars so the cards stay one family, but they take a pointer, a
+ * drag and the arrow keys.
+ */
+.slider-control {
+	margin-top: 9px;
+}
+.slider-control:first-child {
+	margin-top: 0;
+}
+.slider {
+	position: relative;
+	height: 14px;
+	/* Taller than it looks: the visible groove is drawn inset, so the grab
+	 * area clears a fingertip without a fat bar in the card. */
+	padding: 4px 0;
+	background-clip: content-box;
+	background-color: rgba(255, 255, 255, 0.06);
+	background-repeat: no-repeat;
+	background-size: 100% 6px;
+	background-position: 0 4px;
+	border: 0;
+	cursor: pointer;
+	touch-action: none;
+}
+.slider::before {
+	content: "";
+	position: absolute;
+	inset: 4px 0;
+	border: 1px solid var(--amber-faint);
+	pointer-events: none;
+}
+.slider:focus-visible {
+	outline: 1px solid var(--amber);
+	outline-offset: 2px;
+}
+.slider-fill {
+	position: absolute;
+	inset: 4px auto 4px 0;
+	background: var(--amber);
+	box-shadow: 0 0 6px rgba(255, 178, 0, 0.5);
+	pointer-events: none;
+}
+/* A tinted track already shows the value in colour; a second amber fill
+ * over it would only argue with what the gradient is saying. */
+.slider.tinted .slider-fill {
+	display: none;
+}
+.slider-knob {
+	position: absolute;
+	top: 50%;
+	width: 3px;
+	height: 14px;
+	margin-left: -1.5px;
+	background: var(--amber);
+	box-shadow: 0 0 7px rgba(255, 178, 0, 0.75);
+	transform: translateY(-50%);
+	pointer-events: none;
+}
+.slider.tinted .slider-knob {
+	width: 2px;
+	background: #fff;
+	box-shadow:
+		0 0 0 1px rgba(0, 0, 0, 0.55),
+		0 0 7px rgba(255, 255, 255, 0.7);
+}
+
+/* Warm or colour: a pair of states, so they read as one switch. */
+.mode-toggle {
+	display: flex;
+	gap: 0;
+	margin-top: 9px;
+}
+.mode-toggle button {
+	flex: 1 1 0;
+	background: transparent;
+	border: 1px solid var(--amber-dim);
+	color: var(--dim);
+	font-family: inherit;
+	font-size: 9px;
+	letter-spacing: 1.2px;
+	padding: 5px 6px;
+	cursor: pointer;
+}
+.mode-toggle button + button {
+	border-left: 0;
+}
+.mode-toggle button:hover {
+	color: var(--amber);
+	border-color: var(--amber);
+}
+.mode-toggle button.on {
+	color: var(--ink);
+	background: var(--amber);
+	border-color: var(--amber);
 }
 
 /* ── Conversation cards ─────────────────────────────────────────────────*/
