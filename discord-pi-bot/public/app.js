@@ -215,9 +215,16 @@ function harness() {
 				? `${(milliseconds / 60_000).toFixed(1)} min`
 				: `${(milliseconds / 1_000).toFixed(1)} s`;
 		},
-		/** Render message text, converting any LaTeX to MathML. */
+		/**
+		 * Render message text as rich text: markdown structure, then maths.
+		 * Falls back to the maths-only renderer, then to plain text, so a
+		 * missing component degrades rather than blanking the reply.
+		 */
 		renderMessageText(element, text) {
-			window.RemindMeMath.render(element, text);
+			if (window.RemindMeRichText)
+				window.RemindMeRichText.render(element, text);
+			else if (window.RemindMeMath) window.RemindMeMath.render(element, text);
+			else element.textContent = String(text || "");
 		},
 		formatValue(value) {
 			if (value === null || value === undefined) return "—";

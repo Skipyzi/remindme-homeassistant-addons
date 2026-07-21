@@ -2627,3 +2627,157 @@ aside.telemetry,
 	border-top-color: var(--amber-dim);
 	box-shadow: inset 0 0 0 1px rgba(255, 178, 0, 0.12);
 }
+
+/* ── Rich text ──────────────────────────────────────────────────────────
+ * Replies are markdown. Blocks are built as DOM by richtext.js, so these
+ * are plain structural styles — there is no sanitiser output to defend.
+ */
+.rt > *:first-child {
+	margin-top: 0;
+}
+.rt > *:last-child {
+	margin-bottom: 0;
+}
+.rt-p {
+	margin: 0 0 8px;
+}
+.rt-h {
+	font-family: var(--display);
+	color: #f0e6cf;
+	letter-spacing: 0.5px;
+	margin: 12px 0 6px;
+	line-height: 1.2;
+}
+h1.rt-h {
+	font-size: 17px;
+}
+h2.rt-h {
+	font-size: 15px;
+}
+h3.rt-h,
+h4.rt-h,
+h5.rt-h,
+h6.rt-h {
+	font-size: 13px;
+}
+.rt-list {
+	margin: 0 0 8px;
+	padding-left: 18px;
+}
+.rt-list li {
+	margin: 2px 0;
+}
+.rt-quote {
+	margin: 8px 0;
+	padding: 2px 0 2px 10px;
+	border-left: 2px solid var(--amber-faint);
+	color: var(--dim);
+	font-style: italic;
+}
+.rt hr {
+	border: 0;
+	border-top: 1px solid var(--amber-faint);
+	margin: 12px 0;
+}
+.rt a {
+	color: var(--cool);
+	text-decoration: underline;
+	text-underline-offset: 2px;
+	overflow-wrap: anywhere;
+}
+.rt-code {
+	background: rgba(0, 0, 0, 0.3);
+	border: 1px solid var(--amber-faint);
+	padding: 1px 4px;
+	font-family: var(--mono);
+	font-size: 0.94em;
+	color: #f0e6cf;
+}
+
+/* Fenced code: a labelled slab that scrolls rather than stretching the
+ * bubble, with the copy affordance you reach for on a phone. */
+.rt-pre {
+	margin: 8px 0;
+	border: 1px solid var(--amber-faint);
+	background: rgba(0, 0, 0, 0.32);
+}
+.rt-pre-head {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+	padding: 4px 8px;
+	border-bottom: 1px solid var(--amber-faint);
+}
+.rt-lang {
+	font-size: 9.5px;
+	letter-spacing: 1.5px;
+	text-transform: uppercase;
+	color: var(--muted);
+}
+.rt-copy {
+	background: transparent;
+	border: 1px solid var(--amber-dim);
+	color: var(--dim);
+	font-family: inherit;
+	font-size: 9.5px;
+	letter-spacing: 1px;
+	padding: 2px 7px;
+	cursor: pointer;
+}
+.rt-copy:hover {
+	border-color: var(--amber);
+	color: var(--amber);
+}
+.rt-pre pre {
+	margin: 0;
+	padding: 9px 10px;
+	overflow-x: auto;
+	background: none;
+	border: 0;
+	max-height: none;
+}
+.rt-pre code {
+	font-family: var(--mono);
+	font-size: 11.5px;
+	line-height: 1.6;
+	color: #e8dcc0;
+	white-space: pre;
+}
+
+.rt-table {
+	border-collapse: collapse;
+	margin: 8px 0;
+	font-size: 11.5px;
+	display: block;
+	overflow-x: auto;
+	max-width: 100%;
+}
+.rt-table th,
+.rt-table td {
+	border: 1px solid var(--amber-faint);
+	padding: 4px 8px;
+	text-align: left;
+}
+.rt-table th {
+	color: var(--amber);
+	font-weight: normal;
+	letter-spacing: 0.5px;
+}
+
+/* An older rule styled <strong> as a block label — uppercased, its own font,
+ * on its own line. That predates markdown rendering; inside rich text, bold
+ * is emphasis inside a sentence. */
+.rt strong {
+	display: inline;
+	font: inherit;
+	font-weight: 700;
+	letter-spacing: inherit;
+	text-transform: none;
+	margin: 0;
+	color: #f6e7c4;
+}
+.rt em {
+	font-style: italic;
+	color: inherit;
+}
