@@ -1,0 +1,204 @@
+(function exposeCommands(globalScope) {
+	/**
+	 * Local commands: answered by the console itself, never sent to the model.
+	 *
+	 * On a Pi a round trip costs seconds and hundreds of tokens against a small
+	 * context window, so anything the console already knows — its tools, its
+	 * skills, what a light is doing — should not require an inference pass to
+	 * find out.
+	 */
+
+	const table = (rows) =>
+		rows.map(([name, blurb]) => `  ${name.padEnd(22)}${blurb}`).join("\n");
+
+	const COMMANDS = [
+		{
+			name: "/help",
+			usage: "/help",
+			blurb: "this list",
+			async run(app) {
+				app.add(
+					"assistant",
+					[
+						"Local commands — answered here, no tokens spent:",
+						table(COMMANDS.map((c) => [c.usage, c.blurb])),
+					].join("\n"),
+				);
+			},
+		},
+		{
+			name: "/tools",
+			usage: "/tools",
+			blurb: "tools the model can call",
+			async run(app) {
+				const response = await fetch("./api/tools");
+				const tools = response.ok ? await response.json() : [];
+				if (!tools.length) return app.add("assistant", "No tools available.");
+				app.add(
+					"assistant",
+					[
+						`${tools.length} tools available:`,
+						"",
+						...tools.map((tool) =>
+							[
+								`**${tool.name}**(${(tool.parameters || []).join(", ")})`,
+								`  ${tool.description || ""}`,
+							].join("\n"),
+						),
+					].join("\n"),
+				);
+			},
+		},
+		{
+			name: "/entities",
+			usage: "/entities <query>",
+			blurb: "look up devices, no model turn",
+			async run(app, argument) {
+				if (!argument)
+					return app.add("assistant", "Usage: `/entities kitchen light`");
+				const response = await fetch(
+					`./api/entities?query=${encodeURIComponent(argument)}`,
+				);
+				if (!response.ok)
+					return app.add("assistant", "Home Assistant is unavailable.");
+				const cards = await response.json();
+				if (!cards.length)
+					return app.add("assistant", `Nothing matched \`${argument}\`.`);
+				// Rendered as cards, exactly as a tool result would be.
+				app.add("assistant", `${cards.length} match${cards.length > 1 ? "es" : ""}:`, {
+					kind: "answer",
+					items: cards,
+				});
+			},
+		},
+		{
+			name: "/reminders",
+			usage: "/reminders",
+			blurb: "what is scheduled",
+			async run(app) {
+				const response = await fetch("./api/reminders");
+				const reminders = response.ok ? await response.json() : [];
+				if (!reminders.length) return app.add("assistant", "No reminders set.");
+				app.add(
+					"assistant",
+					[
+						`${reminders.length} reminder(s):`,
+						...reminders.map(
+							(item) => `- ${item.message} — ${new Date(item.time).toLocaleString()}`,
+						),
+					].join("\n"),
+				);
+			},
+		},
+		{
+			name: "/skills",
+			usage: "/skills",
+			blurb: "which skills are shaping replies",
+			async run(app) {
+				const response = await fetch("./api/skills");
+				const skills = response.ok ? await response.json() : [];
+				const on = skills.filter((skill) => skill.enabled);
+				app.add(
+					"assistant",
+					[
+						`${on.length} of ${skills.length} skills enabled.`,
+						...skills.map(
+							(skill) => `- ${skill.enabled ? "**on**" : "off"} — ${skill.name}`,
+						),
+						"",
+						"Manage them in the Skills panel.",
+					].join("\n"),
+				);
+			},
+		},
+		{
+			name: "/context",
+			usage: "/context",
+			blurb: "token and context usage",
+			async run(app) {
+				const usage = app.tokenUsage || {};
+				const metrics = app.metrics || {};
+				app.add(
+					"assistant",
+					[
+						"Context:",
+						`- window: ${usage.contextCapacity || "?"} tokens`,
+						`- conversation: ${usage.contextTokens ?? "?"}${usage.exact ? "" : " (estimated)"}`,
+						`- last prompt: ${metrics.inputTokens ?? "?"} in`,
+						`- last reply: ${metrics.thinking ?? 0} thinking tokens`,
+						`- messages held: ${app.messages.length}`,
+					].join("\n"),
+				);
+			},
+		},
+		{
+			name: "/diagnose",
+			usage: "/diagnose",
+			blurb: "probe the model manager",
+			async run(app) {
+				const response = await fetch("./api/models/diagnostics");
+				const report = await response.json();
+				app.add(
+					"assistant",
+					[
+						`Model manager: ${report.ok ? "healthy" : "**not healthy**"}`,
+						"",
+						...(report.checks || []).map((check) =>
+							[
+								`- ${check.ok ? "pass" : "**fail**"} — ${check.step}: ${check.detail || ""}`,
+								check.hint ? `    ${check.hint}` : "",
+							]
+								.filter(Boolean)
+								.join("\n"),
+						),
+					].join("\n"),
+				);
+			},
+		},
+		{
+			name: "/new",
+			usage: "/new",
+			blurb: "start a fresh conversation",
+			async run(app) {
+				await app.newChat();
+			},
+		},
+		{
+			name: "/clear",
+			usage: "/clear",
+			blurb: "empty this transcript",
+			async run(app) {
+				app.clearChat();
+			},
+		},
+	];
+
+	function find(name) {
+		return COMMANDS.find((command) => command.name === name);
+	}
+
+	/** Returns true when the input was handled locally. */
+	async function run(app, text) {
+		const trimmed = String(text || "").trim();
+		if (!trimmed.startsWith("/")) return false;
+		const [word, ...rest] = trimmed.split(/\s+/);
+		const command = find(word.toLowerCase());
+		if (!command) return false;
+		app.add("user", trimmed);
+		try {
+			await command.run(app, rest.join(" ").trim());
+		} catch (error) {
+			app.add("assistant", `\`${word}\` failed: ${error.message || error}`);
+		}
+		return true;
+	}
+
+	/** Names for the composer's hint, so the set is discoverable. */
+	function names() {
+		return COMMANDS.map((command) => command.usage);
+	}
+
+	const api = { run, names, COMMANDS };
+	globalScope.RemindMeCommands = api;
+	if (typeof module !== "undefined" && module.exports) module.exports = api;
+})(typeof window !== "undefined" ? window : globalThis);

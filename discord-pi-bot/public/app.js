@@ -423,40 +423,13 @@ function harness() {
 		 * Local commands are answered by the console itself and never reach the
 		 * model — no tokens spent listing your own capabilities.
 		 */
+		/**
+		 * Local commands are answered by the console and never reach the model.
+		 * See components/commands.js for the set.
+		 */
 		async runLocalCommand(text) {
-			const command = text.toLowerCase();
-			if (command !== "/tools" && command !== "/help") return false;
-			this.add("user", text);
-			if (command === "/help") {
-				this.add(
-					"assistant",
-					[
-						"Local commands:",
-						"  /tools — list the tools the console can call",
-						"  /help  — this list",
-					].join("\n"),
-				);
-				return true;
-			}
-			try {
-				const response = await fetch("./api/tools");
-				const tools = response.ok ? await response.json() : [];
-				const lines = tools.map((tool) =>
-					[
-						`  ${tool.name}(${(tool.parameters || []).join(", ")})`,
-						`      ${tool.description || ""}`,
-					].join("\n"),
-				);
-				this.add(
-					"assistant",
-					lines.length
-						? [`${tools.length} tools available:`, ...lines].join("\n")
-						: "No tools are currently available.",
-				);
-			} catch {
-				this.add("assistant", "Could not read the tool catalogue.");
-			}
-			return true;
+			if (!window.RemindMeCommands) return false;
+			return window.RemindMeCommands.run(this, text);
 		},
 		/** Delete a conversation. Confirmed first — it is not recoverable. */
 		async deleteConversation(conversation) {

@@ -400,6 +400,27 @@ app.get("/api/entities/:id", async (request, response) => {
  * the card rather than during the turn, so a slow recorder query never blocks
  * the model's reply. Never enters the context window.
  */
+/**
+ * Resolve entities without a model turn. The /entities command uses this, so
+ * looking up a light costs no tokens and none of the seconds an inference
+ * pass would take on a Pi.
+ */
+app.get("/api/entities", async (request, response) => {
+	const states = await hassRequest("/states");
+	if (!Array.isArray(states)) {
+		response.status(502).json({ error: "Home Assistant is unavailable" });
+		return;
+	}
+	const cards = resolveEntities(
+		states.map((item) => normalizeEntity(item as HassEntity)),
+		{
+			query: typeof request.query.query === "string" ? request.query.query : "",
+			domain: typeof request.query.domain === "string" ? request.query.domain : "",
+			limit: 12,
+		},
+	);
+	response.set("Cache-Control", "no-store").json(cards);
+});
 app.get("/api/entities/:id/history", async (request, response) => {
 	const entityId = request.params.id;
 	if (!/^[a-z0-9_]+\.[a-z0-9_]+$/.test(entityId)) {
