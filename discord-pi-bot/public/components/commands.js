@@ -193,12 +193,49 @@
 		return true;
 	}
 
+	/**
+	 * The remainder of the command being typed, or "" when there is nothing to
+	 * suggest. Only completes the command word itself: once you are typing
+	 * arguments the console has nothing useful to guess.
+	 */
+	function ghost(draft) {
+		const value = String(draft || "");
+		if (!value.startsWith("/") || /\s/.test(value)) return "";
+		const matches = COMMANDS.filter((command) =>
+			command.name.startsWith(value.toLowerCase()),
+		);
+		// Ambiguous prefixes complete only as far as every match agrees, the
+		// way a shell does, so a keystroke never commits you to the wrong one.
+		if (!matches.length) return "";
+		if (matches.length === 1) return matches[0].name.slice(value.length);
+		let shared = matches[0].name;
+		for (const match of matches.slice(1)) {
+			let index = 0;
+			while (
+				index < shared.length &&
+				index < match.name.length &&
+				shared[index] === match.name[index]
+			)
+				index += 1;
+			shared = shared.slice(0, index);
+		}
+		return shared.length > value.length ? shared.slice(value.length) : "";
+	}
+
+	/** Commands matching what has been typed, for the hint strip. */
+	function matching(draft) {
+		const value = String(draft || "").toLowerCase();
+		if (!value.startsWith("/")) return [];
+		const word = value.split(/\s/)[0];
+		return COMMANDS.filter((command) => command.name.startsWith(word));
+	}
+
 	/** Names for the composer's hint, so the set is discoverable. */
 	function names() {
 		return COMMANDS.map((command) => command.usage);
 	}
 
-	const api = { run, names, COMMANDS };
+	const api = { run, names, ghost, matching, COMMANDS };
 	globalScope.RemindMeCommands = api;
 	if (typeof module !== "undefined" && module.exports) module.exports = api;
 })(typeof window !== "undefined" ? window : globalThis);

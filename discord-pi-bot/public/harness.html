@@ -620,15 +620,27 @@
         >
           <form @submit.prevent="send()">
             <div class="compose-line">
-              <textarea
-                x-ref="composerInput"
-                x-model="draft"
-                @input="resizeComposer($event)"
-                @keydown="handleComposerKeydown($event)"
-                rows="1"
-                placeholder="Ask the console anything…"
-                aria-label="Message"
-              ></textarea
+              <!-- Ghost completion sits behind the textarea, sharing its
+                   metrics so the suggestion lines up with what you typed. -->
+              <div class="compose-field">
+                <div
+                  class="compose-ghost"
+                  aria-hidden="true"
+                  x-show="commandGhost"
+                ><span class="ghost-typed" x-text="draft"></span><span
+                    class="ghost-rest"
+                    x-text="commandGhost"
+                  ></span></div>
+                <textarea
+                  x-ref="composerInput"
+                  x-model="draft"
+                  @input="resizeComposer($event)"
+                  @keydown="handleComposerKeydown($event)"
+                  rows="1"
+                  placeholder="Ask the console anything…"
+                  aria-label="Message"
+                ></textarea>
+              </div
               ><button
                 class="send"
                 :class="{cancel: busy}"
@@ -637,6 +649,19 @@
                 :aria-label="busy ? 'Cancel the current turn' : 'Send message'"
                 x-text="busy ? 'Cancel ✕' : 'Send ↑'"
               ></button>
+            </div>
+            <!-- Discoverability: what the prefix could still become. -->
+            <div class="command-hints" x-show="commandMatches.length > 1">
+              <template x-for="command in commandMatches" :key="command.name">
+                <button
+                  type="button"
+                  class="command-hint"
+                  @click="draft = command.name + (command.usage.includes('<') ? ' ' : ''); $refs.composerInput.focus()"
+                >
+                  <span x-text="command.usage"></span
+                  ><small x-text="command.blurb"></small>
+                </button>
+              </template>
             </div>
             <div class="attachment-strip" x-show="attachments.length">
               <template

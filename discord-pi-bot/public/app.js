@@ -380,7 +380,35 @@ function harness() {
 				});
 			this.persist();
 		},
+		/** The unwritten remainder of the command being typed. */
+		get commandGhost() {
+			return window.RemindMeCommands
+				? window.RemindMeCommands.ghost(this.draft)
+				: "";
+		},
+		get commandMatches() {
+			return window.RemindMeCommands
+				? window.RemindMeCommands.matching(this.draft)
+				: [];
+		},
+		acceptGhost() {
+			const rest = this.commandGhost;
+			if (!rest) return false;
+			this.draft += rest;
+			return true;
+		},
 		handleComposerKeydown(event) {
+			// Tab and Right-at-the-end accept the suggestion, as a shell does.
+			if (this.commandGhost) {
+				const atEnd =
+					event.target.selectionStart === this.draft.length &&
+					event.target.selectionEnd === this.draft.length;
+				if (event.key === "Tab" || (event.key === "ArrowRight" && atEnd)) {
+					event.preventDefault();
+					this.acceptGhost();
+					return;
+				}
+			}
 			return window.RemindMeComposer.handleKeydown(this, event);
 		},
 		resizeComposer(event) {

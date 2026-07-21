@@ -2160,6 +2160,7 @@ body::after {
 	margin-top: 12px;
 }
 .composer textarea,
+.composer .compose-ghost,
 .composer input[type="text"],
 .composer input[type="search"] {
 	background: var(--panel-2);
@@ -2168,6 +2169,10 @@ body::after {
 	color: #f0e6cf;
 	font-family: inherit;
 	font-size: 12px;
+	/* Stated, not inherited: a textarea resolves line-height differently from
+	 * a div, and the ghost layer has to sit on the same baseline as the text
+	 * it completes. */
+	line-height: 1.4;
 	padding: 9px 12px;
 }
 .composer .send,
@@ -2850,4 +2855,71 @@ h6.rt-h {
  * should not invite the click that used to blank the transcript. */
 .history-list .history-open.active {
 	cursor: default;
+}
+
+/* ── Command ghost completion ───────────────────────────────────────────
+ * The suggestion is painted behind the textarea by an element that copies
+ * its box and type metrics exactly, so the grey remainder lands where the
+ * next character will.
+ */
+.compose-field {
+	position: relative;
+	flex: 1;
+	min-width: 0;
+	display: flex;
+}
+.compose-field textarea {
+	position: relative;
+	z-index: 1;
+	width: 100%;
+	background: transparent;
+}
+.compose-ghost {
+	position: absolute;
+	inset: 0;
+	z-index: 0;
+	pointer-events: none;
+	overflow: hidden;
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+	/* Font, padding and border come from the shared composer rule above, so
+	 * the suggestion cannot drift from the text it follows. Only the paint
+	 * is overridden. */
+	background: transparent;
+	border-color: transparent;
+	color: var(--amber-dim);
+}
+.ghost-typed {
+	visibility: hidden;
+}
+.ghost-rest {
+	color: var(--amber-dim);
+}
+
+.command-hints {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	margin-top: 8px;
+}
+.command-hint {
+	display: flex;
+	align-items: baseline;
+	gap: 7px;
+	background: transparent;
+	border: 1px solid var(--amber-faint);
+	color: var(--dim);
+	font-family: inherit;
+	font-size: 10.5px;
+	letter-spacing: 0.5px;
+	padding: 4px 8px;
+	cursor: pointer;
+}
+.command-hint:hover {
+	border-color: var(--amber);
+	color: var(--amber);
+}
+.command-hint small {
+	color: var(--muted);
+	font-size: 9.5px;
 }
