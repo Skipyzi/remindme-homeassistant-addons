@@ -76,6 +76,7 @@
           </div>
           <button @click="clearChat()">Clear conversation</button>
           <button @click="openSkills()">Skills</button>
+          <button @click="openMcp()">MCP</button>
           <button @click="modelsOpen=true">Models</button>
           <button @click="settingsOpen=true">Settings</button>
         </nav>
@@ -706,6 +707,88 @@
           ><strong x-text="metrics.thinking || 0"></strong><span> chars</span>
         </div>
       </aside>
+      <!-- MCP servers: remote tool providers, enabled per server because
+           every tool definition is spent from the context window. -->
+      <div
+        class="settings"
+        id="mcp-view"
+        x-show="mcpOpen"
+        x-cloak
+        @keydown.escape.window="mcpOpen=false"
+      >
+        <section class="settings-card" @click.outside="mcpOpen=false">
+          <div class="kicker">Model context protocol</div>
+          <h2>Connected servers</h2>
+          <p class="settings-note">
+            Tools from enabled servers are offered to the model alongside the
+            built-in ones. Each definition costs context on every request, so
+            enable only what you use.
+          </p>
+
+          <div class="skill-list">
+            <template x-for="server in mcpServers" :key="server.id">
+              <div class="skill-row" :class="{disabled: !server.enabled}">
+                <div class="skill-head">
+                  <label class="skill-toggle"
+                    ><input
+                      type="checkbox"
+                      :checked="server.enabled"
+                      @change="updateMcp(server, {enabled: $event.target.checked})"
+                    /><span x-text="server.enabled ? 'ON' : 'OFF'"></span
+                  ></label>
+                  <input
+                    class="skill-name"
+                    :value="server.name"
+                    @change="updateMcp(server, {name: $event.target.value})"
+                  />
+                  <button
+                    class="chip"
+                    style="flex: none"
+                    @click="testMcp(server)"
+                  >
+                    TEST
+                  </button>
+                  <button
+                    class="history-delete"
+                    title="Remove server"
+                    @click="deleteMcp(server)"
+                  >
+                    &times;
+                  </button>
+                </div>
+                <input
+                  class="skill-body"
+                  :value="server.url"
+                  @change="updateMcp(server, {url: $event.target.value})"
+                />
+                <p
+                  class="settings-note"
+                  x-show="server.probe"
+                  x-text="server.probe"
+                ></p>
+              </div>
+            </template>
+            <p class="settings-note" x-show="!mcpServers.length">
+              No servers yet. Add one below.
+            </p>
+          </div>
+
+          <div class="skill-new">
+            <input x-model="newMcpName" placeholder="Name, e.g. Weather" />
+            <input x-model="newMcpUrl" placeholder="https://host/mcp" />
+            <input
+              x-model="newMcpAuth"
+              placeholder="Authorization header (optional)"
+            />
+            <button class="action" @click="addMcp()">Add server</button>
+          </div>
+
+          <p class="settings-note" x-show="mcpError" x-text="mcpError"></p>
+          <div class="settings-actions">
+            <button class="send" @click="mcpOpen=false">Close</button>
+          </div>
+        </section>
+      </div>
       <!-- Skill manager: named instruction blocks injected into the system
            prompt when enabled. They cost context every turn, so enabling is
            explicit and the panel shows the running total. -->

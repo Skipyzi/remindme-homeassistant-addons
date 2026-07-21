@@ -51,6 +51,12 @@ function harness() {
 		newSkillBody: "",
 		skillError: "",
 		modelDiagnostics: null,
+		mcpOpen: false,
+		mcpServers: [],
+		newMcpName: "",
+		newMcpUrl: "",
+		newMcpAuth: "",
+		mcpError: "",
 		modelsOpen: false,
 		historyOpen: false,
 		boardOpen: false,
@@ -355,6 +361,88 @@ function harness() {
 					],
 				};
 			}
+		},
+		async openMcp() {
+			this.mcpOpen = true;
+			await this.loadMcp();
+		},
+		async loadMcp() {
+			try {
+				const response = await fetch("./api/mcp");
+				this.mcpServers = response.ok ? await response.json() : [];
+			} catch {
+				this.mcpError = "Could not load MCP servers.";
+			}
+		},
+		async addMcp() {
+			const name = this.newMcpName.trim();
+			const url = this.newMcpUrl.trim();
+			if (!name || !url) {
+				this.mcpError = "A server needs a name and a URL.";
+				return;
+			}
+			this.mcpError = "";
+			const response = await fetch("./api/mcp", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					name,
+					url,
+					authorization: this.newMcpAuth.trim() || undefined,
+					enabled: true,
+				}),
+			});
+			const body = await response.json();
+			if (!response.ok) {
+				this.mcpError = body.error || "Could not add the server.";
+				return;
+			}
+			this.mcpServers.unshift(body);
+			this.newMcpName = "";
+			this.newMcpUrl = "";
+			this.newMcpAuth = "";
+		},
+		async updateMcp(server, values) {
+			const response = await fetch(`./api/mcp/${encodeURIComponent(server.id)}`, {
+				method: "PATCH",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify(values),
+			});
+			const body = await response.json();
+			if (!response.ok) {
+				this.mcpError = body.error || "Could not update the server.";
+				return;
+			}
+			Object.assign(server, body);
+		},
+		/** Handshake and list tools, so a server can be checked before use. */
+		async testMcp(server) {
+			server.probe = "Connecting…";
+			try {
+				const response = await fetch(
+					`./api/mcp/${encodeURIComponent(server.id)}/test`,
+					{ method: "POST" },
+				);
+				const body = await response.json();
+				server.probe = body.ok
+					? `${body.serverName || "connected"} — ${body.tools.length} tool(s): ${body.tools
+							.map((tool) => tool.name)
+							.join(", ")}`
+					: `Failed: ${body.error}`;
+			} catch (error) {
+				server.probe = `Failed: ${error.message || error}`;
+			}
+		},
+		async deleteMcp(server) {
+			if (!window.confirm(`Remove "${server.name}"?`)) return;
+			const response = await fetch(`./api/mcp/${encodeURIComponent(server.id)}`, {
+				method: "DELETE",
+			});
+			if (!response.ok && response.status !== 404) {
+				this.mcpError = "Could not remove the server.";
+				return;
+			}
+			this.mcpServers = this.mcpServers.filter((entry) => entry.id !== server.id);
 		},
 		async openSkills() {
 			this.skillsOpen = true;

@@ -34,6 +34,7 @@ export HA_NOTIFY_TARGET="$(get_option ha_notify_target)"
 export REMINDER_DATA_PATH=/data/reminders.json
 export CONVERSATION_DATA_PATH=/data/conversations.json
 export SKILL_DATA_PATH=/data/skills.json
+export MCP_DATA_PATH=/data/mcp.json
 export PRESENCE_UPTIME_PATH=/data/presence-uptime.json
 
 node /app/dist/harness-server.js &

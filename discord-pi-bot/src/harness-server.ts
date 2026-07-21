@@ -32,6 +32,13 @@ import {
 import { ConversationStore } from "./harness/conversations";
 import { SkillStore, skillPrompt } from "./harness/skills";
 import {
+	McpServerStore,
+	callTool as callMcpTool,
+	connect as connectMcp,
+	parseToolCallName,
+	toOpenAiTool,
+} from "./harness/mcp";
+import {
 	describeTransportError,
 	invalidateManagerToken,
 } from "./harness/modelManager";
@@ -76,9 +83,62 @@ const conversations = new ConversationStore();
 void conversations.load();
 const skills = new SkillStore();
 void skills.load();
+const mcpServers = new McpServerStore();
+void mcpServers.load();
 type Send = (event: string, data: unknown) => void;
 
 app.use(express.json({ limit: "64kb" }));
+app.get("/api/mcp", (_request, response) => {
+	response.json(mcpServers.list());
+});
+app.post("/api/mcp", async (request, response) => {
+	try {
+		const created = await mcpServers.create(request.body || {});
+		const { authorization, ...safe } = created;
+		response.status(201).json({ ...safe, hasAuth: Boolean(authorization) });
+	} catch (error) {
+		response.status(400).json({
+			error: error instanceof Error ? error.message : "Invalid MCP server",
+		});
+	}
+});
+app.patch("/api/mcp/:id", async (request, response) => {
+	try {
+		const updated = await mcpServers.update(request.params.id, request.body || {});
+		if (!updated) return response.status(404).json({ error: "Not found" });
+		const { authorization, ...safe } = updated;
+		response.json({ ...safe, hasAuth: Boolean(authorization) });
+	} catch (error) {
+		response.status(400).json({
+			error: error instanceof Error ? error.message : "Invalid MCP server",
+		});
+	}
+});
+app.delete("/api/mcp/:id", async (request, response) => {
+	response.status((await mcpServers.delete(request.params.id)) ? 204 : 404).end();
+});
+/* Handshake and list tools, so a server can be checked before it is trusted
+ * with a turn. */
+app.post("/api/mcp/:id/test", async (request, response) => {
+	const server = mcpServers.get(request.params.id);
+	if (!server) return response.status(404).json({ error: "Not found" });
+	try {
+		const session = await connectMcp(server);
+		response.json({
+			ok: true,
+			serverName: session.serverName,
+			tools: session.tools.map((tool) => ({
+				name: tool.name,
+				description: tool.description,
+			})),
+		});
+	} catch (error) {
+		response.status(502).json({
+			ok: false,
+			error: error instanceof Error ? error.message : "Could not reach server",
+		});
+	}
+});
 app.get("/api/skills", (_request, response) => {
 	response.json(skills.list());
 });
@@ -689,9 +749,27 @@ async function runAgent(
 ): Promise<void> {
 	const activeModel = await activeModelMetadata();
 	const allowedNames = allowedToolNames(prompt);
-	const requestTools = tools.filter((tool) =>
+	const requestTools: Array<Record<string, unknown>> = tools.filter((tool) =>
 		allowedNames.has(tool.function.name),
 	);
+	/*
+	 * Tools from enabled MCP servers join the same loop. Each definition is
+	 * paid for out of the context window on every request, which is why this
+	 * is gated per server rather than discovering everything reachable.
+	 * A server that is down must not take the turn with it.
+	 */
+	for (const server of mcpServers.enabled()) {
+		try {
+			const session = await connectMcp(server, 5000);
+			for (const tool of session.tools)
+				requestTools.push(toOpenAiTool(server.id, tool));
+		} catch (error) {
+			console.warn(
+				`MCP server ${server.name} unavailable:`,
+				error instanceof Error ? error.message : error,
+			);
+		}
+	}
 	const seenToolCalls = new Set<string>();
 	/*
 	 * Entity cards surfaced by tools this turn. They attach to the answer
@@ -1005,6 +1083,21 @@ async function executeTool(
 	name: string,
 	args: Record<string, unknown>,
 ): Promise<ToolResult> {
+	const mcp = parseToolCallName(name);
+	if (mcp) {
+		const server = mcpServers.get(mcp.serverId);
+		if (!server || !server.enabled)
+			return { model: { error: "That MCP server is not enabled." } };
+		try {
+			return { model: await callMcpTool(server, mcp.tool, args) };
+		} catch (error) {
+			return {
+				model: {
+					error: error instanceof Error ? error.message : "MCP call failed",
+				},
+			};
+		}
+	}
 	if (name === "get_entity_state") {
 		const state = await hassRequest(
 			`/states/${encodeURIComponent(String(args.entity_id))}`,
