@@ -174,6 +174,25 @@ function harness() {
 				if (Array.isArray(saved)) this.messages = saved;
 			} catch (_) {}
 		},
+		/**
+		 * The transcript in the shape the model reads it: the turns someone
+		 * actually said, oldest first. Tool rows and cards are furniture —
+		 * their contents already reached the model as tool results, and
+		 * replaying them as prose would only invite the model to imitate
+		 * the format instead of using the tools.
+		 *
+		 * The token meter measures this same list, so what the gauge counts
+		 * and what the request carries cannot drift apart.
+		 */
+		modelHistory() {
+			return this.messages
+				.filter(
+					(message) =>
+						(message.type === "user" || message.type === "assistant") &&
+						message.text?.trim(),
+				)
+				.map((message) => ({ role: message.type, content: message.text }));
+		},
 		add(type, text, extra = {}) {
 			const message = {
 				id: `${Date.now()}-${Math.random()}`,
@@ -975,6 +994,10 @@ function harness() {
 			// Adopt or create a conversation before the first message lands, so
 			// there is always somewhere for save() to write.
 			await window.RemindMeConversations.ensure(this);
+			// Captured before the new turn joins the transcript: it travels as
+			// `message`, and sending it twice would have the model answer an
+			// echo of the question.
+			const history = this.modelHistory();
 			this.add("user", text);
 			this.busy = true;
 			this.startActivity("Working");
@@ -987,6 +1010,7 @@ function harness() {
 					signal: this.abortController.signal,
 					body: JSON.stringify({
 						message: text,
+						history,
 						thinkingMode: this.thinking,
 						attachments: this.attachments,
 					}),

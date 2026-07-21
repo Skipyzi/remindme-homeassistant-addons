@@ -645,6 +645,16 @@
                         x-text="message.metrics?.modelName || message.metrics?.modelId"
                       ></b></span
                   ></template>
+                  <!--
+                    An answer that stopped at the ceiling used to look
+                    exactly like one that finished. Say which it was, and
+                    say what gets more of it.
+                  -->
+                  <template x-if="message.metrics?.truncated"
+                    ><span class="gauge-cut"
+                      >&middot; CUT OFF AT THE LIMIT &mdash; ASK TO CONTINUE, OR
+                      RAISE THE THINKING MODE</span
+                  ></template>
                 </div>
               </div>
               <!-- A reminder shows what was understood before it is set: the

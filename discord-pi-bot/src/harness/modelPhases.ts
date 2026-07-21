@@ -21,6 +21,8 @@ export interface PhaseMetrics {
 	toolResultTokens: number;
 	/** True when any token count above is a character-length estimate. */
 	estimated: boolean;
+	/** True when generation stopped at max_tokens instead of finishing. */
+	truncated?: boolean;
 	modelId?: string;
 	modelName?: string;
 }

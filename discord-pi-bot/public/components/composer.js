@@ -9,12 +9,7 @@
 					headers: { "Content-Type": "application/json" },
 					body: JSON.stringify({
 						prompt: app.draft,
-						messages: app.messages
-							.filter((message) => message.text)
-							.map((message) => ({
-								role: message.type === "user" ? "user" : "assistant",
-								content: message.text,
-							})),
+						messages: app.modelHistory(),
 					}),
 				});
 				const usage = await response.json();

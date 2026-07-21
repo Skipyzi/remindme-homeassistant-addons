@@ -23,6 +23,11 @@ import {
 	type ToolCall,
 } from "./harness/modelPhases";
 import { createSseSender } from "./harness/sse";
+import {
+	fitHistory,
+	validateHistory,
+	type HistoryTurn,
+} from "./harness/history";
 import { measureTokenUsage, tokenizerUrl } from "./harness/tokenizer";
 import { normalizeEntity, type HassEntity } from "./harness/entities";
 import { compactEntity, resolveEntities } from "./harness/entityResolver";
@@ -94,7 +99,15 @@ const mcpServers = new McpServerStore();
 void mcpServers.load();
 type Send = (event: string, data: unknown) => void;
 
-app.use(express.json({ limit: "64kb" }));
+/*
+ * A chat request carries the conversation so far, and a transcript with a
+ * couple of code answers in it clears 64kb without being remarkable. The
+ * ceiling still has to exist — this is a Pi, and the window is 8k tokens,
+ * so anything past a few hundred kb is a client fault rather than a long
+ * conversation. Oversized history is trimmed to the window on arrival;
+ * this only bounds what the parser will hold in memory to do it.
+ */
+app.use(express.json({ limit: "2mb" }));
 app.get("/api/mcp", (_request, response) => {
 	response.json(mcpServers.list());
 });
@@ -760,6 +773,7 @@ app.post("/api/chat", async (request, response) => {
 			send,
 			`request-${Date.now()}`,
 			attachments,
+			validateHistory(request.body?.history),
 		);
 		send("complete", {});
 	} catch (error) {
@@ -882,12 +896,53 @@ const tools = [
 	},
 ];
 
+/*
+ * An image is worth far more tokens than its base64 length suggests, and
+ * the projector's real cost is not visible from here. This is a deliberate
+ * over-estimate: spending history on a miscounted image is the failure
+ * that ends the turn with an HTTP 500.
+ */
+const IMAGE_TOKEN_ALLOWANCE = 1024;
+
+/*
+ * Headroom for what grows after this sum is taken: the chat template's
+ * own scaffolding, and the tool calls and tool results the agent loop
+ * appends to `messages` as the turn proceeds.
+ */
+const CONTEXT_SAFETY_MARGIN = 512;
+
+/**
+ * What is left of the context window for prior turns once everything
+ * mandatory has been paid for — including the reply the model has not
+ * written yet, which is the part that is easy to forget and the part
+ * that truncates the answer when it is missed.
+ */
+function historyBudget(
+	prompt: string,
+	systemPrompt: string,
+	requestTools: unknown[],
+	attachments: ImageAttachment[],
+	thinkingMode: ThinkingMode,
+): number {
+	const contextSize = Number(process.env.LOCAL_LLM_CONTEXT_SIZE || 8192);
+	const profile = getThinkingProfile(thinkingMode, os.totalmem(), contextSize);
+	const reserved =
+		estimateTokens(systemPrompt) +
+		estimateTokens(prompt) +
+		estimateTokens(requestTools.length ? JSON.stringify(requestTools) : "") +
+		attachments.length * IMAGE_TOKEN_ALLOWANCE +
+		profile.maxTokens +
+		CONTEXT_SAFETY_MARGIN;
+	return Math.max(0, contextSize - reserved);
+}
+
 async function runAgent(
 	prompt: string,
 	thinkingMode: ThinkingMode,
 	send: Send,
 	requestId: string,
 	attachments: ImageAttachment[],
+	history: HistoryTurn[] = [],
 ): Promise<void> {
 	const activeModel = await activeModelMetadata();
 	const allowedNames = allowedToolNames(prompt);
@@ -919,14 +974,20 @@ async function runAgent(
 	 * its disclosure as raw JSON, while the cards ARE the reply.
 	 */
 	const answerCards: unknown[] = [];
+	// Enabled skills are appended so they bind for the whole turn.
+	const systemPrompt =
+		"You are RemindMe, a concise general and home assistant. Answer directly. Use tools only when needed. Confirm sensitive home actions." +
+		skillPrompt(skills.enabled());
+	const budget = historyBudget(
+		prompt,
+		systemPrompt,
+		requestTools,
+		attachments,
+		thinkingMode,
+	);
 	const messages: Array<Record<string, unknown>> = [
-		{
-			role: "system",
-			// Enabled skills are appended so they bind for the whole turn.
-			content:
-				"You are RemindMe, a concise general and home assistant. Answer directly. Use tools only when needed. Confirm sensitive home actions." +
-				skillPrompt(skills.enabled()),
-		},
+		{ role: "system", content: systemPrompt },
+		...fitHistory(history, budget),
 		{ role: "user", content: userContent(prompt, attachments) },
 	];
 	for (let iteration = 0; iteration < 5; iteration += 1) {
@@ -1088,6 +1149,8 @@ async function streamModel(
 	let timings: Record<string, number> = {};
 	let usage: Record<string, number> = {};
 	let firstTokenAt: number | undefined;
+	/* "length" means the answer hit max_tokens rather than finishing. */
+	let finishReason = "";
 	const thinkState = { active: false };
 	const toolCalls: ToolCall[] = [];
 	for await (const chunk of response.body as unknown as AsyncIterable<Uint8Array>) {
@@ -1111,6 +1174,7 @@ async function streamModel(
 						}>;
 					};
 					timings?: Record<string, number>;
+					finish_reason?: string | null;
 				}>;
 			};
 			try {
@@ -1119,6 +1183,7 @@ async function streamModel(
 				continue;
 			}
 			const choice = payload.choices?.[0];
+			if (choice?.finish_reason) finishReason = choice.finish_reason;
 			if (payload.timings) timings = { ...timings, ...payload.timings };
 			if (payload.usage) usage = { ...usage, ...payload.usage };
 			if (choice?.timings) timings = { ...timings, ...choice.timings };
@@ -1164,14 +1229,17 @@ async function streamModel(
 		}
 	}
 	const elapsed = Date.now() - started;
-	const metrics: PhaseMetrics = normalizePhaseMetrics(
-		usage,
-		timings,
-		firstTokenAt ? firstTokenAt - started : elapsed,
-		elapsed,
-		{ answer: text, thinking },
-		activeModel,
-	);
+	const metrics: PhaseMetrics = {
+		...normalizePhaseMetrics(
+			usage,
+			timings,
+			firstTokenAt ? firstTokenAt - started : elapsed,
+			elapsed,
+			{ answer: text, thinking },
+			activeModel,
+		),
+		truncated: finishReason === "length",
+	};
 	send("metrics", {
 		inputTokens: metrics.inputTokens,
 		outputTokens: metrics.outputTokens,
@@ -1180,6 +1248,7 @@ async function streamModel(
 		firstTokenMs: metrics.firstTokenMs,
 		totalMs: metrics.totalMs,
 		thinkingTokens: metrics.thinkingTokens,
+		truncated: metrics.truncated,
 	});
 	send("phase_metrics", {
 		phaseId,
