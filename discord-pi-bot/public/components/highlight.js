@@ -30,6 +30,8 @@
 	};
 
 	const ALIASES = {
+		htm: "html",
+		markup: "html",
 		js: "javascript",
 		jsx: "javascript",
 		mjs: "javascript",
@@ -61,13 +63,81 @@
 		json: { line: null, block: null },
 	};
 
+	const MARKUP = new Set(["html", "xml", "svg", "vue", "xhtml"]);
+
+	/**
+	 * Markup tokeniser. Tags, attribute names, attribute values and comments —
+	 * the C-like scanner cannot see any of that, so HTML previously fell
+	 * through to plain text.
+	 */
+	function tokenizeMarkup(code) {
+		const source = String(code || "");
+		const tokens = [];
+		let plain = "";
+		let index = 0;
+		const push = (type, value) => {
+			if (plain) {
+				tokens.push({ type: "plain", value: plain });
+				plain = "";
+			}
+			tokens.push({ type, value });
+		};
+
+		while (index < source.length) {
+			const rest = source.slice(index);
+
+			if (rest.startsWith("<!--")) {
+				const end = source.indexOf("-->", index);
+				const stop = end < 0 ? source.length : end + 3;
+				push("comment", source.slice(index, stop));
+				index = stop;
+				continue;
+			}
+
+			const open = /^<\/?([A-Za-z][\w:-]*)/.exec(rest);
+			if (open) {
+				push("keyword", open[0]);
+				index += open[0].length;
+				// Attributes up to the closing bracket.
+				while (index < source.length && source[index] !== ">") {
+					const tail = source.slice(index);
+					const attribute = /^\s*([A-Za-z_@:][\w:.-]*)/.exec(tail);
+					if (attribute) {
+						push("function", attribute[0]);
+						index += attribute[0].length;
+						continue;
+					}
+					const value = /^\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/.exec(tail);
+					if (value) {
+						push("string", value[0]);
+						index += value[0].length;
+						continue;
+					}
+					plain += source[index];
+					index += 1;
+				}
+				if (index < source.length) {
+					push("keyword", source[index]);
+					index += 1;
+				}
+				continue;
+			}
+
+			plain += source[index];
+			index += 1;
+		}
+		if (plain) tokens.push({ type: "plain", value: plain });
+		return tokens;
+	}
+
 	function normalize(language) {
 		const key = String(language || "").toLowerCase();
 		return ALIASES[key] || key;
 	}
 
 	function isSupported(language) {
-		return Boolean(KEYWORDS[normalize(language)]);
+		const name = normalize(language);
+		return Boolean(KEYWORDS[name]) || MARKUP.has(name);
 	}
 
 	/**
@@ -76,6 +146,7 @@
 	 */
 	function tokenize(code, language) {
 		const name = normalize(language);
+		if (MARKUP.has(name)) return tokenizeMarkup(code);
 		const keywords = new Set((KEYWORDS[name] || "").split(" "));
 		const comment = COMMENTS[name] || { line: null, block: null };
 		const source = String(code || "");

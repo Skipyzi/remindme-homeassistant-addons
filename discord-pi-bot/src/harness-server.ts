@@ -165,6 +165,27 @@ app.delete("/api/skills/:id", async (request, response) => {
  * keys only, so the UI can list capabilities without restating the schema. */
 /* Host telemetry for the rail. Polled, so it is deliberately cheap: reading
  * one sysfs file and differencing CPU counters. */
+/*
+ * Promote content the console already has into an artifact, with no model
+ * turn involved.
+ *
+ * A 1.7B model will not reliably call a tool for "render that as an
+ * artifact", and "that" usually refers to a code block already pushed out of
+ * a 4-8k window. The transcript still holds it, so the /artifact command
+ * lifts the last block straight from there.
+ */
+app.post("/api/artifacts", async (request, response) => {
+	const content = String(request.body?.content || "");
+	if (!content.trim())
+		return response.status(400).json({ error: "Nothing to put in an artifact" });
+	const artifact = await artifacts.create({
+		title: String(request.body?.title || "Untitled"),
+		kind: request.body?.kind as never,
+		language: request.body?.language ? String(request.body.language) : undefined,
+		content,
+	});
+	response.status(201).json({ ...artifact, content: undefined });
+});
 app.get("/api/artifacts", (_request, response) => {
 	response.json(artifacts.list());
 });

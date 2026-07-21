@@ -72,6 +72,55 @@
 			},
 		},
 		{
+			name: "/artifact",
+			usage: "/artifact [title]",
+			blurb: "turn the last code block into one",
+			async run(app, argument) {
+				// Search backwards: the most recent fenced block is what "that"
+				// almost always means.
+				const fence = new RegExp("```([\\w+-]*)\\n([\\s\\S]*?)```", "g");
+				let found;
+				for (let i = app.messages.length - 1; i >= 0 && !found; i -= 1) {
+					const text = app.messages[i].text || "";
+					let match;
+					fence.lastIndex = 0;
+					while ((match = fence.exec(text))) found = match;
+				}
+				if (!found)
+					return app.add(
+						"assistant",
+						"No code block found in this conversation to make an artifact from.",
+					);
+				const language = (found[1] || "").toLowerCase();
+				const content = found[2];
+				const kind = ["html", "htm", "xhtml"].includes(language)
+					? "html"
+					: language === "svg"
+						? "svg"
+						: language === "markdown" || language === "md"
+							? "markdown"
+							: "code";
+				const response = await fetch("./api/artifacts", {
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify({
+						title: argument || `${language || "code"} snippet`,
+						kind,
+						language,
+						content,
+					}),
+				});
+				if (!response.ok)
+					return app.add("assistant", "Could not create the artifact.");
+				const artifact = await response.json();
+				app.add("assistant", `Made an artifact from the last ${language || "code"} block.`, {
+					kind: "answer",
+					artifact,
+				});
+				await app.openArtifact(artifact.id);
+			},
+		},
+		{
 			name: "/reminders",
 			usage: "/reminders",
 			blurb: "what is scheduled",
