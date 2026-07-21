@@ -39,6 +39,8 @@ import { ConversationStore } from "./harness/conversations";
 import { SkillStore, skillPrompt } from "./harness/skills";
 import { readSystemStats } from "./harness/systemStats";
 import { ArtifactStore, toDocument } from "./harness/artifacts";
+import { applyEdit, isEditFailure, modelView } from "./harness/artifactEdit";
+import { partialStringField } from "./harness/streamingJson";
 import { parseReminder, describeWhen } from "./harness/reminderParser";
 import {
 	McpServerStore,
@@ -774,6 +776,10 @@ app.post("/api/chat", async (request, response) => {
 			`request-${Date.now()}`,
 			attachments,
 			validateHistory(request.body?.history),
+			// Which document is on the bench, so edits have a default target.
+			typeof request.body?.artifactId === "string"
+				? request.body.artifactId
+				: "",
 		);
 		send("complete", {});
 	} catch (error) {
@@ -885,6 +891,47 @@ const tools = [
 	{
 		type: "function",
 		function: {
+			name: "read_artifact",
+			description:
+				"Read the current content of an artifact. Use before editing when you are unsure what the document says now.",
+			parameters: {
+				type: "object",
+				properties: { id: { type: "string" } },
+				required: ["id"],
+			},
+		},
+	},
+	{
+		type: "function",
+		function: {
+			name: "edit_artifact",
+			description:
+				"Change part of an existing artifact by quoting the exact text to replace. Use this instead of rewriting the whole document. Returns the document as it stands after the edit.",
+			parameters: {
+				type: "object",
+				properties: {
+					id: { type: "string" },
+					old_string: {
+						type: "string",
+						description:
+							"The exact text to find, copied character for character including indentation. Must appear exactly once unless replace_all is set.",
+					},
+					new_string: {
+						type: "string",
+						description: "The replacement text. Use an empty string to delete.",
+					},
+					replace_all: {
+						type: "boolean",
+						description: "Replace every occurrence rather than requiring one.",
+					},
+				},
+				required: ["id", "old_string", "new_string"],
+			},
+		},
+	},
+	{
+		type: "function",
+		function: {
 			name: "web_search",
 			description: "Search the public web using Exa.",
 			parameters: {
@@ -943,9 +990,13 @@ async function runAgent(
 	requestId: string,
 	attachments: ImageAttachment[],
 	history: HistoryTurn[] = [],
+	openArtifactId = "",
 ): Promise<void> {
 	const activeModel = await activeModelMetadata();
-	const allowedNames = allowedToolNames(prompt);
+	const openArtifact = openArtifactId ? artifacts.get(openArtifactId) : undefined;
+	const allowedNames = allowedToolNames(prompt, {
+		hasArtifact: Boolean(openArtifact),
+	});
 	const requestTools: Array<Record<string, unknown>> = tools.filter((tool) =>
 		allowedNames.has(tool.function.name),
 	);
@@ -974,9 +1025,19 @@ async function runAgent(
 	 * its disclosure as raw JSON, while the cards ARE the reply.
 	 */
 	const answerCards: unknown[] = [];
+	/*
+	 * Naming the open document is what makes an edit possible: the model
+	 * cannot quote an id it was never told, and "change the footer" carries
+	 * no id of its own. The content stays out — it is on screen already,
+	 * and read_artifact fetches it when the model actually needs to see it.
+	 */
+	const artifactPrompt = openArtifact
+		? ` The document "${openArtifact.title}" (id ${openArtifact.id}, ${openArtifact.kind}) is open. To change it, use edit_artifact with that id, quoting the exact text to replace — do not rewrite the whole document. Use read_artifact first if you need to see its current state.`
+		: "";
 	// Enabled skills are appended so they bind for the whole turn.
 	const systemPrompt =
 		"You are RemindMe, a concise general and home assistant. Answer directly. Use tools only when needed. Confirm sensitive home actions." +
+		artifactPrompt +
 		skillPrompt(skills.enabled());
 	const budget = historyBudget(
 		prompt,
@@ -1083,6 +1144,13 @@ async function runAgent(
 				state: "complete",
 				name: call.function.name,
 				result: value.model,
+				/*
+				 * Card data travels beside the model's receipt rather than
+				 * inside it. Only array views were being forwarded, so an
+				 * artifact the model wrote produced no card and could not be
+				 * opened — the document existed and nothing pointed at it.
+				 */
+				view: Array.isArray(value.view) ? undefined : value.view,
 				metrics: toolMetrics,
 			});
 			messages.push({
@@ -1102,6 +1170,49 @@ async function runAgent(
 	send("answer", {
 		text: "I reached the tool-call limit before completing the request.",
 	});
+}
+
+/**
+ * Push a document to the pane while the model is still writing it.
+ *
+ * `create_artifact` carries its whole document in one tool-call argument,
+ * which does not become valid JSON until the closing brace — minutes after
+ * the first tag at a Pi's decode rate. Reading the field out of the partial
+ * text means the console can show the write as it happens instead of
+ * staring at a spinner and then producing a finished page from nowhere.
+ *
+ * This is a preview, not a commitment. Nothing is stored until the tool
+ * actually runs, and the pane swaps the draft for the saved artifact when
+ * its receipt arrives.
+ */
+function streamArtifactPreview(
+	call: ToolCall,
+	emitted: Map<string, number>,
+	send: Send,
+): void {
+	if (call.function.name !== "create_artifact") return;
+	const args = call.function.arguments;
+	const content = partialStringField(args, "content");
+	if (!content) return;
+	if (!emitted.has(call.id)) {
+		const title = partialStringField(args, "title");
+		const kind = partialStringField(args, "kind");
+		emitted.set(call.id, 0);
+		send("artifact_draft", {
+			id: call.id,
+			// The header fields normally land first, but the schema does not
+			// oblige the model to emit them in order, so neither is required.
+			title: title?.complete ? title.value : "Writing…",
+			kind: kind?.complete ? kind.value : "code",
+		});
+	}
+	const already = emitted.get(call.id) || 0;
+	if (content.value.length <= already) return;
+	send("artifact_delta", {
+		id: call.id,
+		text: content.value.slice(already),
+	});
+	emitted.set(call.id, content.value.length);
 }
 
 async function streamModel(
@@ -1153,6 +1264,8 @@ async function streamModel(
 	let finishReason = "";
 	const thinkState = { active: false };
 	const toolCalls: ToolCall[] = [];
+	/* Per tool call, how much of its document has already gone to the pane. */
+	const artifactStreamed = new Map<string, number>();
 	for await (const chunk of response.body as unknown as AsyncIterable<Uint8Array>) {
 		buffer += Buffer.from(chunk).toString("utf8");
 		const lines = buffer.split("\n");
@@ -1225,6 +1338,7 @@ async function streamModel(
 					toolCalls[index].function.name += call.function.name;
 				if (call.function?.arguments)
 					toolCalls[index].function.arguments += call.function.arguments;
+				streamArtifactPreview(toolCalls[index], artifactStreamed, send);
 			}
 		}
 	}
@@ -1428,6 +1542,62 @@ async function executeTool(
 				kind: artifact.kind,
 			},
 			view: { artifact: { ...artifact, content: undefined } },
+		};
+	}
+	if (name === "read_artifact") {
+		const artifact = artifacts.get(String(args.id || ""));
+		if (!artifact) return { model: { error: `No artifact with id ${args.id}` } };
+		const view = modelView(artifact.content);
+		return {
+			model: {
+				id: artifact.id,
+				title: artifact.title,
+				kind: artifact.kind,
+				bytes: view.bytes,
+				lines: view.lines,
+				truncated: view.windowed,
+				content: view.content,
+			},
+		};
+	}
+	if (name === "edit_artifact") {
+		const artifact = artifacts.get(String(args.id || ""));
+		if (!artifact) return { model: { error: `No artifact with id ${args.id}` } };
+		const newString = String(args.new_string ?? "");
+		const result = applyEdit(
+			artifact.content,
+			String(args.old_string ?? ""),
+			newString,
+			args.replace_all === true,
+		);
+		/*
+		 * A failed edit is reported, not thrown. The model sees why it missed
+		 * — wrong quote, or one that matched three places — and gets another
+		 * pass at it inside the same turn.
+		 */
+		if (isEditFailure(result)) return { model: { error: result.error } };
+		const updated = await artifacts.update(artifact.id, {
+			content: result.content,
+		});
+		/*
+		 * The document as it now stands, not just a receipt. A patch can move
+		 * everything below it, and an edit aimed at what the model remembers
+		 * writing lands in the wrong place once that memory is one edit stale.
+		 * Bounded, and centred on what just changed, so a long document costs
+		 * a window rather than the whole context.
+		 */
+		const view = modelView(result.content, result.content.indexOf(newString));
+		return {
+			model: {
+				edited: true,
+				id: artifact.id,
+				replacements: result.replacements,
+				bytes: view.bytes,
+				lines: view.lines,
+				truncated: view.windowed,
+				content: view.content,
+			},
+			view: { artifact: { ...updated, content: undefined } },
 		};
 	}
 	if (name === "web_search") {

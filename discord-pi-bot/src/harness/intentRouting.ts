@@ -8,7 +8,15 @@ const webTerms =
 const artifactTerms =
 	/(draw|chart|graph|diagram|plot|render|visuali[sz]e|artifact|page|dashboard|svg|html|mock ?up|write (?:me )?an? (?:app|page|script|program))/i;
 
-export function allowedToolNames(prompt: string): Set<string> {
+export interface ToolContext {
+	/** A document is open in the console, so edits have something to act on. */
+	hasArtifact?: boolean;
+}
+
+export function allowedToolNames(
+	prompt: string,
+	context: ToolContext = {},
+): Set<string> {
 	const allowed = new Set<string>();
 	if (homeTerms.test(prompt)) {
 		allowed.add("get_entity_state");
@@ -21,6 +29,17 @@ export function allowedToolNames(prompt: string): Set<string> {
 	}
 	if (webTerms.test(prompt)) allowed.add("web_search");
 	if (artifactTerms.test(prompt)) allowed.add("create_artifact");
+	/*
+	 * Editing needs something to edit, and the wording rarely says so.
+	 * "Make the heading bigger" names no artifact and matches no keyword,
+	 * but with a document open on the bench it is plainly an edit — so the
+	 * open document, not the phrasing, is what puts these tools in reach.
+	 */
+	if (context.hasArtifact) {
+		allowed.add("read_artifact");
+		allowed.add("edit_artifact");
+		allowed.add("create_artifact");
+	}
 	return allowed;
 }
 

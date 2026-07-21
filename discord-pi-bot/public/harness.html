@@ -1352,8 +1352,33 @@
               <b x-text="currentArtifact?.title || 'Artifact'"></b>
             </div>
             <div class="artifact-actions">
-              <button class="chip" @click="downloadArtifact()">SAVE</button>
-              <button class="chip warn" @click="deleteArtifact()">DELETE</button>
+              <!--
+                While the model writes there is nothing saved to save or
+                delete, and nothing rendered to preview, so the toggle is the
+                only control that means anything.
+              -->
+              <div class="mode-toggle" role="group" aria-label="Artifact view">
+                <button
+                  :class="{on: artifactView==='source'}"
+                  @click="artifactView='source'"
+                >
+                  SOURCE
+                </button>
+                <button
+                  :class="{on: artifactView==='preview'}"
+                  :disabled="artifactStreaming"
+                  @click="artifactView='preview'"
+                >
+                  PREVIEW
+                </button>
+              </div>
+              <!-- Both act on a stored document, so both wait for one. -->
+              <template x-if="currentArtifact?.id"
+                ><span
+                  ><button class="chip" @click="downloadArtifact()">SAVE</button>
+                  <button class="chip warn" @click="deleteArtifact()">
+                    DELETE</button></span
+              ></template>
               <button
                 class="chip"
                 @click="artifactOpen=false"
@@ -1364,22 +1389,33 @@
             </div>
           </header>
           <div class="artifact-stage">
-            <template
-              x-if="currentArtifact && ['html','svg'].includes(currentArtifact.kind)"
+            <template x-if="artifactIsFramed()"
               ><iframe
                 class="artifact-frame"
                 sandbox="allow-scripts"
                 referrerpolicy="no-referrer"
-                :src="`./api/artifacts/${currentArtifact.id}/document`"
+                :src="artifactFrameSrc()"
                 title="Artifact preview"
               ></iframe
             ></template>
             <template
-              x-if="currentArtifact && !['html','svg'].includes(currentArtifact.kind)"
+              x-if="!artifactIsFramed() && artifactView==='preview' && currentArtifact"
               ><div
                 class="artifact-text"
                 x-effect="renderArtifactBody($el, currentArtifact)"
               ></div
+            ></template>
+            <!--
+              The document as text, and the only view available while it is
+              still arriving. `x-text` rather than the rich-text renderer:
+              this is what the model actually wrote, markup and all.
+            -->
+            <template x-if="artifactView==='source' && currentArtifact"
+              ><pre
+                class="artifact-source"
+                :class="{writing: artifactStreaming}"
+                x-text="currentArtifact.content"
+              ></pre
             ></template>
           </div>
         </aside>

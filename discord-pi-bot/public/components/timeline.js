@@ -104,7 +104,9 @@
 			const presentation = {
 				confirm: data.result?.confirmation_required ? data.result : undefined,
 				// An artifact surfaces as a card on the row that produced it.
-				artifact: data.result?.artifact,
+				// It rides in `view`, since the model's own receipt deliberately
+				// leaves the document out.
+				artifact: data.view?.artifact || data.result?.artifact,
 			};
 			return upsert(
 				entries,

@@ -71,6 +71,10 @@ function harness() {
 		system: null,
 		artifactOpen: false,
 		currentArtifact: null,
+		/** "preview" renders the document; "source" shows what it is made of. */
+		artifactView: "preview",
+		/** True while the model is still writing the document on the bench. */
+		artifactStreaming: false,
 		tokenUsage: {
 			exact: false,
 			promptTokens: 0,
@@ -317,10 +321,65 @@ function harness() {
 				const response = await fetch(`./api/artifacts/${encodeURIComponent(id)}`);
 				if (!response.ok) return;
 				this.currentArtifact = await response.json();
+				this.artifactStreaming = false;
+				this.artifactView = "preview";
 				this.artifactOpen = true;
 			} catch {
 				/* nothing to show */
 			}
+		},
+		/**
+		 * The model has started writing a document. Put an empty one on the
+		 * bench so the text has somewhere to land.
+		 *
+		 * This is a draft with no id: nothing is saved until the tool call
+		 * completes, and if the model abandons it mid-write the draft simply
+		 * never settles.
+		 */
+		beginArtifactDraft(data) {
+			this.currentArtifact = {
+				id: null,
+				title: data.title || "Writing…",
+				kind: data.kind || "code",
+				content: "",
+			};
+			this.artifactStreaming = true;
+			// Source while it writes: a half-built page renders as nonsense,
+			// and watching the markup arrive is the part worth seeing.
+			this.artifactView = "source";
+			this.artifactOpen = true;
+		},
+		appendArtifactDraft(data) {
+			if (!this.currentArtifact || !this.artifactStreaming) return;
+			this.currentArtifact.content += data.text || "";
+		},
+		/**
+		 * The write finished, or an edit landed. Replace whatever is on the
+		 * bench with the saved document and show it rendered.
+		 */
+		async settleArtifact(artifact) {
+			if (!artifact?.id) return;
+			this.artifactStreaming = false;
+			await this.openArtifact(artifact.id);
+		},
+		/** Rendered documents get a frame; everything else is read as text. */
+		artifactIsFramed() {
+			return (
+				this.artifactView === "preview" &&
+				!this.artifactStreaming &&
+				Boolean(this.currentArtifact?.id) &&
+				["html", "svg"].includes(this.currentArtifact?.kind)
+			);
+		},
+		/**
+		 * Cache-busted per revision: an edit changes the document behind a URL
+		 * that has not changed, and the frame would otherwise show the version
+		 * from before the edit.
+		 */
+		artifactFrameSrc() {
+			const artifact = this.currentArtifact;
+			if (!artifact?.id) return "";
+			return `./api/artifacts/${encodeURIComponent(artifact.id)}/document?v=${encodeURIComponent(artifact.updatedAt || "")}`;
 		},
 		/** Markdown and code artifacts go through the same rich-text renderer. */
 		renderArtifactBody(element, artifact) {
@@ -1011,6 +1070,8 @@ function harness() {
 					body: JSON.stringify({
 						message: text,
 						history,
+						// What is on the bench, so "change the footer" has a target.
+						artifactId: this.artifactOpen ? this.currentArtifact?.id || "" : "",
 						thinkingMode: this.thinking,
 						attachments: this.attachments,
 					}),
@@ -1058,6 +1119,9 @@ function harness() {
 									`Calling ${String(data.name || "tool").replaceAll("_", " ")}`,
 								);
 							if (event === "answer_delta") this.setActivityLabel("Replying");
+							// A saved document, from a fresh write or an edit.
+							if (event === "tool_complete" && data.view?.artifact)
+								this.settleArtifact(data.view.artifact);
 							if (event === "phase_metrics") {
 								this.metrics = {
 									inputTokens: data.metrics.inputTokens,
@@ -1069,6 +1133,11 @@ function harness() {
 									thinking: data.metrics.thinkingTokens,
 								};
 							}
+						} else if (event === "artifact_draft") {
+							this.beginArtifactDraft(data);
+							this.setActivityLabel("Writing document");
+						} else if (event === "artifact_delta") {
+							this.appendArtifactDraft(data);
 						} else if (event === "error") throw new Error(data.message);
 						this.persist();
 					}
@@ -1081,6 +1150,12 @@ function harness() {
 					this.offline = true;
 				}
 			} finally {
+				/*
+				 * A cancelled or failed turn leaves a half-written draft on the
+				 * bench. Stop calling it a write in progress — the text stays
+				 * readable, but nothing pretends it is still coming.
+				 */
+				this.artifactStreaming = false;
 				this.abortController = null;
 				this.stopActivity();
 				this.busy = false;
