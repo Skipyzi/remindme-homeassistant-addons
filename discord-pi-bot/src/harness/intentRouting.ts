@@ -38,6 +38,7 @@ export function allowedToolNames(
 	if (context.hasArtifact) {
 		allowed.add("read_artifact");
 		allowed.add("edit_artifact");
+		allowed.add("rewrite_artifact");
 		allowed.add("create_artifact");
 	}
 	return allowed;

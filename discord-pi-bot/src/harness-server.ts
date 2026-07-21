@@ -904,9 +904,28 @@ const tools = [
 	{
 		type: "function",
 		function: {
+			name: "rewrite_artifact",
+			description:
+				"Replace the entire content of an existing artifact with a new version. Use when the change affects most of the document, or when you cannot quote the exact text to replace.",
+			parameters: {
+				type: "object",
+				properties: {
+					id: { type: "string" },
+					content: {
+						type: "string",
+						description: "The complete new document, not a fragment.",
+					},
+				},
+				required: ["id", "content"],
+			},
+		},
+	},
+	{
+		type: "function",
+		function: {
 			name: "edit_artifact",
 			description:
-				"Change part of an existing artifact by quoting the exact text to replace. Use this instead of rewriting the whole document. Returns the document as it stands after the edit.",
+				"Change a small part of an existing artifact by quoting the exact text to replace. Use rewrite_artifact instead when replacing most of the document. Returns the document as it stands after the edit.",
 			parameters: {
 				type: "object",
 				properties: {
@@ -1032,7 +1051,7 @@ async function runAgent(
 	 * and read_artifact fetches it when the model actually needs to see it.
 	 */
 	const artifactPrompt = openArtifact
-		? ` The document "${openArtifact.title}" (id ${openArtifact.id}, ${openArtifact.kind}) is open. To change it, use edit_artifact with that id, quoting the exact text to replace — do not rewrite the whole document. Use read_artifact first if you need to see its current state.`
+		? ` The document "${openArtifact.title}" (id ${openArtifact.id}, ${openArtifact.kind}) is open. For a small change use edit_artifact with that id, quoting the exact text to replace. For a change affecting most of the document, or when you cannot quote the existing text exactly, use rewrite_artifact with the complete new document. Use read_artifact first if you need to see its current state.`
 		: "";
 	// Enabled skills are appended so they bind for the whole turn.
 	const systemPrompt =
@@ -1560,6 +1579,26 @@ async function executeTool(
 			},
 		};
 	}
+	if (name === "rewrite_artifact") {
+		const artifact = artifacts.get(String(args.id || ""));
+		if (!artifact) return { model: { error: `No artifact with id ${args.id}` } };
+		const content = String(args.content ?? "");
+		if (!content.trim())
+			return { model: { error: "content is required and cannot be empty" } };
+		const updated = await artifacts.update(artifact.id, { content });
+		const view = modelView(content);
+		return {
+			model: {
+				rewritten: true,
+				id: artifact.id,
+				bytes: view.bytes,
+				lines: view.lines,
+				truncated: view.windowed,
+				content: view.content,
+			},
+			view: { artifact: { ...updated, content: undefined } },
+		};
+	}
 	if (name === "edit_artifact") {
 		const artifact = artifacts.get(String(args.id || ""));
 		if (!artifact) return { model: { error: `No artifact with id ${args.id}` } };
@@ -1592,6 +1631,20 @@ async function executeTool(
 				edited: true,
 				id: artifact.id,
 				replacements: result.replacements,
+				/*
+				 * Say what was actually done. A quote that only matched with
+				 * whitespace collapsed, or a call that was really a rewrite,
+				 * both produced the right document by a route the model did
+				 * not ask for — and it should know for the next call.
+				 */
+				...(result.rewrote
+					? {
+							note: "old_string covered almost none of the document while new_string restarted it, so this was applied as a full rewrite. Use rewrite_artifact for that.",
+						}
+					: {}),
+				...(result.loose
+					? { note: "old_string matched only after collapsing whitespace." }
+					: {}),
 				bytes: view.bytes,
 				lines: view.lines,
 				truncated: view.windowed,
