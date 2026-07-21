@@ -2974,19 +2974,50 @@ h6.rt-h {
 }
 
 /* ── Artifacts ──────────────────────────────────────────────────────────
- * The pane is a third column, not an overlay: opening a document should
- * narrow the conversation, not hide it, so you can read what was said
- * about the thing while looking at the thing.
+ * The artifact gets its own case on the bench rather than a third column
+ * inside the console's: opening a document should set it beside the
+ * conversation as its own object, not reshape the console around it.
  */
-.screen.with-artifact {
-	grid-template-columns: 210px minmax(0, 1fr) minmax(0, 1fr);
+.workbench {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 16px;
+	width: 100%;
+	height: 100%;
+	min-width: 0;
+	padding: 0 12px;
+}
+/* Alone, the console keeps the width it always had. With the artifact out
+ * it gives up half the bench, and both cases share the space evenly. */
+.workbench > .deck {
+	flex: 0 1 auto;
+	width: 94%;
+}
+.workbench.with-artifact > .deck {
+	flex: 1 1 0;
+	width: auto;
+	min-width: 0;
+	max-width: none;
+}
+.artifact-deck {
+	min-width: 0;
+}
+.artifact-screen {
+	grid-template-columns: minmax(0, 1fr);
 }
 .artifact-pane {
 	display: flex;
 	flex-direction: column;
 	min-width: 0;
-	border-left: 1px solid var(--amber-dim);
 	background: rgba(0, 0, 0, 0.22);
+}
+/* Below the split breakpoint there is not enough bench for two cases, so
+ * the artifact takes the whole of it and the console steps aside. */
+@media (max-width: 1000px) {
+	.workbench.with-artifact > .deck:not(.artifact-deck) {
+		display: none;
+	}
 }
 .artifact-head {
 	display: flex;

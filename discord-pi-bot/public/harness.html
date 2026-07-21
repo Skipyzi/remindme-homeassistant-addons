@@ -24,13 +24,19 @@
   </head>
   <body>
     <pre id="ascii" aria-hidden="true"></pre>
+    <!--
+      Two cases on one bench. The artifact gets its own device rather than a
+      third column inside this one: a document the model wrote is a separate
+      thing from the console, and giving it its own bezel says so.
+    -->
     <div
-      class="deck"
-      :class="{scanlines:scanlines}"
+      class="workbench"
+      :class="{'with-artifact': artifactOpen}"
       x-data="harness()"
       x-init="init()"
     >
-      <div class="screen" :class="{'with-artifact': artifactOpen}">
+      <div class="deck" :class="{scanlines:scanlines}">
+        <div class="screen">
         <div class="flicker" aria-hidden="true"></div>
         <aside
         class="rail"
@@ -828,55 +834,6 @@
           </form>
         </footer>
       </main>
-      <!--
-        Artifact pane. A sibling of the chat rather than an overlay, so opening
-        one narrows the conversation instead of hiding it — the document and
-        the discussion about it stay visible together.
-
-        HTML and SVG render in a frame with sandbox="allow-scripts" and no
-        allow-same-origin, which puts them in an opaque origin: a document the
-        model wrote cannot read the console, its storage, or the Home
-        Assistant session it is embedded in. Those two flags together would
-        undo the sandbox, so they are never combined.
-      -->
-      <aside class="artifact-pane" x-show="artifactOpen" x-cloak>
-        <header class="artifact-head">
-          <div class="artifact-heading">
-            <span class="artifact-kind" x-text="currentArtifact?.kind"></span>
-            <b x-text="currentArtifact?.title || 'Artifact'"></b>
-          </div>
-          <div class="artifact-actions">
-            <button class="chip" @click="downloadArtifact()">SAVE</button>
-            <button class="chip warn" @click="deleteArtifact()">DELETE</button>
-            <button
-              class="chip"
-              @click="artifactOpen=false"
-              aria-label="Close artifact"
-            >
-              ✕
-            </button>
-          </div>
-        </header>
-        <div class="artifact-stage">
-          <template
-            x-if="currentArtifact && ['html','svg'].includes(currentArtifact.kind)"
-            ><iframe
-              class="artifact-frame"
-              sandbox="allow-scripts"
-              referrerpolicy="no-referrer"
-              :src="`./api/artifacts/${currentArtifact.id}/document`"
-              title="Artifact preview"
-            ></iframe
-          ></template>
-          <template
-            x-if="currentArtifact && !['html','svg'].includes(currentArtifact.kind)"
-            ><div
-              class="artifact-text"
-              x-effect="renderArtifactBody($el, currentArtifact)"
-            ></div
-          ></template>
-        </div>
-      </aside>
       </div>
       <aside class="telemetry" id="house-board" :class="{open: boardOpen}">
         <div class="kicker">Live telemetry</div>
@@ -1354,5 +1311,64 @@
         </section>
       </div>
     </div>
+    <!--
+      The artifact's own case. Same bezel and glass as the console so the two
+      read as a matched pair on the bench.
+
+      HTML and SVG render in a frame with sandbox="allow-scripts" and no
+      allow-same-origin, which puts them in an opaque origin: a document the
+      model wrote cannot read the console, its storage, or the Home Assistant
+      session it is embedded in. Those two flags together would undo the
+      sandbox, so they are never combined.
+    -->
+    <div
+      class="deck artifact-deck"
+      :class="{scanlines:scanlines}"
+      x-show="artifactOpen"
+      x-cloak
+    >
+      <div class="screen artifact-screen">
+        <div class="flicker" aria-hidden="true"></div>
+        <aside class="artifact-pane">
+          <header class="artifact-head">
+            <div class="artifact-heading">
+              <span class="artifact-kind" x-text="currentArtifact?.kind"></span>
+              <b x-text="currentArtifact?.title || 'Artifact'"></b>
+            </div>
+            <div class="artifact-actions">
+              <button class="chip" @click="downloadArtifact()">SAVE</button>
+              <button class="chip warn" @click="deleteArtifact()">DELETE</button>
+              <button
+                class="chip"
+                @click="artifactOpen=false"
+                aria-label="Close artifact"
+              >
+                ✕
+              </button>
+            </div>
+          </header>
+          <div class="artifact-stage">
+            <template
+              x-if="currentArtifact && ['html','svg'].includes(currentArtifact.kind)"
+              ><iframe
+                class="artifact-frame"
+                sandbox="allow-scripts"
+                referrerpolicy="no-referrer"
+                :src="`./api/artifacts/${currentArtifact.id}/document`"
+                title="Artifact preview"
+              ></iframe
+            ></template>
+            <template
+              x-if="currentArtifact && !['html','svg'].includes(currentArtifact.kind)"
+              ><div
+                class="artifact-text"
+                x-effect="renderArtifactBody($el, currentArtifact)"
+              ></div
+            ></template>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </div>
   </body>
 </html>
