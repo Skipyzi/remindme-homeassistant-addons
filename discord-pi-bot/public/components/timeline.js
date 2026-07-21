@@ -15,6 +15,25 @@
 		);
 	}
 
+	/**
+	 * Merge phase-level metrics into an entry without discarding what the
+	 * entry knows about itself.
+	 *
+	 * phase_metrics arrives before a phase's tool calls and phase_complete
+	 * after, and both used to overwrite `metrics` outright — so a tool row's
+	 * toolResultTokens, set at tool_complete, was wiped moments later and the
+	 * context a tool fed back never appeared anywhere.
+	 */
+	function mergeMetrics(entry, incoming) {
+		if (!incoming) return entry.metrics;
+		const kept = entry.metrics || {};
+		return {
+			...kept,
+			...incoming,
+			toolResultTokens: incoming.toolResultTokens || kept.toolResultTokens || 0,
+		};
+	}
+
 	function applyHarnessEvent(entries, event, data) {
 		const phaseId = data.phaseId || `legacy-${Date.now()}`;
 		if (event === "phase_start") {
@@ -151,7 +170,9 @@
 		}
 		if (event === "phase_metrics") {
 			return entries.map((entry) =>
-				entry.phaseId === phaseId ? { ...entry, metrics: data.metrics } : entry,
+				entry.phaseId === phaseId
+					? { ...entry, metrics: mergeMetrics(entry, data.metrics) }
+					: entry,
 			);
 		}
 		if (event === "phase_complete") {
@@ -175,7 +196,7 @@
 										? String(entry.text || "").trim()
 										: entry.text,
 								state: "complete",
-								metrics: data.metrics || entry.metrics,
+								metrics: mergeMetrics(entry, data.metrics),
 								completedAt: Date.now(),
 							}
 						: entry,

@@ -696,6 +696,10 @@ async function runAgent(
 			kind: thinkingMode === "fast" ? "answer" : "thinking",
 			state: "active",
 		});
+		/* What this phase's tools fed back into the window. Reported on the
+		 * phase so the running context total reflects it, not just the
+		 * individual tool rows. */
+		let phaseToolTokens = 0;
 		const result = await streamModel(
 			messages,
 			thinkingMode,
@@ -759,9 +763,11 @@ async function runAgent(
 			if (Array.isArray(value.view)) answerCards.push(...value.view);
 			// What this tool pushes back into the window, tracked separately from
 			// the model's own output so context bloat is attributable per call.
+			const resultTokens = estimateTokens(serialized);
+			phaseToolTokens += resultTokens;
 			const toolMetrics = {
 				...result.metrics,
-				toolResultTokens: estimateTokens(serialized),
+				toolResultTokens: resultTokens,
 			};
 			send("tool", {
 				name: call.function.name,
@@ -788,7 +794,7 @@ async function runAgent(
 			iteration,
 			kind: "tool",
 			state: "complete",
-			metrics: result.metrics,
+			metrics: { ...result.metrics, toolResultTokens: phaseToolTokens },
 		});
 	}
 	send("answer", {
