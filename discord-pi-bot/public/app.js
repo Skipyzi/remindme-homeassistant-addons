@@ -446,6 +446,199 @@ function harness() {
 			const summary = parts.filter(Boolean).join(" · ");
 			if (summary) entity.sparkSummary = summary;
 		},
+		get enabledSkillCount() {
+			return this.skills.filter((skill) => skill.enabled).length;
+		},
+		/** Rough cost of what enabled skills add to every request. */
+		get skillTokenCost() {
+			const text = this.skills
+				.filter((skill) => skill.enabled)
+				.map((skill) => `${skill.name}: ${skill.instructions}`)
+				.join("\n");
+			return Math.ceil(text.length / 4);
+		},
+		/** Probe each layer to the model manager and show where it breaks. */
+		async runModelDiagnostics() {
+			this.modelDiagnostics = null;
+			try {
+				const response = await fetch("./api/models/diagnostics");
+				this.modelDiagnostics = await response.json();
+			} catch (error) {
+				this.modelDiagnostics = {
+					ok: false,
+					checks: [
+						{ step: "harness", ok: false, detail: String(error.message || error) },
+					],
+				};
+			}
+		},
+		async openMcp() {
+			this.mcpOpen = true;
+			await this.loadMcp();
+		},
+		async loadMcp() {
+			try {
+				const response = await fetch("./api/mcp");
+				this.mcpServers = response.ok ? await response.json() : [];
+			} catch {
+				this.mcpError = "Could not load MCP servers.";
+			}
+		},
+		async addMcp() {
+			const name = this.newMcpName.trim();
+			const url = this.newMcpUrl.trim();
+			if (!name || !url) {
+				this.mcpError = "A server needs a name and a URL.";
+				return;
+			}
+			this.mcpError = "";
+			const response = await fetch("./api/mcp", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					name,
+					url,
+					authorization: this.newMcpAuth.trim() || undefined,
+					enabled: true,
+				}),
+			});
+			const body = await response.json();
+			if (!response.ok) {
+				this.mcpError = body.error || "Could not add the server.";
+				return;
+			}
+			this.mcpServers.unshift(body);
+			this.newMcpName = "";
+			this.newMcpUrl = "";
+			this.newMcpAuth = "";
+		},
+		async updateMcp(server, values) {
+			const response = await fetch(`./api/mcp/${encodeURIComponent(server.id)}`, {
+				method: "PATCH",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify(values),
+			});
+			const body = await response.json();
+			if (!response.ok) {
+				this.mcpError = body.error || "Could not update the server.";
+				return;
+			}
+			Object.assign(server, body);
+		},
+		/** Handshake and list tools, so a server can be checked before use. */
+		async testMcp(server) {
+			server.probe = "Connecting…";
+			try {
+				const response = await fetch(
+					`./api/mcp/${encodeURIComponent(server.id)}/test`,
+					{ method: "POST" },
+				);
+				const body = await response.json();
+				server.probe = body.ok
+					? `${body.serverName || "connected"} — ${body.tools.length} tool(s): ${body.tools
+							.map((tool) => tool.name)
+							.join(", ")}`
+					: `Failed: ${body.error}`;
+			} catch (error) {
+				server.probe = `Failed: ${error.message || error}`;
+			}
+		},
+		async deleteMcp(server) {
+			if (!window.confirm(`Remove "${server.name}"?`)) return;
+			const response = await fetch(`./api/mcp/${encodeURIComponent(server.id)}`, {
+				method: "DELETE",
+			});
+			if (!response.ok && response.status !== 404) {
+				this.mcpError = "Could not remove the server.";
+				return;
+			}
+			this.mcpServers = this.mcpServers.filter((entry) => entry.id !== server.id);
+		},
+		async openSkills() {
+			this.skillsOpen = true;
+			await this.loadSkills();
+		},
+		async loadSkills() {
+			try {
+				const response = await fetch("./api/skills");
+				this.skills = response.ok ? await response.json() : [];
+			} catch {
+				this.skillError = "Could not load skills.";
+			}
+		},
+		async addSkill() {
+			const name = this.newSkillName.trim();
+			const instructions = this.newSkillBody.trim();
+			if (!name || !instructions) {
+				this.skillError = "A skill needs both a name and instructions.";
+				return;
+			}
+			this.skillError = "";
+			const response = await fetch("./api/skills", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ name, instructions, enabled: true }),
+			});
+			if (!response.ok) {
+				this.skillError = "Could not save the skill.";
+				return;
+			}
+			this.skills.unshift(await response.json());
+			this.newSkillName = "";
+			this.newSkillBody = "";
+		},
+		async updateSkill(skill, values) {
+			const response = await fetch(
+				`./api/skills/${encodeURIComponent(skill.id)}`,
+				{
+					method: "PATCH",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify(values),
+				},
+			);
+			if (!response.ok) {
+				this.skillError = "Could not update the skill.";
+				return;
+			}
+			Object.assign(skill, await response.json());
+		},
+		toggleSkill(skill, enabled) {
+			return this.updateSkill(skill, { enabled });
+		},
+		async deleteSkill(skill) {
+			if (!window.confirm(`Delete the skill "${skill.name}"?`)) return;
+			const response = await fetch(
+				`./api/skills/${encodeURIComponent(skill.id)}`,
+				{ method: "DELETE" },
+			);
+			if (!response.ok && response.status !== 404) {
+				this.skillError = "Could not delete the skill.";
+				return;
+			}
+			this.skills = this.skills.filter((entry) => entry.id !== skill.id);
+		},
+		/**
+		 * Local commands are answered by the console itself and never reach the
+		 * model — no tokens spent listing your own capabilities.
+		 */
+		/**
+		 * Local commands are answered by the console and never reach the model.
+		 * See components/commands.js for the set.
+		 */
+		async runLocalCommand(text) {
+			if (!window.RemindMeCommands) return false;
+			return window.RemindMeCommands.run(this, text);
+		},
+		/** Delete a conversation. Confirmed first — it is not recoverable. */
+		async deleteConversation(conversation) {
+			if (
+				!window.confirm(
+					`Delete "${conversation.title || "this conversation"}"? This cannot be undone.`,
+				)
+			)
+				return;
+			await window.RemindMeConversations.remove(this, conversation);
+		},
 		async entityAction(entity, action, value) {
 			const outcome = await window.RemindMeEntities.performEntityAction(
 				entity,
