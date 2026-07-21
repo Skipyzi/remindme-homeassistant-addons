@@ -87,6 +87,41 @@
             x-text="offline ? 'local tools offline' : 'local tools ready'"
           ></div>
           <div class="micro" x-text="hardware"></div>
+          <!-- Host telemetry: inference and Home Assistant share this Pi, so
+               these are the numbers that explain a slow reply. -->
+          <div class="host-stats" x-show="system">
+            <div class="host-stat">
+              <span class="host-label">CPU</span>
+              <span class="host-bar"
+                ><i :style="`width:${system?.cpuPercent || 0}%`"></i
+              ></span>
+              <span class="host-value" x-text="`${system?.cpuPercent ?? 0}%`"></span>
+            </div>
+            <div class="host-stat">
+              <span class="host-label">MEM</span>
+              <span class="host-bar"
+                ><i :style="`width:${system?.memoryPercent || 0}%`"></i
+              ></span>
+              <span
+                class="host-value"
+                x-text="`${formatBytes(system?.memoryUsedBytes)}/${formatBytes(system?.memoryTotalBytes)}`"
+              ></span>
+            </div>
+            <div class="host-stat" x-show="system?.temperatureC !== undefined">
+              <span class="host-label">TEMP</span>
+              <span class="host-bar"
+                ><i
+                  :class="{hot: system?.throttling}"
+                  :style="`width:${Math.min(100, ((system?.temperatureC || 0) / 90) * 100)}%`"
+                ></i
+              ></span>
+              <span
+                class="host-value"
+                :class="{hot: system?.throttling}"
+                x-text="`${system?.temperatureC}°C`"
+              ></span>
+            </div>
+          </div>
         </div>
       </aside>
       <main class="main">

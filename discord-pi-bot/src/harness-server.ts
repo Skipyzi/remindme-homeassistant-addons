@@ -31,6 +31,7 @@ import {
 } from "./harness/entityActions";
 import { ConversationStore } from "./harness/conversations";
 import { SkillStore, skillPrompt } from "./harness/skills";
+import { readSystemStats } from "./harness/systemStats";
 import {
 	McpServerStore,
 	callTool as callMcpTool,
@@ -156,6 +157,11 @@ app.delete("/api/skills/:id", async (request, response) => {
 });
 /* Tool catalogue for the /tools command — names, descriptions and parameter
  * keys only, so the UI can list capabilities without restating the schema. */
+/* Host telemetry for the rail. Polled, so it is deliberately cheap: reading
+ * one sysfs file and differencing CPU counters. */
+app.get("/api/system", async (_request, response) => {
+	response.set("Cache-Control", "no-store").json(await readSystemStats());
+});
 app.get("/api/tools", (_request, response) => {
 	response.json(
 		tools.map((tool) => ({

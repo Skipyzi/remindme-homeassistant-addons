@@ -68,6 +68,7 @@ function harness() {
 		sessionLabel: "ready // private network",
 		hardware: "raspberry pi profile",
 		metrics: {},
+		system: null,
 		tokenUsage: {
 			exact: false,
 			promptTokens: 0,
@@ -152,6 +153,7 @@ function harness() {
 					this.offline = true;
 				});
 			window.RemindMeModelCookbook.load(this);
+			this.startSystemPolling();
 		},
 		persist() {
 			localStorage.setItem(
@@ -231,6 +233,31 @@ function harness() {
 				window.RemindMeRichText.render(element, text);
 			else if (window.RemindMeMath) window.RemindMeMath.render(element, text);
 			else element.textContent = String(text || "");
+		},
+		formatBytes(value) {
+			const bytes = Number(value || 0);
+			if (bytes >= 1e9) return `${(bytes / 1e9).toFixed(1)}G`;
+			if (bytes >= 1e6) return `${Math.round(bytes / 1e6)}M`;
+			return `${Math.round(bytes / 1e3)}K`;
+		},
+		/**
+		 * Poll host telemetry. Every five seconds is often enough to catch a
+		 * thermal climb without adding load to the thing being measured, and
+		 * it pauses while the tab is hidden.
+		 */
+		startSystemPolling() {
+			const tick = async () => {
+				if (document.hidden) return;
+				try {
+					const response = await fetch("./api/system");
+					if (response.ok) this.system = await response.json();
+				} catch {
+					this.system = null;
+				}
+			};
+			tick();
+			clearInterval(this.systemTimer);
+			this.systemTimer = setInterval(tick, 5000);
 		},
 		formatValue(value) {
 			if (value === null || value === undefined) return "—";

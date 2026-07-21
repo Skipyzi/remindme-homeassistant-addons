@@ -2923,3 +2923,48 @@ h6.rt-h {
 	color: var(--muted);
 	font-size: 9.5px;
 }
+
+/* ── Host telemetry ─────────────────────────────────────────────────────
+ * Compact by design: this lives in the rail foot and should read at a
+ * glance, not invite study.
+ */
+.host-stats {
+	display: grid;
+	gap: 4px;
+	margin-top: 8px;
+}
+.host-stat {
+	display: grid;
+	grid-template-columns: 30px 1fr auto;
+	align-items: center;
+	gap: 6px;
+	font-size: 9px;
+	letter-spacing: 0.5px;
+}
+.host-label {
+	color: var(--muted);
+}
+.host-bar {
+	height: 3px;
+	background: rgba(255, 255, 255, 0.07);
+	border: 1px solid var(--amber-faint);
+	overflow: hidden;
+}
+.host-bar i {
+	display: block;
+	height: 100%;
+	background: var(--amber-dim);
+	transition: width 0.4s ease;
+}
+/* Rust once the SoC is hot enough to throttle — the point at which this
+ * stops being trivia and starts explaining a slow reply. */
+.host-bar i.hot {
+	background: var(--bad);
+}
+.host-value {
+	color: var(--dim);
+	white-space: nowrap;
+}
+.host-value.hot {
+	color: var(--bad);
+}
