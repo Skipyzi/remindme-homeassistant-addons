@@ -1,0 +1,4 @@
+#!/usr/bin/with-contenv bashio
+# s6 passes the process exit code and signal as positional arguments.
+bashio::log.info "Cultivation Assistant service stopped"
+exit 0

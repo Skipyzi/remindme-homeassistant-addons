@@ -1,0 +1,28 @@
+name: Cultivation Assistant
+version: 0.1.0
+slug: cultivation_assistant
+description: Local-first plant planning and Home Assistant cultivation monitoring.
+url: https://github.com/Skipyzi/remindme-homeassistant-addons
+arch:
+  - amd64
+  - aarch64
+  - armv7
+startup: application
+boot: auto
+init: false
+ingress: true
+ingress_port: 8099
+panel_icon: mdi:sprout
+panel_title: Cultivation
+homeassistant_api: true
+hassio_api: true
+ports:
+  8099/tcp: null
+ports_description:
+  8099/tcp: Direct access is disabled by default; use Home Assistant Ingress.
+options:
+  log_level: info
+schema:
+  log_level: list(trace|debug|info|warning|error)
+backup_exclude:
+  - "*/cache/*"
