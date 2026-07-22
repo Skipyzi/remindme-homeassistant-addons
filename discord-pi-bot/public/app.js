@@ -232,7 +232,13 @@ function harness() {
 			localStorage.setItem(
 				"remindme.history",
 				JSON.stringify(
-					this.messages.map((message) => ({ ...message, confirm: undefined })),
+					this.messages.map((message) => ({
+					...message,
+					confirm: undefined,
+					// A half-filled wizard is live UI state, not transcript. Drop
+					// it so a restored conversation never reopens a stale form.
+					wizard: undefined,
+				})),
 				),
 			);
 			window.RemindMeConversations.save(this);
@@ -1462,14 +1468,322 @@ function harness() {
 				});
 		},
 		async confirmAction(message) {
+			const confirm = message.confirm;
 			const r = await fetch("./api/confirm", {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ token: message.confirm.token }),
+				body: JSON.stringify({ token: confirm.token }),
 			});
-			message.text = r.ok ? "Action applied." : "Action failed.";
+			// Say what was actually committed — a reminder set, not a generic
+			// "action applied" that reads the same for every confirmation.
+			if (r.ok)
+				message.text =
+					confirm.kind === "reminder"
+						? `Reminder set for ${confirm.when}.`
+						: "Action applied.";
+			else message.text = "Action failed.";
 			message.confirm = null;
 			this.persist();
+		},
+		/* ── Task wizard ──────────────────────────────────────────────── */
+		/** Drop an inline task-builder card into the transcript. */
+		openTaskWizard() {
+			return this.add("wizard", "", {
+				label: "TASK WIZARD",
+				wizard: {
+					what: "",
+					when: "",
+					vault: true,
+					notify: true,
+					error: "",
+					submitting: false,
+				},
+			});
+		},
+		async submitTaskWizard(message) {
+			const wizard = message.wizard;
+			wizard.error = "";
+			if (!wizard.what.trim()) {
+				wizard.error = "Say what the task should do.";
+				return;
+			}
+			if (!wizard.when.trim()) {
+				wizard.error = "Say when — e.g. 'every day at 8'.";
+				return;
+			}
+			const deliver = [];
+			if (wizard.vault) deliver.push("vault");
+			if (wizard.notify) deliver.push("notify");
+			if (!deliver.length) {
+				wizard.error = "Pick at least one delivery target.";
+				return;
+			}
+			wizard.submitting = true;
+			try {
+				const response = await fetch("./api/tasks", {
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify({
+						prompt: wizard.what.trim(),
+						text: wizard.when.trim(),
+						deliver,
+					}),
+				});
+				const data = await response.json().catch(() => ({}));
+				if (!response.ok) {
+					wizard.error = data.error || "Could not schedule the task.";
+					wizard.submitting = false;
+					return;
+				}
+				// Collapse the form into a plain confirmation line, which then
+				// persists like any other answer.
+				message.wizard = null;
+				message.kind = "answer";
+				message.text = `Scheduled **${data.name}** — ${data.scheduleText}. First run ${new Date(data.nextRun).toLocaleString()}.`;
+				this.persist();
+			} catch (error) {
+				wizard.error = error.message || "Network error.";
+				wizard.submitting = false;
+			}
+		},
+		cancelTaskWizard(message) {
+			message.wizard = null;
+			message.kind = "answer";
+			message.text = "Task wizard closed.";
+			this.persist();
+		},
+		/* ── Vault graph ──────────────────────────────────────────────────
+		 * The vault's relations, drawn in the transcript. Same-origin, so it
+		 * fetches its own data — an artifact frame is sandboxed off the network,
+		 * and this needs /api/vault/graph. Notes cluster by their leading tag;
+		 * [[wikilinks]] are the solid edges between them.
+		 */
+		graphPalette: [
+			"#ffb200",
+			"#e0872f",
+			"#d9a441",
+			"#c96f3a",
+			"#e6c34b",
+			"#b8862f",
+			"#d9694b",
+			"#9c7bd9",
+		],
+		graphColor(key) {
+			let hash = 0;
+			for (let i = 0; i < key.length; i += 1)
+				hash = (hash * 31 + key.charCodeAt(i)) >>> 0;
+			return this.graphPalette[hash % this.graphPalette.length];
+		},
+		computeGraphLayout(nodes, edges) {
+			// Cluster each note under its leading tag (or "untagged"), lay the
+			// clusters out on a big ring, and spread each cluster's notes on a
+			// small ring around their hub — the same hub-and-spoke shape the
+			// constellation's relation map uses.
+			const clusters = new Map();
+			for (const node of nodes) {
+				const tag = (node.tags && node.tags[0]) || "untagged";
+				if (!clusters.has(tag)) clusters.set(tag, []);
+				clusters.get(tag).push(node);
+			}
+			const cx = 420;
+			const cy = 320;
+			const clusterR = clusters.size > 1 ? 230 : 0;
+			const hubs = [];
+			const placed = new Map();
+			const laidNodes = [];
+			let ci = 0;
+			for (const [tag, members] of clusters) {
+				const hubAngle = (ci / clusters.size) * Math.PI * 2 - Math.PI / 2;
+				const hx = cx + Math.cos(hubAngle) * clusterR;
+				const hy = cy + Math.sin(hubAngle) * clusterR;
+				const color = this.graphColor(tag);
+				hubs.push({ tag, x: hx, y: hy, color, count: members.length });
+				const nodeR = Math.min(140, 34 + members.length * 9);
+				members.forEach((node, ni) => {
+					const a =
+						members.length === 1
+							? hubAngle
+							: (ni / members.length) * Math.PI * 2;
+					const x = hx + Math.cos(a) * (members.length === 1 ? 0 : nodeR);
+					const y = hy + Math.sin(a) * (members.length === 1 ? 0 : nodeR);
+					placed.set(node.id, { x, y });
+					laidNodes.push({
+						id: node.id,
+						title: node.title,
+						x,
+						y,
+						color,
+						tag,
+						degree: node.degree || 0,
+					});
+				});
+				ci += 1;
+			}
+			// Only link edges between notes we actually placed.
+			const laidEdges = [];
+			for (const edge of edges || []) {
+				if (edge.kind !== "link") continue;
+				const a = placed.get(edge.source);
+				const b = placed.get(edge.target);
+				if (a && b) laidEdges.push({ x1: a.x, y1: a.y, x2: b.x, y2: b.y });
+			}
+			const graph = {
+				nodes: laidNodes,
+				edges: laidEdges,
+				hubs,
+				view: { x: 0, y: 0, w: 840, h: 640 },
+			};
+			// Pre-render the drawing as an SVG string. Alpine's <template x-for>
+			// clones nodes in the HTML namespace, so SVG children built that way
+			// never paint; setting innerHTML on a real <svg> parses them in the
+			// SVG namespace instead. Click handling is delegated, keyed by
+			// data-path on each node group.
+			graph.svg = this.buildGraphSvg(graph);
+			return graph;
+		},
+		buildGraphSvg(graph) {
+			const esc = (value) =>
+				String(value).replace(
+					/[<>&"]/g,
+					(c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;" })[c],
+				);
+			const clip = (title) =>
+				title.length > 18 ? `${title.slice(0, 17)}…` : title;
+			let svg = "";
+			for (const edge of graph.edges)
+				svg += `<line x1="${edge.x1}" y1="${edge.y1}" x2="${edge.x2}" y2="${edge.y2}" stroke="#8a5c00" stroke-opacity="0.5" stroke-width="1"/>`;
+			for (const hub of graph.hubs)
+				svg += `<circle cx="${hub.x}" cy="${hub.y}" r="7" fill="${hub.color}" fill-opacity="0.45"/><text x="${hub.x}" y="${hub.y - 12}" text-anchor="middle" font-size="13" fill="${hub.color}">#${esc(hub.tag)}</text>`;
+			for (const node of graph.nodes) {
+				const r = 6 + Math.min(6, node.degree);
+				svg += `<g class="vg-node" data-path="${esc(node.id)}"><title>${esc(node.title)}</title><circle cx="${node.x}" cy="${node.y}" r="${r}" fill="${node.color}"/><text x="${node.x}" y="${node.y + 18}" text-anchor="middle" font-size="10" fill="#b98f3a">${esc(clip(node.title))}</text></g>`;
+			}
+			return svg;
+		},
+		/**
+		 * Inject the pre-built SVG string as real SVG nodes.
+		 *
+		 * Setting innerHTML on an <svg> parses its children in the HTML
+		 * namespace, where <circle> and <line> are unknown elements that never
+		 * paint. Parsing the string as an SVG document and importing the nodes
+		 * keeps them in the SVG namespace, so they render.
+		 */
+		renderGraphInto(el, graph) {
+			// viewBox is set imperatively here and in the pan/zoom handlers:
+			// Alpine's :viewBox binding does not reliably apply the camelCased
+			// SVG attribute, which left the drawing off-canvas.
+			if (el) this.applyGraphView(el, graph.view);
+			if (!el || el.dataset.rendered === graph.svg) return;
+			while (el.firstChild) el.removeChild(el.firstChild);
+			const doc = new DOMParser().parseFromString(
+				`<svg xmlns="http://www.w3.org/2000/svg">${graph.svg}</svg>`,
+				"image/svg+xml",
+			);
+			// Snapshot the children first: importNode clones without detaching
+			// from the source, so iterating firstChild would never advance.
+			for (const child of Array.from(doc.documentElement.childNodes))
+				el.appendChild(document.importNode(child, true));
+			el.dataset.rendered = graph.svg;
+		},
+		applyGraphView(el, view) {
+			el.setAttribute("viewBox", `${view.x} ${view.y} ${view.w} ${view.h}`);
+		},
+		/* A click anywhere in the SVG resolves to the nearest note group. */
+		graphClick(event) {
+			if (this._graphPanned) return;
+			const group = event.target.closest?.("[data-path]");
+			if (group) this.graphOpenNote({ id: group.getAttribute("data-path") });
+		},
+		async openVaultGraph(query) {
+			const [graph, tags] = await Promise.all([
+				fetch("./api/vault/graph")
+					.then((r) => (r.ok ? r.json() : { nodes: [], edges: [] }))
+					.catch(() => ({ nodes: [], edges: [] })),
+				fetch("./api/vault/tags")
+					.then((r) => (r.ok ? r.json() : []))
+					.catch(() => []),
+			]);
+			let notes = (graph.nodes || []).filter((node) => node.kind !== "tag");
+			if (query) {
+				const q = query.toLowerCase();
+				notes = notes.filter(
+					(node) =>
+						node.title.toLowerCase().includes(q) ||
+						(node.tags || []).some((tag) => tag.includes(q)),
+				);
+			}
+			if (!notes.length) {
+				this.add(
+					"answer",
+					query
+						? `No notes match \`${query}\`.`
+						: "The vault is empty. Save a note and it will appear here.",
+				);
+				return;
+			}
+			const layout = this.computeGraphLayout(notes, graph.edges);
+			this.add("graph", "", {
+				label: "VAULT GRAPH",
+				graph: layout,
+				graphMeta: `${notes.length} notes · ${layout.edges.length} links · ${tags.length} tags`,
+			});
+		},
+		/** A node tap reads the note into the transcript. */
+		async graphOpenNote(node) {
+			const response = await fetch(
+				`./api/vault/note?path=${encodeURIComponent(node.id)}`,
+			);
+			if (!response.ok) return this.add("answer", `Could not open ${node.id}.`);
+			const note = await response.json();
+			const tags = (note.tags || []).map((tag) => `#${tag}`).join(" ");
+			this.add(
+				"answer",
+				[`### ${note.title}`, tags, "", note.body || "*(empty note)*"]
+					.filter((line) => line !== "")
+					.join("\n"),
+			);
+		},
+		/* Pan and zoom act on the tapped graph's own viewBox. */
+		graphPanStart(message, event) {
+			this._graphDrag = {
+				message,
+				x: event.clientX,
+				y: event.clientY,
+				vx: message.graph.view.x,
+				vy: message.graph.view.y,
+				rect: event.currentTarget.getBoundingClientRect(),
+				moved: false,
+			};
+		},
+		graphPanMove(event) {
+			const drag = this._graphDrag;
+			if (!drag) return;
+			const view = drag.message.graph.view;
+			const dx = ((event.clientX - drag.x) * view.w) / drag.rect.width;
+			const dy = ((event.clientY - drag.y) * view.h) / drag.rect.height;
+			if (Math.abs(event.clientX - drag.x) + Math.abs(event.clientY - drag.y) > 3)
+				drag.moved = true;
+			view.x = drag.vx - dx;
+			view.y = drag.vy - dy;
+			this.applyGraphView(event.currentTarget, view);
+		},
+		graphPanEnd() {
+			this._graphDrag = null;
+		},
+		graphZoom(message, event) {
+			event.preventDefault();
+			const view = message.graph.view;
+			const rect = event.currentTarget.getBoundingClientRect();
+			const mx = view.x + ((event.clientX - rect.left) / rect.width) * view.w;
+			const my = view.y + ((event.clientY - rect.top) / rect.height) * view.h;
+			const factor = event.deltaY > 0 ? 1.12 : 0.89;
+			const nw = Math.min(2400, Math.max(220, view.w * factor));
+			const k = nw / view.w;
+			view.x = mx - (mx - view.x) * k;
+			view.y = my - (my - view.y) * k;
+			view.w = nw;
+			view.h *= k;
+			this.applyGraphView(event.currentTarget, view);
 		},
 		cancelAction(message) {
 			message.text = "Action cancelled.";
