@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>RemindMe Vault</title>
+		<link rel="stylesheet" href="styles.css" />
+	</head>
+	<body>
+		<div class="app">
+			<!-- Far-left ribbon: the workspace-level actions, Obsidian-style. -->
+			<nav class="ribbon" aria-label="Actions">
+				<button id="rb-new" class="ribbon-btn" title="New note" aria-label="New note">＋</button>
+				<button id="rb-graph" class="ribbon-btn" title="Graph view" aria-label="Graph view">◕</button>
+				<button id="rb-reload" class="ribbon-btn" title="Reload vault" aria-label="Reload vault">⟳</button>
+			</nav>
+
+			<!-- File explorer. -->
+			<aside class="explorer" aria-label="Notes">
+				<div class="explorer-head">
+					<input id="search" type="search" placeholder="Search notes…" aria-label="Search notes" />
+				</div>
+				<ul id="note-list" class="note-list"></ul>
+			</aside>
+
+			<!-- Main workspace: the editor by default, the graph as a pane. -->
+			<main class="workspace">
+				<section id="editor-pane" class="pane editor-pane">
+					<div class="tabbar"><span id="tab-title" class="tab">New note</span></div>
+					<div class="edit-body">
+						<input id="note-title" class="title-input" placeholder="Title" aria-label="Title" />
+						<div class="meta-row">
+							<input id="note-tags" placeholder="tags, comma separated" aria-label="Tags" />
+							<input id="note-type" placeholder="type" aria-label="Type" />
+						</div>
+						<textarea
+							id="note-body"
+							class="body-input"
+							spellcheck="false"
+							placeholder="# Write markdown…&#10;Link notes with [[Another note]] and tag with #topic."
+							aria-label="Note body"
+						></textarea>
+						<div class="editor-actions">
+							<button id="save-btn" class="btn">Save</button>
+							<button id="delete-btn" class="btn danger" disabled>Delete</button>
+							<span id="save-status" class="save-status"></span>
+						</div>
+						<div class="backlinks">
+							<h4>Linked &amp; related</h4>
+							<ul id="backlink-list"></ul>
+						</div>
+					</div>
+				</section>
+
+				<section id="graph-pane" class="pane graph-pane" hidden>
+					<div class="tabbar">
+						<span class="tab">Constellation</span>
+						<button id="graph-close" class="tab-close" title="Close" aria-label="Close graph">✕</button>
+					</div>
+					<div id="graph-mount" class="graph-mount"></div>
+				</section>
+			</main>
+		</div>
+		<script type="module" src="bundle.js"></script>
+	</body>
+</html>

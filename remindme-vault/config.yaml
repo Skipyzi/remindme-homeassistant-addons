@@ -1,0 +1,25 @@
+name: RemindMe Vault
+version: "0.1.0"
+slug: remindme_vault
+description: An editable Obsidian-format note vault with a 3D constellation view, served from Home Assistant
+arch:
+  - aarch64
+  - amd64
+startup: application
+boot: auto
+init: false
+ingress: true
+ingress_port: 8091
+panel_icon: mdi:graph-outline
+panel_title: Vault
+panel_admin: false
+options:
+  instance_name: RemindMe Vault
+schema:
+  instance_name: str
+map:
+  # The vault is plain markdown under /share so Obsidian desktop (and the
+  # RemindMe add-on) can read and write the very same files.
+  - type: share
+    read_only: false
+    path: /share
