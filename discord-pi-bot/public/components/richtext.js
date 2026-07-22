@@ -86,6 +86,29 @@
 				continue;
 			}
 
+			// A bare URL the model wrote as plain text. After the markdown-link
+			// rule, so [label](url) still wins, and before emphasis, so an
+			// underscore inside a URL is not read as italics.
+			const bareUrl = /^https?:\/\/[^\s<>()]+/.exec(rest);
+			if (bareUrl) {
+				let url = bareUrl[0];
+				// Leave trailing sentence punctuation out of the link.
+				const trailing = /[.,;:!?)\]}'"]+$/.exec(url);
+				if (trailing) url = url.slice(0, -trailing[0].length);
+				const href = safeHref(url);
+				if (href) {
+					flush();
+					const anchor = document.createElement("a");
+					anchor.href = href;
+					anchor.target = "_blank";
+					anchor.rel = "noopener noreferrer";
+					anchor.textContent = url;
+					parent.appendChild(anchor);
+					index += url.length;
+					continue;
+				}
+			}
+
 			const strong = /^(\*\*|__)(?=\S)([\s\S]*?\S)\1/.exec(rest);
 			if (strong) {
 				flush();
