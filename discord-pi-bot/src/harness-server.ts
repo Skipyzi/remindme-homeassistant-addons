@@ -41,6 +41,7 @@ import { ArtifactStore, toDocument } from "./harness/artifacts";
 import { applyEdit, isEditFailure, modelView } from "./harness/artifactEdit";
 import { partialStringField } from "./harness/streamingJson";
 import { EndpointStore, validateEndpointUrl } from "./harness/endpoints";
+import { readablePage, ReaderError } from "./harness/reader";
 import { parseReminder, describeWhen } from "./harness/reminderParser";
 import {
 	McpServerStore,
@@ -362,6 +363,26 @@ app.get("/api/artifacts/:id/document", (request, response) => {
 });
 app.get("/api/system", async (_request, response) => {
 	response.set("Cache-Control", "no-store").json(await readSystemStats());
+});
+/*
+ * Reader mode: fetch a page and return its readable text for the console to
+ * render in the artifact panel. Fetching arbitrary URLs is an SSRF risk, so
+ * readablePage refuses anything resolving to a non-public address — a bad
+ * URL is a 400 with a reason, an unexpected failure a 502.
+ */
+app.get("/api/reader", async (request, response) => {
+	const target = String(request.query.url || "");
+	if (!target)
+		return response.status(400).json({ error: "A url query parameter is required." });
+	try {
+		const page = await readablePage(target);
+		response.set("Cache-Control", "no-store").json(page);
+	} catch (error) {
+		if (error instanceof ReaderError)
+			return response.status(400).json({ error: error.message });
+		console.error("Reader failed:", error);
+		response.status(502).json({ error: "The page could not be fetched." });
+	}
 });
 app.get("/api/tools", (_request, response) => {
 	response.json(

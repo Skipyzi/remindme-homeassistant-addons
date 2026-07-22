@@ -2854,6 +2854,26 @@ h6.rt-h {
 	text-underline-offset: 2px;
 	overflow-wrap: anywhere;
 }
+/* The reader affordance beside a link: fetch the page and read it in the
+ * panel. Kept quiet — a dim glyph that warms on hover — so it rides along
+ * without competing with the link it follows. */
+.rt-reader {
+	background: transparent;
+	border: 0;
+	padding: 0 2px;
+	margin-left: 2px;
+	font-size: 0.85em;
+	line-height: 1;
+	cursor: pointer;
+	opacity: 0.55;
+	vertical-align: baseline;
+	filter: grayscale(0.4);
+}
+.rt-reader:hover,
+.rt-reader:focus-visible {
+	opacity: 1;
+	filter: none;
+}
 .rt-code {
 	background: rgba(0, 0, 0, 0.3);
 	border: 1px solid var(--amber-faint);

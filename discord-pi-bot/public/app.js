@@ -167,6 +167,15 @@ function harness() {
 				if (typeof event.data?.artifactStatus === "string")
 					this.artifactStatus = event.data.artifactStatus;
 			});
+			/*
+			 * The reader glyph beside a link asks, through a bubbling DOM event,
+			 * for the page to be fetched and shown in the artifact panel. The
+			 * link itself still opens the live site in a new tab untouched.
+			 */
+			window.addEventListener("remindme:reader", (event) => {
+				const url = event.detail?.url;
+				if (url) this.openReader(url);
+			});
 		},
 		/**
 		 * Pull the model badge, capabilities and thinking profiles from the
@@ -431,6 +440,55 @@ function harness() {
 				this.artifactOpen = true;
 			} catch {
 				/* nothing to show */
+			}
+		},
+		/** The bare host of a URL, for a title before the real one arrives. */
+		readerHost(url) {
+			try {
+				return new URL(url).host;
+			} catch {
+				return String(url || "");
+			}
+		},
+		/**
+		 * Reader mode. Fetch a link's readable text server-side and show it in
+		 * the artifact panel as a document with no id — so it rides the same
+		 * pane and renderer as an artifact but carries no SAVE or DELETE, and
+		 * is never framed. The live site is left to the link's own new tab.
+		 */
+		async openReader(url) {
+			const href = String(url || "");
+			if (!/^https?:\/\//i.test(href)) return;
+			const show = (content, title) => {
+				this.currentArtifact = {
+					kind: "reader",
+					title: title || this.readerHost(href),
+					content,
+					sourceUrl: href,
+				};
+			};
+			show(`Fetching ${href} …`);
+			this.artifactSource = "";
+			this.artifactStreaming = false;
+			this.artifactView = "preview";
+			this.artifactOpen = true;
+			try {
+				const response = await fetch(`./api/reader?url=${encodeURIComponent(href)}`);
+				const data = await response.json().catch(() => ({}));
+				if (!response.ok || !data?.text) {
+					const reason = data?.error || `Could not read the page (HTTP ${response.status}).`;
+					show(`${reason}\n\n[Open the original ↗](${href})`);
+					return;
+				}
+				const head = [
+					`# ${data.title || this.readerHost(href)}`,
+					`[Open the original ↗](${href})`,
+				];
+				if (data.byline) head.push(`_${data.byline}_`);
+				if (data.truncated) head.push("_(truncated for length)_");
+				show(`${head.join("\n\n")}\n\n${data.text}`, data.title);
+			} catch {
+				show(`Could not reach the reader.\n\n[Open the original ↗](${href})`);
 			}
 		},
 		/**

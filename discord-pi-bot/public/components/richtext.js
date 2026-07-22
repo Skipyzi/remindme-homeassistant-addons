@@ -30,6 +30,33 @@
 	}
 
 	/**
+	 * A small companion control that asks the app to open a link in reader
+	 * mode — the harness fetches the page and renders its text in the panel,
+	 * since the live site cannot be framed. richtext stays framework-free: it
+	 * only fires a DOM event and lets whoever is listening do the work. Only
+	 * external http(s) links get one; mailto and the like do not.
+	 */
+	function appendReaderGlyph(parent, href) {
+		if (!/^https?:/i.test(href)) return;
+		const glyph = document.createElement("button");
+		glyph.type = "button";
+		glyph.className = "rt-reader";
+		glyph.title = "Open in reader";
+		glyph.setAttribute("aria-label", "Open in reader");
+		glyph.textContent = "📖";
+		glyph.addEventListener("click", (event) => {
+			event.preventDefault();
+			glyph.dispatchEvent(
+				new CustomEvent("remindme:reader", {
+					bubbles: true,
+					detail: { url: href },
+				}),
+			);
+		});
+		parent.appendChild(glyph);
+	}
+
+	/**
 	 * Inline pass: code, bold, italic, links, then maths on what is left.
 	 * Ordered so that code spans win — backticks protect their contents from
 	 * every other rule, which is what stops `**` inside code being eaten.
@@ -78,6 +105,7 @@
 					anchor.rel = "noopener noreferrer";
 					appendInline(anchor, link[1] || href);
 					parent.appendChild(anchor);
+					appendReaderGlyph(parent, href);
 				} else {
 					// Unsafe scheme: show the label, never the link.
 					parent.appendChild(document.createTextNode(link[1] || ""));
@@ -104,6 +132,7 @@
 					anchor.rel = "noopener noreferrer";
 					anchor.textContent = url;
 					parent.appendChild(anchor);
+					appendReaderGlyph(parent, href);
 					index += url.length;
 					continue;
 				}
