@@ -1,0 +1,1040 @@
+/*
+ * RemindMe Search — a phosphor command-line face for SearXNG.
+ *
+ * The instance is part of the RemindMe wrist-console, so it wears the same
+ * amber-CRT skin: an olive-black tube, a stencil wordmark, one turquoise
+ * accent for links, and mono type throughout. Boldness is spent in one
+ * place — the command line and its scan-sweep — and everything else is kept
+ * quiet: hairline dividers, generous space, no chrome that does not report
+ * something true.
+ */
+
+@font-face {
+	font-family: "Big Shoulders Stencil Text";
+	src: url("/static/remindme/fonts/big-shoulders-stencil-text-700.woff2") format("woff2");
+	font-weight: 700;
+	font-style: normal;
+	font-display: swap;
+}
+@font-face {
+	font-family: "Share Tech Mono";
+	src: url("/static/remindme/fonts/share-tech-mono.woff2") format("woff2");
+	font-weight: 400;
+	font-style: normal;
+	font-display: swap;
+}
+
+/*
+ * One palette, swapped by [data-theme] on the root. The variable names keep
+ * the amber vocabulary even in the other skins — "--amber" is simply "the
+ * phosphor accent" — so nothing downstream has to change to add a theme.
+ * --bloom is the warm top of the tube's gradient; --crt scales the scanline
+ * overlay so a daylight theme can turn the glass off.
+ */
+:root,
+:root[data-theme="amber"] {
+	--ink: #080704;
+	--bloom: #1a1305;
+	--panel: #140e05;
+	--panel-2: #1d1408;
+	--amber: #ffb200;
+	--amber-dim: #8a5c00;
+	--amber-faint: #5c4416;
+	--cool: #5fb8d6;
+	--green: #5cc06a;
+	--red: #e05a2b;
+	--text: #e8dcc0;
+	--muted: #8a7d5c;
+	--dim: #c9a34e;
+	--glow: 0.45;
+	--crt: 0.5;
+}
+
+/* P1 green phosphor — the other classic tube. */
+:root[data-theme="green"] {
+	--ink: #02120a;
+	--bloom: #063421;
+	--panel: #04180d;
+	--panel-2: #072a17;
+	--amber: #43f79b;
+	--amber-dim: #1c8a54;
+	--amber-faint: #124a30;
+	--cool: #64d9c8;
+	--green: #a6e86a;
+	--red: #ef6b4a;
+	--text: #d8f5e4;
+	--muted: #5f9d7d;
+	--dim: #8fe0b4;
+	--glow: 0.45;
+	--crt: 0.5;
+}
+
+/* OLED — true black for the deepest panels, no bloom to light the pixels. */
+:root[data-theme="oled"] {
+	--ink: #000000;
+	--bloom: #000000;
+	--panel: #0a0905;
+	--panel-2: #12100a;
+	--amber: #ffbe1a;
+	--amber-dim: #7a5300;
+	--amber-faint: #3d2f14;
+	--cool: #64c3e2;
+	--green: #66cf74;
+	--red: #e86336;
+	--text: #f0e4c8;
+	--muted: #8a7d5c;
+	--dim: #d0aa54;
+	--glow: 0.5;
+	--crt: 0.32;
+}
+
+/* Daylight — warm paper, ink text, bronze accent. Still mono and instrument;
+ * the identity rides the type and layout, not the darkness. */
+:root[data-theme="light"] {
+	--ink: #ece4d3;
+	--bloom: #f6f0e2;
+	--panel: #e2d8c1;
+	--panel-2: #d8ccae;
+	--amber: #9a6206;
+	--amber-dim: #b78e3f;
+	--amber-faint: #c9b587;
+	--cool: #0d6079;
+	--green: #3c7a2b;
+	--red: #b23417;
+	--text: #2b2418;
+	--muted: #786c50;
+	--dim: #6e571e;
+	--glow: 0;
+	--crt: 0;
+}
+
+/*
+ * Immersion is the second dial, orthogonal to colour: how much of the
+ * Fallout-terminal theatre to run. --fx scales every optical effect at once
+ * (scanlines, phosphor glow, flicker), so Silent turns the tube off, Standard
+ * runs it, and Cinematic pushes it past one. The heavier cinematic-only
+ * pieces — curvature vignette, boot sequence, single-hue phosphor — gate on
+ * the attribute itself.
+ */
+:root,
+:root[data-immersion="standard"] {
+	--fx: 1;
+}
+:root[data-immersion="silent"] {
+	--fx: 0;
+}
+:root[data-immersion="cinematic"] {
+	--fx: 1.5;
+}
+/* Cinematic collapses to a single phosphor colour, the way a real monochrome
+ * terminal has no second ink — links and URLs separate by brightness instead. */
+:root[data-immersion="cinematic"] {
+	--cool: var(--amber);
+	--green: var(--dim);
+}
+
+:root {
+	--display: "Big Shoulders Stencil Text", "Arial Narrow", sans-serif;
+	--mono: "Share Tech Mono", ui-monospace, Consolas, monospace;
+
+	--edge: 1px solid var(--amber-faint);
+	--reading: 44rem;
+}
+
+* {
+	box-sizing: border-box;
+}
+html {
+	-webkit-text-size-adjust: 100%;
+}
+body {
+	margin: 0;
+	/* An app shell: the frame stays put and only the results scroll. dvh keeps
+	 * the bottom off the mobile browser's collapsing chrome. */
+	height: 100vh;
+	height: 100dvh;
+	overflow: hidden;
+	display: flex;
+	flex-direction: column;
+	background:
+		radial-gradient(120% 90% at 50% -10%, var(--bloom) 0%, var(--ink) 62%),
+		var(--ink);
+	color: var(--text);
+	transition: background 0.25s, color 0.25s;
+	font-family: var(--mono);
+	font-size: 15px;
+	line-height: 1.5;
+	letter-spacing: 0.01em;
+}
+
+a {
+	color: var(--cool);
+	text-decoration: none;
+}
+a:hover {
+	text-decoration: underline;
+	text-underline-offset: 2px;
+}
+
+/* The tube: faint scanlines and a vignette so the whole page reads as glass,
+ * never loud enough to fight the text on top of it. */
+.crt {
+	position: fixed;
+	inset: 0;
+	pointer-events: none;
+	z-index: 40;
+	background:
+		repeating-linear-gradient(
+			to bottom,
+			rgba(0, 0, 0, 0) 0,
+			rgba(0, 0, 0, 0) 2px,
+			rgba(0, 0, 0, 0.16) 3px
+		),
+		radial-gradient(130% 100% at 50% 50%, transparent 58%, rgba(0, 0, 0, 0.55) 100%);
+	mix-blend-mode: multiply;
+	opacity: calc(var(--crt) * var(--fx));
+}
+
+/* Cinematic-only tube: a deep curvature vignette, a rolling refresh band, and
+ * a rare flicker. Kept on its own layer so Silent and Standard never pay for
+ * it, and so it can be swapped for another cinematic treatment later. */
+.fx {
+	position: fixed;
+	inset: 0;
+	pointer-events: none;
+	z-index: 41;
+	display: none;
+}
+:root[data-immersion="cinematic"] .fx {
+	display: block;
+	background: radial-gradient(115% 115% at 50% 50%, transparent 42%, rgba(0, 0, 0, 0.72) 100%);
+	animation: flicker 7s steps(1) infinite;
+}
+:root[data-immersion="cinematic"] .fx::after {
+	content: "";
+	position: absolute;
+	left: 0;
+	right: 0;
+	height: 16vh;
+	background: linear-gradient(transparent, rgba(255, 255, 255, 0.035), transparent);
+	animation: roll 7.5s linear infinite;
+}
+:root[data-immersion="light"] .fx,
+:root[data-immersion="silent"] .fx {
+	display: none;
+}
+
+/* Boot sequence: a short terminal handshake shown when Cinematic loads. It
+ * covers the tube, types a few lines, then lifts. A click or key skips it. */
+.boot {
+	position: fixed;
+	inset: 0;
+	z-index: 60;
+	background: var(--ink);
+	color: var(--amber);
+	font-family: var(--mono);
+	padding: clamp(20px, 8vh, 90px) clamp(18px, 8vw, 120px);
+	display: none;
+	cursor: pointer;
+}
+.boot.on {
+	display: block;
+}
+.boot.off {
+	animation: bootOut 0.4s ease forwards;
+}
+.boot pre {
+	margin: 0;
+	font-size: clamp(0.85rem, 2.6vw, 1.05rem);
+	line-height: 1.7;
+	white-space: pre-wrap;
+	text-shadow: 0 0 calc(10px * var(--glow)) color-mix(in srgb, var(--amber), transparent 55%);
+}
+.boot .caret-block {
+	display: inline-block;
+	width: 0.6em;
+	height: 1em;
+	background: var(--amber);
+	vertical-align: -0.12em;
+	animation: blink 1s steps(1) infinite;
+}
+.boot-skip {
+	position: absolute;
+	right: 18px;
+	bottom: 16px;
+	font-size: 10px;
+	letter-spacing: 0.22em;
+	text-transform: uppercase;
+	color: var(--muted);
+}
+
+/* Immersion control: a three-step signal meter, low → full. */
+.fx-level {
+	display: inline-flex;
+	align-items: flex-end;
+	gap: 3px;
+	height: 15px;
+}
+.fx-step {
+	width: 5px;
+	padding: 0;
+	background: transparent;
+	border: 1px solid var(--amber-faint);
+	border-bottom: 0;
+	cursor: pointer;
+	transition: background 0.12s, border-color 0.12s;
+}
+.fx-step[data-fx="silent"] {
+	height: 6px;
+}
+.fx-step[data-fx="standard"] {
+	height: 10px;
+}
+.fx-step[data-fx="cinematic"] {
+	height: 15px;
+}
+.fx-step:hover {
+	border-color: var(--amber-dim);
+}
+/* Light every bar up to and including the active level, like signal strength. */
+.fx-level[data-level="silent"] .fx-step[data-fx="silent"],
+.fx-level[data-level="standard"] .fx-step[data-fx="silent"],
+.fx-level[data-level="standard"] .fx-step[data-fx="standard"],
+.fx-level[data-level="cinematic"] .fx-step {
+	background: var(--amber);
+	border-color: var(--amber-dim);
+}
+
+/* ── Top instrument bar ─────────────────────────────────────────────── */
+.bar {
+	position: relative;
+	z-index: 20;
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	padding: 10px 18px;
+	border-bottom: var(--edge);
+	background: linear-gradient(var(--panel), transparent);
+}
+.bar-mark {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+}
+.pwr {
+	width: 8px;
+	height: 8px;
+	border-radius: 50%;
+	background: var(--amber);
+	box-shadow: 0 0 8px 1px var(--amber);
+}
+.bar-name {
+	font-size: 12px;
+	letter-spacing: 0.28em;
+	text-transform: uppercase;
+	color: var(--dim);
+}
+.bar-name .slash {
+	color: var(--amber-dim);
+	margin: 0 4px;
+}
+.bar-status {
+	display: flex;
+	align-items: center;
+	gap: 9px;
+}
+.bar-status-label {
+	font-size: 10px;
+	letter-spacing: 0.24em;
+	text-transform: uppercase;
+	color: var(--muted);
+}
+.led {
+	width: 8px;
+	height: 8px;
+	border-radius: 50%;
+	background: var(--amber-faint);
+	transition: background 0.2s, box-shadow 0.2s;
+}
+.bar-status[data-state="ok"] .led {
+	background: var(--green);
+	box-shadow: 0 0 8px 1px var(--green);
+}
+.bar-status[data-state="busy"] .led {
+	background: var(--amber);
+	box-shadow: 0 0 8px 1px var(--amber);
+	animation: pulse 0.9s ease-in-out infinite;
+}
+.bar-status[data-state="error"] .led {
+	background: var(--red);
+	box-shadow: 0 0 8px 1px var(--red);
+}
+.bar-right {
+	display: flex;
+	align-items: center;
+	gap: 16px;
+}
+/* Theme swatches: each shows its tube colour split from its accent, so the
+ * choice reads at a glance. Small enough to survive a phone bar. */
+.themes {
+	display: flex;
+	align-items: center;
+	gap: 7px;
+}
+.swatch {
+	width: 15px;
+	height: 15px;
+	padding: 0;
+	border: 1px solid var(--amber-faint);
+	border-radius: 50%;
+	cursor: pointer;
+	transition: transform 0.12s, box-shadow 0.12s;
+}
+.swatch:hover {
+	transform: scale(1.12);
+}
+.swatch[aria-pressed="true"] {
+	box-shadow: 0 0 0 2px var(--ink), 0 0 0 3px var(--amber);
+}
+.swatch[data-set="amber"] {
+	background: linear-gradient(135deg, #080704 46%, #ffb200 54%);
+}
+.swatch[data-set="green"] {
+	background: linear-gradient(135deg, #02120a 46%, #43f79b 54%);
+}
+.swatch[data-set="oled"] {
+	background: linear-gradient(135deg, #000 46%, #ffbe1a 54%);
+}
+.swatch[data-set="light"] {
+	background: linear-gradient(135deg, #ece4d3 46%, #9a6206 54%);
+}
+
+/* ── Stage & hero ───────────────────────────────────────────────────── */
+.stage {
+	position: relative;
+	z-index: 10;
+	flex: 1;
+	min-height: 0;
+	width: 100%;
+	max-width: 1400px;
+	margin: 0 auto;
+	padding: 0 22px;
+	display: flex;
+	flex-direction: column;
+	overflow: hidden;
+}
+/* Empty state parks the console in the middle of the tube, and keeps the
+ * landing command line to a sane reading width rather than the full deck. */
+.stage[data-mode="idle"] {
+	justify-content: center;
+	padding-bottom: 8vh;
+}
+.stage[data-mode="idle"] .hero {
+	width: 100%;
+	max-width: 760px;
+	margin: 0 auto;
+}
+.stage[data-mode="idle"] .readout {
+	flex: none;
+}
+.hero {
+	flex: none;
+	transition: padding 0.35s ease;
+}
+.stage[data-mode="idle"] .hero {
+	padding-top: 2vh;
+}
+.stage:not([data-mode="idle"]) .hero {
+	padding: 12px 0 8px;
+	border-bottom: var(--edge);
+}
+
+.wordmark {
+	margin: 0 0 6px;
+	font-family: var(--display);
+	font-weight: 700;
+	line-height: 0.9;
+	letter-spacing: 0.06em;
+	text-transform: uppercase;
+	color: var(--amber);
+	text-shadow: 0 0 calc(24px * var(--glow) * var(--fx)) color-mix(in srgb, var(--amber), transparent 50%);
+	font-size: clamp(2.6rem, 8vw, 5rem);
+}
+.wordmark .wordmark-sub {
+	color: var(--dim);
+	margin-left: 0.35em;
+	-webkit-text-stroke: 1px var(--amber-dim);
+	color: transparent;
+}
+.tagline {
+	margin: 0 0 26px;
+	font-size: 11px;
+	letter-spacing: 0.26em;
+	text-transform: uppercase;
+	color: var(--muted);
+}
+/* Compact header once results are up: wordmark shrinks, tagline hides. */
+.stage:not([data-mode="idle"]) .wordmark {
+	font-size: clamp(1.4rem, 4vw, 1.9rem);
+	margin-bottom: 0;
+}
+/* At readout size the outlined sub gets too thin to read, so fill it. */
+.stage:not([data-mode="idle"]) .wordmark .wordmark-sub {
+	-webkit-text-stroke: 0;
+	color: var(--amber-dim);
+}
+.stage:not([data-mode="idle"]) .tagline {
+	display: none;
+}
+
+/* ── The command line ───────────────────────────────────────────────── */
+.console {
+	margin: 0;
+}
+.prompt {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	padding: 12px 12px 12px 14px;
+	background: var(--panel);
+	border: 1px solid var(--amber-dim);
+	box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.4);
+	transition: border-color 0.2s, box-shadow 0.2s;
+}
+.prompt:focus-within {
+	border-color: var(--amber);
+	box-shadow: 0 0 0 1px var(--amber),
+		0 0 calc(22px * var(--glow) * var(--fx)) color-mix(in srgb, var(--amber), transparent 65%);
+}
+.caret {
+	color: var(--amber);
+	font-size: 1.15rem;
+	line-height: 1;
+	opacity: 0.9;
+}
+.q {
+	flex: 1;
+	min-width: 0;
+	background: transparent;
+	border: 0;
+	outline: none;
+	color: var(--text);
+	font-family: var(--mono);
+	font-size: 1.15rem;
+	letter-spacing: 0.02em;
+	caret-color: var(--amber);
+}
+.q::placeholder {
+	color: var(--amber-faint);
+}
+.run {
+	flex: none;
+	background: transparent;
+	border: 1px solid var(--amber-dim);
+	color: var(--amber);
+	font-family: var(--mono);
+	font-size: 11px;
+	letter-spacing: 0.22em;
+	padding: 7px 12px;
+	cursor: pointer;
+	transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.run:hover {
+	background: var(--amber);
+	color: var(--ink);
+	border-color: var(--amber);
+}
+.run:active {
+	transform: translateY(1px);
+}
+
+/* ── Channel tabs ───────────────────────────────────────────────────── */
+.channels {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	margin-top: 12px;
+}
+.channel {
+	display: inline-flex;
+	align-items: center;
+	gap: 7px;
+	background: transparent;
+	border: var(--edge);
+	color: var(--muted);
+	font-family: var(--mono);
+	font-size: 11px;
+	letter-spacing: 0.16em;
+	text-transform: uppercase;
+	padding: 6px 12px;
+	cursor: pointer;
+	transition: color 0.15s, border-color 0.15s;
+}
+.channel:hover {
+	color: var(--dim);
+	border-color: var(--amber-dim);
+}
+.chled {
+	width: 6px;
+	height: 6px;
+	border-radius: 50%;
+	background: var(--amber-faint);
+	transition: background 0.15s, box-shadow 0.15s;
+}
+.channel.is-on {
+	color: var(--amber);
+	border-color: var(--amber-dim);
+}
+.channel.is-on .chled {
+	background: var(--amber);
+	box-shadow: 0 0 7px 1px var(--amber);
+}
+
+/* ── Autocomplete ───────────────────────────────────────────────────── */
+.suggest {
+	margin-top: 6px;
+	border: var(--edge);
+	border-top: 0;
+	background: var(--panel);
+}
+.suggest-item {
+	display: block;
+	width: 100%;
+	text-align: left;
+	background: transparent;
+	border: 0;
+	border-top: 1px solid rgba(92, 68, 22, 0.4);
+	color: var(--dim);
+	font-family: var(--mono);
+	font-size: 0.95rem;
+	padding: 8px 14px;
+	cursor: pointer;
+}
+.suggest-item:first-child {
+	border-top: 0;
+}
+.suggest-item:hover,
+.suggest-item[aria-selected="true"] {
+	background: var(--panel-2);
+	color: var(--amber);
+}
+
+/* ── Readout (results) ──────────────────────────────────────────────── */
+.readout {
+	padding: 6px 0 24px;
+}
+/* In results mode the readout is the only thing that scrolls. */
+.stage:not([data-mode="idle"]) .readout {
+	flex: 1;
+	min-height: 0;
+	overflow-y: auto;
+	overflow-x: hidden;
+	scrollbar-width: thin;
+	scrollbar-color: var(--amber-faint) transparent;
+	overscroll-behavior: contain;
+}
+.readout::-webkit-scrollbar {
+	width: 10px;
+}
+.readout::-webkit-scrollbar-thumb {
+	background: var(--amber-faint);
+	border: 3px solid var(--ink);
+	border-radius: 6px;
+}
+.readout::-webkit-scrollbar-track {
+	background: transparent;
+}
+.meta {
+	display: flex;
+	align-items: baseline;
+	gap: 10px;
+	padding: 8px 0 8px;
+	font-size: 10px;
+	letter-spacing: 0.22em;
+	text-transform: uppercase;
+	color: var(--muted);
+}
+.meta b {
+	color: var(--amber);
+	font-weight: 400;
+}
+/* One orchestrated moment: a phosphor bar sweeps down the fresh results. */
+.readout.sweep::before {
+	content: "";
+	position: absolute;
+	left: 0;
+	right: 0;
+	height: 40vh;
+	background: linear-gradient(
+		to bottom,
+		transparent,
+		rgba(255, 178, 0, 0.12),
+		transparent
+	);
+	pointer-events: none;
+	animation: sweep 0.6s ease-out 1;
+}
+.readout {
+	position: relative;
+}
+
+.answer {
+	border: 1px solid var(--amber-dim);
+	background: var(--panel);
+	padding: 10px 14px;
+	margin: 2px 0 12px;
+}
+.answer-tag {
+	font-size: 10px;
+	letter-spacing: 0.24em;
+	text-transform: uppercase;
+	color: var(--amber);
+	margin-bottom: 4px;
+}
+.answer-body {
+	color: var(--text);
+	font-size: 1rem;
+}
+
+/* Results fill the deck as a card grid — two or three columns on a desktop,
+ * one on a phone — so the width is used instead of a narrow centre column. */
+.rows {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
+	gap: 10px;
+	padding-top: 10px;
+	/* stretch: every card in a row shares the tallest height, so the grid
+	 * reads as an even bento rather than a ragged one. */
+	align-items: stretch;
+}
+.row {
+	display: grid;
+	grid-template-columns: 3ch 1fr;
+	gap: 0 12px;
+	padding: 12px 14px;
+	border: var(--edge);
+	background: color-mix(in srgb, var(--panel), transparent 22%);
+	align-content: start;
+}
+.rank {
+	color: var(--amber-dim);
+	font-size: 0.8rem;
+	padding-top: 3px;
+	text-align: right;
+	user-select: none;
+}
+.row-main {
+	min-width: 0;
+}
+.row-title {
+	display: inline;
+	color: var(--cool);
+	font-size: 1.06rem;
+	line-height: 1.3;
+	overflow-wrap: anywhere;
+}
+.row-title:hover {
+	text-decoration: underline;
+	text-underline-offset: 2px;
+}
+.row-url {
+	display: block;
+	color: var(--green);
+	font-size: 0.78rem;
+	letter-spacing: 0.02em;
+	margin: 2px 0 4px;
+	overflow-wrap: anywhere;
+	opacity: 0.85;
+}
+.row-snippet {
+	color: var(--text);
+	font-size: 0.9rem;
+	line-height: 1.45;
+	overflow-wrap: anywhere;
+	/* Two lines keeps every hit the same height, so more fit the readout. */
+	display: -webkit-box;
+	-webkit-line-clamp: 2;
+	-webkit-box-orient: vertical;
+	overflow: hidden;
+}
+.row-engines {
+	margin-top: 5px;
+	font-size: 10px;
+	letter-spacing: 0.16em;
+	text-transform: uppercase;
+	color: var(--muted);
+}
+.row-published {
+	color: var(--amber-dim);
+	margin-right: 8px;
+}
+
+/* Image channel: a contact sheet rather than readout rows. */
+.grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+	gap: 8px;
+	padding-top: 12px;
+}
+.tile {
+	display: block;
+	border: var(--edge);
+	background: var(--panel);
+	aspect-ratio: 1 / 1;
+	overflow: hidden;
+	position: relative;
+}
+.tile img {
+	width: 100%;
+	height: 100%;
+	object-fit: cover;
+	display: block;
+	filter: sepia(0.15) saturate(1.05);
+	transition: transform 0.25s, filter 0.2s;
+}
+.tile:hover img {
+	transform: scale(1.05);
+	filter: none;
+}
+.tile-cap {
+	position: absolute;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	padding: 5px 7px;
+	font-size: 10px;
+	color: var(--text);
+	background: linear-gradient(transparent, rgba(8, 7, 4, 0.9));
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+/* Related queries, offered as switches you can throw. */
+.related {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	padding: 22px 0 6px;
+	border-top: 1px solid rgba(92, 68, 22, 0.45);
+	margin-top: 18px;
+}
+.related-label {
+	width: 100%;
+	font-size: 10px;
+	letter-spacing: 0.24em;
+	text-transform: uppercase;
+	color: var(--muted);
+	margin-bottom: 2px;
+}
+.chip {
+	background: transparent;
+	border: var(--edge);
+	color: var(--dim);
+	font-family: var(--mono);
+	font-size: 0.88rem;
+	padding: 5px 11px;
+	cursor: pointer;
+}
+.chip:hover {
+	color: var(--amber);
+	border-color: var(--amber-dim);
+}
+
+.more {
+	display: block;
+	width: 100%;
+	margin: 26px 0 0;
+	background: transparent;
+	border: 1px solid var(--amber-dim);
+	color: var(--amber);
+	font-family: var(--mono);
+	font-size: 11px;
+	letter-spacing: 0.24em;
+	text-transform: uppercase;
+	padding: 12px;
+	cursor: pointer;
+	transition: background 0.15s, color 0.15s;
+}
+.more:hover {
+	background: var(--panel);
+}
+.more[disabled] {
+	color: var(--muted);
+	border-color: var(--amber-faint);
+	cursor: default;
+}
+
+/* ── Loading / empty / error notices ────────────────────────────────── */
+.notice {
+	padding: 40px 0;
+	color: var(--muted);
+	font-size: 0.95rem;
+}
+.notice .line {
+	color: var(--dim);
+}
+.notice.error .line {
+	color: var(--red);
+}
+.scan {
+	display: inline-flex;
+	align-items: center;
+	gap: 12px;
+	color: var(--amber);
+	letter-spacing: 0.2em;
+	text-transform: uppercase;
+	font-size: 12px;
+}
+.scan-bar {
+	width: 120px;
+	height: 6px;
+	background: var(--panel);
+	border: var(--edge);
+	overflow: hidden;
+}
+.scan-bar::after {
+	content: "";
+	display: block;
+	width: 40%;
+	height: 100%;
+	background: var(--amber);
+	box-shadow: 0 0 10px var(--amber);
+	animation: track 0.9s ease-in-out infinite;
+}
+
+/* ── Footer ─────────────────────────────────────────────────────────── */
+.foot {
+	position: relative;
+	z-index: 10;
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	justify-content: center;
+	padding: 16px;
+	border-top: var(--edge);
+	font-size: 10px;
+	letter-spacing: 0.14em;
+	text-transform: uppercase;
+	color: var(--muted);
+}
+.foot a {
+	color: var(--dim);
+}
+.foot-dot {
+	color: var(--amber-faint);
+}
+
+/* ── Motion ─────────────────────────────────────────────────────────── */
+@keyframes blink {
+	0%,
+	50% {
+		opacity: 1;
+	}
+	51%,
+	100% {
+		opacity: 0;
+	}
+}
+@keyframes pulse {
+	0%,
+	100% {
+		opacity: 1;
+	}
+	50% {
+		opacity: 0.35;
+	}
+}
+@keyframes track {
+	0% {
+		transform: translateX(-100%);
+	}
+	100% {
+		transform: translateX(350%);
+	}
+}
+@keyframes sweep {
+	from {
+		transform: translateY(-40vh);
+		opacity: 0.9;
+	}
+	to {
+		transform: translateY(100vh);
+		opacity: 0;
+	}
+}
+@keyframes flicker {
+	0%,
+	96%,
+	100% {
+		opacity: 1;
+	}
+	97% {
+		opacity: 0.82;
+	}
+	98% {
+		opacity: 1;
+	}
+	99% {
+		opacity: 0.9;
+	}
+}
+@keyframes roll {
+	from {
+		transform: translateY(-16vh);
+	}
+	to {
+		transform: translateY(100vh);
+	}
+}
+@keyframes bootOut {
+	to {
+		opacity: 0;
+		visibility: hidden;
+	}
+}
+.row {
+	animation: rise 0.32s ease-out both;
+}
+
+@keyframes rise {
+	from {
+		opacity: 0;
+		transform: translateY(6px);
+	}
+	to {
+		opacity: 1;
+		transform: none;
+	}
+}
+
+:focus-visible {
+	outline: 2px solid var(--amber);
+	outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	*,
+	*::before,
+	*::after {
+		animation: none !important;
+		transition: none !important;
+	}
+}
+
+@media (max-width: 520px) {
+	.bar-status-label {
+		display: none;
+	}
+	.wordmark {
+		font-size: clamp(2.2rem, 12vw, 3.2rem);
+	}
+	.run .run-key {
+		display: none;
+	}
+	.run::after {
+		content: "\21B5"; /* return arrow */
+		font-size: 14px;
+	}
+}

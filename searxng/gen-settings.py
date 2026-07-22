@@ -59,6 +59,8 @@ def main() -> None:
         "  formats:",
         "    - html",
         "    - json",
+        # Feeds the custom console's suggestion dropdown via /autocompleter.
+        '  autocomplete: "duckduckgo"',
         # Turn off engines that cannot work on this box, so they stop failing
         # to load on every start and stop being queried on every search.
         # use_default_settings merges these by name, leaving every other

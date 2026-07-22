@@ -10,7 +10,10 @@ USER root
 
 COPY gen-settings.py /gen-settings.py
 COPY run.sh /run.sh
-RUN chmod 0755 /run.sh /gen-settings.py
+# The custom landing page and its assets. run.sh copies these over the
+# installed theme on every start, so they follow wherever upstream keeps it.
+COPY frontend /remindme-frontend
+RUN chmod 0755 /run.sh /gen-settings.py && chmod -R a+rX /remindme-frontend
 
 EXPOSE 8080
 ENTRYPOINT ["/run.sh"]

@@ -14,6 +14,28 @@ image with two changes: the settings come from the add-on options, and the
 2. Install **SearXNG**, then **Start** it. The first start pulls the upstream
    image and builds the wrapper, which takes a few minutes on a Pi.
 
+## The RemindMe console
+
+The landing page is replaced with a custom search console that matches the
+RemindMe wrist-terminal: an amber-phosphor command line that queries SearXNG's
+JSON API in place and renders the results itself. It has two independent
+dials, both remembered in the browser:
+
+- **Colour** — Amber, Green (P1 phosphor), OLED (true black) or Light (daylight
+  paper). The swatches are top-right.
+- **Immersion** — the meter beside the swatches. **Silent** drops the CRT and
+  glow for a plain instrument; **Standard** runs the Pip-Boy-style scanlines and
+  bloom; **Cinematic** adds a boot sequence, heavier tube and single-hue
+  phosphor. (The boot text is original homage — rename `ATOMLINK` in
+  `frontend/app.js` if you want your own in-world brand.)
+
+The console is served from the theme's own `/static` directory, so it loads
+same-origin and needs no change to SearXNG's security policy. `run.sh` copies
+it into place on every start, finding the theme path through the installed
+package so an upstream move does not silently drop it. SearXNG's normal pages
+(`/preferences`, `/about`) and its server-rendered results — the no-JS
+fallback — are untouched.
+
 ## Using it
 
 - **From your network:** browse to `http://<home-assistant-ip>:8181`. The

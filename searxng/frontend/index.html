@@ -1,0 +1,102 @@
+{% raw %}<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta name="referrer" content="no-referrer" />
+		<meta name="robots" content="noindex, nofollow" />
+		<title>RemindMe Search</title>
+		<link rel="stylesheet" href="/static/remindme/app.css" />
+	</head>
+	<body>
+		<!--
+			A no-JS fallback: this same form GETs SearXNG's own results page, so
+			the instance still searches with scripting off. With JS on, app.js
+			takes over the submit and renders results from the JSON API in place.
+		-->
+		<div class="crt" aria-hidden="true"></div>
+		<div class="fx" aria-hidden="true"></div>
+		<div class="boot" id="boot" aria-hidden="true">
+			<pre id="boot-log"></pre>
+			<div class="boot-skip">click to skip</div>
+		</div>
+
+		<header class="bar">
+			<div class="bar-mark">
+				<span class="pwr" aria-hidden="true"></span>
+				<span class="bar-name">RemindMe<span class="slash">//</span>Search</span>
+			</div>
+			<div class="bar-right">
+				<div class="bar-status" id="link-status" data-state="idle">
+					<span class="bar-status-label">LAN · private</span>
+					<span class="led" aria-hidden="true"></span>
+				</div>
+				<div class="fx-level" id="fx-level" data-level="standard" role="group" aria-label="Immersion level">
+					<button type="button" class="fx-step" data-fx="silent" title="Silent — barely themed" aria-label="Silent immersion"></button>
+					<button type="button" class="fx-step" data-fx="standard" title="Standard — Fallout terminal" aria-label="Standard immersion"></button>
+					<button type="button" class="fx-step" data-fx="cinematic" title="Cinematic — full terminal" aria-label="Cinematic immersion"></button>
+				</div>
+				<div class="themes" id="themes" role="group" aria-label="Theme">
+					<button type="button" class="swatch" data-set="amber" title="Amber phosphor" aria-label="Amber phosphor theme" aria-pressed="true"></button>
+					<button type="button" class="swatch" data-set="green" title="Green phosphor" aria-label="Green phosphor theme" aria-pressed="false"></button>
+					<button type="button" class="swatch" data-set="oled" title="OLED black" aria-label="OLED black theme" aria-pressed="false"></button>
+					<button type="button" class="swatch" data-set="light" title="Light" aria-label="Light theme" aria-pressed="false"></button>
+				</div>
+			</div>
+		</header>
+
+		<main class="stage" id="stage" data-mode="idle">
+			<section class="hero">
+				<h1 class="wordmark">
+					<span>RemindMe</span><span class="wordmark-sub">Search</span>
+				</h1>
+				<p class="tagline">Private metasearch · no logs, no tracking</p>
+
+				<form class="console" id="search-form" action="/search" method="get" role="search">
+					<div class="prompt">
+						<span class="caret" aria-hidden="true">&gt;</span>
+						<input
+							id="q"
+							name="q"
+							class="q"
+							type="text"
+							autocomplete="off"
+							autocapitalize="off"
+							autocorrect="off"
+							spellcheck="false"
+							enterkeyhint="search"
+							aria-label="Search the web"
+							placeholder="query the open web"
+						/>
+						<button class="run" type="submit" aria-label="Run search">
+							<span class="run-key">RUN</span>
+						</button>
+					</div>
+					<div class="channels" id="channels" role="tablist" aria-label="Search channel">
+						<button type="button" class="channel is-on" data-cat="general" role="tab" aria-selected="true"><span class="chled" aria-hidden="true"></span>Web</button>
+						<button type="button" class="channel" data-cat="news" role="tab" aria-selected="false"><span class="chled" aria-hidden="true"></span>News</button>
+						<button type="button" class="channel" data-cat="images" role="tab" aria-selected="false"><span class="chled" aria-hidden="true"></span>Images</button>
+						<button type="button" class="channel" data-cat="videos" role="tab" aria-selected="false"><span class="chled" aria-hidden="true"></span>Videos</button>
+						<button type="button" class="channel" data-cat="science" role="tab" aria-selected="false"><span class="chled" aria-hidden="true"></span>Science</button>
+					</div>
+					<!-- carries the active channel through a no-JS form GET -->
+					<input type="hidden" name="categories" id="categories" value="general" />
+				</form>
+
+				<div class="suggest" id="suggest" hidden></div>
+			</section>
+
+			<section class="readout" id="readout" aria-live="polite"></section>
+		</main>
+
+		<footer class="foot">
+			<span>RemindMe Search</span>
+			<span class="foot-dot" aria-hidden="true">·</span>
+			<span>powered by <a href="/about">SearXNG</a></span>
+			<span class="foot-dot" aria-hidden="true">·</span>
+			<a href="/preferences">engines &amp; preferences</a>
+		</footer>
+
+		<script src="/static/remindme/app.js" defer></script>
+	</body>
+</html>{% endraw %}
