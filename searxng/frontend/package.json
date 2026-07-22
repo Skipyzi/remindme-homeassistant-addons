@@ -1,0 +1,14 @@
+{
+  "name": "remindme-searxng-constellation",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Build tooling for the RemindMe SearXNG constellation view. Bundles three.js + the render core into a single self-hosted module.",
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "^0.24.0",
+    "three": "^0.160.0"
+  }
+}

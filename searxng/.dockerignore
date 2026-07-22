@@ -1,0 +1,10 @@
+# The frontend build toolchain and sources are not needed in the image — only
+# the built artifacts (app.*, constellation.*, index.html, fonts) are copied to
+# static by run.sh. Build constellation.js with `npm install && node build.mjs`
+# in frontend/ and commit the result.
+frontend/node_modules
+frontend/src
+frontend/build.mjs
+frontend/package.json
+frontend/package-lock.json
+frontend/.gitignore

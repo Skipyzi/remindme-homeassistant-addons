@@ -17,6 +17,10 @@ INDEX_TPL="$SEARX_DIR/templates/simple/index.html"
 
 mkdir -p "$STATIC_DIR/fonts"
 cp -f /remindme-frontend/app.css /remindme-frontend/app.js "$STATIC_DIR/"
+# The 3D "constellation" view: a static page plus its bundled module. It is
+# reached directly at /static/remindme/constellation.html (no Flask route
+# needed) and linked from the landing page.
+cp -f /remindme-frontend/constellation.html /remindme-frontend/constellation.js "$STATIC_DIR/"
 cp -f /remindme-frontend/fonts/*.woff2 "$STATIC_DIR/fonts/"
 if [ -f "$INDEX_TPL" ]; then
 	cp -f /remindme-frontend/index.html "$INDEX_TPL"

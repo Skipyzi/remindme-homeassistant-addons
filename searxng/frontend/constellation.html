@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta name="referrer" content="no-referrer" />
+		<meta name="robots" content="noindex, nofollow" />
+		<title>RemindMe Search — Constellation</title>
+		<style>
+			html, body { margin: 0; height: 100%; background: #04060f; color: #dfe9ff; font-family: ui-sans-serif, system-ui, sans-serif; }
+			#app { position: fixed; inset: 0; }
+			/* Shown only if the module never boots (no WebGL / old browser). */
+			.fallback { position: fixed; inset: 0; display: grid; place-items: center; text-align: center; padding: 24px; }
+			.fallback a { color: #7cf6ff; }
+			#app:not(:empty) ~ .fallback { display: none; }
+		</style>
+	</head>
+	<body>
+		<div id="app"></div>
+		<div class="fallback">
+			<div>
+				<p>The constellation view needs WebGL and JavaScript.</p>
+				<p><a href="/">← back to RemindMe Search</a></p>
+			</div>
+		</div>
+		<!-- One self-hosted module (three.js + render core + adapter), so it stays
+		     inside SearXNG's default script-src 'self' CSP — no CDN, no import map. -->
+		<script type="module" src="/static/remindme/constellation.js"></script>
+	</body>
+</html>
