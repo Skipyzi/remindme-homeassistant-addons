@@ -727,6 +727,117 @@
                   </button>
                 </div></template
               >
+              <!-- Task wizard: build a scheduled task inline, without having to
+                   remember the /task grammar. Same idea as the reminder card —
+                   show what will be scheduled before committing it. -->
+              <template x-if="message.wizard"
+                ><div class="task-wizard">
+                  <header>
+                    <span class="tw-title">New scheduled task</span>
+                    <span class="pill">WIZARD</span>
+                  </header>
+                  <div class="tw-body">
+                    <label class="tw-field">
+                      <span>WHAT SHOULD IT DO</span>
+                      <textarea
+                        rows="2"
+                        x-model="message.wizard.what"
+                        @keydown.enter.meta="submitTaskWizard(message)"
+                        placeholder="summarise what happened yesterday"
+                      ></textarea>
+                    </label>
+                    <label class="tw-field">
+                      <span>WHEN</span>
+                      <input
+                        type="text"
+                        x-model="message.wizard.when"
+                        placeholder="every day at 8"
+                      />
+                    </label>
+                    <div class="tw-presets">
+                      <button
+                        type="button"
+                        class="chip"
+                        @click="message.wizard.when='every day at 8'"
+                      >
+                        DAILY 8AM
+                      </button>
+                      <button
+                        type="button"
+                        class="chip"
+                        @click="message.wizard.when='every 6 hours'"
+                      >
+                        EVERY 6H
+                      </button>
+                      <button
+                        type="button"
+                        class="chip"
+                        @click="message.wizard.when='mondays at 9'"
+                      >
+                        WEEKLY MON
+                      </button>
+                    </div>
+                    <div class="tw-targets">
+                      <button
+                        type="button"
+                        class="chip"
+                        :class="{on: message.wizard.vault}"
+                        @click="message.wizard.vault=!message.wizard.vault"
+                      >
+                        ARCHIVE TO VAULT
+                      </button>
+                      <button
+                        type="button"
+                        class="chip"
+                        :class="{on: message.wizard.notify}"
+                        @click="message.wizard.notify=!message.wizard.notify"
+                      >
+                        NOTIFY
+                      </button>
+                    </div>
+                    <p
+                      class="tw-error"
+                      x-show="message.wizard.error"
+                      x-text="message.wizard.error"
+                    ></p>
+                  </div>
+                  <div class="actions">
+                    <button
+                      class="chip"
+                      :disabled="message.wizard.submitting"
+                      @click="submitTaskWizard(message)"
+                      x-text="message.wizard.submitting ? 'SCHEDULING…' : 'SCHEDULE'"
+                    ></button>
+                    <button class="chip warn" @click="cancelTaskWizard(message)">
+                      CANCEL
+                    </button>
+                  </div>
+                </div></template
+              >
+              <!-- Vault graph: notes as a constellation, drawn same-origin so
+                   it can fetch its own data. Clusters are tags, edges are
+                   [[wikilinks]], a tap reads the note. -->
+              <template x-if="message.graph"
+                ><div class="vault-graph">
+                  <header>
+                    <span class="vg-title">Vault graph</span>
+                    <span class="vg-meta" x-text="message.graphMeta"></span>
+                  </header>
+                  <svg
+                    class="vg-canvas"
+                    x-init="renderGraphInto($el, message.graph)"
+                    @pointerdown="graphPanStart(message,$event)"
+                    @pointermove="graphPanMove($event)"
+                    @pointerup="graphPanEnd()"
+                    @pointerleave="graphPanEnd()"
+                    @wheel.prevent="graphZoom(message,$event)"
+                    @click="graphClick($event)"
+                  ></svg>
+                  <div class="vg-hint">
+                    drag to pan · scroll to zoom · tap a note to read it
+                  </div>
+                </div></template
+              >
             </article>
           </template>
           <!-- Activity row: the turn is alive but has not produced a phase

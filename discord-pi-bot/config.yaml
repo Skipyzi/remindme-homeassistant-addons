@@ -1,5 +1,5 @@
 name: RemindMe Discord Bot
-version: "2.38.0"
+version: "2.39.0"
 slug: remindme_discord_bot
 description: Discord bot with reminders, pi-agent bridge, and local LLM support
 arch:
@@ -46,3 +46,8 @@ map:
   - type: data
     read_only: false
     path: /data
+  # The Obsidian vault lives here so the desktop app and this add-on share the
+  # same files; the bot both reads and writes notes (model memory), so rw.
+  - type: share
+    read_only: false
+    path: /share

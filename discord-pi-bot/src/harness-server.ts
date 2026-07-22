@@ -36,6 +36,14 @@ import {
 } from "./harness/entityActions";
 import { ConversationStore } from "./harness/conversations";
 import { SkillStore, skillPrompt } from "./harness/skills";
+import { VaultStore, type VaultNote } from "./harness/vault";
+import {
+	TaskStore,
+	describeSchedule,
+	extractSchedule,
+	parseSchedule,
+	type ScheduledTask,
+} from "./harness/taskStore";
 import { readSystemStats } from "./harness/systemStats";
 import { ArtifactStore, toDocument } from "./harness/artifacts";
 import { applyEdit, isEditFailure, modelView } from "./harness/artifactEdit";
@@ -101,7 +109,73 @@ const mcpServers = new McpServerStore();
 void mcpServers.load();
 const endpoints = new EndpointStore();
 void endpoints.load();
+/*
+ * The Obsidian vault at /share/vault, doubling as the model's editable
+ * long-term memory. Parsed once at boot into an in-memory index; a note the
+ * model writes reindexes itself. Notes edited externally in Obsidian are
+ * picked up by POST /api/vault/reload — a full reparse is too heavy to run on
+ * every read on a Pi, and cross-platform fs.watch is the same unreliable story
+ * that made the reminder store poll instead.
+ */
+const vault = new VaultStore();
+void vault.load();
+/*
+ * Scheduled tasks — standing prompts the harness runs on a cadence. The store
+ * and the runner both live here because this process holds the model, the
+ * tools, and the vault; only the ping half of delivery crosses back to the bot,
+ * as an ordinary one-shot reminder.
+ */
+const tasks = new TaskStore();
+void tasks.load();
 type Send = (event: string, data: unknown) => void;
+
+/** A filesystem- and link-safe slug from a title. */
+function slug(text: string): string {
+	return (
+		String(text || "")
+			.toLowerCase()
+			.replace(/[^a-z0-9]+/g, "-")
+			.replace(/^-+|-+$/g, "")
+			.slice(0, 60) || "note"
+	);
+}
+
+/**
+ * Build the frontmatter patch from a save request. Only supplied fields are
+ * returned, so a save that names a body but not tags leaves the note's tags
+ * where they were — `VaultStore.write` merges the patch onto what exists.
+ */
+function noteFrontmatter(
+	body: Record<string, unknown> | undefined,
+): Record<string, string | string[]> {
+	const patch: Record<string, string | string[]> = {};
+	if (typeof body?.title === "string" && body.title.trim())
+		patch.title = body.title.trim();
+	if (typeof body?.type === "string" && body.type.trim())
+		patch.type = body.type.trim();
+	if (Array.isArray(body?.tags))
+		patch.tags = body.tags.map((tag) => String(tag).replace(/^#/, "")).filter(Boolean);
+	else if (typeof body?.tags === "string" && body.tags.trim())
+		patch.tags = body.tags
+			.split(",")
+			.map((tag) => tag.trim().replace(/^#/, ""))
+			.filter(Boolean);
+	return patch;
+}
+
+/** A note trimmed to what a list or a tool receipt needs — never the full body. */
+function summariseNote(note: VaultNote) {
+	return {
+		path: note.path,
+		title: note.title,
+		type: note.type,
+		tags: note.tags,
+		links: note.links.length,
+		backlinks: 0,
+		updatedAt: note.updatedAt,
+		snippet: note.body.replace(/\s+/g, " ").trim().slice(0, 160),
+	};
+}
 
 /** The endpoint every request resolves against, custom or the local default. */
 function resolveEndpoint() {
@@ -263,6 +337,137 @@ app.patch("/api/skills/:id", async (request, response) => {
 });
 app.delete("/api/skills/:id", async (request, response) => {
 	response.status((await skills.delete(request.params.id)) ? 204 : 404).end();
+});
+/*
+ * Vault / memory. Note paths carry slashes, so they travel as a `path` query
+ * parameter rather than a route segment. Reads serve the in-memory index;
+ * writes go straight to disk and reindex, so a note the console saves is a
+ * note Obsidian opens.
+ */
+app.get("/api/vault", (request, response) => {
+	const notes = vault.list({
+		tag: request.query.tag ? String(request.query.tag) : undefined,
+		type: request.query.type ? String(request.query.type) : undefined,
+		search: request.query.search ? String(request.query.search) : undefined,
+	});
+	response.json(notes.map(summariseNote));
+});
+app.get("/api/vault/tags", (_request, response) => {
+	response.json(vault.tags());
+});
+app.get("/api/vault/graph", (request, response) => {
+	response.json(vault.graph({ includeTags: request.query.tags === "1" }));
+});
+app.get("/api/vault/related", (request, response) => {
+	const related = vault.related(String(request.query.path || ""));
+	response.json({
+		backlinks: related.backlinks.map(summariseNote),
+		byTag: related.byTag.map(summariseNote),
+	});
+});
+app.get("/api/vault/note", (request, response) => {
+	const note = vault.get(String(request.query.path || ""));
+	response.status(note ? 200 : 404).json(note || { error: "Note not found" });
+});
+app.put("/api/vault/note", async (request, response) => {
+	const path = String(request.body?.path || "").trim();
+	if (!path)
+		return response.status(400).json({ error: "A note path is required." });
+	try {
+		const note = await vault.write(path, {
+			body: typeof request.body?.body === "string" ? request.body.body : undefined,
+			frontmatter: noteFrontmatter(request.body),
+		});
+		response.json(note);
+	} catch (error) {
+		response
+			.status(400)
+			.json({ error: error instanceof Error ? error.message : "Write failed" });
+	}
+});
+app.delete("/api/vault/note", async (request, response) => {
+	const removed = await vault.delete(String(request.query.path || ""));
+	response.status(removed ? 204 : 404).end();
+});
+/* Reparse the whole vault — used after Obsidian edits it from outside. */
+app.post("/api/vault/reload", async (_request, response) => {
+	await vault.load();
+	response.json({ notes: vault.list().length });
+});
+/*
+ * Scheduled tasks. Create accepts either a structured body or free text — the
+ * /task console command sends the latter, "every day at 8 recap yesterday",
+ * and the cadence is parsed out here.
+ */
+app.get("/api/tasks", (_request, response) => {
+	response.json(
+		tasks.list().map((task) => ({ ...task, scheduleText: describeSchedule(task.schedule) })),
+	);
+});
+app.post("/api/tasks", async (request, response) => {
+	const body = request.body || {};
+	let name = typeof body.name === "string" ? body.name.trim() : "";
+	let prompt = typeof body.prompt === "string" ? body.prompt.trim() : "";
+	let schedule =
+		body.schedule && typeof body.schedule === "object" && "kind" in body.schedule
+			? body.schedule
+			: undefined;
+	if (typeof body.text === "string" && body.text.trim()) {
+		const parsed = extractSchedule(body.text);
+		schedule = schedule || parsed.schedule;
+		prompt = prompt || parsed.rest;
+	}
+	if (!schedule) {
+		return response.status(400).json({
+			error:
+				"No schedule found. Say when, e.g. 'daily at 8', 'every 6 hours', or 'mondays at 9'.",
+		});
+	}
+	if (!prompt) {
+		return response
+			.status(400)
+			.json({ error: "The task needs something to do." });
+	}
+	if (!name) name = prompt.split(/\s+/).slice(0, 6).join(" ");
+	const task = await tasks.create({
+		name,
+		prompt,
+		schedule,
+		deliver: Array.isArray(body.deliver) ? body.deliver : undefined,
+		channelId: typeof body.channelId === "string" ? body.channelId : undefined,
+	});
+	response.status(201).json({ ...task, scheduleText: describeSchedule(task.schedule) });
+});
+app.patch("/api/tasks/:id", async (request, response) => {
+	const body = request.body || {};
+	// Accept a cadence given as free text as well as a structured object.
+	if (typeof body.scheduleText === "string" && body.scheduleText.trim()) {
+		const parsed = parseSchedule(body.scheduleText);
+		if (parsed) body.schedule = parsed;
+	}
+	const updated = await tasks.update(request.params.id, body);
+	response
+		.status(updated ? 200 : 404)
+		.json(
+			updated
+				? { ...updated, scheduleText: describeSchedule(updated.schedule) }
+				: { error: "Task not found" },
+		);
+});
+app.delete("/api/tasks/:id", async (request, response) => {
+	response.status((await tasks.delete(request.params.id)) ? 204 : 404).end();
+});
+/*
+ * Run a task now, outside its schedule — the "does this actually work" button.
+ * It does not disturb the next scheduled fire.
+ */
+app.post("/api/tasks/:id/run", async (request, response) => {
+	const task = tasks.get(request.params.id);
+	if (!task) return response.status(404).json({ error: "Task not found" });
+	const outcome = await runTaskNow(task);
+	// A manual run records its result but leaves the cadence untouched.
+	await tasks.recordRun(task.id, { ...outcome, reschedule: false });
+	response.json(outcome);
 });
 /* Tool catalogue for the /tools command — names, descriptions and parameter
  * keys only, so the UI can list capabilities without restating the schema. */
@@ -1127,6 +1332,72 @@ const tools = [
 			},
 		},
 	},
+	{
+		type: "function",
+		function: {
+			name: "search_memory",
+			description:
+				"Search your long-term memory — the notes vault — for things saved before: facts about the user, their projects, preferences, and past notes. Returns matching note titles and paths, not full text.",
+			parameters: {
+				type: "object",
+				properties: {
+					query: { type: "string", description: "Words to look for in title or body." },
+					tag: { type: "string", description: "Restrict to notes with this tag." },
+					type: {
+						type: "string",
+						enum: ["user", "feedback", "project", "reference"],
+						description: "Restrict to one kind of memory.",
+					},
+				},
+			},
+		},
+	},
+	{
+		type: "function",
+		function: {
+			name: "read_memory",
+			description:
+				"Read the full text of one memory note by its path, taken from search_memory. Returns the body plus its links and backlinks.",
+			parameters: {
+				type: "object",
+				properties: { path: { type: "string" } },
+				required: ["path"],
+			},
+		},
+	},
+	{
+		type: "function",
+		function: {
+			name: "write_memory",
+			description:
+				"Save or update a memory note. Use it to remember a durable fact, a preference, a project detail, or a reference — not this turn's chatter. Reuse an existing path to update that note; link related notes with [[Note Title]] in the body and classify with type and tags.",
+			parameters: {
+				type: "object",
+				properties: {
+					path: {
+						type: "string",
+						description:
+							"Short kebab-case path without extension, e.g. projects/remindme or user/preferences.",
+					},
+					title: { type: "string" },
+					type: {
+						type: "string",
+						enum: ["user", "feedback", "project", "reference"],
+					},
+					tags: {
+						type: "array",
+						items: { type: "string" },
+						description: "Topic tags without the leading #.",
+					},
+					body: {
+						type: "string",
+						description: "The note's Markdown. Link others with [[Title]].",
+					},
+				},
+				required: ["path", "body"],
+			},
+		},
+	},
 ];
 
 /*
@@ -1714,8 +1985,22 @@ async function executeTool(
 			at: parsed.at.toISOString(),
 			when: describeWhen(parsed.at),
 			assumedEvening: parsed.assumedEvening,
+			/*
+			 * A nudge the model reads in its tool result, so it stops announcing
+			 * the reminder as set. The confirmation card, not the reply, is what
+			 * commits it.
+			 */
+			awaiting_confirmation: true,
 		};
-		return { model: { awaiting_confirmation: true, when: confirmation.when }, view: confirmation };
+		/*
+		 * The confirmation travels as `model`, not just `view`, because the
+		 * `tool` stream event the console renders carries `value.model`. Sending
+		 * only a lean receipt here left the console with no confirmation_required
+		 * flag, so the card — and with it the only way to actually schedule the
+		 * reminder — never appeared. control_entity works for exactly this
+		 * reason: its model IS the confirmation.
+		 */
+		return { model: confirmation, view: confirmation };
 	}
 	if (name === "create_artifact") {
 		const artifact = await artifacts.create({
@@ -1830,6 +2115,73 @@ async function executeTool(
 	}
 	if (name === "web_search") {
 		return { model: await webSearch(String(args.query)) };
+	}
+	if (name === "search_memory") {
+		const matches = vault
+			.list({
+				search: typeof args.query === "string" ? args.query : undefined,
+				tag: typeof args.tag === "string" ? args.tag : undefined,
+				type: typeof args.type === "string" ? args.type : undefined,
+			})
+			.slice(0, 8)
+			.map(summariseNote);
+		return {
+			model: matches.length
+				? matches.map(({ path, title, type, tags, snippet }) => ({
+						path,
+						title,
+						type,
+						tags,
+						snippet,
+					}))
+				: { matches: [], hint: "Nothing saved matches. Broaden the query or omit the tag." },
+			view: { memory: matches },
+		};
+	}
+	if (name === "read_memory") {
+		const note = vault.get(String(args.path || ""));
+		if (!note)
+			return { model: { error: `No memory note at ${args.path}. Use search_memory to find its path.` } };
+		const related = vault.related(note.path);
+		return {
+			model: {
+				path: note.path,
+				title: note.title,
+				type: note.type,
+				tags: note.tags,
+				body: note.body,
+				links: note.links,
+				backlinks: related.backlinks.map((entry) => entry.path),
+			},
+			view: { memory: [summariseNote(note)] },
+		};
+	}
+	if (name === "write_memory") {
+		const path = String(args.path || "").trim();
+		if (!path) return { model: { error: "A note path is required." } };
+		const body = typeof args.body === "string" ? args.body : "";
+		if (!body.trim()) return { model: { error: "A note body is required." } };
+		try {
+			const note = await vault.write(path, {
+				body,
+				frontmatter: noteFrontmatter(args),
+			});
+			return {
+				model: {
+					saved: true,
+					path: note.path,
+					title: note.title,
+					tags: note.tags,
+					/* Surface dangling links so the model can offer to fill them in. */
+					unresolved_links: note.unresolvedLinks,
+				},
+				view: { memory: [summariseNote(note)] },
+			};
+		} catch (error) {
+			return {
+				model: { error: error instanceof Error ? error.message : "Write failed" },
+			};
+		}
 	}
 	return { model: { error: `Unknown tool: ${name}` } };
 }
@@ -2132,6 +2484,136 @@ async function webSearch(query: string) {
 	};
 }
 
+/* ── Scheduled tasks ──────────────────────────────────────────────────── */
+
+/**
+ * Run a task's prompt through the full agent loop with no browser attached,
+ * and return the answer text. The agent streams to a `send` callback; here it
+ * feeds a collector that keeps the answer events and discards the rest, so a
+ * scheduled run reuses exactly the tools and reasoning a chat turn gets.
+ */
+async function runTaskPrompt(prompt: string): Promise<string> {
+	const answers: string[] = [];
+	const collect: Send = (event, data) => {
+		if (event === "answer") {
+			const text = (data as { text?: unknown })?.text;
+			if (typeof text === "string" && text.trim()) answers.push(text.trim());
+		}
+	};
+	const mode = getThinkingProfile(
+		"balanced",
+		os.totalmem(),
+		Number(process.env.LOCAL_LLM_CONTEXT_SIZE || 8192),
+	).id;
+	await runAgent(prompt, mode, collect, `task-${Date.now()}`, [], [], "");
+	// The last answer is the turn's conclusion; earlier ones are pre-tool asides.
+	return answers[answers.length - 1] || "";
+}
+
+/** A one-line headline from a report, for the notification and the UI. */
+function headline(report: string): string {
+	const line = report
+		.split("\n")
+		.map((entry) => entry.trim())
+		.find((entry) => entry && !entry.startsWith("#"));
+	const text = (line || report).replace(/\s+/g, " ").trim();
+	return text.length > 240 ? `${text.slice(0, 237)}…` : text;
+}
+
+/**
+ * Run a task once and deliver it. The full report is archived as a dated vault
+ * note; the headline is pushed as a one-shot reminder so the bot's pipeline
+ * pings Home Assistant, mobile, and Discord as configured. Returns the outcome
+ * for the store to record.
+ */
+async function runTaskNow(task: ScheduledTask): Promise<{
+	status: "ok" | "error";
+	summary: string;
+	notePath?: string;
+}> {
+	const at = new Date();
+	let report: string;
+	try {
+		report = await runTaskPrompt(task.prompt);
+	} catch (error) {
+		console.error(`Task "${task.name}" failed:`, error);
+		return {
+			status: "error",
+			summary: error instanceof Error ? error.message : "Run failed",
+		};
+	}
+	if (!report.trim())
+		return { status: "error", summary: "The model returned nothing." };
+
+	let notePath: string | undefined;
+	if (task.deliver.includes("vault")) {
+		// One note per run. Daily/weekly get a date; intervals add the time so
+		// several runs in a day do not overwrite each other.
+		const day = at.toISOString().slice(0, 10);
+		const stamp =
+			task.schedule.kind === "interval"
+				? `${day}-${String(at.getHours()).padStart(2, "0")}${String(at.getMinutes()).padStart(2, "0")}`
+				: day;
+		try {
+			const note = await vault.write(`tasks/${stamp}-${slug(task.name)}`, {
+				frontmatter: {
+					title: `${task.name} — ${describeWhen(at)}`,
+					type: "reference",
+					tags: ["task-report", slug(task.name)],
+				},
+				body: `${report}\n`,
+			});
+			notePath = note.path;
+		} catch (error) {
+			console.error(`Task "${task.name}" could not archive to the vault:`, error);
+		}
+	}
+
+	if (task.deliver.includes("notify")) {
+		const suffix = notePath ? `\n\n(Full report saved to ${notePath})` : "";
+		try {
+			await addReminder(
+				`${task.name}: ${headline(report)}${suffix}`,
+				0,
+				process.env.OWNER_ID || "",
+				task.channelId || "",
+			);
+		} catch (error) {
+			console.error(`Task "${task.name}" could not enqueue a notification:`, error);
+		}
+	}
+
+	return { status: "ok", summary: headline(report), notePath };
+}
+
+/**
+ * Poll for due tasks and run them one at a time.
+ *
+ * A minute-granular sweep is plenty for daily and weekly cadences and cheap
+ * for intervals; running due tasks serially matters more, because a Pi with a
+ * single small model cannot answer two turns at once. A task that is still
+ * running when the next sweep comes is skipped, not stacked.
+ */
+let taskSweepRunning = false;
+function startTaskScheduler(intervalMs = 60_000): ReturnType<typeof setInterval> {
+	const sweep = async () => {
+		if (taskSweepRunning) return;
+		taskSweepRunning = true;
+		try {
+			for (const task of tasks.due()) {
+				const outcome = await runTaskNow(task);
+				await tasks.recordRun(task.id, { ...outcome, at: new Date() });
+			}
+		} catch (error) {
+			console.error("Task sweep failed:", error);
+		} finally {
+			taskSweepRunning = false;
+		}
+	};
+	void sweep();
+	return setInterval(() => void sweep(), intervalMs);
+}
+
 /*
  * Revalidate every asset on every load.
  *
@@ -2162,4 +2644,7 @@ if (require.main === module) {
 	app.listen(port, () =>
 		console.log(`RemindMe harness listening on port ${port}`),
 	);
+	// Only the running server sweeps for due tasks; importing the app for a
+	// test must not start firing model turns.
+	startTaskScheduler();
 }

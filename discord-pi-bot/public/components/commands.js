@@ -175,6 +175,144 @@
 			},
 		},
 		{
+			name: "/vault",
+			usage: "/vault [query]",
+			blurb: "browse memory notes, no model turn",
+			async run(app, argument) {
+				const url = argument
+					? `./api/vault?search=${encodeURIComponent(argument)}`
+					: "./api/vault";
+				const response = await fetch(url);
+				const notes = response.ok ? await response.json() : [];
+				if (!notes.length)
+					return app.add(
+						"answer",
+						argument ? `No notes match \`${argument}\`.` : "The vault is empty.",
+					);
+				app.add(
+					"answer",
+					[
+						`${notes.length} note${notes.length > 1 ? "s" : ""}${argument ? ` matching \`${argument}\`` : ""}:`,
+						...notes.map((note) => {
+							const tags = note.tags?.length
+								? ` — ${note.tags.map((tag) => `#${tag}`).join(" ")}`
+								: "";
+							return `- **${note.title}** \`${note.path}\`${tags}`;
+						}),
+					].join("\n"),
+				);
+			},
+		},
+		{
+			name: "/graph",
+			usage: "/graph [query]",
+			blurb: "the vault drawn as a constellation",
+			async run(app, argument) {
+				await app.openVaultGraph(argument);
+			},
+		},
+		{
+			name: "/task",
+			usage: "/task [new | <when> <what> | list | run <id> | on/off <id> | delete <id>]",
+			blurb: "scheduled reports and research runs",
+			async run(app, argument) {
+				const say = (text) => app.add("answer", text);
+				const fetchTasks = async () => {
+					const response = await fetch("./api/tasks");
+					return response.ok ? await response.json() : [];
+				};
+				// Resolve a short id (as listed) to a full task.
+				const resolve = async (prefix) => {
+					const list = await fetchTasks();
+					return list.find((task) => task.id.startsWith(prefix));
+				};
+				const nextLabel = (task) =>
+					task.enabled
+						? new Date(task.nextRun).toLocaleString()
+						: "paused";
+
+				const trimmed = (argument || "").trim();
+				const [word, ...rest] = trimmed.split(/\s+/);
+				const sub = word?.toLowerCase();
+				const target = rest.join(" ").trim();
+
+				// The wizard is the friendly path in: an inline form, no grammar
+				// to remember. Opened explicitly, or when there is nothing to list.
+				if (sub === "new" || sub === "wizard") {
+					app.openTaskWizard();
+					return;
+				}
+				if (!trimmed || sub === "list") {
+					const list = await fetchTasks();
+					if (!list.length) {
+						app.openTaskWizard();
+						return;
+					}
+					return say(
+						[
+							`${list.length} task${list.length > 1 ? "s" : ""}:`,
+							...list.map(
+								(task) =>
+									`- \`${task.id.slice(0, 8)}\` **${task.name}** — ${task.scheduleText} · next ${nextLabel(task)}${task.enabled ? "" : " *(off)*"}`,
+							),
+							"",
+							"`/task new` for the wizard · `/task run <id>` to run now · `/task off <id>` to pause · `/task delete <id>` to remove.",
+						].join("\n"),
+					);
+				}
+
+				if (["delete", "remove", "rm"].includes(sub)) {
+					const task = await resolve(target);
+					if (!task) return say(`No task starting \`${target}\`.`);
+					await fetch(`./api/tasks/${encodeURIComponent(task.id)}`, {
+						method: "DELETE",
+					});
+					return say(`Deleted **${task.name}**.`);
+				}
+				if (["on", "off", "enable", "disable"].includes(sub)) {
+					const task = await resolve(target);
+					if (!task) return say(`No task starting \`${target}\`.`);
+					const enabled = sub === "on" || sub === "enable";
+					await fetch(`./api/tasks/${encodeURIComponent(task.id)}`, {
+						method: "PATCH",
+						headers: { "Content-Type": "application/json" },
+						body: JSON.stringify({ enabled }),
+					});
+					return say(`**${task.name}** ${enabled ? "resumed" : "paused"}.`);
+				}
+				if (sub === "run") {
+					const task = await resolve(target);
+					if (!task) return say(`No task starting \`${target}\`.`);
+					say(`Running **${task.name}** now…`);
+					const response = await fetch(
+						`./api/tasks/${encodeURIComponent(task.id)}/run`,
+						{ method: "POST" },
+					);
+					const outcome = response.ok ? await response.json() : { status: "error", summary: "Request failed" };
+					return say(
+						outcome.status === "ok"
+							? `**${task.name}** done: ${outcome.summary}${outcome.notePath ? ` — saved to \`${outcome.notePath}\`` : ""}`
+							: `**${task.name}** failed: ${outcome.summary}`,
+					);
+				}
+
+				// Anything else is a new task: "<when> <what>".
+				const response = await fetch("./api/tasks", {
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify({ text: trimmed }),
+				});
+				if (!response.ok) {
+					const error = await response.json().catch(() => ({}));
+					return say(error.error || "Could not create the task.");
+				}
+				const task = await response.json();
+				return say(
+					`Scheduled **${task.name}** — ${task.scheduleText}. First run ${nextLabel(task)}.`,
+				);
+			},
+		},
+		{
 			name: "/context",
 			usage: "/context",
 			blurb: "token and context usage",

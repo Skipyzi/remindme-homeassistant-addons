@@ -3780,3 +3780,140 @@ textarea.editor-text:focus-visible {
 	letter-spacing: 0.5px;
 	color: var(--amber);
 }
+
+/* ── Task wizard ─────────────────────────────────────────────────────────
+ * An inline form for building a scheduled task. Wears the same amber-card
+ * skin as the reminder confirmation so it reads as one family of "confirm
+ * before commit" surfaces.
+ */
+.task-wizard {
+	margin-top: 8px;
+	border: 1px solid var(--amber-dim);
+	background: rgba(255, 178, 0, 0.04);
+	max-width: 540px;
+}
+.task-wizard header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 10px;
+	padding: 10px 12px;
+	border-bottom: 1px solid var(--amber-faint);
+}
+.task-wizard .tw-title {
+	font-size: 12px;
+	letter-spacing: 1px;
+	color: var(--amber);
+}
+.task-wizard .tw-body {
+	padding: 10px 12px;
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+}
+.tw-field {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+}
+.tw-field > span {
+	font-size: 9px;
+	letter-spacing: 1px;
+	color: var(--dim);
+}
+.tw-field textarea,
+.tw-field input {
+	width: 100%;
+	background: var(--ink);
+	border: 1px solid var(--amber-faint);
+	color: var(--amber);
+	font-family: inherit;
+	font-size: 12px;
+	padding: 7px 8px;
+	resize: vertical;
+}
+.tw-field textarea:focus,
+.tw-field input:focus {
+	outline: none;
+	border-color: var(--amber);
+}
+.tw-presets,
+.tw-targets {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+}
+/* A chosen delivery target reads solid amber, not the dim outline. */
+.task-wizard .chip.on {
+	border-color: var(--amber);
+	color: var(--ink);
+	background: var(--amber);
+}
+.tw-error {
+	margin: 0;
+	font-size: 10px;
+	letter-spacing: 0.5px;
+	color: var(--bad);
+}
+.task-wizard .actions {
+	display: flex;
+	gap: 8px;
+	padding: 0 12px 12px;
+}
+
+/* ── Vault graph ─────────────────────────────────────────────────────────
+ * The vault's relation map, inline in the transcript. Same amber-card frame;
+ * the drawing itself is a pannable, zoomable SVG constellation.
+ */
+.vault-graph {
+	margin-top: 8px;
+	border: 1px solid var(--amber-dim);
+	background: rgba(255, 178, 0, 0.04);
+	max-width: 640px;
+}
+.vault-graph header {
+	display: flex;
+	align-items: baseline;
+	justify-content: space-between;
+	gap: 10px;
+	padding: 10px 12px;
+	border-bottom: 1px solid var(--amber-faint);
+}
+.vault-graph .vg-title {
+	font-size: 12px;
+	letter-spacing: 1px;
+	color: var(--amber);
+}
+.vault-graph .vg-meta {
+	font-size: 9px;
+	letter-spacing: 1px;
+	color: var(--dim);
+}
+.vg-canvas {
+	display: block;
+	width: 100%;
+	height: 360px;
+	background: var(--ink);
+	cursor: grab;
+	touch-action: none;
+}
+.vg-canvas:active {
+	cursor: grabbing;
+}
+.vg-node {
+	cursor: pointer;
+}
+.vg-node circle {
+	transition: fill-opacity 0.12s;
+}
+.vg-node:hover circle {
+	stroke: var(--amber);
+	stroke-width: 2;
+}
+.vg-hint {
+	padding: 8px 12px;
+	font-size: 9px;
+	letter-spacing: 1px;
+	color: var(--dim);
+	border-top: 1px solid var(--amber-faint);
+}
