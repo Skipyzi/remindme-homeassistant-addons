@@ -71,6 +71,7 @@
 	let state = { query: "", pageno: 1, running: false, exhausted: false };
 	let suggestTimer = 0;
 	let suggestPick = -1;
+	let moreObserver = null;
 
 	/* ── small helpers ────────────────────────────────────────────────── */
 
@@ -400,7 +401,13 @@
 			line.appendChild(el("span", "row-published", shortDate(result.publishedDate)));
 		}
 		const engines = result.engines && result.engines.length ? result.engines : [result.engine];
-		line.appendChild(document.createTextNode(engines.filter(Boolean).join(" · ")));
+		// Each provider gets its own coloured badge so the source of a hit is
+		// legible at a glance; the colour is chosen in CSS by data-engine.
+		engines.filter(Boolean).forEach(function (name) {
+			const badge = el("span", "eng", String(name));
+			badge.setAttribute("data-engine", String(name).toLowerCase());
+			line.appendChild(badge);
+		});
 		main.appendChild(line);
 
 		row.appendChild(main);
@@ -446,6 +453,49 @@
 		return box;
 	}
 
+	/* Pull the next page. Shared by the fallback button and the infinite
+	 * scroll, and guarded so the two can never fire it at once. The page cap
+	 * is a backstop against a provider that always returns a full page. */
+	function loadNext() {
+		if (state.running || state.exhausted || state.pageno >= 25) return;
+		const more = readout.querySelector(".more");
+		if (more) {
+			more.textContent = copy().scanning + "…";
+			more.disabled = true;
+		}
+		run(state.query, state.pageno + 1, false).then(function () {
+			const still = readout.querySelector(".more");
+			if (still) {
+				still.textContent = "Load more";
+				still.disabled = false;
+			}
+			// Keep filling while the readout still cannot scroll, so a short
+			// first page does not leave the button stranded on screen; once it
+			// overflows, the observer takes over on scroll. Capped so a provider
+			// that always returns a full page cannot loop forever.
+			if (
+				!state.exhausted &&
+				state.pageno < 12 &&
+				readout.scrollHeight <= readout.clientHeight + 4
+			) {
+				requestAnimationFrame(loadNext);
+			}
+		});
+	}
+
+	/* Auto-load when the button scrolls near the bottom of the readout. The
+	 * button stays as a click fallback for when scrolling is not available. */
+	function ensureMoreObserver() {
+		if (moreObserver) return moreObserver;
+		moreObserver = new IntersectionObserver(
+			function (entries) {
+				if (entries.some((entry) => entry.isIntersecting)) loadNext();
+			},
+			{ root: readout, rootMargin: "300px 0px" },
+		);
+		return moreObserver;
+	}
+
 	function attachMore() {
 		let more = readout.querySelector(".more");
 		if (state.exhausted) {
@@ -455,20 +505,14 @@
 		if (!more) {
 			more = el("button", "more", "Load more");
 			more.type = "button";
-			more.addEventListener("click", function () {
-				if (state.running) return;
-				more.textContent = "Scanning…";
-				more.disabled = true;
-				run(state.query, state.pageno + 1, false).then(function () {
-					const still = readout.querySelector(".more");
-					if (still) {
-						still.textContent = "Load more";
-						still.disabled = false;
-					}
-				});
-			});
+			more.addEventListener("click", loadNext);
+			readout.appendChild(more);
+			// Observe once. Re-observing on every page re-fires the callback in
+			// a loop and stampedes the loader, so it is done only at creation.
+			ensureMoreObserver().observe(more);
+		} else if (readout.lastElementChild !== more) {
+			readout.appendChild(more); // keep it last, without re-observing
 		}
-		readout.appendChild(more); // keep it last
 	}
 
 	/* ── notices ──────────────────────────────────────────────────────── */

@@ -741,7 +741,7 @@ a:hover {
 .row-url {
 	display: block;
 	color: var(--green);
-	font-size: 0.78rem;
+	font-size: 0.72rem;
 	letter-spacing: 0.02em;
 	margin: 2px 0 4px;
 	overflow-wrap: anywhere;
@@ -759,7 +759,11 @@ a:hover {
 	overflow: hidden;
 }
 .row-engines {
-	margin-top: 5px;
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 6px;
+	margin-top: 6px;
 	font-size: 10px;
 	letter-spacing: 0.16em;
 	text-transform: uppercase;
@@ -767,8 +771,35 @@ a:hover {
 }
 .row-published {
 	color: var(--amber-dim);
-	margin-right: 8px;
+	margin-right: 2px;
 }
+/* Provider badge: a boxed chip tinted per search engine so the source reads
+ * at a glance. --eng is the brand-ish colour; the box is a translucent wash
+ * of it with a matching border. Unknown engines fall back to muted. */
+.eng {
+	--eng: var(--muted);
+	color: var(--eng);
+	border: 1px solid color-mix(in srgb, var(--eng), transparent 55%);
+	background: color-mix(in srgb, var(--eng), transparent 88%);
+	padding: 1px 6px 2px;
+	border-radius: 2px;
+	font-size: 9.5px;
+	letter-spacing: 0.12em;
+	line-height: 1.4;
+}
+.eng[data-engine="google"] { --eng: #5b9bff; }
+.eng[data-engine="bing"] { --eng: #2fbfa8; }
+.eng[data-engine="duckduckgo"] { --eng: #ff7a45; }
+.eng[data-engine="brave"] { --eng: #ff6a3d; }
+.eng[data-engine="startpage"] { --eng: #9a7bff; }
+.eng[data-engine="qwant"] { --eng: #5aa0ff; }
+.eng[data-engine="mojeek"] { --eng: #e0b64e; }
+.eng[data-engine="mwmbl"] { --eng: #7fd18a; }
+.eng[data-engine="wikipedia"],
+.eng[data-engine="wikidata"] { --eng: #d2d6d9; }
+.eng[data-engine="reddit"] { --eng: #ff5a3d; }
+.eng[data-engine="github"] { --eng: #b48cff; }
+.eng[data-engine="youtube"] { --eng: #ff5b5b; }
 
 /* Image channel: a contact sheet rather than readout rows. */
 .grid {
