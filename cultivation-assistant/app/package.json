@@ -1,0 +1,22 @@
+{
+  "name": "cultivation-assistant",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "dev": "pnpm frontend:dev",
+    "build": "pnpm frontend:build",
+    "test": "pnpm frontend:test && uv run pytest -q",
+    "lint": "pnpm frontend:lint && uv run ruff check backend custom_components scripts && uv run mypy backend/cultivation_assistant",
+    "verify": "pnpm lint && pnpm test && pnpm build",
+    "frontend:dev": "pnpm --filter cultivation-assistant-frontend dev",
+    "frontend:build": "pnpm --filter cultivation-assistant-frontend build",
+    "frontend:test": "pnpm --filter cultivation-assistant-frontend test",
+    "frontend:lint": "pnpm --filter cultivation-assistant-frontend lint",
+    "backend:dev": "uv run uvicorn cultivation_assistant.main:app --app-dir backend --reload --port 8000",
+    "backend:migrate": "uv run alembic -c backend/alembic.ini upgrade head",
+    "openapi:export": "uv run python scripts/export_openapi.py",
+    "sync:addon": "uv run python scripts/sync_addon_context.py",
+    "docker:build": "pnpm sync:addon && docker build -t cultivation-assistant:dev cultivation"
+  },
+  "packageManager": "pnpm@11.13.1"
+}

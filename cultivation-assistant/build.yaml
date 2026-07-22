@@ -1,0 +1,8 @@
+build_from:
+  amd64: ghcr.io/home-assistant/amd64-base-python:3.12-alpine3.21
+  aarch64: ghcr.io/home-assistant/aarch64-base-python:3.12-alpine3.21
+  armv7: ghcr.io/home-assistant/armv7-base-python:3.12-alpine3.21
+labels:
+  org.opencontainers.image.title: Cultivation Assistant
+  org.opencontainers.image.description: Local-first cultivation planning for Home Assistant
+  org.opencontainers.image.source: https://github.com/Skipyzi/remindme-homeassistant-addons

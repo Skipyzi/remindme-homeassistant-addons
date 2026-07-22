@@ -1,0 +1,19 @@
+#!/usr/bin/with-contenv bashio
+set -euo pipefail
+
+export CULTIVATION_LOG_LEVEL="$(bashio::config 'log_level')"
+export CULTIVATION_SUPERVISOR_TOKEN="${SUPERVISOR_TOKEN:-}"
+
+mkdir -p /data
+cd /app
+
+bashio::log.info "Applying Cultivation Assistant database migrations"
+alembic -c /app/backend/alembic.ini upgrade head
+
+bashio::log.info "Starting Cultivation Assistant on the internal Ingress port"
+exec uvicorn cultivation_assistant.main:app \
+  --app-dir /app/backend \
+  --host 0.0.0.0 \
+  --port 8099 \
+  --proxy-headers \
+  --forwarded-allow-ips="*"
