@@ -1,9 +1,0 @@
-{
-	"id": "remindme-constellation",
-	"name": "Constellation",
-	"version": "0.1.0",
-	"minAppVersion": "1.4.0",
-	"description": "A 3D constellation file viewer for the vault: notes as specimens, grouped by type and linked by shared tags. Open a note by flying to it.",
-	"author": "RemindMe",
-	"isDesktopOnly": true
-}

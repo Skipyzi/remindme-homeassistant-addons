@@ -30,6 +30,9 @@ export MODEL_MANAGER_TOKEN_PATH=/data/model-manager-token
 export SEARXNG_URL="$(get_option searxng_url)"
 export EXA_API_KEY="$(get_option exa_api_key)"
 export HA_NOTIFY_TARGET="$(get_option ha_notify_target)"
+# The companion remindme-vault editor add-on's URL, for deep-linking notes from
+# the chat console. Blank hides the link.
+export VAULT_UI_URL="$(get_option vault_url)"
 # Only /data is a persisted volume. Anything defaulting to ./data lands in
 # /app inside the image and is lost on every restart and update.
 export REMINDER_DATA_PATH=/data/reminders.json
@@ -39,8 +42,8 @@ export MCP_DATA_PATH=/data/mcp.json
 export ARTIFACT_DATA_PATH=/data/artifacts.json
 export PRESENCE_UPTIME_PATH=/data/presence-uptime.json
 export TASK_DATA_PATH=/data/tasks.json
-# The Obsidian vault is a shared folder, not add-on data, so it lives under
-# /share where the desktop app can sync to the same files.
+# The vault is a shared folder, not add-on data, so it lives under /share where
+# the remindme-vault editor add-on reads and writes the same files.
 export VAULT_DATA_PATH=/share/vault
 
 node /app/dist/harness-server.js &

@@ -10,22 +10,100 @@ import {
 import { dirname, join, relative, sep } from "node:path";
 
 /**
- * The vault is a folder of Markdown notes — an Obsidian vault living at
- * `/share/vault` so the desktop app and this add-on read the same real files.
- * The model treats it as an editable, Hermes-style memory: notes it can read,
- * link, tag, and rewrite. The constellation view reads the same graph.
+ * The vault is a folder of Markdown notes living at `/share/vault`, so this
+ * add-on and the companion remindme-vault editor read the same real files (the
+ * plain Obsidian-Markdown format keeps them portable, but the editor is
+ * remindme-vault, not the Obsidian desktop app). The model treats it as an
+ * editable, Hermes-style memory: notes it can read, link, tag, and rewrite. The
+ * constellation view reads the same graph.
  *
  * Everything here is derived from the files on disk, never from a mirrored
  * index that could drift. A note is identified by its vault-relative path
- * (`projects/remindme.md`), the same identity Obsidian uses, so a note the
- * user renames in Obsidian is simply a different note here — no hidden ids to
- * keep in sync.
+ * (`projects/remindme.md`), so a note renamed in the vault editor is simply a
+ * different note here — no hidden ids to keep in sync.
  *
  * Frontmatter is hand-parsed rather than pulling in a YAML dependency: the
  * fields a note actually carries — `title`, `type`, `tags`, `aliases` — are a
  * short, flat list, and the rest of this codebase deliberately avoids heavy
  * deps on a Pi.
  */
+
+/* Words too common to say anything about which memory is relevant. Kept short
+ * on purpose — recall leans on scoring, not an exhaustive stoplist. */
+const RECALL_STOPWORDS = new Set([
+	// Common short words appear in nearly every note body, so left in they make
+	// recall match everything. The three-letter ones matter most.
+	"the",
+	"and",
+	"for",
+	"are",
+	"but",
+	"not",
+	"was",
+	"our",
+	"out",
+	"who",
+	"get",
+	"all",
+	"can",
+	"had",
+	"has",
+	"its",
+	"did",
+	"one",
+	"new",
+	"now",
+	"use",
+	"way",
+	"may",
+	"see",
+	"let",
+	"ask",
+	"put",
+	"yes",
+	"this",
+	"that",
+	"with",
+	"from",
+	"have",
+	"what",
+	"when",
+	"they",
+	"them",
+	"then",
+	"your",
+	"you're",
+	"about",
+	"there",
+	"their",
+	"would",
+	"could",
+	"should",
+	"want",
+	"need",
+	"like",
+	"just",
+	"know",
+	"tell",
+	"give",
+	"please",
+	"thanks",
+	"okay",
+	"yeah",
+	"does",
+	"done",
+	"here",
+	"into",
+	"over",
+	"some",
+	"than",
+	"also",
+	"much",
+	"more",
+	"most",
+	"very",
+	"still",
+]);
 
 export interface VaultNote {
 	/** Vault-relative POSIX path, e.g. `projects/remindme.md`. The id. */
@@ -389,6 +467,46 @@ export class VaultStore {
 			.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 	}
 
+	/**
+	 * Notes most relevant to a free-text prompt, for proactively surfacing
+	 * long-term memory before the model asks. Each note is scored by how many
+	 * of the prompt's salient words it mentions — a title or tag hit counts
+	 * double, since those are what a note is *about* — so a passing remark can
+	 * still pull back what was saved on the subject. Recency breaks ties. Unlike
+	 * `list({search})`, which needs the whole phrase as one substring, this
+	 * matches word by word, which is what makes it useful for recall.
+	 */
+	recall(prompt: string, limit = 5): VaultNote[] {
+		const words = [
+			...new Set(
+				(prompt.toLowerCase().match(/[a-z0-9][a-z0-9'-]{2,}/g) || []).filter(
+					(word) => !RECALL_STOPWORDS.has(word),
+				),
+			),
+		];
+		if (!words.length) return [];
+		const scored: Array<{ note: VaultNote; score: number }> = [];
+		for (const note of this.notes.values()) {
+			const title = note.title.toLowerCase();
+			const body = note.body.toLowerCase();
+			const tags = note.tags.map((tag) => tag.toLowerCase());
+			let score = 0;
+			for (const word of words) {
+				if (title.includes(word) || tags.some((tag) => tag.includes(word)))
+					score += 2;
+				else if (body.includes(word)) score += 1;
+			}
+			if (score > 0) scored.push({ note, score });
+		}
+		return scored
+			.sort(
+				(a, b) =>
+					b.score - a.score || b.note.updatedAt.localeCompare(a.note.updatedAt),
+			)
+			.slice(0, limit)
+			.map((entry) => entry.note);
+	}
+
 	/** Backlinks plus tag-neighbours — what the model should pull in as context. */
 	related(path: string): VaultRelated {
 		const note = this.get(path);
@@ -461,8 +579,8 @@ export class VaultStore {
 
 	/**
 	 * Write a note and refresh the index. Frontmatter and body are stored as the
-	 * `---` block the parser reads, so a note the model writes is a note Obsidian
-	 * opens. Returns the reparsed note with links resolved.
+	 * `---` block the parser reads, so a note the model writes is a note the
+	 * remindme-vault editor opens. Returns the reparsed note with links resolved.
 	 */
 	async write(
 		path: string,

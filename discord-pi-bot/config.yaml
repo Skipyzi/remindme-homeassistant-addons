@@ -1,5 +1,5 @@
 name: RemindMe Discord Bot
-version: "2.39.0"
+version: "2.41.0"
 slug: remindme_discord_bot
 description: Discord bot with reminders, pi-agent bridge, and local LLM support
 arch:
@@ -28,6 +28,7 @@ options:
   searxng_url: ""
   exa_api_key: ""
   ha_notify_target: ""
+  vault_url: ""
 schema:
   discord_token: password
   owner_id: str
@@ -42,12 +43,14 @@ schema:
   searxng_url: str?
   exa_api_key: password
   ha_notify_target: str
+  vault_url: str?
 map:
   - type: data
     read_only: false
     path: /data
-  # The Obsidian vault lives here so the desktop app and this add-on share the
-  # same files; the bot both reads and writes notes (model memory), so rw.
+  # The Markdown vault lives here so the remindme-vault editor add-on and this
+  # add-on share the same files; the bot both reads and writes notes (model
+  # memory), so rw.
   - type: share
     read_only: false
     path: /share

@@ -8,8 +8,21 @@ const webTerms =
 const artifactTerms =
 	/(draw|chart|graph|diagram|plot|render|visuali[sz]e|artifact|page|dashboard|svg|html|mock ?up|write (?:me )?an? (?:app|page|script|program))/i;
 
-const memoryTerms =
-	/\b(remember|memory|memories|notes?|vault|recall|forget|jot|save (?:this|that|it)|keep track|what did (?:i|we)|last (?:time|week|month))\b/i;
+/* Short acknowledgements that the last thing worked — the cue to capture what
+ * worked as a memory. Kept to clear confirmations, not any stray "worked". */
+const positiveFeedbackTerms =
+	/\b(that (?:worked|fixed it|did it|nailed it|works)|it works? now|works? now|working now|perfect|thanks?|thank you|nice(?: one)?|great(?: job)?|awesome|brilliant|exactly right|spot on|well done|nailed it|fixed it|solved it|that'?s it|good job|love it)\b/i;
+
+/**
+ * True when the message is essentially "that worked" — a cue to save what just
+ * worked as a memory. Guarded by length so a long turn that merely opens with
+ * "thanks, now also…" is treated as its new request, not a save.
+ */
+export function detectPositiveFeedback(prompt: string): boolean {
+	const text = String(prompt || "").trim();
+	if (!positiveFeedbackTerms.test(text)) return false;
+	return text.split(/\s+/).length <= 10;
+}
 
 export interface ToolContext {
 	/** A document is open in the console, so edits have something to act on. */
@@ -32,11 +45,16 @@ export function allowedToolNames(
 	}
 	if (webTerms.test(prompt)) allowed.add("web_search");
 	if (artifactTerms.test(prompt)) allowed.add("create_artifact");
-	if (memoryTerms.test(prompt)) {
-		allowed.add("search_memory");
-		allowed.add("read_memory");
-		allowed.add("write_memory");
-	}
+	/*
+	 * Long-term memory is always in reach, not gated behind memory words: the
+	 * point of it is that the model recalls and saves on its own judgement, so
+	 * a stray "I'm allergic to peanuts" can be written without the user asking.
+	 * The three tools are cheap, and proactive recall already rides in the
+	 * system prompt.
+	 */
+	allowed.add("search_memory");
+	allowed.add("read_memory");
+	allowed.add("write_memory");
 	/*
 	 * Editing needs something to edit, and the wording rarely says so.
 	 * "Make the heading bigger" names no artifact and matches no keyword,

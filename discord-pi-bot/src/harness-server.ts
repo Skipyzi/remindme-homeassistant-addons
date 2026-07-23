@@ -63,7 +63,11 @@ import {
 	invalidateManagerToken,
 } from "./harness/modelManager";
 
-import { allowedToolNames, toolCallKey } from "./harness/intentRouting";
+import {
+	allowedToolNames,
+	detectPositiveFeedback,
+	toolCallKey,
+} from "./harness/intentRouting";
 import {
 	getThinkingProfile,
 	thinkingProfilesForHardware,
@@ -110,12 +114,14 @@ void mcpServers.load();
 const endpoints = new EndpointStore();
 void endpoints.load();
 /*
- * The Obsidian vault at /share/vault, doubling as the model's editable
- * long-term memory. Parsed once at boot into an in-memory index; a note the
- * model writes reindexes itself. Notes edited externally in Obsidian are
- * picked up by POST /api/vault/reload — a full reparse is too heavy to run on
- * every read on a Pi, and cross-platform fs.watch is the same unreliable story
- * that made the reminder store poll instead.
+ * The Markdown vault at /share/vault, doubling as the model's editable
+ * long-term memory. The companion remindme-vault add-on edits the very same
+ * files, so a note is one note across the model, the chat, and that editor.
+ * Parsed once at boot into an in-memory index; a note the model writes
+ * reindexes itself. Notes edited externally are picked up by POST
+ * /api/vault/reload — a full reparse is too heavy to run on every read on a Pi,
+ * and cross-platform fs.watch is the same unreliable story that made the
+ * reminder store poll instead.
  */
 const vault = new VaultStore();
 void vault.load();
@@ -342,7 +348,7 @@ app.delete("/api/skills/:id", async (request, response) => {
  * Vault / memory. Note paths carry slashes, so they travel as a `path` query
  * parameter rather than a route segment. Reads serve the in-memory index;
  * writes go straight to disk and reindex, so a note the console saves is a
- * note Obsidian opens.
+ * note the remindme-vault add-on opens.
  */
 app.get("/api/vault", (request, response) => {
 	const notes = vault.list({
@@ -389,7 +395,7 @@ app.delete("/api/vault/note", async (request, response) => {
 	const removed = await vault.delete(String(request.query.path || ""));
 	response.status(removed ? 204 : 404).end();
 });
-/* Reparse the whole vault — used after Obsidian edits it from outside. */
+/* Reparse the whole vault — used after remindme-vault edits it from outside. */
 app.post("/api/vault/reload", async (_request, response) => {
 	await vault.load();
 	response.json({ notes: vault.list().length });
@@ -1054,6 +1060,9 @@ app.get("/api/status", async (_request, response) => {
 		vision:
 			process.env.LOCAL_LLM_VISION === "true" &&
 			Boolean(managed?.capabilities.includes("vision")),
+		/* The companion remindme-vault editor's URL, if configured — lets the
+		 * console deep-link a note into that add-on. Empty means no link shown. */
+		vaultUrl: process.env.VAULT_UI_URL || "",
 		profiles: thinkingProfilesForHardware(os.totalmem(), contextSize),
 		hardware: {
 			architecture: process.arch,
@@ -1491,10 +1500,42 @@ async function runAgent(
 	const artifactPrompt = openArtifact
 		? ` The document "${openArtifact.title}" (id ${openArtifact.id}, ${openArtifact.kind}) is open. For a small change use edit_artifact with that id, quoting the exact text to replace. For a change affecting most of the document, or when you cannot quote the existing text exactly, use rewrite_artifact with the complete new document. Use read_artifact first if you need to see its current state.`
 		: "";
+	/*
+	 * Long-term memory: the vault the model shares with the remindme-vault
+	 * editor. Notes touching this turn's prompt are surfaced up front so the
+	 * model recalls without a tool round-trip; it can still write_memory to
+	 * save durable facts and read_memory for a note's full text. Injected into
+	 * the system prompt, so historyBudget already pays for its tokens.
+	 */
+	const recalled = vault.recall(prompt, 5);
+	const memoryPrompt = recalled.length
+		? "\n\nFrom your long-term memory (shared notes vault). Treat as things you already know; use read_memory for a note's full text before relying on specifics:\n" +
+			recalled
+				.map((note) => {
+					const tags = note.tags.length
+						? ` [${note.tags.map((tag) => `#${tag}`).join(" ")}]`
+						: "";
+					const snippet = note.body.replace(/\s+/g, " ").trim().slice(0, 140);
+					return `- ${note.title} (${note.path})${tags}: ${snippet}`;
+				})
+				.join("\n")
+		: "";
+	/*
+	 * When the user just signals that the last thing worked, that is the moment
+	 * to learn from it: save the reusable lesson so the next conversation starts
+	 * ahead. Only on short acknowledgements, and only with something to look back
+	 * on — the prior turn is what holds what worked.
+	 */
+	const learningPrompt =
+		history.length > 0 && detectPositiveFeedback(prompt)
+			? "\n\nThe user is confirming the previous approach worked. If the exchange above holds a durable, reusable lesson — a fix that worked, a method, a confirmed preference — call write_memory with type feedback to save it: a short kebab path under feedback/, a clear title, and a body stating what worked and why (link related notes with [[Title]]). Then acknowledge in one short line. If nothing is durable enough to keep, just acknowledge."
+			: "";
 	// Enabled skills are appended so they bind for the whole turn.
 	const systemPrompt =
-		"You are RemindMe, a concise general and home assistant. Answer directly. Use tools only when needed. Confirm sensitive home actions." +
+		"You are RemindMe, a concise general and home assistant. Answer directly. Use tools only when needed. Confirm sensitive home actions. You have a long-term memory — a personal notes vault: search_memory and read_memory to recall, write_memory to save durable facts, preferences, and project details worth keeping across conversations." +
 		artifactPrompt +
+		memoryPrompt +
+		learningPrompt +
 		skillPrompt(skills.enabled());
 	const budget = historyBudget(
 		prompt,
