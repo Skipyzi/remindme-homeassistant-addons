@@ -28,7 +28,7 @@ function channelIsForReminders(message: Message): boolean {
 		"name" in message.channel && typeof message.channel.name === "string"
 			? message.channel.name
 			: "";
-	return name.toLowerCase().includes("reminders");
+	return name.toLowerCase().includes("reminder");
 }
 
 function parseTime(input: string): { text: string; delayMs: number } | null {
@@ -145,9 +145,17 @@ export async function handleRemindCommand(
 	message: Message,
 	input?: string,
 ): Promise<void> {
-	if (!channelIsForReminders(message)) {
+	/*
+	 * In a server, reminders are confined to a #reminder(s) channel so they do
+	 * not scatter across every channel. A DM is different: it is already
+	 * private, so a reminder set there is a personal one — stored with no
+	 * channel and delivered back as a DM, the same private reminder the LLM
+	 * console creates, kept in sync through the shared store.
+	 */
+	const inDirectMessage = !message.inGuild();
+	if (!inDirectMessage && !channelIsForReminders(message)) {
 		await message.reply(
-			"⚠️ Reminders only work in a channel with **reminders** in its name.",
+			"⚠️ In a server, reminders only work in a channel with **reminder** in its name. You can also DM me to set a private one.",
 		);
 		return;
 	}
@@ -170,7 +178,8 @@ export async function handleRemindCommand(
 		parsed.text,
 		parsed.delayMs / 60_000,
 		message.author.id,
-		message.channel.id,
+		// No channel for a DM: a private reminder, delivered back as a DM.
+		inDirectMessage ? "" : message.channel.id,
 	);
 	const timestamp = Math.floor(reminder.time.getTime() / 1000);
 	const card = new EmbedBuilder()
@@ -194,9 +203,9 @@ export async function handleRemindCommand(
 }
 
 export async function handleRemindList(message: Message): Promise<void> {
-	if (!channelIsForReminders(message)) {
+	if (message.inGuild() && !channelIsForReminders(message)) {
 		await message.reply(
-			"⚠️ Reminders only work in a channel with **reminders** in its name.",
+			"⚠️ In a server, reminders only work in a channel with **reminder** in its name. You can also DM me.",
 		);
 		return;
 	}
