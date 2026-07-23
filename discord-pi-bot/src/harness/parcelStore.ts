@@ -151,3 +151,40 @@ export class ParcelStore {
 		return true;
 	}
 }
+
+/* Plain-language for each status tag, used in notifications and status cards. */
+const TAG_LABEL: Record<ParcelTag, string> = {
+	Pending: "tracking started",
+	InfoReceived: "label created, awaiting pickup",
+	InTransit: "in transit",
+	OutForDelivery: "out for delivery",
+	AttemptFail: "delivery attempt failed",
+	Delivered: "delivered",
+	AvailableForPickup: "ready for pickup",
+	Exception: "exception — check the carrier",
+	Expired: "tracking expired",
+	Unknown: "status unknown",
+};
+
+export function describeParcelTag(tag: ParcelTag): string {
+	return TAG_LABEL[tag] || "status unknown";
+}
+
+/**
+ * The notification text for a status change, or null when nothing changed since
+ * the owner was last told. Pure so the poller's notify-or-skip decision is
+ * testable without a network. `previousTag` is the tag the owner last saw.
+ */
+export function parcelNotice(
+	label: string,
+	previousTag: ParcelTag | undefined,
+	newTag: ParcelTag,
+	message?: string,
+): string | null {
+	if (newTag === previousTag) return null;
+	const detail =
+		message && message.toLowerCase() !== newTag.toLowerCase()
+			? ` — ${message}`
+			: "";
+	return `📦 ${label}: ${describeParcelTag(newTag)}${detail}`;
+}

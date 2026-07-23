@@ -396,6 +396,71 @@
 			},
 		},
 		{
+			name: "/parcel",
+			usage: "/parcel [list | add <number> [label] | forget <id>]",
+			blurb: "track packages and delivery status",
+			async run(app, argument) {
+				const say = (text) => app.add("answer", text);
+				const trimmed = (argument || "").trim();
+				const [word, ...rest] = trimmed.split(/\s+/);
+				const sub = word?.toLowerCase();
+
+				const fetchParcels = async () => {
+					const response = await fetch("./api/parcels");
+					return response.ok ? await response.json() : { enabled: false, parcels: [] };
+				};
+				const line = (parcel) =>
+					`- \`${parcel.id.slice(0, 8)}\` **${parcel.label}** — ${parcel.status}${parcel.location ? ` (${parcel.location})` : ""}${parcel.expectedDelivery ? ` · ETA ${parcel.expectedDelivery}` : ""}`;
+
+				if (["forget", "remove", "delete", "rm"].includes(sub)) {
+					const target = rest.join(" ").trim();
+					if (!target) return say("Say which parcel: `/parcel forget <id>`.");
+					const { parcels } = await fetchParcels();
+					const match = parcels.find((parcel) => parcel.id.startsWith(target));
+					if (!match) return say(`No parcel starting \`${target}\`.`);
+					await fetch(`./api/parcels/${encodeURIComponent(match.id)}`, {
+						method: "DELETE",
+					});
+					return say(`Stopped tracking **${match.label}**.`);
+				}
+
+				if (sub === "add" || sub === "track") {
+					const number = rest.shift();
+					if (!number) return say("Say a tracking number: `/parcel add <number> [label]`.");
+					const label = rest.join(" ").trim();
+					say(`Tracking \`${number}\`…`);
+					const response = await fetch("./api/parcels", {
+						method: "POST",
+						headers: { "Content-Type": "application/json" },
+						body: JSON.stringify({ trackingNumber: number, label }),
+					});
+					if (!response.ok) {
+						const error = await response.json().catch(() => ({}));
+						return say(error.error || "Could not track that parcel.");
+					}
+					const parcel = await response.json();
+					return say(`Tracking **${parcel.label}** — ${parcel.status}.`);
+				}
+
+				// Default and `list`: show the tracked parcels.
+				const { enabled, parcels } = await fetchParcels();
+				if (!enabled)
+					return say(
+						"Parcel tracking is off. Set the AfterShip API key in the add-on configuration.",
+					);
+				if (!parcels.length)
+					return say("No parcels tracked. Add one with `/parcel add <number> [label]`.");
+				return say(
+					[
+						`${parcels.length} parcel${parcels.length > 1 ? "s" : ""}:`,
+						...parcels.map(line),
+						"",
+						"`/parcel add <number> [label]` to track · `/parcel forget <id>` to stop.",
+					].join("\n"),
+				);
+			},
+		},
+		{
 			name: "/context",
 			usage: "/context",
 			blurb: "token and context usage",

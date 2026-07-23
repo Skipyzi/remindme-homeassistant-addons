@@ -24,6 +24,11 @@ export function detectPositiveFeedback(prompt: string): boolean {
 	return text.split(/\s+/).length <= 10;
 }
 
+/* Words that put the parcel-tracking tools in reach: asking after a package,
+ * a delivery, a courier, or a tracking number. */
+const parcelTerms =
+	/\b(parcels?|packages?|shipments?|tracking|track(?:ing)? (?:number|code)|deliver(?:y|ed|ies)?|courier|dhl|dpd|hermes|gls|ups|fedex|where('?s| is) my)\b/i;
+
 export interface ToolContext {
 	/** A document is open in the console, so edits have something to act on. */
 	hasArtifact?: boolean;
@@ -44,6 +49,10 @@ export function allowedToolNames(
 		allowed.add("create_reminder");
 	}
 	if (webTerms.test(prompt)) allowed.add("web_search");
+	if (parcelTerms.test(prompt)) {
+		allowed.add("track_parcel");
+		allowed.add("list_parcels");
+	}
 	if (artifactTerms.test(prompt)) allowed.add("create_artifact");
 	/*
 	 * Long-term memory is always in reach, not gated behind memory words: the
