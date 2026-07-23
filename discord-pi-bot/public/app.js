@@ -67,6 +67,8 @@ function harness() {
 		modelBadge: "LOCAL • QWEN",
 		sessionLabel: "ready // private network",
 		hardware: "raspberry pi profile",
+		/** The companion remindme-vault editor's URL, from /api/status. Empty hides deep-links. */
+		vaultUrl: "",
 		metrics: {},
 		system: null,
 		artifactOpen: false,
@@ -200,6 +202,7 @@ function harness() {
 					}
 					if (d.hardware)
 						this.hardware = `${d.hardware.architecture} / ${d.hardware.cpuCores} cores`;
+					this.vaultUrl = d.vaultUrl || "";
 					this.offline = false;
 				})
 				.catch(() => {
@@ -1738,10 +1741,27 @@ function harness() {
 			const tags = (note.tags || []).map((tag) => `#${tag}`).join(" ");
 			this.add(
 				"answer",
-				[`### ${note.title}`, tags, "", note.body || "*(empty note)*"]
+				[
+					`### ${note.title}`,
+					tags,
+					"",
+					note.body || "*(empty note)*",
+					this.vaultNoteUrl(note.path)
+						? `\n[Open in Vault ↗](${this.vaultNoteUrl(note.path)})`
+						: "",
+				]
 					.filter((line) => line !== "")
 					.join("\n"),
 			);
+		},
+		/**
+		 * A deep-link that opens a note in the companion remindme-vault editor,
+		 * or "" when no vault URL is configured. Trailing-slash normalised so the
+		 * `?note=` query survives HA ingress rewriting.
+		 */
+		vaultNoteUrl(path) {
+			if (!this.vaultUrl || !path) return "";
+			return `${this.vaultUrl.replace(/\/+$/, "")}/?note=${encodeURIComponent(path)}`;
 		},
 		/* Pan and zoom act on the tapped graph's own viewBox. */
 		graphPanStart(message, event) {

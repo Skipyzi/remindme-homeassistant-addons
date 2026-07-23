@@ -2,12 +2,12 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { allowedToolNames } from "../src/harness/intentRouting.ts";
 
-test("memory phrasing exposes the memory tools", () => {
+test("memory tools are always in reach — long-term memory is not gated", () => {
 	for (const prompt of [
 		"remember that I take my coffee black",
 		"what did we decide last week?",
-		"add a note about the vault",
-		"recall my project preferences",
+		"turn on the kitchen light",
+		"how tall is Mount Everest?",
 	]) {
 		const allowed = allowedToolNames(prompt);
 		assert.ok(allowed.has("search_memory"), prompt);
@@ -16,9 +16,8 @@ test("memory phrasing exposes the memory tools", () => {
 	}
 });
 
-test("unrelated phrasing does not pull in memory tools", () => {
+test("other intents still route alongside memory", () => {
 	const allowed = allowedToolNames("turn on the kitchen light");
-	assert.ok(!allowed.has("write_memory"));
-	// Home terms still route to entity tools.
+	// Home terms still route to entity tools, on top of the always-on memory.
 	assert.ok(allowed.has("control_entity"));
 });

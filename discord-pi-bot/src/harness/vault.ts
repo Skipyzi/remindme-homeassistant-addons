@@ -28,6 +28,83 @@ import { dirname, join, relative, sep } from "node:path";
  * deps on a Pi.
  */
 
+/* Words too common to say anything about which memory is relevant. Kept short
+ * on purpose — recall leans on scoring, not an exhaustive stoplist. */
+const RECALL_STOPWORDS = new Set([
+	// Common short words appear in nearly every note body, so left in they make
+	// recall match everything. The three-letter ones matter most.
+	"the",
+	"and",
+	"for",
+	"are",
+	"but",
+	"not",
+	"was",
+	"our",
+	"out",
+	"who",
+	"get",
+	"all",
+	"can",
+	"had",
+	"has",
+	"its",
+	"did",
+	"one",
+	"new",
+	"now",
+	"use",
+	"way",
+	"may",
+	"see",
+	"let",
+	"ask",
+	"put",
+	"yes",
+	"this",
+	"that",
+	"with",
+	"from",
+	"have",
+	"what",
+	"when",
+	"they",
+	"them",
+	"then",
+	"your",
+	"you're",
+	"about",
+	"there",
+	"their",
+	"would",
+	"could",
+	"should",
+	"want",
+	"need",
+	"like",
+	"just",
+	"know",
+	"tell",
+	"give",
+	"please",
+	"thanks",
+	"okay",
+	"yeah",
+	"does",
+	"done",
+	"here",
+	"into",
+	"over",
+	"some",
+	"than",
+	"also",
+	"much",
+	"more",
+	"most",
+	"very",
+	"still",
+]);
+
 export interface VaultNote {
 	/** Vault-relative POSIX path, e.g. `projects/remindme.md`. The id. */
 	path: string;
@@ -388,6 +465,46 @@ export class VaultStore {
 				return true;
 			})
 			.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+	}
+
+	/**
+	 * Notes most relevant to a free-text prompt, for proactively surfacing
+	 * long-term memory before the model asks. Each note is scored by how many
+	 * of the prompt's salient words it mentions — a title or tag hit counts
+	 * double, since those are what a note is *about* — so a passing remark can
+	 * still pull back what was saved on the subject. Recency breaks ties. Unlike
+	 * `list({search})`, which needs the whole phrase as one substring, this
+	 * matches word by word, which is what makes it useful for recall.
+	 */
+	recall(prompt: string, limit = 5): VaultNote[] {
+		const words = [
+			...new Set(
+				(prompt.toLowerCase().match(/[a-z0-9][a-z0-9'-]{2,}/g) || []).filter(
+					(word) => !RECALL_STOPWORDS.has(word),
+				),
+			),
+		];
+		if (!words.length) return [];
+		const scored: Array<{ note: VaultNote; score: number }> = [];
+		for (const note of this.notes.values()) {
+			const title = note.title.toLowerCase();
+			const body = note.body.toLowerCase();
+			const tags = note.tags.map((tag) => tag.toLowerCase());
+			let score = 0;
+			for (const word of words) {
+				if (title.includes(word) || tags.some((tag) => tag.includes(word)))
+					score += 2;
+				else if (body.includes(word)) score += 1;
+			}
+			if (score > 0) scored.push({ note, score });
+		}
+		return scored
+			.sort(
+				(a, b) =>
+					b.score - a.score || b.note.updatedAt.localeCompare(a.note.updatedAt),
+			)
+			.slice(0, limit)
+			.map((entry) => entry.note);
 	}
 
 	/** Backlinks plus tag-neighbours — what the model should pull in as context. */

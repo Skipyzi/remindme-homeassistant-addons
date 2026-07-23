@@ -1056,6 +1056,9 @@ app.get("/api/status", async (_request, response) => {
 		vision:
 			process.env.LOCAL_LLM_VISION === "true" &&
 			Boolean(managed?.capabilities.includes("vision")),
+		/* The companion remindme-vault editor's URL, if configured — lets the
+		 * console deep-link a note into that add-on. Empty means no link shown. */
+		vaultUrl: process.env.VAULT_UI_URL || "",
 		profiles: thinkingProfilesForHardware(os.totalmem(), contextSize),
 		hardware: {
 			architecture: process.arch,
@@ -1493,10 +1496,31 @@ async function runAgent(
 	const artifactPrompt = openArtifact
 		? ` The document "${openArtifact.title}" (id ${openArtifact.id}, ${openArtifact.kind}) is open. For a small change use edit_artifact with that id, quoting the exact text to replace. For a change affecting most of the document, or when you cannot quote the existing text exactly, use rewrite_artifact with the complete new document. Use read_artifact first if you need to see its current state.`
 		: "";
+	/*
+	 * Long-term memory: the vault the model shares with the remindme-vault
+	 * editor. Notes touching this turn's prompt are surfaced up front so the
+	 * model recalls without a tool round-trip; it can still write_memory to
+	 * save durable facts and read_memory for a note's full text. Injected into
+	 * the system prompt, so historyBudget already pays for its tokens.
+	 */
+	const recalled = vault.recall(prompt, 5);
+	const memoryPrompt = recalled.length
+		? "\n\nFrom your long-term memory (shared notes vault). Treat as things you already know; use read_memory for a note's full text before relying on specifics:\n" +
+			recalled
+				.map((note) => {
+					const tags = note.tags.length
+						? ` [${note.tags.map((tag) => `#${tag}`).join(" ")}]`
+						: "";
+					const snippet = note.body.replace(/\s+/g, " ").trim().slice(0, 140);
+					return `- ${note.title} (${note.path})${tags}: ${snippet}`;
+				})
+				.join("\n")
+		: "";
 	// Enabled skills are appended so they bind for the whole turn.
 	const systemPrompt =
-		"You are RemindMe, a concise general and home assistant. Answer directly. Use tools only when needed. Confirm sensitive home actions." +
+		"You are RemindMe, a concise general and home assistant. Answer directly. Use tools only when needed. Confirm sensitive home actions. You have a long-term memory — a personal notes vault: search_memory and read_memory to recall, write_memory to save durable facts, preferences, and project details worth keeping across conversations." +
 		artifactPrompt +
+		memoryPrompt +
 		skillPrompt(skills.enabled());
 	const budget = historyBudget(
 		prompt,

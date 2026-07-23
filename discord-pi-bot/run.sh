@@ -30,6 +30,9 @@ export MODEL_MANAGER_TOKEN_PATH=/data/model-manager-token
 export SEARXNG_URL="$(get_option searxng_url)"
 export EXA_API_KEY="$(get_option exa_api_key)"
 export HA_NOTIFY_TARGET="$(get_option ha_notify_target)"
+# The companion remindme-vault editor add-on's URL, for deep-linking notes from
+# the chat console. Blank hides the link.
+export VAULT_UI_URL="$(get_option vault_url)"
 # Only /data is a persisted volume. Anything defaulting to ./data lands in
 # /app inside the image and is lost on every restart and update.
 export REMINDER_DATA_PATH=/data/reminders.json

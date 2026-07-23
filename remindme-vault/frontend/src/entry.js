@@ -504,4 +504,9 @@ function wire() {
 
 wire();
 newNote();
-void loadTree();
+// A ?note=<path> deep-link (e.g. from the RemindMe chat console's "Open in
+// Vault") opens that note once the tree has loaded.
+const deepLinkNote = new URLSearchParams(location.search).get("note");
+void loadTree().then(() => {
+	if (deepLinkNote) void openNote(deepLinkNote);
+});
