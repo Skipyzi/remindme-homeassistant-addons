@@ -33,6 +33,9 @@ type ModelSupervisor interface {
 	State() state.State
 	Persist(state.State) error
 	ActiveID() string
+	// Activate hot-swaps the running model for candidate, rolling back to the
+	// previous one if it fails to become ready.
+	Activate(context.Context, state.Installed, hardware.Runtime) error
 }
 
 type PairingExchanger interface {
@@ -58,7 +61,17 @@ type Dependencies struct {
 	CustomCatalogPath string
 	InferenceURL      string
 	Now               func() time.Time
+	// MaxInstalledModels caps how many .gguf files may sit in the model
+	// directory at once, so a run of downloads cannot fill storage. A new
+	// download past the cap is refused until a model is removed. Zero uses the
+	// default.
+	MaxInstalledModels int
 }
+
+// defaultMaxInstalledModels bounds accumulated downloads. The per-download disk
+// preflight already prevents overflow; this stops a pile of unused models from
+// creeping the disk toward full.
+const defaultMaxInstalledModels = 6
 
 type APIError struct {
 	Code      string `json:"code"`
@@ -109,6 +122,9 @@ func NewServer(dependencies Dependencies) *Server {
 	if dependencies.Now == nil {
 		dependencies.Now = time.Now
 	}
+	if dependencies.MaxInstalledModels <= 0 {
+		dependencies.MaxInstalledModels = defaultMaxInstalledModels
+	}
 	server := &Server{
 		dependencies: dependencies,
 		manager:      http.NewServeMux(),
@@ -140,6 +156,7 @@ func (server *Server) registerRoutes() {
 	server.manager.Handle("GET /manager/v1/catalog", server.auth(http.HandlerFunc(server.listCatalog)))
 	server.manager.Handle("POST /manager/v1/preflight", server.auth(http.HandlerFunc(server.preflight)))
 	server.manager.Handle("POST /manager/v1/install", server.auth(http.HandlerFunc(server.install)))
+	server.manager.Handle("POST /manager/v1/activate", server.auth(http.HandlerFunc(server.activate)))
 	server.manager.Handle("POST /manager/v1/cancel", server.auth(http.HandlerFunc(server.cancelOperation)))
 	server.manager.Handle("DELETE /manager/v1/models/{id}", server.auth(http.HandlerFunc(server.removeModel)))
 	server.manager.Handle("GET /manager/v1/models/{id}/options.yaml", server.auth(http.HandlerFunc(server.modelOptionsYAML)))
@@ -240,6 +257,19 @@ func (server *Server) install(response http.ResponseWriter, request *http.Reques
 	if !ok {
 		return
 	}
+	// Cap accumulated downloads: a new model past the limit is refused until one
+	// is removed. Re-downloading an already-installed model is always allowed.
+	if !server.isInstalled(variant) &&
+		server.installedModelCount() >= server.dependencies.MaxInstalledModels {
+		writeError(response, http.StatusConflict, APIError{
+			Code: "storage_model_limit",
+			Message: fmt.Sprintf(
+				"At most %d downloaded models are kept. Remove one before downloading another.",
+				server.dependencies.MaxInstalledModels,
+			),
+		})
+		return
+	}
 	if !server.beginMutation(response) {
 		return
 	}
@@ -284,6 +314,73 @@ func (server *Server) runInstall(ctx context.Context, variant catalog.Variant) {
 	current = current.CompleteDownload()
 	_ = server.dependencies.Supervisor.Persist(current)
 	server.events.publish(snapshotFromState(current))
+}
+
+// EmitState publishes a supervisor state to the operation event stream, so a
+// switch's activating → probing → active phases reach subscribers live.
+func (server *Server) EmitState(current state.State) {
+	server.events.publish(snapshotFromState(current))
+}
+
+// activate hot-swaps the running model for a downloaded, verified one. The
+// candidate must be installed, verified, and safe for the hardware; the
+// supervisor rolls back to the previous model if it fails to become ready.
+func (server *Server) activate(response http.ResponseWriter, request *http.Request) {
+	_, variant, _, assessment, ok := server.selection(response, request)
+	if !ok {
+		return
+	}
+	if !server.isInstalled(variant) {
+		writeError(response, http.StatusConflict, APIError{Code: "model_not_installed", Message: "Download this model before switching to it."})
+		return
+	}
+	if !server.isVerified(variant) {
+		writeError(response, http.StatusConflict, APIError{Code: "model_not_verified", Message: "Verify this model before switching to it."})
+		return
+	}
+	if server.dependencies.Supervisor.ActiveID() == variant.ID {
+		writeJSON(response, http.StatusOK, map[string]any{"operation": server.events.current(), "alreadyActive": true})
+		return
+	}
+	if !server.beginMutation(response) {
+		return
+	}
+	candidate := state.Installed{
+		ID:   variant.ID,
+		Repo: variant.Repo,
+		File: variant.File,
+		Path: filepath.Join(server.dependencies.ModelDir, variant.File),
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	server.setCancel(cancel)
+	// Publish an immediate activating snapshot so the console reacts at once,
+	// before the supervisor's own phase emissions arrive.
+	snapshot := OperationSnapshot{
+		ID:        fmt.Sprintf("activate-%d", server.dependencies.Now().UnixNano()),
+		VariantID: variant.ID,
+		Phase:     state.PhaseActivating,
+	}
+	server.events.publish(snapshot)
+	writeJSON(response, http.StatusAccepted, map[string]any{"operation": snapshot})
+	go server.runActivate(ctx, candidate, assessment.Runtime)
+}
+
+func (server *Server) runActivate(ctx context.Context, candidate state.Installed, runtime hardware.Runtime) {
+	defer server.endMutation()
+	err := server.dependencies.Supervisor.Activate(ctx, candidate, runtime)
+	// The supervisor has persisted the terminal state — active on success, or
+	// the restored/degraded state after a rollback — so report from it.
+	current := server.dependencies.Supervisor.State()
+	snapshot := snapshotFromState(current)
+	if err != nil {
+		code, message := "activation_failed", "Switching models failed."
+		if current.LastError != nil {
+			code, message = current.LastError.Code, current.LastError.Message
+		}
+		snapshot.Phase = current.Phase
+		snapshot.Error = &APIError{Code: code, Message: message}
+	}
+	server.events.publish(snapshot)
 }
 
 func (server *Server) cancelOperation(response http.ResponseWriter, _ *http.Request) {
@@ -520,6 +617,22 @@ func (server *Server) isInstalled(variant catalog.Variant) bool {
 
 func (server *Server) isVerified(variant catalog.Variant) bool {
 	return server.dependencies.Verified != nil && server.dependencies.Verified.Has(variant)
+}
+
+// installedModelCount is how many .gguf files sit in the model directory —
+// finished downloads, not in-progress .partial files.
+func (server *Server) installedModelCount() int {
+	entries, err := os.ReadDir(server.dependencies.ModelDir)
+	if err != nil {
+		return 0
+	}
+	count := 0
+	for _, entry := range entries {
+		if !entry.IsDir() && strings.HasSuffix(strings.ToLower(entry.Name()), ".gguf") {
+			count++
+		}
+	}
+	return count
 }
 
 func (server *Server) beginMutation(response http.ResponseWriter) bool {

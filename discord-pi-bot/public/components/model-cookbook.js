@@ -30,6 +30,9 @@ window.RemindMeModelCookbook = {
 			hfToken: "",
 			customModel: { repo: "", file: "" },
 			modelEvents: null,
+			/* Set while a "download & use" is waiting for the download to finish
+			 * before it hot-swaps to the model. */
+			pendingActivateId: "",
 		};
 	},
 
@@ -96,14 +99,21 @@ window.RemindMeModelCookbook = {
 				vm.modelError = "Model progress returned malformed data.";
 				return;
 			}
-			if (
-				["idle", "active", "failed", "degraded"].includes(
-					vm.modelOperation.phase,
-				)
-			) {
+			const phase = vm.modelOperation.phase;
+			if (["idle", "active", "failed", "degraded"].includes(phase)) {
 				this.loadStatus(vm).catch(() => {});
 				this.loadCatalog(vm).catch(() => {});
 			}
+			// A "download & use" whose download just finished now hot-swaps.
+			if (phase === "idle" && vm.pendingActivateId) {
+				const target = vm.pendingActivateId;
+				vm.pendingActivateId = "";
+				void this.activate(vm, target);
+			}
+			// A failed or rolled-back download must not then try to activate.
+			if (["failed", "degraded"].includes(phase)) vm.pendingActivateId = "";
+			// A completed switch: refresh the header badge to the new model.
+			if (phase === "active") vm.refreshStatus?.();
 		});
 		source.onerror = () => {
 			vm.modelError =
@@ -135,6 +145,24 @@ window.RemindMeModelCookbook = {
 
 	download(vm, id) {
 		return this.mutate(vm, "./api/models/install", "POST", { id });
+	},
+
+	/* Hot-swap the running model to an already-downloaded, verified one. */
+	activate(vm, id) {
+		return this.mutate(vm, "./api/models/activate", "POST", { id });
+	},
+
+	/*
+	 * One click to "use" a model: switch to it if it's verified, otherwise
+	 * download and verify first, then activate when the download completes
+	 * (see the pendingActivateId handling in connect()).
+	 */
+	use(vm, id) {
+		const variant = vm.modelCatalog.find((item) => item.model.id === id);
+		if (variant?.active) return Promise.resolve(null);
+		if (variant?.verified) return this.activate(vm, id);
+		vm.pendingActivateId = id;
+		return this.download(vm, id);
 	},
 
 	async loadYaml(vm, id) {

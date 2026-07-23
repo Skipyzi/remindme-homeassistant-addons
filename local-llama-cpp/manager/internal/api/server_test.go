@@ -257,13 +257,65 @@ func TestOptionsYAMLRequiresVerifiedDownload(t *testing.T) {
 	}
 }
 
-func TestActivationEndpointIsUnavailable(t *testing.T) {
+func TestActivationSwitchesInstalledModel(t *testing.T) {
+	dependencies := testDependencies(t, "http://127.0.0.1:1")
+	// A downloaded, verified model is a candidate for switching.
+	path := filepath.Join(dependencies.ModelDir, "test.gguf")
+	if err := os.WriteFile(path, []byte("GGUFtest"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	variant, _ := dependencies.Catalog.Find("test-q4")
+	if err := dependencies.Verified.Record(variant, path); err != nil {
+		t.Fatal(err)
+	}
+	server := NewServer(dependencies)
+	request := httptest.NewRequest(http.MethodPost, "/manager/v1/activate", strings.NewReader(`{"id":"test-q4"}`))
+	request.Header.Set("Authorization", "Bearer manager-secret")
+	response := httptest.NewRecorder()
+	server.ServeHTTP(response, request)
+	if response.Code != http.StatusAccepted {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+	fake := dependencies.Supervisor.(*fakeSupervisor)
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		fake.mu.Lock()
+		calls, active := fake.activateCalls, fake.active
+		fake.mu.Unlock()
+		if calls == 1 && active == "test-q4" {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatal("activate was not invoked")
+}
+
+func TestInstallRefusedPastModelLimit(t *testing.T) {
+	dependencies := testDependencies(t, "http://127.0.0.1:1")
+	dependencies.MaxInstalledModels = 1
+	// An unrelated downloaded model already fills the cap.
+	if err := os.WriteFile(filepath.Join(dependencies.ModelDir, "other.gguf"), []byte("GGUFxxxx"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	server := NewServer(dependencies)
+	request := httptest.NewRequest(http.MethodPost, "/manager/v1/install", strings.NewReader(`{"id":"test-q4"}`))
+	request.Header.Set("Authorization", "Bearer manager-secret")
+	response := httptest.NewRecorder()
+	server.ServeHTTP(response, request)
+	if response.Code != http.StatusConflict ||
+		!strings.Contains(response.Body.String(), "storage_model_limit") {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
+func TestActivationRequiresInstalledModel(t *testing.T) {
 	server := NewServer(testDependencies(t, "http://127.0.0.1:1"))
 	request := httptest.NewRequest(http.MethodPost, "/manager/v1/activate", strings.NewReader(`{"id":"test-q4"}`))
 	request.Header.Set("Authorization", "Bearer manager-secret")
 	response := httptest.NewRecorder()
 	server.ServeHTTP(response, request)
-	if response.Code != http.StatusNotFound || strings.Contains(response.Body.String(), "model_not_installed") {
+	if response.Code != http.StatusConflict ||
+		!strings.Contains(response.Body.String(), "model_not_installed") {
 		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
 	}
 }

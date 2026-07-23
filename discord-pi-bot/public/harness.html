@@ -117,7 +117,7 @@
           <button @click="openSkills()">Skills</button>
           <button @click="openMcp()">MCP</button>
           <button @click="modelsOpen=true">Models</button>
-          <button @click="settingsOpen=true">Settings</button>
+          <button @click="openSettings()">Settings</button>
         </nav>
         <div class="rail-foot">
           <div
@@ -176,6 +176,23 @@
             Home console<small x-text="sessionLabel"></small>
           </div>
           <div class="badge" x-text="modelBadge"></div>
+          <!-- Global model-operation indicator: visible from anywhere while a
+               download or switch is running, so long jobs are never silent. -->
+          <button
+            class="model-working"
+            x-show="modelOperationBusy"
+            x-cloak
+            @click="modelsOpen=true"
+            :title="`Model ${(modelOperation?.phase||'').replaceAll('_',' ')} — open Models`"
+            aria-live="polite"
+          >
+            <span class="model-working-spin" aria-hidden="true"></span>
+            <span x-text="(modelOperation?.phase||'working').replaceAll('_',' ')"></span>
+            <span
+              x-show="modelOperation?.bytesTotal"
+              x-text="` ${Math.round(modelProgressPercent())}%`"
+            ></span>
+          </button>
           <button
             class="mobile-toggle"
             aria-controls="house-board"
@@ -887,9 +904,11 @@
                 class="send"
                 :class="{cancel: busy}"
                 type="button"
+                :disabled="modelSwitching && !busy"
                 @click="busy ? cancel() : send()"
+                :title="modelSwitching && !busy ? 'Switching model — inference is briefly unavailable' : ''"
                 :aria-label="busy ? 'Cancel the current turn' : 'Send message'"
-                x-text="busy ? 'Cancel ✕' : 'Send ↑'"
+                x-text="busy ? 'Cancel ✕' : (modelSwitching ? 'Switching…' : 'Send ↑')"
               ></button>
             </div>
             <!-- Discoverability: what the prefix could still become. -->
@@ -1179,7 +1198,29 @@
               ><input type="checkbox" x-model="scanlines"
             /></label>
           </div>
+          <div class="settings-persona">
+            <label
+              >System prompt
+              <textarea
+                x-model="persona"
+                rows="6"
+                spellcheck="false"
+                placeholder="You are RemindMe, a concise general and home assistant…"
+              ></textarea>
+            </label>
+            <p class="settings-note">
+              The model's base instructions. Memory, tools and skills are always
+              added on top of this.
+            </p>
+            <p
+              class="settings-note"
+              x-show="personaStatus"
+              x-text="personaStatus"
+            ></p>
+          </div>
           <div class="settings-actions">
+            <button class="action" @click="savePersona()">Save prompt</button>
+            <button class="action" @click="resetPersona()">Reset to default</button>
             <button class="send" @click="settingsOpen=false">Close</button>
           </div>
         </section>
@@ -1480,27 +1521,31 @@
                     x-text="variant.assessment?.warnings?.[0]"
                   ></p>
                   <div class="model-actions">
+                    <!-- Not downloaded yet: download, verify, and switch in one go. -->
                     <button
                       class="action"
-                      x-show="!variant.verified"
+                      x-show="!variant.verified && !variant.active"
                       :disabled="modelOperationBusy || !variant.assessment?.safe"
-                      @click="downloadModel(variant.model.id)"
+                      @click="useModel(variant.model.id)"
                     >
-                      Download
+                      Download &amp; use
                     </button>
+                    <!-- Downloaded and verified: hot-swap to it, no add-on restart. -->
                     <button
                       class="action"
-                      x-show="variant.verified"
-                      @click="copyModelYaml(variant.model.id)"
+                      x-show="variant.verified && !variant.active"
+                      :disabled="modelOperationBusy"
+                      @click="useModel(variant.model.id)"
                     >
-                      Copy complete YAML
+                      Use this model
                     </button>
+                    <!-- The native-config YAML path stays as an advanced fallback. -->
                     <button
                       class="ghost"
                       x-show="variant.verified"
-                      @click="downloadModelYaml(variant.model.id)"
+                      @click="copyModelYaml(variant.model.id)"
                     >
-                      Download YAML
+                      Copy YAML
                     </button>
                     <button
                       class="ghost"
@@ -1515,13 +1560,13 @@
               >
             </div>
             <section class="model-yaml" x-show="modelPairingConfigured">
-              <div class="kicker">Manual activation</div>
-              <h3>Native Configuration remains authoritative</h3>
+              <div class="kicker">Manual activation (fallback)</div>
+              <h3>Native Configuration YAML</h3>
               <p>
-                Downloading never changes the running model. After verification,
-                copy the complete YAML, open the llama.cpp add-on
-                <b>Configuration</b> YAML editor, replace the options, save, and
-                restart the llama.cpp add-on.
+                <b>Use this model</b> switches the running model in place — no
+                restart. This YAML path is a fallback: copy the complete YAML,
+                open the llama.cpp add-on <b>Configuration</b> editor, replace
+                the options, save, and restart the llama.cpp add-on.
               </p>
               <p class="micro" aria-live="polite" x-text="modelYamlMessage"></p>
               <pre x-show="modelYaml" x-text="modelYaml"></pre>

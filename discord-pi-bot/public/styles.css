@@ -273,6 +273,45 @@ button {
 		monospace;
 	letter-spacing: 0.08em;
 }
+/* Global model-operation chip: a spinner + phase, shown in the topbar while a
+ * download or model switch runs, so a long job is visible from any view. */
+.model-working {
+	display: inline-flex;
+	align-items: center;
+	gap: 7px;
+	border: 1px solid var(--amber, #e0a34a);
+	color: var(--amber, #e0a34a);
+	background: transparent;
+	padding: 5px 9px;
+	cursor: pointer;
+	font:
+		10px "DM Mono",
+		monospace;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+	white-space: nowrap;
+}
+.model-working:hover {
+	background: rgba(224, 163, 74, 0.12);
+}
+.model-working-spin {
+	width: 10px;
+	height: 10px;
+	border: 2px solid currentColor;
+	border-top-color: transparent;
+	border-radius: 50%;
+	animation: model-working-spin 0.8s linear infinite;
+}
+@keyframes model-working-spin {
+	to {
+		transform: rotate(360deg);
+	}
+}
+@media (prefers-reduced-motion: reduce) {
+	.model-working-spin {
+		animation: none;
+	}
+}
 .chat {
 	flex: 1 1 auto;
 	min-height: 0;
@@ -508,6 +547,29 @@ select {
 	background: var(--ink);
 	color: var(--text);
 	padding: 10px;
+}
+.settings-persona {
+	margin-top: 16px;
+}
+.settings-persona label {
+	display: grid;
+	gap: 6px;
+	color: var(--muted);
+	font:
+		11px "DM Mono",
+		monospace;
+}
+.settings-persona textarea {
+	width: 100%;
+	border: 1px solid var(--line);
+	background: var(--ink);
+	color: var(--text);
+	padding: 10px;
+	font:
+		13px "DM Mono",
+		monospace;
+	line-height: 1.5;
+	resize: vertical;
 }
 .settings-actions {
 	display: flex;

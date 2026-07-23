@@ -64,6 +64,25 @@ type Supervisor struct {
 	current        *state.Installed
 	currentRuntime hardware.Runtime
 	persisted      state.State
+	emit           func(state.State)
+}
+
+// SetEmitter registers a callback invoked with the persisted state after every
+// phase transition, so a switch streams activating → probing → active live.
+// The callback runs while the supervisor lock is held, so it must not call back
+// into the supervisor; publishing to a separate hub is the intended use.
+func (supervisor *Supervisor) SetEmitter(emit func(state.State)) {
+	supervisor.mu.Lock()
+	supervisor.emit = emit
+	supervisor.mu.Unlock()
+}
+
+// emitState reports the current persisted state to the emitter, if any. Called
+// with the lock held.
+func (supervisor *Supervisor) emitState() {
+	if supervisor.emit != nil {
+		supervisor.emit(cloneState(supervisor.persisted))
+	}
 }
 
 func NewSupervisor(config Config, launcher Launcher, store state.Store, probe Probe) (*Supervisor, error) {
@@ -175,6 +194,7 @@ func (supervisor *Supervisor) Activate(ctx context.Context, candidate state.Inst
 	if err := supervisor.store.Save(supervisor.persisted); err != nil {
 		return err
 	}
+	supervisor.emitState()
 	if err := supervisor.process.Stop(20 * time.Second); err != nil {
 		return supervisor.rollbackLocked(ctx, previous, previousRuntime, previousFallback, candidate, fmt.Errorf("stop active model: %w", err))
 	}
@@ -193,6 +213,7 @@ func (supervisor *Supervisor) Activate(ctx context.Context, candidate state.Inst
 		_ = process.Stop(5 * time.Second)
 		return supervisor.rollbackLocked(ctx, previous, previousRuntime, previousFallback, candidate, err)
 	}
+	supervisor.emitState()
 	if err := supervisor.probeWithTimeout(ctx, process); err != nil {
 		_ = process.Stop(5 * time.Second)
 		supervisor.process = nil
@@ -209,6 +230,7 @@ func (supervisor *Supervisor) Activate(ctx context.Context, candidate state.Inst
 	if err := supervisor.store.Save(supervisor.persisted); err != nil {
 		return err
 	}
+	supervisor.emitState()
 	return supervisor.PruneLocked(supervisor.persisted)
 }
 

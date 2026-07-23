@@ -2,18 +2,24 @@
 
 ARM64 llama.cpp appliance for RemindMe with hardware-aware Hugging Face GGUF downloads, checksum verification, and native Home Assistant configuration.
 
-## Manual model lifecycle
+## Model lifecycle
 
-Version 1.10.0 runs a small authenticated model manager in front of `llama-server`:
+The add-on runs a small authenticated model manager in front of `llama-server`:
 
 - The OpenAI-compatible API remains at port `8080`, including `/v1/chat/completions`.
-- A download does not change, stop, or restart the running model.
 - Completed downloads are checked for exact byte size, GGUF header, and SHA-256 when supplied by the curated catalog.
 - Interrupted `.partial` downloads can resume.
 - Verified models expose complete credential-free options YAML.
-- Model activation is performed only through the llama.cpp add-on's native **Configuration** page and a manual restart.
 
-Open **Models** in the RemindMe sidebar to compare models, download one, and wait for **Verified**. Choose **Copy complete YAML** or **Download YAML**, paste the complete document into the llama.cpp add-on Configuration YAML editor, save, and restart the llama.cpp add-on. The downloaded file does not affect the running model until that restart.
+### One-click switching (in-place activation)
+
+`POST /manager/v1/activate {"id": "<model>"}` hot-swaps the running model without restarting the add-on: the manager stops `llama-server`, starts it on the chosen verified model, and probes readiness (health plus a real completion). If the candidate fails to become ready, the manager **rolls back to the previous model automatically**. Progress streams over the operation SSE feed as `activating → probing → active` (or `rollback`). Because a Pi cannot hold two models in RAM at once, inference is briefly unavailable during the swap.
+
+In the RemindMe **Models** sidebar, **Use this model** switches to a verified model, and **Download & use** downloads, verifies, and switches in one action. The console blocks sending while a swap is in flight.
+
+### Manual activation (fallback)
+
+Activation through the llama.cpp add-on's native **Configuration** page still works: choose **Copy YAML**, paste the complete document into the Configuration YAML editor, save, and restart the llama.cpp add-on. This path does not change the running model until that restart, and is kept as a fallback to the one-click switch above.
 
 At startup, the add-on log prints a short-lived six-character pairing code. Enter it in RemindMe's Model Workbench. The code is single-use, expires, and is rate-limited; the protected manager token returned by the direct exchange never enters browser state.
 
