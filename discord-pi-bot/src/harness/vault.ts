@@ -475,8 +475,12 @@ export class VaultStore {
 	 * still pull back what was saved on the subject. Recency breaks ties. Unlike
 	 * `list({search})`, which needs the whole phrase as one substring, this
 	 * matches word by word, which is what makes it useful for recall.
+	 *
+	 * `prefix` scopes recall to a folder — by default the curated `memory/`
+	 * folder, since auto-surfacing the whole vault (task reports, journal, …)
+	 * would be too much noise for every turn. On-demand search stays vault-wide.
 	 */
-	recall(prompt: string, limit = 5): VaultNote[] {
+	recall(prompt: string, limit = 5, prefix = "memory/"): VaultNote[] {
 		const words = [
 			...new Set(
 				(prompt.toLowerCase().match(/[a-z0-9][a-z0-9'-]{2,}/g) || []).filter(
@@ -487,6 +491,7 @@ export class VaultStore {
 		if (!words.length) return [];
 		const scored: Array<{ note: VaultNote; score: number }> = [];
 		for (const note of this.notes.values()) {
+			if (prefix && !note.path.startsWith(prefix)) continue;
 			const title = note.title.toLowerCase();
 			const body = note.body.toLowerCase();
 			const tags = note.tags.map((tag) => tag.toLowerCase());

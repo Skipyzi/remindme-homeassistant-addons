@@ -231,7 +231,10 @@
 					? `./api/vault?search=${encodeURIComponent(search)}`
 					: "./api/vault";
 				const response = await fetch(url);
-				const notes = response.ok ? await response.json() : [];
+				const all = response.ok ? await response.json() : [];
+				// Memory lives in its own folder; the rest of the vault is reachable
+				// by the model's search tools, not this insight view.
+				const notes = all.filter((note) => (note.path || "").startsWith("memory/"));
 				if (!notes.length)
 					return say(
 						search
