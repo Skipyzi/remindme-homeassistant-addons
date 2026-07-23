@@ -21,3 +21,6 @@ reminders.json
 .DS_Store
 Thumbs.db
 *.log
+
+# Local Git worktrees
+.worktrees/
