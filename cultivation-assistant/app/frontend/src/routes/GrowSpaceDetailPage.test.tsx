@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { GrowSpaceDetailContent } from "./GrowSpaceDetailPage";
 
@@ -10,8 +11,9 @@ const detailFixture = {
 	location: "Basement",
 	space_type: "tent",
 	active: true,
-	area_m2: "1.4400",
-	volume_m3: "2.8800",
+	dimensions: { length: "80", width: "80", height: "180", unit: "cm" },
+	area_m2: "0.6400",
+	volume_m3: "1.1520",
 	mapping_count: 1,
 	live_readings: [
 		{
@@ -80,11 +82,48 @@ describe("GrowSpaceDetailContent", () => {
 		expect(
 			await screen.findByRole("heading", { name: "North tent" }),
 		).toBeVisible();
+		expect(screen.getByText("80 × 80 × 180 cm")).toBeVisible();
 		expect(screen.getByText("sensor.north_temperature")).toBeVisible();
 		expect(screen.getByText("24 °C")).toBeVisible();
 		expect(
 			screen.getByText(/equipment can be attached after setup/i),
 		).toBeVisible();
 		expect(screen.getByText(/targets and schedules/i)).toBeVisible();
+	});
+
+	it("edits core details and reversible status", async () => {
+		const user = userEvent.setup();
+		const fetcher = vi.fn().mockImplementation(
+			(_input: string, init?: RequestInit) => {
+				const payload =
+					init?.method === "PATCH"
+						? { ...detailFixture, location: "Garage", active: false }
+						: detailFixture;
+				return Promise.resolve(
+					new Response(JSON.stringify(payload), {
+						status: 200,
+						headers: { "Content-Type": "application/json" },
+					}),
+				);
+			},
+		);
+		vi.stubGlobal("fetch", fetcher);
+		renderDetail();
+		await screen.findByRole("heading", { name: "North tent" });
+
+		await user.click(screen.getByRole("button", { name: /edit details/i }));
+		await user.clear(screen.getByLabelText(/Location/));
+		await user.type(screen.getByLabelText(/Location/), "Garage");
+		await user.click(screen.getByRole("radio", { name: "Inactive" }));
+		await user.click(screen.getByRole("button", { name: /save changes/i }));
+
+		const patchCall = fetcher.mock.calls.find(
+			([, init]) => (init as RequestInit | undefined)?.method === "PATCH",
+		);
+		expect(patchCall).toBeDefined();
+		expect(JSON.parse(String((patchCall?.[1] as RequestInit).body))).toEqual(
+			expect.objectContaining({ location: "Garage", active: false }),
+		);
+		expect(screen.queryByText(/archive this grow space/i)).not.toBeInTheDocument();
 	});
 });

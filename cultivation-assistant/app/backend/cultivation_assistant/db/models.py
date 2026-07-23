@@ -87,6 +87,13 @@ class GrowSpace(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         sa.Index("ix_grow_spaces_active_name", "active", "name"),
         sa.CheckConstraint("area_m2 IS NULL OR area_m2 > 0", name="ck_grow_space_area"),
         sa.CheckConstraint("volume_m3 IS NULL OR volume_m3 > 0", name="ck_grow_space_volume"),
+        sa.CheckConstraint("length_m IS NULL OR length_m > 0", name="ck_grow_space_length"),
+        sa.CheckConstraint("width_m IS NULL OR width_m > 0", name="ck_grow_space_width"),
+        sa.CheckConstraint("height_m IS NULL OR height_m > 0", name="ck_grow_space_height"),
+        sa.CheckConstraint(
+            "dimension_unit IS NULL OR dimension_unit IN ('cm', 'in')",
+            name="ck_grow_space_dimension_unit",
+        ),
     )
 
     name: orm.Mapped[str] = orm.mapped_column(sa.String(120), nullable=False)
@@ -98,6 +105,10 @@ class GrowSpace(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     area_m2: orm.Mapped[Decimal | None] = orm.mapped_column(sa.Numeric(12, 4))
     volume_m3: orm.Mapped[Decimal | None] = orm.mapped_column(sa.Numeric(12, 4))
+    length_m: orm.Mapped[Decimal | None] = orm.mapped_column(sa.Numeric(12, 4))
+    width_m: orm.Mapped[Decimal | None] = orm.mapped_column(sa.Numeric(12, 4))
+    height_m: orm.Mapped[Decimal | None] = orm.mapped_column(sa.Numeric(12, 4))
+    dimension_unit: orm.Mapped[str | None] = orm.mapped_column(sa.String(8))
     mappings: orm.Mapped[list[EntityMapping]] = orm.relationship(
         back_populates="grow_space",
         cascade="all, delete-orphan",

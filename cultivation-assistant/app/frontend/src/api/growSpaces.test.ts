@@ -3,6 +3,7 @@ import {
 	createGrowSpace,
 	discoverEntities,
 	listGrowSpaces,
+	updateGrowSpace,
 } from "./growSpaces";
 
 const growSpaceFixture = {
@@ -12,8 +13,14 @@ const growSpaceFixture = {
 	location: "Basement",
 	space_type: "tent",
 	active: true,
-	area_m2: "1.4400",
-	volume_m3: "2.8800",
+	dimensions: {
+		length: "80",
+		width: "80",
+		height: "180",
+		unit: "cm",
+	},
+	area_m2: "0.6400",
+	volume_m3: "1.1520",
 	mapping_count: 0,
 	live_readings: [],
 	mappings: [],
@@ -31,13 +38,39 @@ describe("grow spaces API", () => {
 		);
 
 		await createGrowSpace(
-			{ name: "North tent", space_type: "tent", mappings: [] },
+			{
+				name: "North tent",
+				space_type: "tent",
+				dimensions: {
+					length: "80",
+					width: "80",
+					height: "180",
+					unit: "cm",
+				},
+				mappings: [],
+			},
 			fetcher,
 		);
 
 		expect(fetcher).toHaveBeenCalledWith(
 			"api/v1/grow-spaces",
 			expect.objectContaining({ method: "POST" }),
+		);
+	});
+
+	it("updates a grow space through an Ingress-relative URL", async () => {
+		const fetcher = vi.fn().mockResolvedValue(
+			new Response(JSON.stringify({ ...growSpaceFixture, active: false }), {
+				status: 200,
+				headers: { "Content-Type": "application/json" },
+			}),
+		);
+
+		await updateGrowSpace("space-1", { active: false }, fetcher);
+
+		expect(fetcher).toHaveBeenCalledWith(
+			"api/v1/grow-spaces/space-1",
+			expect.objectContaining({ method: "PATCH" }),
 		);
 	});
 

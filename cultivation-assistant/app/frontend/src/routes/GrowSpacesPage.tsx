@@ -9,26 +9,27 @@ import {
 } from "lucide-react";
 import { useGrowSpaces, type GrowSpaceSummary } from "../api/growSpaces";
 import { GrowSpaceWizard } from "../features/grow-spaces/GrowSpaceWizard";
+import { growSpaceTypeLabels } from "../features/grow-spaces/types";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { Card } from "../components/ui/Card";
 
-const typeLabels: Record<string, string> = {
-	tent: "Indoor tent",
-	room: "Room",
-	cabinet: "Cabinet",
-	greenhouse: "Greenhouse zone",
-	hydroponic_system: "Hydroponic system",
-	other: "Other",
-};
-
 function dimensionSummary(space: GrowSpaceSummary) {
-	const dimensions: string[] = [];
+	if (space.dimensions) {
+		return `${[
+			space.dimensions.length,
+			space.dimensions.width,
+			space.dimensions.height,
+		]
+			.filter((value) => value !== null)
+			.join(" × ")} ${space.dimensions.unit}`;
+	}
+	const measurements: string[] = [];
 	if (space.area_m2 !== null)
-		dimensions.push(`${Number(space.area_m2).toFixed(2)} m²`);
+		measurements.push(`${Number(space.area_m2).toFixed(2)} m²`);
 	if (space.volume_m3 !== null)
-		dimensions.push(`${Number(space.volume_m3).toFixed(2)} m³`);
-	return dimensions.join(" · ");
+		measurements.push(`${Number(space.volume_m3).toFixed(2)} m³`);
+	return measurements.join(" · ");
 }
 
 function airTemperature(space: GrowSpaceSummary) {
@@ -71,7 +72,7 @@ export function GrowSpacesPage() {
 						type="checkbox"
 						onChange={(event) => setIncludeArchived(event.target.checked)}
 					/>
-					Include archived spaces
+					Include inactive spaces
 				</label>
 			</div>
 
@@ -101,8 +102,8 @@ export function GrowSpacesPage() {
 					<p className="eyebrow">No premises records</p>
 					<h2>Create your first grow space</h2>
 					<p>
-						Start with a tent, room, cabinet, greenhouse zone, or hydroponic
-						system. Environmental mappings are optional during setup.
+						Start with an Indoor Tent, Greenhouse, Outdoor area, or Room.
+						Environmental mappings are optional during setup.
 					</p>
 					<Button onClick={() => setWizardOpen(true)}>
 						<Plus size={16} /> Create grow space
@@ -115,6 +116,7 @@ export function GrowSpacesPage() {
 					{spaces.data.items.map((space, index) => {
 						const temperature = airTemperature(space);
 						const dimensions = dimensionSummary(space);
+						const legacyType = !(space.space_type in growSpaceTypeLabels);
 						return (
 							<Card className="space-card" key={space.id}>
 								<div className="space-card__image">
@@ -123,18 +125,25 @@ export function GrowSpacesPage() {
 									>
 										<Boxes size={26} />
 									</div>
-									<Badge tone={space.active ? "healthy" : "neutral"}>
-										<CircleDot size={10} />{" "}
-										{space.active ? "Active" : "Archived"}
-									</Badge>
+									<div className="space-card__badges">
+										{legacyType && <Badge tone="attention">Legacy type</Badge>}
+										<Badge tone={space.active ? "healthy" : "neutral"}>
+											<CircleDot size={10} />{" "}
+											{space.active ? "Active" : "Inactive"}
+										</Badge>
+									</div>
 								</div>
 								<div className="space-card__body">
 									<h2>{space.name}</h2>
 									<p>
-										{[space.location, typeLabels[space.space_type], dimensions]
+										{[
+											space.location,
+											growSpaceTypeLabels[space.space_type] ?? space.space_type.replaceAll("_", " "),
+										]
 											.filter(Boolean)
 											.join(" · ")}
 									</p>
+									{dimensions && <p className="space-card__dimensions">{dimensions}</p>}
 									<div className="space-stats">
 										<span>
 											<Wifi size={15} />

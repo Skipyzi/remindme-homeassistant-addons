@@ -11,8 +11,9 @@ const growSpaceFixture = {
 	location: null,
 	space_type: "tent",
 	active: true,
-	area_m2: null,
-	volume_m3: null,
+	dimensions: { length: "80", width: "80", height: "180", unit: "cm" },
+	area_m2: "0.6400",
+	volume_m3: "1.1520",
 	mapping_count: 0,
 	live_readings: [],
 	mappings: [],
@@ -36,6 +37,12 @@ afterEach(() => {
 	vi.unstubAllGlobals();
 });
 
+async function fillDimensions(user: ReturnType<typeof userEvent.setup>) {
+	await user.type(screen.getByLabelText(/^Length/), "80");
+	await user.type(screen.getByLabelText(/^Width/), "80");
+	await user.type(screen.getByLabelText(/^Height/), "180");
+}
+
 describe("GrowSpaceWizard", () => {
 	it("creates a grow space without requiring mappings", async () => {
 		const user = userEvent.setup();
@@ -55,6 +62,7 @@ describe("GrowSpaceWizard", () => {
 
 		await user.type(screen.getByLabelText(/^Name/), "North tent");
 		await user.selectOptions(screen.getByLabelText(/Space type/), "tent");
+		await fillDimensions(user);
 		await user.click(
 			screen.getByRole("button", { name: /continue to mappings/i }),
 		);
@@ -65,11 +73,22 @@ describe("GrowSpaceWizard", () => {
 			screen.getByRole("button", { name: /create grow space/i }),
 		);
 
-		expect(fetcher).toHaveBeenCalledWith(
-			"api/v1/grow-spaces",
+		const createCall = fetcher.mock.calls.find(
+			([input]) => input === "api/v1/grow-spaces",
+		);
+		expect(createCall).toBeDefined();
+		const request = createCall?.[1] as RequestInit;
+		expect(request.method).toBe("POST");
+		expect(JSON.parse(String(request.body))).toEqual(
 			expect.objectContaining({
-				method: "POST",
-				body: expect.stringContaining('"mappings":[]'),
+				space_type: "tent",
+				dimensions: {
+					length: "80",
+					width: "80",
+					height: "180",
+					unit: "cm",
+				},
+				mappings: [],
 			}),
 		);
 		await waitFor(() => expect(onCreated).toHaveBeenCalledWith("space-1"));
@@ -94,11 +113,42 @@ describe("GrowSpaceWizard", () => {
 		renderWizard();
 
 		await user.type(screen.getByLabelText(/^Name/), "North tent");
+		await fillDimensions(user);
 		await user.click(
 			screen.getByRole("button", { name: /continue to mappings/i }),
 		);
 		await user.click(screen.getByRole("button", { name: /back to details/i }));
 
 		expect(screen.getByLabelText(/^Name/)).toHaveValue("North tent");
+		expect(screen.getByLabelText(/^Length/)).toHaveValue("80");
+	});
+
+	it("does not advance without required dimensions", async () => {
+		const user = userEvent.setup();
+		renderWizard();
+		await user.type(screen.getByLabelText(/^Name/), "North tent");
+
+		await user.click(
+			screen.getByRole("button", { name: /continue to mappings/i }),
+		);
+
+		expect(screen.getByRole("alert")).toHaveTextContent(/length is required/i);
+	});
+
+	it("allows Outdoor without a height", async () => {
+		const user = userEvent.setup();
+		renderWizard();
+		await user.type(screen.getByLabelText(/^Name/), "South plot");
+		await user.selectOptions(screen.getByLabelText(/Space type/), "outdoor");
+		await user.type(screen.getByLabelText(/^Length/), "200");
+		await user.type(screen.getByLabelText(/^Width/), "300");
+
+		await user.click(
+			screen.getByRole("button", { name: /continue to mappings/i }),
+		);
+
+		expect(
+			screen.getByRole("heading", { name: /map sensors to south plot/i }),
+		).toBeVisible();
 	});
 });
