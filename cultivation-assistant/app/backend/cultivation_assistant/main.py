@@ -16,6 +16,7 @@ from cultivation_assistant import __version__
 from cultivation_assistant.api.errors import http_exception_handler
 from cultivation_assistant.config import Settings
 from cultivation_assistant.db.engine import Database
+from cultivation_assistant.grow_spaces.router import create_router as create_grow_spaces_router
 from cultivation_assistant.home_assistant.client import (
     HomeAssistantClient,
     HomeAssistantConnectionError,
@@ -138,6 +139,10 @@ def create_app(
     app.add_api_route("/api/v1/health", health_endpoint, methods=["GET"], tags=["system"])
     app.add_api_route("/api/v1/readiness", readiness_endpoint, methods=["GET"], tags=["system"])
     app.add_api_route("/api/v1/diagnostics", diagnostics_endpoint, methods=["GET"], tags=["system"])
+    app.include_router(
+        create_grow_spaces_router(runtime_database, state_cache, status),
+        prefix="/api/v1",
+    )
     if runtime_settings.frontend_dist.is_dir():
         app.mount(
             "/",
