@@ -133,6 +133,13 @@ function harness() {
 				"rollback",
 			].includes(this.modelOperation?.phase);
 		},
+		/* A model swap unloads the running model, so inference is briefly down.
+		 * Sending is blocked during these phases (a download does not stop it). */
+		get modelSwitching() {
+			return ["activating", "probing", "rollback"].includes(
+				this.modelOperation?.phase,
+			);
+		},
 		get contextLevel() {
 			return this.contextPercent >= 90
 				? "danger"
@@ -1869,6 +1876,10 @@ function harness() {
 		},
 		async downloadModel(id) {
 			return window.RemindMeModelCookbook.download(this, id);
+		},
+		/** One click: switch to a model, downloading and verifying first if needed. */
+		async useModel(id) {
+			return window.RemindMeModelCookbook.use(this, id);
 		},
 		async copyModelYaml(id) {
 			return window.RemindMeModelCookbook.copyYaml(this, id);

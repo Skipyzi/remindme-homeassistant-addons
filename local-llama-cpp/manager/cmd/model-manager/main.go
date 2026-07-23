@@ -111,6 +111,9 @@ func main() {
 		ModelDir: configured.models, CredentialPath: credentialPath,
 		CustomCatalogPath: customCatalogPath, InferenceURL: "http://127.0.0.1:8081",
 	})
+	// Stream the supervisor's phase transitions onto the operation event feed,
+	// so a model switch shows activating → probing → active live.
+	supervisor.SetEmitter(server.EmitState)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()

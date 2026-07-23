@@ -848,6 +848,14 @@ app.post("/api/models/install", async (request, response) => {
 			.json(safeModelError("invalid_model", "Model selection is invalid."));
 	await proxyModelManager(response, "/install", "POST", body);
 });
+app.post("/api/models/activate", async (request, response) => {
+	const body = modelSelectionBody(request.body);
+	if (!body)
+		return response
+			.status(400)
+			.json(safeModelError("invalid_model", "Model selection is invalid."));
+	await proxyModelManager(response, "/activate", "POST", body);
+});
 app.post("/api/models/cancel", async (_request, response) => {
 	await proxyModelManager(response, "/cancel", "POST", {});
 });

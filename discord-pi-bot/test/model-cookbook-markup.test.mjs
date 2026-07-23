@@ -7,19 +7,24 @@ const css = readFileSync("public/styles.css", "utf8");
 const app = readFileSync("public/app.js", "utf8");
 const component = readFileSync("public/components/model-cookbook.js", "utf8");
 
-test("models use a dedicated download-only workbench", () => {
+test("models support one-click switching with a YAML fallback", () => {
 	assert.match(html, /@click="modelsOpen=true">Models/);
 	assert.match(html, /id="models-view"[^>]*x-show="modelsOpen"/s);
 	assert.match(html, /data-model-catalog/);
-	assert.match(html, /@click="downloadModel\(variant\.model\.id\)"/);
+	// The primary action is now "use" — download+verify+activate, or hot-swap.
+	assert.match(html, /@click="useModel\(variant\.model\.id\)"/);
+	assert.match(html, /Download &amp; use/);
+	assert.match(html, /Use this model/);
 	assert.match(html, /@click="cancelModelOperation\(\)"/);
+	// Copy YAML stays as the advanced fallback path.
 	assert.match(html, /@click="copyModelYaml\(variant\.model\.id\)"/);
-	assert.match(html, /@click="downloadModelYaml\(variant\.model\.id\)"/);
 	assert.match(html, /variant\.verified/);
 	assert.match(html, /Configuration/i);
 	assert.match(html, /restart the llama\.cpp add-on/i);
-	assert.doesNotMatch(html, /Install \+ activate|>Activate</i);
-	assert.doesNotMatch(component, /\.\/api\/models\/activate|activate\(vm/);
+	// The switch client hits the activate endpoint and orchestrates use().
+	assert.match(component, /\.\/api\/models\/activate/);
+	assert.match(component, /use\(vm, id\)/);
+	assert.match(app, /useModel\(id\)/);
 	assert.doesNotMatch(app, /localStorage.*modelYaml/s);
 });
 
