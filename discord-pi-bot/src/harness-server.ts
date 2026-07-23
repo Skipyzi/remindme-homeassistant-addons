@@ -169,6 +169,34 @@ function noteFrontmatter(
 	return patch;
 }
 
+/*
+ * The model's curated long-term memory lives in its own folder, sorted by kind,
+ * so recall and the /memory view stay focused — the rest of the vault (task
+ * reports, journal, project notes) is still reachable by search, just not
+ * auto-surfaced. write_memory files here regardless of the path the model gives.
+ */
+const MEMORY_DIR = "memory";
+const MEMORY_KINDS = ["user", "feedback", "project", "reference"];
+
+/** Normalise a write_memory path to `memory/<kind>/<slug>`, kind-sorted. */
+function memoryNotePath(rawPath: unknown, type: unknown): string {
+	const segments = String(rawPath || "")
+		.trim()
+		.replace(/\.md$/i, "")
+		.replace(/^\/+/, "")
+		.replace(new RegExp(`^${MEMORY_DIR}/`, "i"), "")
+		.split("/")
+		.map((segment) => segment.trim())
+		.filter(Boolean);
+	// Ensure a kind subfolder: honour one the model already used, else the type.
+	if (!MEMORY_KINDS.includes(segments[0])) {
+		const kind = MEMORY_KINDS.includes(String(type)) ? String(type) : "";
+		if (kind) segments.unshift(kind);
+	}
+	if (!segments.length) segments.push("note");
+	return `${MEMORY_DIR}/${segments.join("/")}`;
+}
+
 /** A note trimmed to what a list or a tool receipt needs — never the full body. */
 function summariseNote(note: VaultNote) {
 	return {
@@ -1346,7 +1374,7 @@ const tools = [
 		function: {
 			name: "search_memory",
 			description:
-				"Search your long-term memory — the notes vault — for things saved before: facts about the user, their projects, preferences, and past notes. Returns matching note titles and paths, not full text.",
+				"Search your whole notes vault — your curated long-term memory under memory/ plus every other note (task reports, journal, project notes). Use it to find anything saved before. Returns matching titles and paths, not full text.",
 			parameters: {
 				type: "object",
 				properties: {
@@ -1379,14 +1407,14 @@ const tools = [
 		function: {
 			name: "write_memory",
 			description:
-				"Save or update a memory note. Use it to remember a durable fact, a preference, a project detail, or a reference — not this turn's chatter. Reuse an existing path to update that note; link related notes with [[Note Title]] in the body and classify with type and tags.",
+				"Save or update a long-term memory. Use it to remember a durable fact, a preference, a project detail, or a reference — not this turn's chatter. Memories are filed automatically under the memory/ folder, sorted by type, and tagged #memory. Reuse an existing path to update that note; link related notes with [[Note Title]] in the body and classify with type and tags.",
 			parameters: {
 				type: "object",
 				properties: {
 					path: {
 						type: "string",
 						description:
-							"Short kebab-case path without extension, e.g. projects/remindme or user/preferences.",
+							"Short kebab-case name without extension, e.g. preferences or coffee-order. Filed under memory/<type>/ for you; reuse the same name to update.",
 					},
 					title: { type: "string" },
 					type: {
@@ -1528,11 +1556,11 @@ async function runAgent(
 	 */
 	const learningPrompt =
 		history.length > 0 && detectPositiveFeedback(prompt)
-			? "\n\nThe user is confirming the previous approach worked. If the exchange above holds a durable, reusable lesson — a fix that worked, a method, a confirmed preference — call write_memory with type feedback to save it: a short kebab path under feedback/, a clear title, and a body stating what worked and why (link related notes with [[Title]]). Then acknowledge in one short line. If nothing is durable enough to keep, just acknowledge."
+			? "\n\nThe user is confirming the previous approach worked. If the exchange above holds a durable, reusable lesson — a fix that worked, a method, a confirmed preference — call write_memory with type feedback to save it: a short kebab name, a clear title, and a body stating what worked and why (link related notes with [[Title]]). It is filed under memory/feedback/ for you. Then acknowledge in one short line. If nothing is durable enough to keep, just acknowledge."
 			: "";
 	// Enabled skills are appended so they bind for the whole turn.
 	const systemPrompt =
-		"You are RemindMe, a concise general and home assistant. Answer directly. Use tools only when needed. Confirm sensitive home actions. You have a long-term memory — a personal notes vault: search_memory and read_memory to recall, write_memory to save durable facts, preferences, and project details worth keeping across conversations." +
+		"You are RemindMe, a concise general and home assistant. Answer directly. Use tools only when needed. Confirm sensitive home actions. You have a long-term memory kept in the memory/ folder of your notes vault: write_memory saves durable facts, preferences, and project details there to carry across conversations; search_memory searches the whole vault (memory plus everything else) and read_memory reads any note." +
 		artifactPrompt +
 		memoryPrompt +
 		learningPrompt +
@@ -2198,15 +2226,18 @@ async function executeTool(
 		};
 	}
 	if (name === "write_memory") {
-		const path = String(args.path || "").trim();
-		if (!path) return { model: { error: "A note path is required." } };
+		if (!String(args.path || "").trim())
+			return { model: { error: "A note path is required." } };
 		const body = typeof args.body === "string" ? args.body : "";
 		if (!body.trim()) return { model: { error: "A note body is required." } };
+		// File under memory/<kind>/… and always tag #memory, so the folder and
+		// the tag both mark it as long-term memory.
+		const path = memoryNotePath(args.path, args.type);
+		const frontmatter = noteFrontmatter(args);
+		const tags = Array.isArray(frontmatter.tags) ? frontmatter.tags : [];
+		frontmatter.tags = [...new Set(["memory", ...tags])];
 		try {
-			const note = await vault.write(path, {
-				body,
-				frontmatter: noteFrontmatter(args),
-			});
+			const note = await vault.write(path, { body, frontmatter });
 			return {
 				model: {
 					saved: true,
