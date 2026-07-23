@@ -176,6 +176,23 @@
             Home console<small x-text="sessionLabel"></small>
           </div>
           <div class="badge" x-text="modelBadge"></div>
+          <!-- Global model-operation indicator: visible from anywhere while a
+               download or switch is running, so long jobs are never silent. -->
+          <button
+            class="model-working"
+            x-show="modelOperationBusy"
+            x-cloak
+            @click="modelsOpen=true"
+            :title="`Model ${(modelOperation?.phase||'').replaceAll('_',' ')} — open Models`"
+            aria-live="polite"
+          >
+            <span class="model-working-spin" aria-hidden="true"></span>
+            <span x-text="(modelOperation?.phase||'working').replaceAll('_',' ')"></span>
+            <span
+              x-show="modelOperation?.bytesTotal"
+              x-text="` ${Math.round(modelProgressPercent())}%`"
+            ></span>
+          </button>
           <button
             class="mobile-toggle"
             aria-controls="house-board"

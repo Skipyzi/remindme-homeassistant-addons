@@ -290,6 +290,24 @@ func TestActivationSwitchesInstalledModel(t *testing.T) {
 	t.Fatal("activate was not invoked")
 }
 
+func TestInstallRefusedPastModelLimit(t *testing.T) {
+	dependencies := testDependencies(t, "http://127.0.0.1:1")
+	dependencies.MaxInstalledModels = 1
+	// An unrelated downloaded model already fills the cap.
+	if err := os.WriteFile(filepath.Join(dependencies.ModelDir, "other.gguf"), []byte("GGUFxxxx"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	server := NewServer(dependencies)
+	request := httptest.NewRequest(http.MethodPost, "/manager/v1/install", strings.NewReader(`{"id":"test-q4"}`))
+	request.Header.Set("Authorization", "Bearer manager-secret")
+	response := httptest.NewRecorder()
+	server.ServeHTTP(response, request)
+	if response.Code != http.StatusConflict ||
+		!strings.Contains(response.Body.String(), "storage_model_limit") {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
 func TestActivationRequiresInstalledModel(t *testing.T) {
 	server := NewServer(testDependencies(t, "http://127.0.0.1:1"))
 	request := httptest.NewRequest(http.MethodPost, "/manager/v1/activate", strings.NewReader(`{"id":"test-q4"}`))

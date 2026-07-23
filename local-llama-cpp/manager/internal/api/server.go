@@ -61,7 +61,17 @@ type Dependencies struct {
 	CustomCatalogPath string
 	InferenceURL      string
 	Now               func() time.Time
+	// MaxInstalledModels caps how many .gguf files may sit in the model
+	// directory at once, so a run of downloads cannot fill storage. A new
+	// download past the cap is refused until a model is removed. Zero uses the
+	// default.
+	MaxInstalledModels int
 }
+
+// defaultMaxInstalledModels bounds accumulated downloads. The per-download disk
+// preflight already prevents overflow; this stops a pile of unused models from
+// creeping the disk toward full.
+const defaultMaxInstalledModels = 6
 
 type APIError struct {
 	Code      string `json:"code"`
@@ -111,6 +121,9 @@ var pairingCodePattern = regexp.MustCompile(`^[A-HJ-NP-Z2-9]{6}$`)
 func NewServer(dependencies Dependencies) *Server {
 	if dependencies.Now == nil {
 		dependencies.Now = time.Now
+	}
+	if dependencies.MaxInstalledModels <= 0 {
+		dependencies.MaxInstalledModels = defaultMaxInstalledModels
 	}
 	server := &Server{
 		dependencies: dependencies,
@@ -242,6 +255,19 @@ func (server *Server) preflight(response http.ResponseWriter, request *http.Requ
 func (server *Server) install(response http.ResponseWriter, request *http.Request) {
 	_, variant, _, _, ok := server.selection(response, request)
 	if !ok {
+		return
+	}
+	// Cap accumulated downloads: a new model past the limit is refused until one
+	// is removed. Re-downloading an already-installed model is always allowed.
+	if !server.isInstalled(variant) &&
+		server.installedModelCount() >= server.dependencies.MaxInstalledModels {
+		writeError(response, http.StatusConflict, APIError{
+			Code: "storage_model_limit",
+			Message: fmt.Sprintf(
+				"At most %d downloaded models are kept. Remove one before downloading another.",
+				server.dependencies.MaxInstalledModels,
+			),
+		})
 		return
 	}
 	if !server.beginMutation(response) {
@@ -591,6 +617,22 @@ func (server *Server) isInstalled(variant catalog.Variant) bool {
 
 func (server *Server) isVerified(variant catalog.Variant) bool {
 	return server.dependencies.Verified != nil && server.dependencies.Verified.Has(variant)
+}
+
+// installedModelCount is how many .gguf files sit in the model directory —
+// finished downloads, not in-progress .partial files.
+func (server *Server) installedModelCount() int {
+	entries, err := os.ReadDir(server.dependencies.ModelDir)
+	if err != nil {
+		return 0
+	}
+	count := 0
+	for _, entry := range entries {
+		if !entry.IsDir() && strings.HasSuffix(strings.ToLower(entry.Name()), ".gguf") {
+			count++
+		}
+	}
+	return count
 }
 
 func (server *Server) beginMutation(response http.ResponseWriter) bool {

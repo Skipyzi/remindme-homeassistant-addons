@@ -42,3 +42,10 @@ test("progress and errors have accessible live regions", () => {
 	assert.match(html, /class="model-operation"[^>]*aria-live="polite"/s);
 	assert.match(html, /class="model-error"[^>]*role="alert"/s);
 });
+
+test("a global working indicator shows model ops from any view", () => {
+	// A topbar chip, gated on modelOperationBusy, opens Models when clicked.
+	assert.match(html, /class="model-working"[^>]*x-show="modelOperationBusy"/s);
+	assert.match(html, /class="model-working-spin"/);
+	assert.match(css, /@keyframes model-working-spin/);
+});
