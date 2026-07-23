@@ -1,7 +1,9 @@
 import type {
+	DimensionUnit,
 	EntityMappingInput,
 	GrowSpaceCreateInput,
 	GrowSpaceType,
+	LegacyGrowSpaceType,
 } from "../../api/growSpaces";
 
 export const environmentalRoleOptions = [
@@ -23,33 +25,73 @@ export const environmentalRoleLabels = Object.fromEntries(
 	environmentalRoleOptions,
 ) as Record<string, string>;
 
-export type WizardStep = "details" | "mappings" | "review";
-export type AreaUnit = "m²" | "ft²";
-export type VolumeUnit = "m³" | "ft³";
+export const growSpaceTypeOptions: readonly [GrowSpaceType, string][] = [
+	["tent", "Indoor Tent"],
+	["greenhouse", "Greenhouse"],
+	["outdoor", "Outdoor"],
+	["room", "Room"],
+];
 
-export interface GrowSpaceDraft {
+export const growSpaceTypeLabels: Record<string, string> = Object.fromEntries(
+	growSpaceTypeOptions,
+);
+
+export type WizardStep = "details" | "mappings" | "review";
+export type EditableGrowSpaceType = GrowSpaceType | LegacyGrowSpaceType;
+
+export interface GrowSpaceDetailsDraft {
 	name: string;
 	description: string;
 	location: string;
+	spaceType: EditableGrowSpaceType;
+	length: string;
+	width: string;
+	height: string;
+	dimensionUnit: DimensionUnit;
+	active: boolean;
+}
+
+export interface GrowSpaceDraft extends GrowSpaceDetailsDraft {
 	spaceType: GrowSpaceType;
-	areaValue: string;
-	areaUnit: AreaUnit;
-	volumeValue: string;
-	volumeUnit: VolumeUnit;
 	mappings: EntityMappingInput[];
 }
 
-export const emptyGrowSpaceDraft: GrowSpaceDraft = {
+export const emptyGrowSpaceDetailsDraft: GrowSpaceDetailsDraft = {
 	name: "",
 	description: "",
 	location: "",
 	spaceType: "tent",
-	areaValue: "",
-	areaUnit: "m²",
-	volumeValue: "",
-	volumeUnit: "m³",
+	length: "",
+	width: "",
+	height: "",
+	dimensionUnit: "cm",
+	active: true,
+};
+
+export const emptyGrowSpaceDraft: GrowSpaceDraft = {
+	...emptyGrowSpaceDetailsDraft,
+	spaceType: "tent",
 	mappings: [],
 };
+
+export function validateGrowSpaceDetails(draft: GrowSpaceDetailsDraft) {
+	if (!draft.name.trim()) return "Name is required before continuing.";
+	if (!draft.length.trim()) return "Length is required before continuing.";
+	if (!draft.width.trim()) return "Width is required before continuing.";
+	if (draft.spaceType !== "outdoor" && !draft.height.trim()) {
+		return "Height is required for enclosed grow spaces.";
+	}
+	for (const [label, value] of [
+		["Length", draft.length],
+		["Width", draft.width],
+		["Height", draft.height],
+	] as const) {
+		if (value.trim() && (!Number.isFinite(Number(value)) || Number(value) <= 0)) {
+			return `${label} must be a positive number.`;
+		}
+	}
+	return null;
+}
 
 export function draftToCreateInput(
 	draft: GrowSpaceDraft,
@@ -59,12 +101,12 @@ export function draftToCreateInput(
 		description: draft.description.trim() || null,
 		location: draft.location.trim() || null,
 		space_type: draft.spaceType,
-		area: draft.areaValue
-			? { value: draft.areaValue, unit: draft.areaUnit }
-			: null,
-		volume: draft.volumeValue
-			? { value: draft.volumeValue, unit: draft.volumeUnit }
-			: null,
+		dimensions: {
+			length: draft.length,
+			width: draft.width,
+			height: draft.height.trim() || null,
+			unit: draft.dimensionUnit,
+		},
 		mappings: draft.mappings,
 	};
 }

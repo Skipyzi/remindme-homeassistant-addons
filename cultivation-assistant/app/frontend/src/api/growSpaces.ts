@@ -42,6 +42,13 @@ const entityMappingSchema = z.object({
 	updated_at: z.string(),
 });
 
+const dimensionsSchema = z.object({
+	length: z.union([z.string(), z.number()]),
+	width: z.union([z.string(), z.number()]),
+	height: z.union([z.string(), z.number()]).nullable(),
+	unit: z.enum(["cm", "in"]),
+});
+
 const growSpaceSummarySchema = z.object({
 	id: z.string(),
 	name: z.string(),
@@ -49,6 +56,7 @@ const growSpaceSummarySchema = z.object({
 	location: z.string().nullable(),
 	space_type: z.string(),
 	active: z.boolean(),
+	dimensions: dimensionsSchema.nullable(),
 	area_m2: z.union([z.string(), z.number()]).nullable(),
 	volume_m3: z.union([z.string(), z.number()]).nullable(),
 	mapping_count: z.number().int(),
@@ -96,17 +104,15 @@ export type EntityMapping = z.infer<typeof entityMappingSchema>;
 export type EntityCandidate = z.infer<typeof entityCandidateSchema>;
 export type Compatibility = z.infer<typeof compatibilitySchema>;
 
-export type GrowSpaceType =
-	| "tent"
-	| "room"
-	| "cabinet"
-	| "greenhouse"
-	| "hydroponic_system"
-	| "other";
+export type GrowSpaceType = "tent" | "greenhouse" | "outdoor" | "room";
+export type LegacyGrowSpaceType = "cabinet" | "hydroponic_system" | "other";
+export type DimensionUnit = "cm" | "in";
 
-export interface DimensionInput {
-	value: string;
-	unit: "m²" | "ft²" | "m³" | "ft³";
+export interface DimensionsInput {
+	length: string;
+	width: string;
+	height: string | null;
+	unit: DimensionUnit;
 }
 
 export interface EntityMappingInput {
@@ -123,9 +129,17 @@ export interface GrowSpaceCreateInput {
 	description?: string | null;
 	location?: string | null;
 	space_type: GrowSpaceType;
-	area?: DimensionInput | null;
-	volume?: DimensionInput | null;
+	dimensions: DimensionsInput;
 	mappings?: EntityMappingInput[];
+}
+
+export interface GrowSpaceUpdateInput {
+	name?: string;
+	description?: string | null;
+	location?: string | null;
+	space_type?: GrowSpaceType;
+	dimensions?: DimensionsInput;
+	active?: boolean;
 }
 
 export class ApiError extends Error {
@@ -210,6 +224,23 @@ export async function createGrowSpace(
 	);
 }
 
+export async function updateGrowSpace(
+	growSpaceId: string,
+	input: GrowSpaceUpdateInput,
+	fetcher: typeof fetch = fetch,
+): Promise<GrowSpace> {
+	const response = await fetcher(`api/v1/grow-spaces/${growSpaceId}`, {
+		method: "PATCH",
+		headers: jsonHeaders,
+		body: JSON.stringify(input),
+	});
+	return parseResponse(
+		response,
+		growSpaceSchema,
+		"Invalid grow-space response",
+	);
+}
+
 export async function archiveGrowSpace(
 	growSpaceId: string,
 	fetcher: typeof fetch = fetch,
@@ -274,6 +305,20 @@ export function useCreateGrowSpace() {
 	const queryClient = useQueryClient();
 	return useMutation({
 		mutationFn: (input: GrowSpaceCreateInput) => createGrowSpace(input),
+		onSuccess: (growSpace) => updateCreatedCache(queryClient, growSpace),
+	});
+}
+
+export function useUpdateGrowSpace() {
+	const queryClient = useQueryClient();
+	return useMutation({
+		mutationFn: ({
+			growSpaceId,
+			input,
+		}: {
+			growSpaceId: string;
+			input: GrowSpaceUpdateInput;
+		}) => updateGrowSpace(growSpaceId, input),
 		onSuccess: (growSpace) => updateCreatedCache(queryClient, growSpace),
 	});
 }

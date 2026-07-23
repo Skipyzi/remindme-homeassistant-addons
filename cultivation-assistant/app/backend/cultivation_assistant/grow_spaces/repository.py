@@ -1,11 +1,14 @@
 # pyright: reportMissingImports=false
 """SQLAlchemy persistence queries for grow spaces and entity mappings."""
 
+from decimal import Decimal
+
 import sqlalchemy as sa
 from sqlalchemy import orm
 from sqlalchemy.ext import asyncio as sa_async
 
 from cultivation_assistant.db.models import EntityMapping, GrowSpace
+from cultivation_assistant.grow_spaces.dimensions import CanonicalDimensions
 from cultivation_assistant.grow_spaces.schemas import (
     EntityMappingCreate,
     GrowSpaceCreate,
@@ -55,15 +58,25 @@ class GrowSpaceRepository:
             statement = statement.where(GrowSpace.id != exclude_id)
         return bool(await self._session.scalar(statement.limit(1)))
 
-    async def add(self, request: GrowSpaceCreate) -> GrowSpace:
+    async def add(
+        self,
+        request: GrowSpaceCreate,
+        dimensions: CanonicalDimensions,
+        area_m2: Decimal,
+        volume_m3: Decimal | None,
+    ) -> GrowSpace:
         """Create and flush one grow space without committing."""
         grow_space = GrowSpace(
             name=request.name,
             description=request.description,
             location=request.location,
             space_type=request.space_type.value,
-            area_m2=request.area_m2,
-            volume_m3=request.volume_m3,
+            length_m=dimensions.length_m,
+            width_m=dimensions.width_m,
+            height_m=dimensions.height_m,
+            dimension_unit=request.dimensions.unit.value,
+            area_m2=area_m2,
+            volume_m3=volume_m3,
         )
         self._session.add(grow_space)
         await self._session.flush()

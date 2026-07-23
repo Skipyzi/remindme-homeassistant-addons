@@ -2,11 +2,15 @@ import { useEffect, useRef, useState } from "react";
 import { ArrowLeft, ArrowRight, Check, X } from "lucide-react";
 import { useCreateGrowSpace } from "../../api/growSpaces";
 import { Button } from "../../components/ui/Button";
+import { calculateDimensionPreview } from "./dimensions";
 import { EntityMappingFields } from "./EntityMappingFields";
+import { GrowSpaceDetailsForm } from "./GrowSpaceDetailsForm";
 import {
 	draftToCreateInput,
 	environmentalRoleLabels,
 	emptyGrowSpaceDraft,
+	growSpaceTypeLabels,
+	validateGrowSpaceDetails,
 	type GrowSpaceDraft,
 	type WizardStep,
 } from "./types";
@@ -45,8 +49,9 @@ export function GrowSpaceWizard({
 	}
 
 	function continueToMappings() {
-		if (!draft.name.trim()) {
-			setValidationError("Name is required before continuing.");
+		const detailsError = validateGrowSpaceDetails(draft);
+		if (detailsError) {
+			setValidationError(detailsError);
 			return;
 		}
 		setValidationError(null);
@@ -68,6 +73,12 @@ export function GrowSpaceWizard({
 
 	const errorMessage = validationError ?? createMutation.error?.message ?? null;
 	const stepIndex = steps.findIndex((item) => item.key === step);
+	const dimensionPreview = calculateDimensionPreview({
+		length: draft.length,
+		width: draft.width,
+		height: draft.height,
+		unit: draft.dimensionUnit,
+	});
 
 	return (
 		<div className="wizard-backdrop">
@@ -130,105 +141,16 @@ export function GrowSpaceWizard({
 								Describe the physical area first. Sensors and equipment remain
 								independent attachments.
 							</p>
-							<div className="wizard-form-grid">
-								<label className="form-field span-two">
-									<span>Name · required</span>
-									<input
-										autoFocus
-										value={draft.name}
-										onChange={(event) =>
-											updateDraft({ name: event.target.value })
-										}
-									/>
-								</label>
-								<label className="form-field">
-									<span>Space type</span>
-									<select
-										value={draft.spaceType}
-										onChange={(event) =>
-											updateDraft({
-												spaceType: event.target
-													.value as GrowSpaceDraft["spaceType"],
-											})
-										}
-									>
-										<option value="tent">Indoor tent</option>
-										<option value="room">Room</option>
-										<option value="cabinet">Cabinet</option>
-										<option value="greenhouse">Greenhouse zone</option>
-										<option value="hydroponic_system">Hydroponic system</option>
-										<option value="other">Other</option>
-									</select>
-								</label>
-								<label className="form-field">
-									<span>Location</span>
-									<input
-										placeholder="Basement · north wall"
-										value={draft.location}
-										onChange={(event) =>
-											updateDraft({ location: event.target.value })
-										}
-									/>
-								</label>
-								<label className="form-field span-two">
-									<span>Description</span>
-									<textarea
-										rows={3}
-										value={draft.description}
-										onChange={(event) =>
-											updateDraft({ description: event.target.value })
-										}
-									/>
-								</label>
-								<div className="dimension-field">
-									<label className="form-field">
-										<span>Area</span>
-										<input
-											inputMode="decimal"
-											value={draft.areaValue}
-											onChange={(event) =>
-												updateDraft({ areaValue: event.target.value })
-											}
-										/>
-									</label>
-									<select
-										aria-label="Area unit"
-										value={draft.areaUnit}
-										onChange={(event) =>
-											updateDraft({
-												areaUnit: event.target.value as "m²" | "ft²",
-											})
-										}
-									>
-										<option value="m²">m²</option>
-										<option value="ft²">ft²</option>
-									</select>
-								</div>
-								<div className="dimension-field">
-									<label className="form-field">
-										<span>Volume</span>
-										<input
-											inputMode="decimal"
-											value={draft.volumeValue}
-											onChange={(event) =>
-												updateDraft({ volumeValue: event.target.value })
-											}
-										/>
-									</label>
-									<select
-										aria-label="Volume unit"
-										value={draft.volumeUnit}
-										onChange={(event) =>
-											updateDraft({
-												volumeUnit: event.target.value as "m³" | "ft³",
-											})
-										}
-									>
-										<option value="m³">m³</option>
-										<option value="ft³">ft³</option>
-									</select>
-								</div>
-							</div>
+							<GrowSpaceDetailsForm
+								mode="create"
+								value={draft}
+								onChange={(details) =>
+									updateDraft({
+										...details,
+										spaceType: details.spaceType as GrowSpaceDraft["spaceType"],
+									})
+								}
+							/>
 						</section>
 					)}
 
@@ -258,26 +180,30 @@ export function GrowSpaceWizard({
 								</div>
 								<div>
 									<span>Type</span>
-									<strong>{draft.spaceType.replaceAll("_", " ")}</strong>
+									<strong>{growSpaceTypeLabels[draft.spaceType]}</strong>
 								</div>
 								<div>
 									<span>Location</span>
 									<strong>{draft.location || "Not recorded"}</strong>
 								</div>
 								<div>
-									<span>Area</span>
+									<span>Dimensions</span>
 									<strong>
-										{draft.areaValue
-											? `${draft.areaValue} ${draft.areaUnit}`
-											: "Not recorded"}
+										{[draft.length, draft.width, draft.height]
+											.filter(Boolean)
+											.join(" × ")} {draft.dimensionUnit}
 									</strong>
+								</div>
+								<div>
+									<span>Floor area</span>
+									<strong>{dimensionPreview?.areaM2 ?? "—"} m²</strong>
 								</div>
 								<div>
 									<span>Volume</span>
 									<strong>
-										{draft.volumeValue
-											? `${draft.volumeValue} ${draft.volumeUnit}`
-											: "Not recorded"}
+										{dimensionPreview?.volumeM3
+											? `${dimensionPreview.volumeM3} m³`
+											: "Volume not available"}
 									</strong>
 								</div>
 								<div>

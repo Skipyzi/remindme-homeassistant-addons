@@ -3,41 +3,40 @@
 from datetime import datetime
 from decimal import Decimal
 from enum import StrEnum
-from typing import Any, Literal, Self
+from typing import Any, Self
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from cultivation_assistant.grow_spaces.dimensions import DimensionUnit
 from cultivation_assistant.grow_spaces.roles import get_role_definition
-from cultivation_assistant.grow_spaces.units import (
-    Compatibility,
-    normalize_area,
-    normalize_volume,
-)
+from cultivation_assistant.grow_spaces.units import Compatibility
 
 
 class GrowSpaceType(StrEnum):
     """Supported physical grow-space categories."""
 
     TENT = "tent"
-    ROOM = "room"
-    CABINET = "cabinet"
     GREENHOUSE = "greenhouse"
-    HYDROPONIC_SYSTEM = "hydroponic_system"
-    OTHER = "other"
+    OUTDOOR = "outdoor"
+    ROOM = "room"
 
 
-class AreaInput(BaseModel):
-    """Positive area in a supported display unit."""
+class DimensionsInput(BaseModel):
+    """Positive linear dimensions in one shared display unit."""
 
-    value: Decimal = Field(gt=0, max_digits=12, decimal_places=4)
-    unit: Literal["m²", "ft²"]
+    length: Decimal = Field(gt=0, max_digits=12, decimal_places=4)
+    width: Decimal = Field(gt=0, max_digits=12, decimal_places=4)
+    height: Decimal | None = Field(default=None, gt=0, max_digits=12, decimal_places=4)
+    unit: DimensionUnit
 
 
-class VolumeInput(BaseModel):
-    """Positive volume in a supported display unit."""
+class DimensionsResponse(BaseModel):
+    """Editable dimensions reconstructed in their preferred unit."""
 
-    value: Decimal = Field(gt=0, max_digits=12, decimal_places=4)
-    unit: Literal["m³", "ft³"]
+    length: Decimal
+    width: Decimal
+    height: Decimal | None
+    unit: DimensionUnit
 
 
 class EntityMappingCreate(BaseModel):
@@ -104,8 +103,7 @@ class GrowSpaceCreate(BaseModel):
     description: str | None = None
     location: str | None = Field(default=None, max_length=200)
     space_type: GrowSpaceType
-    area: AreaInput | None = None
-    volume: VolumeInput | None = None
+    dimensions: DimensionsInput
     mappings: list[EntityMappingCreate] = Field(default_factory=_empty_entity_mappings)
 
     @field_validator("name")
@@ -124,17 +122,11 @@ class GrowSpaceCreate(BaseModel):
         cleaned = value.strip()
         return cleaned or None
 
-    @property
-    def area_m2(self) -> Decimal | None:
-        if self.area is None:
-            return None
-        return normalize_area(self.area.value, self.area.unit)
-
-    @property
-    def volume_m3(self) -> Decimal | None:
-        if self.volume is None:
-            return None
-        return normalize_volume(self.volume.value, self.volume.unit)
+    @model_validator(mode="after")
+    def require_enclosed_height(self) -> Self:
+        if self.space_type is not GrowSpaceType.OUTDOOR and self.dimensions.height is None:
+            raise ValueError("Height is required for enclosed grow spaces")
+        return self
 
 
 class GrowSpaceUpdate(BaseModel):
@@ -144,8 +136,8 @@ class GrowSpaceUpdate(BaseModel):
     description: str | None = None
     location: str | None = Field(default=None, max_length=200)
     space_type: GrowSpaceType | None = None
-    area: AreaInput | None = None
-    volume: VolumeInput | None = None
+    dimensions: DimensionsInput | None = None
+    active: bool | None = None
 
     @field_validator("name")
     @classmethod
@@ -214,6 +206,7 @@ class GrowSpaceSummary(BaseModel):
     location: str | None
     space_type: str
     active: bool
+    dimensions: DimensionsResponse | None
     area_m2: Decimal | None
     volume_m3: Decimal | None
     mapping_count: int

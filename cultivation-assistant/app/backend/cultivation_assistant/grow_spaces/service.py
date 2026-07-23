@@ -6,10 +6,19 @@ from typing import Any
 
 from cultivation_assistant.db.engine import Database
 from cultivation_assistant.db.models import AuditLog, EntityMapping, GrowSpace
+from cultivation_assistant.grow_spaces.dimensions import (
+    CanonicalDimensions,
+    DimensionUnit,
+    derive_measurements,
+    from_metres,
+    to_metres,
+)
 from cultivation_assistant.grow_spaces.discovery import EntityDiscoveryService
 from cultivation_assistant.grow_spaces.repository import GrowSpaceRepository
 from cultivation_assistant.grow_spaces.roles import get_role_definition
 from cultivation_assistant.grow_spaces.schemas import (
+    DimensionsInput,
+    DimensionsResponse,
     EntityMappingCreate,
     EntityMappingResponse,
     EntityMappingUpdate,
@@ -17,14 +26,13 @@ from cultivation_assistant.grow_spaces.schemas import (
     GrowSpaceListResponse,
     GrowSpaceResponse,
     GrowSpaceSummary,
+    GrowSpaceType,
     GrowSpaceUpdate,
     LiveReading,
 )
 from cultivation_assistant.grow_spaces.units import (
     Compatibility,
-    normalize_area,
     normalize_environment_value,
-    normalize_volume,
 )
 from cultivation_assistant.home_assistant.state_cache import EntityStateCache
 
@@ -70,7 +78,14 @@ class GrowSpaceService:
             repository = GrowSpaceRepository(session)
             if await repository.active_name_exists(request.name):
                 raise GrowSpaceConflict("An active grow space with this name already exists")
-            record = await repository.add(request)
+            dimensions = self._canonical_dimensions(request.dimensions)
+            area_m2, volume_m3 = derive_measurements(dimensions)
+            record = await repository.add(
+                request,
+                dimensions,
+                area_m2,
+                volume_m3,
+            )
             created_mappings: list[EntityMapping] = []
             for mapping_request in request.mappings:
                 created_mappings.append(
@@ -100,17 +115,25 @@ class GrowSpaceService:
         async with self._database.transaction() as session:
             repository = GrowSpaceRepository(session)
             record = await self._require_space(repository, grow_space_id)
-            self._require_active(record)
-            if request.name is not None and await repository.active_name_exists(
-                request.name,
+            old_active = record.active
+            resulting_active = request.active if request.active is not None else record.active
+            resulting_name = request.name if request.name is not None else record.name
+            if resulting_active and await repository.active_name_exists(
+                resulting_name,
                 exclude_id=record.id,
             ):
                 raise GrowSpaceConflict("An active grow space with this name already exists")
 
             changed = self._apply_update(record, request)
+            if old_active and not record.active:
+                action = "grow_space.deactivated"
+            elif not old_active and record.active:
+                action = "grow_space.reactivated"
+            else:
+                action = "grow_space.updated"
             session.add(
                 self._audit(
-                    action="grow_space.updated",
+                    action=action,
                     resource_type="grow_space",
                     resource_id=record.id,
                     correlation_id=correlation_id,
@@ -124,19 +147,19 @@ class GrowSpaceService:
         async with self._database.transaction() as session:
             repository = GrowSpaceRepository(session)
             record = await self._require_space(repository, grow_space_id)
-            self._require_active(record)
-            record.active = False
-            record.updated_at = datetime.now(UTC)
-            session.add(
-                self._audit(
-                    action="grow_space.archived",
-                    resource_type="grow_space",
-                    resource_id=record.id,
-                    correlation_id=correlation_id,
-                    details={"name": record.name},
+            if record.active:
+                record.active = False
+                record.updated_at = datetime.now(UTC)
+                session.add(
+                    self._audit(
+                        action="grow_space.deactivated",
+                        resource_type="grow_space",
+                        resource_id=record.id,
+                        correlation_id=correlation_id,
+                        details={"name": record.name},
+                    )
                 )
-            )
-            await session.flush()
+                await session.flush()
 
     async def create_mapping(
         self,
@@ -147,7 +170,6 @@ class GrowSpaceService:
         async with self._database.transaction() as session:
             repository = GrowSpaceRepository(session)
             grow_space = await self._require_space(repository, grow_space_id)
-            self._require_active(grow_space)
             mapping = await self._add_mapping_record(repository, grow_space, request)
             session.add(
                 self._audit(
@@ -175,7 +197,6 @@ class GrowSpaceService:
         async with self._database.transaction() as session:
             repository = GrowSpaceRepository(session)
             grow_space = await self._require_space(repository, grow_space_id)
-            self._require_active(grow_space)
             mapping = await repository.get_mapping(grow_space_id, mapping_id)
             if mapping is None:
                 raise GrowSpaceNotFound("Entity mapping was not found")
@@ -204,7 +225,6 @@ class GrowSpaceService:
         async with self._database.transaction() as session:
             repository = GrowSpaceRepository(session)
             grow_space = await self._require_space(repository, grow_space_id)
-            self._require_active(grow_space)
             mapping = await repository.get_mapping(grow_space_id, mapping_id)
             if mapping is None:
                 raise GrowSpaceNotFound("Entity mapping was not found")
@@ -266,15 +286,16 @@ class GrowSpaceService:
             raise GrowSpaceNotFound("Grow space was not found")
         return record
 
-    @staticmethod
-    def _require_active(record: GrowSpace) -> None:
-        if not record.active:
-            raise GrowSpaceConflict("Archived grow spaces cannot be changed")
-
-    @staticmethod
-    def _apply_update(record: GrowSpace, request: GrowSpaceUpdate) -> set[str]:
+    def _apply_update(self, record: GrowSpace, request: GrowSpaceUpdate) -> set[str]:
         changed: set[str] = set()
         fields = request.model_fields_set
+        target_type = request.space_type
+        if target_type is None:
+            try:
+                target_type = GrowSpaceType(record.space_type)
+            except ValueError:
+                target_type = None
+
         if "name" in fields and request.name is not None:
             record.name = request.name
             changed.add("name")
@@ -287,23 +308,69 @@ class GrowSpaceService:
         if "space_type" in fields and request.space_type is not None:
             record.space_type = request.space_type.value
             changed.add("space_type")
-        if "area" in fields:
-            record.area_m2 = (
-                None
-                if request.area is None
-                else normalize_area(request.area.value, request.area.unit)
+        if "active" in fields and request.active is not None:
+            record.active = request.active
+            changed.add("active")
+
+        if "dimensions" in fields:
+            if request.dimensions is None:
+                raise GrowSpaceValidationError("Dimensions are required")
+            if target_type is None:
+                raise GrowSpaceValidationError(
+                    "Choose a current space type before changing dimensions"
+                )
+            dimensions = self._canonical_dimensions(request.dimensions)
+            self._validate_height(target_type, dimensions)
+            area_m2, volume_m3 = derive_measurements(dimensions)
+            record.length_m = dimensions.length_m
+            record.width_m = dimensions.width_m
+            record.height_m = dimensions.height_m
+            record.dimension_unit = request.dimensions.unit.value
+            record.area_m2 = area_m2
+            record.volume_m3 = volume_m3
+            changed.update(
+                {
+                    "length_m",
+                    "width_m",
+                    "height_m",
+                    "dimension_unit",
+                    "area_m2",
+                    "volume_m3",
+                }
             )
-            changed.add("area_m2")
-        if "volume" in fields:
-            record.volume_m3 = (
-                None
-                if request.volume is None
-                else normalize_volume(request.volume.value, request.volume.unit)
+        elif "space_type" in fields and request.space_type is not None:
+            if record.length_m is None or record.width_m is None:
+                raise GrowSpaceValidationError(
+                    "Dimensions are required when changing a legacy space type"
+                )
+            existing_dimensions = CanonicalDimensions(
+                length_m=record.length_m,
+                width_m=record.width_m,
+                height_m=record.height_m,
             )
-            changed.add("volume_m3")
+            self._validate_height(request.space_type, existing_dimensions)
+
         if changed:
             record.updated_at = datetime.now(UTC)
         return changed
+
+    @staticmethod
+    def _canonical_dimensions(request: DimensionsInput) -> CanonicalDimensions:
+        return CanonicalDimensions(
+            length_m=to_metres(request.length, request.unit),
+            width_m=to_metres(request.width, request.unit),
+            height_m=(
+                None if request.height is None else to_metres(request.height, request.unit)
+            ),
+        )
+
+    @staticmethod
+    def _validate_height(
+        space_type: GrowSpaceType,
+        dimensions: CanonicalDimensions,
+    ) -> None:
+        if space_type is not GrowSpaceType.OUTDOOR and dimensions.height_m is None:
+            raise GrowSpaceValidationError("Height is required for enclosed grow spaces")
 
     @staticmethod
     def _apply_mapping_update(
@@ -426,12 +493,33 @@ class GrowSpaceService:
             location=record.location,
             space_type=record.space_type,
             active=record.active,
+            dimensions=self._dimensions_response(record),
             area_m2=record.area_m2,
             volume_m3=record.volume_m3,
             mapping_count=(len(selected_mappings) if mapping_count is None else mapping_count),
             live_readings=self._live_readings(selected_mappings),
             created_at=record.created_at,
             updated_at=record.updated_at,
+        )
+
+    @staticmethod
+    def _dimensions_response(record: GrowSpace) -> DimensionsResponse | None:
+        if (
+            record.length_m is None
+            or record.width_m is None
+            or record.dimension_unit is None
+        ):
+            return None
+        unit = DimensionUnit(record.dimension_unit)
+        return DimensionsResponse(
+            length=from_metres(record.length_m, unit),
+            width=from_metres(record.width_m, unit),
+            height=(
+                None
+                if record.height_m is None
+                else from_metres(record.height_m, unit)
+            ),
+            unit=unit,
         )
 
     def _response(
