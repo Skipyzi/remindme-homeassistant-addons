@@ -204,6 +204,86 @@
 			},
 		},
 		{
+			name: "/memory",
+			usage: "/memory [query | forget <path>]",
+			blurb: "what the model remembers — insight & edit",
+			async run(app, argument) {
+				const say = (text) => app.add("answer", text);
+				const trimmed = (argument || "").trim();
+				const [word, ...rest] = trimmed.split(/\s+/);
+				const sub = word?.toLowerCase();
+
+				// Forget: drop one memory. Editing a memory is done in the vault —
+				// every row below carries an "edit ↗" deep-link when configured.
+				if (sub === "forget" || sub === "delete") {
+					const path = rest.join(" ").trim();
+					if (!path)
+						return say("Usage: `/memory forget <path>` — the path shown in `/memory`.");
+					const response = await fetch(
+						`./api/vault/note?path=${encodeURIComponent(path)}`,
+						{ method: "DELETE" },
+					);
+					return say(response.ok ? `Forgotten \`${path}\`.` : `No memory at \`${path}\`.`);
+				}
+
+				const search = trimmed;
+				const url = search
+					? `./api/vault?search=${encodeURIComponent(search)}`
+					: "./api/vault";
+				const response = await fetch(url);
+				const notes = response.ok ? await response.json() : [];
+				if (!notes.length)
+					return say(
+						search
+							? `No memories match \`${search}\`.`
+							: "No memories yet. They build up as you work — or tell me something worked and I'll keep it.",
+					);
+
+				// Memories are vault notes; group them by the kind write_memory sets.
+				const ORDER = ["user", "feedback", "project", "reference"];
+				const LABEL = {
+					user: "About you",
+					feedback: "How to work",
+					project: "Projects",
+					reference: "References",
+					other: "Other",
+				};
+				const byType = new Map();
+				for (const note of notes) {
+					const key = ORDER.includes(note.type) ? note.type : "other";
+					if (!byType.has(key)) byType.set(key, []);
+					byType.get(key).push(note);
+				}
+				const row = (note) => {
+					const tags = note.tags?.length
+						? ` — ${note.tags.map((tag) => `#${tag}`).join(" ")}`
+						: "";
+					const editUrl = app.vaultNoteUrl?.(note.path);
+					const edit = editUrl ? ` · [edit ↗](${editUrl})` : "";
+					return `- **${note.title}** \`${note.path}\`${tags}${edit}`;
+				};
+				const sections = [...ORDER, "other"]
+					.filter((key) => byType.has(key))
+					.map((key) =>
+						[
+							`**${LABEL[key]}** (${byType.get(key).length})`,
+							...byType.get(key).map(row),
+						].join("\n"),
+					);
+				const plural = notes.length > 1 ? "memories" : "memory";
+				say(
+					[
+						search
+							? `${notes.length} ${plural} matching \`${search}\`:`
+							: `${notes.length} ${plural} held:`,
+						"",
+						...sections.map((section) => `${section}\n`),
+						"`/memory forget <path>` to drop one · edit any in the vault.",
+					].join("\n"),
+				);
+			},
+		},
+		{
 			name: "/graph",
 			usage: "/graph [query]",
 			blurb: "the vault drawn as a constellation",

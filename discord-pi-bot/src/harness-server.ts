@@ -63,7 +63,11 @@ import {
 	invalidateManagerToken,
 } from "./harness/modelManager";
 
-import { allowedToolNames, toolCallKey } from "./harness/intentRouting";
+import {
+	allowedToolNames,
+	detectPositiveFeedback,
+	toolCallKey,
+} from "./harness/intentRouting";
 import {
 	getThinkingProfile,
 	thinkingProfilesForHardware,
@@ -1516,11 +1520,22 @@ async function runAgent(
 				})
 				.join("\n")
 		: "";
+	/*
+	 * When the user just signals that the last thing worked, that is the moment
+	 * to learn from it: save the reusable lesson so the next conversation starts
+	 * ahead. Only on short acknowledgements, and only with something to look back
+	 * on — the prior turn is what holds what worked.
+	 */
+	const learningPrompt =
+		history.length > 0 && detectPositiveFeedback(prompt)
+			? "\n\nThe user is confirming the previous approach worked. If the exchange above holds a durable, reusable lesson — a fix that worked, a method, a confirmed preference — call write_memory with type feedback to save it: a short kebab path under feedback/, a clear title, and a body stating what worked and why (link related notes with [[Title]]). Then acknowledge in one short line. If nothing is durable enough to keep, just acknowledge."
+			: "";
 	// Enabled skills are appended so they bind for the whole turn.
 	const systemPrompt =
 		"You are RemindMe, a concise general and home assistant. Answer directly. Use tools only when needed. Confirm sensitive home actions. You have a long-term memory — a personal notes vault: search_memory and read_memory to recall, write_memory to save durable facts, preferences, and project details worth keeping across conversations." +
 		artifactPrompt +
 		memoryPrompt +
+		learningPrompt +
 		skillPrompt(skills.enabled());
 	const budget = historyBudget(
 		prompt,
