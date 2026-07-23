@@ -69,6 +69,11 @@ function harness() {
 		hardware: "raspberry pi profile",
 		/** The companion remindme-vault editor's URL, from /api/status. Empty hides deep-links. */
 		vaultUrl: "",
+		/** The editable base system prompt and its default, loaded when Settings opens. */
+		persona: "",
+		personaDefault: "",
+		personaCustom: false,
+		personaStatus: "",
 		metrics: {},
 		system: null,
 		artifactOpen: false,
@@ -208,6 +213,43 @@ function harness() {
 				.catch(() => {
 					this.offline = true;
 				});
+		},
+		/* ── System prompt (persona) ──────────────────────────────────── */
+		/** Open Settings and pull the current persona so the field is live. */
+		async openSettings() {
+			this.settingsOpen = true;
+			await this.loadPersona();
+		},
+		async loadPersona() {
+			try {
+				const data = await fetch("./api/persona").then((r) => r.json());
+				this.persona = data.prompt || "";
+				this.personaDefault = data.default || "";
+				this.personaCustom = Boolean(data.custom);
+			} catch {
+				this.personaStatus = "Could not load the system prompt.";
+			}
+		},
+		async savePersona() {
+			this.personaStatus = "Saving…";
+			try {
+				const data = await fetch("./api/persona", {
+					method: "PUT",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify({ prompt: this.persona }),
+				}).then((r) => r.json());
+				this.persona = data.prompt || "";
+				this.personaCustom = Boolean(data.custom);
+				this.personaStatus = data.custom ? "Saved." : "Saved — using the default.";
+			} catch {
+				this.personaStatus = "Save failed.";
+			}
+		},
+		/** Clear to the default: an empty prompt tells the server to reset. */
+		async resetPersona() {
+			this.persona = "";
+			await this.savePersona();
+			this.persona = this.personaDefault;
 		},
 		/* ── Inference endpoints ──────────────────────────────────────── */
 		editEndpoint(endpoint) {

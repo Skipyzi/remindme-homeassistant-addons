@@ -36,6 +36,7 @@ import {
 } from "./harness/entityActions";
 import { ConversationStore } from "./harness/conversations";
 import { SkillStore, skillPrompt } from "./harness/skills";
+import { DEFAULT_PERSONA, PersonaStore } from "./harness/persona";
 import { VaultStore, type VaultNote } from "./harness/vault";
 import {
 	TaskStore,
@@ -133,6 +134,10 @@ void vault.load();
  */
 const tasks = new TaskStore();
 void tasks.load();
+/* The editable base system prompt. Persisted so an edit survives restarts; the
+ * capability instructions are always appended on top of it. */
+const persona = new PersonaStore();
+void persona.load();
 type Send = (event: string, data: unknown) => void;
 
 /** A filesystem- and link-safe slug from a title. */
@@ -356,6 +361,23 @@ app.post("/api/endpoints/:id/test", async (request, response) => {
 			error: error instanceof Error ? error.message : "Could not reach endpoint",
 		});
 	}
+});
+/* The editable base system prompt. GET returns the prompt in effect plus the
+ * default (for a reset); PUT sets it, and an empty value resets to the default. */
+app.get("/api/persona", (_request, response) => {
+	response.json({
+		prompt: persona.get(),
+		default: DEFAULT_PERSONA,
+		custom: persona.isCustom(),
+	});
+});
+app.put("/api/persona", async (request, response) => {
+	await persona.set(String(request.body?.prompt ?? ""));
+	response.json({
+		prompt: persona.get(),
+		default: DEFAULT_PERSONA,
+		custom: persona.isCustom(),
+	});
 });
 app.get("/api/skills", (_request, response) => {
 	response.json(skills.list());
@@ -1558,9 +1580,14 @@ async function runAgent(
 		history.length > 0 && detectPositiveFeedback(prompt)
 			? "\n\nThe user is confirming the previous approach worked. If the exchange above holds a durable, reusable lesson — a fix that worked, a method, a confirmed preference — call write_memory with type feedback to save it: a short kebab name, a clear title, and a body stating what worked and why (link related notes with [[Title]]). It is filed under memory/feedback/ for you. Then acknowledge in one short line. If nothing is durable enough to keep, just acknowledge."
 			: "";
-	// Enabled skills are appended so they bind for the whole turn.
+	/*
+	 * The persona (voice + standing rules) is user-editable in Settings; the
+	 * capability line is always appended, so editing the persona can never
+	 * strip the model's memory or tools. Skills bind for the whole turn.
+	 */
 	const systemPrompt =
-		"You are RemindMe, a concise general and home assistant. Answer directly. Use tools only when needed. Confirm sensitive home actions. You have a long-term memory kept in the memory/ folder of your notes vault: write_memory saves durable facts, preferences, and project details there to carry across conversations; search_memory searches the whole vault (memory plus everything else) and read_memory reads any note." +
+		persona.get() +
+		" You have a long-term memory kept in the memory/ folder of your notes vault: write_memory saves durable facts, preferences, and project details there to carry across conversations; search_memory searches the whole vault (memory plus everything else) and read_memory reads any note." +
 		artifactPrompt +
 		memoryPrompt +
 		learningPrompt +

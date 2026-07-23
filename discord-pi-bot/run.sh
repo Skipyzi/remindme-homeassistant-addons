@@ -42,6 +42,7 @@ export MCP_DATA_PATH=/data/mcp.json
 export ARTIFACT_DATA_PATH=/data/artifacts.json
 export PRESENCE_UPTIME_PATH=/data/presence-uptime.json
 export TASK_DATA_PATH=/data/tasks.json
+export PERSONA_DATA_PATH=/data/persona.json
 # The vault is a shared folder, not add-on data, so it lives under /share where
 # the remindme-vault editor add-on reads and writes the same files.
 export VAULT_DATA_PATH=/share/vault

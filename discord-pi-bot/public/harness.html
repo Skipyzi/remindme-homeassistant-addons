@@ -117,7 +117,7 @@
           <button @click="openSkills()">Skills</button>
           <button @click="openMcp()">MCP</button>
           <button @click="modelsOpen=true">Models</button>
-          <button @click="settingsOpen=true">Settings</button>
+          <button @click="openSettings()">Settings</button>
         </nav>
         <div class="rail-foot">
           <div
@@ -1179,7 +1179,29 @@
               ><input type="checkbox" x-model="scanlines"
             /></label>
           </div>
+          <div class="settings-persona">
+            <label
+              >System prompt
+              <textarea
+                x-model="persona"
+                rows="6"
+                spellcheck="false"
+                placeholder="You are RemindMe, a concise general and home assistant…"
+              ></textarea>
+            </label>
+            <p class="settings-note">
+              The model's base instructions. Memory, tools and skills are always
+              added on top of this.
+            </p>
+            <p
+              class="settings-note"
+              x-show="personaStatus"
+              x-text="personaStatus"
+            ></p>
+          </div>
           <div class="settings-actions">
+            <button class="action" @click="savePersona()">Save prompt</button>
+            <button class="action" @click="resetPersona()">Reset to default</button>
             <button class="send" @click="settingsOpen=false">Close</button>
           </div>
         </section>

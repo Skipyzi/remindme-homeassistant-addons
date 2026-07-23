@@ -509,6 +509,29 @@ select {
 	color: var(--text);
 	padding: 10px;
 }
+.settings-persona {
+	margin-top: 16px;
+}
+.settings-persona label {
+	display: grid;
+	gap: 6px;
+	color: var(--muted);
+	font:
+		11px "DM Mono",
+		monospace;
+}
+.settings-persona textarea {
+	width: 100%;
+	border: 1px solid var(--line);
+	background: var(--ink);
+	color: var(--text);
+	padding: 10px;
+	font:
+		13px "DM Mono",
+		monospace;
+	line-height: 1.5;
+	resize: vertical;
+}
 .settings-actions {
 	display: flex;
 	justify-content: flex-end;
