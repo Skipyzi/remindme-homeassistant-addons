@@ -46,8 +46,9 @@ map:
   - type: data
     read_only: false
     path: /data
-  # The Obsidian vault lives here so the desktop app and this add-on share the
-  # same files; the bot both reads and writes notes (model memory), so rw.
+  # The Markdown vault lives here so the remindme-vault editor add-on and this
+  # add-on share the same files; the bot both reads and writes notes (model
+  # memory), so rw.
   - type: share
     read_only: false
     path: /share

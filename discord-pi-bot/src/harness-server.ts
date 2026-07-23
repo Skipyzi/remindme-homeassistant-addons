@@ -110,12 +110,14 @@ void mcpServers.load();
 const endpoints = new EndpointStore();
 void endpoints.load();
 /*
- * The Obsidian vault at /share/vault, doubling as the model's editable
- * long-term memory. Parsed once at boot into an in-memory index; a note the
- * model writes reindexes itself. Notes edited externally in Obsidian are
- * picked up by POST /api/vault/reload — a full reparse is too heavy to run on
- * every read on a Pi, and cross-platform fs.watch is the same unreliable story
- * that made the reminder store poll instead.
+ * The Markdown vault at /share/vault, doubling as the model's editable
+ * long-term memory. The companion remindme-vault add-on edits the very same
+ * files, so a note is one note across the model, the chat, and that editor.
+ * Parsed once at boot into an in-memory index; a note the model writes
+ * reindexes itself. Notes edited externally are picked up by POST
+ * /api/vault/reload — a full reparse is too heavy to run on every read on a Pi,
+ * and cross-platform fs.watch is the same unreliable story that made the
+ * reminder store poll instead.
  */
 const vault = new VaultStore();
 void vault.load();
@@ -342,7 +344,7 @@ app.delete("/api/skills/:id", async (request, response) => {
  * Vault / memory. Note paths carry slashes, so they travel as a `path` query
  * parameter rather than a route segment. Reads serve the in-memory index;
  * writes go straight to disk and reindex, so a note the console saves is a
- * note Obsidian opens.
+ * note the remindme-vault add-on opens.
  */
 app.get("/api/vault", (request, response) => {
 	const notes = vault.list({
@@ -389,7 +391,7 @@ app.delete("/api/vault/note", async (request, response) => {
 	const removed = await vault.delete(String(request.query.path || ""));
 	response.status(removed ? 204 : 404).end();
 });
-/* Reparse the whole vault — used after Obsidian edits it from outside. */
+/* Reparse the whole vault — used after remindme-vault edits it from outside. */
 app.post("/api/vault/reload", async (_request, response) => {
 	await vault.load();
 	response.json({ notes: vault.list().length });

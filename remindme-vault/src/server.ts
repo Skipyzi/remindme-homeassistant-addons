@@ -1,5 +1,6 @@
 import express from "express";
-import { resolve } from "node:path";
+import { mkdir, readdir } from "node:fs/promises";
+import { join, relative, resolve, sep } from "node:path";
 import { VaultStore, type VaultNote } from "./vault";
 
 /*
@@ -15,8 +16,40 @@ const app = express();
 const port = Number(process.env.VAULT_PORT || 8091);
 app.use(express.json({ limit: "4mb" }));
 
-const vault = new VaultStore(process.env.VAULT_DATA_PATH || "/share/vault");
+const VAULT_ROOT = process.env.VAULT_DATA_PATH || "/share/vault";
+const vault = new VaultStore(VAULT_ROOT);
 void vault.load();
+
+/** Resolve a vault-relative path to an absolute one, refusing to escape root. */
+function resolveInside(relPath: string): string {
+	const clean = relPath.split(/[\\/]+/).filter(Boolean).join(sep);
+	const absolute = join(VAULT_ROOT, clean);
+	const rel = relative(VAULT_ROOT, absolute);
+	if (rel.startsWith("..")) throw new Error("Path escapes the vault");
+	return absolute;
+}
+
+/** Every folder under the vault, relative and POSIX-style, empty ones included. */
+async function walkFolders(): Promise<string[]> {
+	const dirs: string[] = [];
+	async function recurse(absolute: string, rel: string): Promise<void> {
+		let entries: import("node:fs").Dirent[];
+		try {
+			entries = await readdir(absolute, { withFileTypes: true });
+		} catch {
+			return;
+		}
+		for (const entry of entries) {
+			// Dotfolders (like Obsidian's own .obsidian) are config, not vault.
+			if (!entry.isDirectory() || entry.name.startsWith(".")) continue;
+			const childRel = rel ? `${rel}/${entry.name}` : entry.name;
+			dirs.push(childRel);
+			await recurse(join(absolute, entry.name), childRel);
+		}
+	}
+	await recurse(VAULT_ROOT, "");
+	return dirs.sort();
+}
 
 /** Frontmatter patch from a save request — only the fields supplied. */
 function noteFrontmatter(
@@ -59,6 +92,26 @@ app.get("/api/vault", (request, response) => {
 	response.json(notes.map(summarise));
 });
 app.get("/api/vault/tags", (_request, response) => response.json(vault.tags()));
+/* The explorer tree: every folder (empty ones too) plus note summaries. */
+app.get("/api/vault/tree", async (_request, response) => {
+	response.json({
+		folders: await walkFolders(),
+		notes: vault.list().map(summarise),
+	});
+});
+/* Create a folder by exploring/adding to the vault storage. */
+app.post("/api/vault/folder", async (request, response) => {
+	const path = String(request.body?.path || "").trim();
+	if (!path) return response.status(400).json({ error: "A folder path is required." });
+	try {
+		await mkdir(resolveInside(path), { recursive: true });
+		response.status(201).json({ path });
+	} catch (error) {
+		response
+			.status(400)
+			.json({ error: error instanceof Error ? error.message : "Could not create folder" });
+	}
+});
 app.get("/api/vault/graph", (request, response) =>
 	response.json(vault.graph({ includeTags: request.query.tags === "1" })),
 );

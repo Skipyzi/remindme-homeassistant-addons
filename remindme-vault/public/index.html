@@ -7,50 +7,82 @@
 		<link rel="stylesheet" href="styles.css" />
 	</head>
 	<body>
-		<div class="app">
-			<!-- Far-left ribbon: the workspace-level actions, Obsidian-style. -->
+		<div class="app" id="app">
+			<!-- Far-left ribbon: workspace-level actions, Obsidian-style. -->
 			<nav class="ribbon" aria-label="Actions">
 				<button id="rb-new" class="ribbon-btn" title="New note" aria-label="New note">＋</button>
+				<button id="rb-folder" class="ribbon-btn" title="New folder" aria-label="New folder">🗀</button>
 				<button id="rb-graph" class="ribbon-btn" title="Graph view" aria-label="Graph view">◕</button>
 				<button id="rb-reload" class="ribbon-btn" title="Reload vault" aria-label="Reload vault">⟳</button>
 			</nav>
 
-			<!-- File explorer. -->
+			<!-- File explorer: a folder tree over the vault storage. -->
 			<aside class="explorer" aria-label="Notes">
 				<div class="explorer-head">
 					<input id="search" type="search" placeholder="Search notes…" aria-label="Search notes" />
 				</div>
-				<ul id="note-list" class="note-list"></ul>
+				<div id="tree" class="tree"></div>
 			</aside>
+
+			<!-- Draggable divider: explorer ↔ workspace. -->
+			<div id="explorer-gutter" class="hgutter" role="separator" aria-orientation="vertical"></div>
 
 			<!-- Main workspace: the editor by default, the graph as a pane. -->
 			<main class="workspace">
 				<section id="editor-pane" class="pane editor-pane">
-					<div class="tabbar"><span id="tab-title" class="tab">New note</span></div>
-					<div class="edit-body">
+					<div class="tabbar">
+						<span id="tab-title" class="tab">New note</span>
+						<div class="mode-toggle" role="group" aria-label="View mode">
+							<button data-mode="edit" class="mode-btn active">Edit</button>
+							<button data-mode="split" class="mode-btn">Split</button>
+							<button data-mode="read" class="mode-btn">Read</button>
+						</div>
+					</div>
+					<div class="edit-head">
 						<input id="note-title" class="title-input" placeholder="Title" aria-label="Title" />
 						<div class="meta-row">
-							<input id="note-tags" placeholder="tags, comma separated" aria-label="Tags" />
-							<input id="note-type" placeholder="type" aria-label="Type" />
+							<label class="meta-field"
+								>Type / folder
+								<input
+									id="note-type"
+									list="group-list"
+									placeholder="e.g. project"
+									aria-label="Type or folder"
+							/></label>
+							<label class="meta-field"
+								>Tags
+								<input
+									id="note-tags"
+									placeholder="comma separated"
+									aria-label="Tags"
+							/></label>
 						</div>
+						<datalist id="group-list"></datalist>
+					</div>
+					<div id="edit-split" class="edit-split" data-mode="edit">
 						<textarea
 							id="note-body"
-							class="body-input"
+							class="source"
 							spellcheck="false"
 							placeholder="# Write markdown…&#10;Link notes with [[Another note]] and tag with #topic."
 							aria-label="Note body"
 						></textarea>
-						<div class="editor-actions">
-							<button id="save-btn" class="btn">Save</button>
-							<button id="delete-btn" class="btn danger" disabled>Delete</button>
-							<span id="save-status" class="save-status"></span>
-						</div>
-						<div class="backlinks">
-							<h4>Linked &amp; related</h4>
-							<ul id="backlink-list"></ul>
-						</div>
+						<div id="split-gutter" class="vgutter" role="separator" aria-orientation="horizontal"></div>
+						<div id="preview" class="preview markdown" aria-label="Preview"></div>
+					</div>
+					<div class="editor-actions">
+						<button id="save-btn" class="btn">Save</button>
+						<button id="delete-btn" class="btn danger" disabled>Delete</button>
+						<span id="save-status" class="save-status"></span>
+					</div>
+					<div class="backlinks">
+						<h4>Linked &amp; related</h4>
+						<ul id="backlink-list"></ul>
 					</div>
 				</section>
+
+				<!-- Draggable divider: editor ↕ constellation. -->
+				<div id="graph-gutter" class="rgutter" role="separator" aria-orientation="horizontal" hidden></div>
 
 				<section id="graph-pane" class="pane graph-pane" hidden>
 					<div class="tabbar">

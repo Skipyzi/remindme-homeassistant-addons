@@ -10,16 +10,17 @@ import {
 import { dirname, join, relative, sep } from "node:path";
 
 /**
- * The vault is a folder of Markdown notes — an Obsidian vault living at
- * `/share/vault` so the desktop app and this add-on read the same real files.
- * The model treats it as an editable, Hermes-style memory: notes it can read,
- * link, tag, and rewrite. The constellation view reads the same graph.
+ * The vault is a folder of Markdown notes living at `/share/vault`, so this
+ * add-on and the companion remindme-vault editor read the same real files (the
+ * plain Obsidian-Markdown format keeps them portable, but the editor is
+ * remindme-vault, not the Obsidian desktop app). The model treats it as an
+ * editable, Hermes-style memory: notes it can read, link, tag, and rewrite. The
+ * constellation view reads the same graph.
  *
  * Everything here is derived from the files on disk, never from a mirrored
  * index that could drift. A note is identified by its vault-relative path
- * (`projects/remindme.md`), the same identity Obsidian uses, so a note the
- * user renames in Obsidian is simply a different note here — no hidden ids to
- * keep in sync.
+ * (`projects/remindme.md`), so a note renamed in the vault editor is simply a
+ * different note here — no hidden ids to keep in sync.
  *
  * Frontmatter is hand-parsed rather than pulling in a YAML dependency: the
  * fields a note actually carries — `title`, `type`, `tags`, `aliases` — are a
@@ -461,8 +462,8 @@ export class VaultStore {
 
 	/**
 	 * Write a note and refresh the index. Frontmatter and body are stored as the
-	 * `---` block the parser reads, so a note the model writes is a note Obsidian
-	 * opens. Returns the reparsed note with links resolved.
+	 * `---` block the parser reads, so a note the model writes is a note the
+	 * remindme-vault editor opens. Returns the reparsed note with links resolved.
 	 */
 	async write(
 		path: string,
