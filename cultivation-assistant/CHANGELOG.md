@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.1
+
+- Corrected editable Grow Space types to Indoor Tent, Greenhouse, Outdoor, and Room.
+- Added canonical dimensions with calculated floor area and volume.
+- Added full Grow Space editing and reversible Active/Inactive status.
+
 ## 0.2.0
 
 - Added universal Grow Spaces with audited create, update, list, detail, and reversible Active/Inactive APIs.

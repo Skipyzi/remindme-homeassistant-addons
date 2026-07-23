@@ -1,5 +1,5 @@
 name: Cultivation Assistant
-version: 0.2.0
+version: 0.2.1
 slug: cultivation_assistant
 description: Local-first plant planning and Home Assistant cultivation monitoring.
 url: https://github.com/Skipyzi/remindme-homeassistant-addons
