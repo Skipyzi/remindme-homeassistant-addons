@@ -12,7 +12,7 @@ class EntityState:
 
     entity_id: str
     state: str
-    attributes: Mapping[str, Any]
+    attributes: Mapping[str, object]
     last_updated: datetime
 
 
@@ -39,6 +39,10 @@ class EntityStateCache:
         """Return an immutable snapshot of current entity states."""
         return tuple(self._states.values())
 
+    def find(self, entity_id: str) -> EntityState | None:
+        """Return a cached entity state without raising when it is unknown."""
+        return self._states.get(entity_id)
+
     def is_stale(
         self,
         entity_id: str,
@@ -59,7 +63,7 @@ class EntityStateCache:
         if not isinstance(attributes, Mapping):
             raise ValueError("Home Assistant state attributes must be an object")
         typed_attributes = cast(Mapping[object, object], attributes)
-        normalized_attributes: dict[str, Any] = {}
+        normalized_attributes: dict[str, object] = {}
         for key, value in typed_attributes.items():
             normalized_attributes[str(key)] = value
         return EntityState(

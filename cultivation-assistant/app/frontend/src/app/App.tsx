@@ -9,6 +9,7 @@ import {
 import { AppShell } from "../components/layout/AppShell";
 import { ThemeProvider } from "./ThemeProvider";
 import { ComingSoonPage } from "../routes/ComingSoonPage";
+import { GrowSpaceDetailPage } from "../routes/GrowSpaceDetailPage";
 import { GrowSpacesPage } from "../routes/GrowSpacesPage";
 import { OverviewPage } from "../routes/OverviewPage";
 import { SettingsPage } from "../routes/SettingsPage";
@@ -23,6 +24,11 @@ const growSpacesRoute = createRoute({
 	getParentRoute: () => rootRoute,
 	path: "/grow-spaces",
 	component: GrowSpacesPage,
+});
+const growSpaceDetailRoute = createRoute({
+	getParentRoute: () => rootRoute,
+	path: "/grow-spaces/$growSpaceId",
+	component: GrowSpaceDetailPage,
 });
 const settingsRoute = createRoute({
 	getParentRoute: () => rootRoute,
@@ -50,6 +56,7 @@ const placeholderRoutes = placeholderPaths.map((path) =>
 const routeTree = rootRoute.addChildren([
 	indexRoute,
 	growSpacesRoute,
+	growSpaceDetailRoute,
 	settingsRoute,
 	...placeholderRoutes,
 ]);
