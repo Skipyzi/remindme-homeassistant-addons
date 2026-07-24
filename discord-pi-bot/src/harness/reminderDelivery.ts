@@ -22,11 +22,13 @@ export function deliveryTargets(
 		homeAssistant: isOwner ? "pending" : "skipped",
 		mobile: isOwner ? "pending" : "skipped",
 		/*
-		 * A reminder set in the console has no channel to answer in. That is
-		 * not a failed delivery — treating it as one left the reminder
-		 * retrying against an empty channel id once a minute, for ever.
+		 * Discord has a recipient either way: a channel reminder answers in its
+		 * channel, and a reminder with no channel — one set from the LLM console
+		 * — is delivered as a direct message to its owner. Only a reminder with
+		 * neither a channel nor a user is genuinely undeliverable and skipped,
+		 * so it does not retry against nothing once a minute for ever.
 		 */
-		discord: reminder.channelId ? "pending" : "skipped",
+		discord: reminder.channelId || reminder.userId ? "pending" : "skipped",
 	};
 }
 

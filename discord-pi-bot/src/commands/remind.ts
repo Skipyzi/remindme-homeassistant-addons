@@ -2,18 +2,13 @@ import {
 	ActionRowBuilder,
 	ButtonBuilder,
 	ButtonStyle,
-	EmbedBuilder,
-	type Message,
+	MessageFlags,
 } from "discord.js";
 import { askLocalLlm } from "../localLlm";
 import { config } from "../config";
-import {
-	addReminder,
-	deleteReminder,
-	listReminders,
-} from "../utils/reminderManager";
+import { deleteReminder } from "../utils/reminderManager";
 
-function reminderButtons(id: string, userId: string) {
+export function reminderButtons(id: string, userId: string) {
 	return new ActionRowBuilder<ButtonBuilder>().addComponents(
 		new ButtonBuilder()
 			.setCustomId(`reminder:delete:${userId}:${id}`)
@@ -23,15 +18,14 @@ function reminderButtons(id: string, userId: string) {
 	);
 }
 
-function channelIsForReminders(message: Message): boolean {
-	const name =
-		"name" in message.channel && typeof message.channel.name === "string"
-			? message.channel.name
-			: "";
-	return name.toLowerCase().includes("reminders");
+/** A channel whose name marks it as a place group reminders live. */
+export function nameIsReminderChannel(name: string | null | undefined): boolean {
+	return typeof name === "string" && name.toLowerCase().includes("reminder");
 }
 
-function parseTime(input: string): { text: string; delayMs: number } | null {
+export function parseTime(
+	input: string,
+): { text: string; delayMs: number } | null {
 	const tomorrowMatch = input.match(/^(.+?)\s+tomorrow\s*$/i);
 	if (tomorrowMatch) {
 		const date = new Date();
@@ -106,7 +100,7 @@ function parseTime(input: string): { text: string; delayMs: number } | null {
 	return null;
 }
 
-async function reviewReminderIntent(
+export async function reviewReminderIntent(
 	input: string,
 ): Promise<{ text: string; delayMs: number } | null> {
 	if (!config.localLlmEnabled) return null;
@@ -137,79 +131,19 @@ async function reviewReminderIntent(
 	return null;
 }
 
-function commandText(content: string): string {
-	return content.replace(/^!(?:remindme|remind)(?:\s+me)?\s*/i, "").trim();
-}
-
-export async function handleRemindCommand(
-	message: Message,
-	input?: string,
-): Promise<void> {
-	if (!channelIsForReminders(message)) {
-		await message.reply(
-			"⚠️ Reminders only work in a channel with **reminders** in its name.",
-		);
-		return;
-	}
-	const reminderInput = commandText(input ?? message.content);
-	const parsed =
-		parseTime(reminderInput) ?? (await reviewReminderIntent(reminderInput));
-	if (!parsed || parsed.delayMs <= 0) {
-		await message.reply(
-			"Usage: `!remindme <thing> in <number> minutes/hours/days/weeks` or `!remindme <thing> on <date>`.",
-		);
-		return;
-	}
-
-	/*
-	 * No handler here. Delivery belongs to the scheduler in the bot process,
-	 * which reaches Home Assistant and the phone as well as this channel —
-	 * a reply from here would have been the Discord half only.
-	 */
-	const reminder = await addReminder(
-		parsed.text,
-		parsed.delayMs / 60_000,
-		message.author.id,
-		message.channel.id,
-	);
-	const timestamp = Math.floor(reminder.time.getTime() / 1000);
-	const card = new EmbedBuilder()
-		.setColor(0x5865f2)
-		.setTitle("⏰ Reminder created")
-		.setDescription(`**${reminder.message}**`)
-		.addFields(
-			{
-				name: "When",
-				value: `<t:${timestamp}:F>\n<t:${timestamp}:R>`,
-				inline: true,
-			},
-			{ name: "Reminder ID", value: `\`${reminder.id}\``, inline: true },
-			{ name: "Owner", value: `<@${reminder.userId}>`, inline: true },
-		)
-		.setFooter({ text: "Use !remindme edit/delete <id>" });
-	await message.reply({
-		embeds: [card],
-		components: [reminderButtons(reminder.id, reminder.userId)],
-	});
-}
-
-export async function handleRemindList(message: Message): Promise<void> {
-	if (!channelIsForReminders(message)) {
-		await message.reply(
-			"⚠️ Reminders only work in a channel with **reminders** in its name.",
-		);
-		return;
-	}
-	const reminders = await listReminders(message.author.id);
-	if (!reminders.length) {
-		await message.reply("You have no active reminders.");
-		return;
-	}
-	const lines = reminders.map(
-		(reminder) =>
-			`• \`${reminder.id}\` — ${reminder.message} (<t:${Math.floor(reminder.time.getTime() / 1000)}:R>)`,
-	);
-	await message.reply(`**Your reminders**\n${lines.join("\n")}`);
+/**
+ * Resolve a reminder's "what" and "when" into text and a delay, trying the
+ * fast pattern parser first and the local model as a fallback. `when` is the
+ * user's time phrase, e.g. "in 2 hours", "tomorrow", "on friday".
+ */
+export async function resolveReminder(
+	text: string,
+	when: string,
+): Promise<{ text: string; delayMs: number } | null> {
+	const combined = `${text.trim()} ${when.trim()}`.trim();
+	const parsed = parseTime(combined) ?? (await reviewReminderIntent(combined));
+	if (!parsed || parsed.delayMs <= 0) return null;
+	return parsed;
 }
 
 export async function handleReminderDeleteButton(
@@ -220,14 +154,14 @@ export async function handleReminderDeleteButton(
 	if (interaction.user.id !== userId) {
 		await interaction.reply({
 			content: "Only the reminder owner can delete it.",
-			ephemeral: true,
+			flags: MessageFlags.Ephemeral,
 		});
 		return;
 	}
 	if (!(await deleteReminder(id, userId))) {
 		await interaction.reply({
 			content: "That reminder no longer exists.",
-			ephemeral: true,
+			flags: MessageFlags.Ephemeral,
 		});
 		return;
 	}
@@ -235,15 +169,4 @@ export async function handleReminderDeleteButton(
 		components: [],
 		content: "🗑️ Reminder deleted.",
 	});
-}
-
-export async function handleRemindDelete(message: Message): Promise<void> {
-	const id = message.content
-		.replace(/^!(?:remindme|remind)\s+delete\s*/i, "")
-		.trim();
-	await message.reply(
-		(await deleteReminder(id, message.author.id))
-			? "✅ Reminder deleted."
-			: "❌ Reminder not found.",
-	);
 }

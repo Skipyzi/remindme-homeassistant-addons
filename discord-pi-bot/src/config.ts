@@ -17,6 +17,7 @@ export const config = {
 		process.env.REMINDER_CHECK_INTERVAL || "60000",
 		10,
 	),
+	aftershipApiKey: process.env.AFTERSHIP_API_KEY || "",
 };
 
 export function validateConfig(): string[] {

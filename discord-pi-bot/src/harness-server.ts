@@ -45,6 +45,17 @@ import {
 	parseSchedule,
 	type ScheduledTask,
 } from "./harness/taskStore";
+import {
+	ParcelStore,
+	describeParcelTag,
+	parcelNotice,
+	type Parcel,
+} from "./harness/parcelStore";
+import {
+	AfterShipError,
+	createTracking,
+	getTracking,
+} from "./harness/aftership";
 import { readSystemStats } from "./harness/systemStats";
 import { ArtifactStore, toDocument } from "./harness/artifacts";
 import { applyEdit, isEditFailure, modelView } from "./harness/artifactEdit";
@@ -138,6 +149,14 @@ void tasks.load();
  * capability instructions are always appended on top of it. */
 const persona = new PersonaStore();
 void persona.load();
+/*
+ * Tracked parcels. AfterShip registers each number once and polls the carrier
+ * itself; a scheduler here refreshes the cached status and pings the owner on a
+ * change (see startParcelScheduler). Tracking is off unless an AfterShip key is
+ * configured — every entry point checks config.aftershipApiKey first.
+ */
+const parcels = new ParcelStore();
+void parcels.load();
 type Send = (event: string, data: unknown) => void;
 
 /** A filesystem- and link-safe slug from a title. */
@@ -524,6 +543,30 @@ app.post("/api/tasks/:id/run", async (request, response) => {
 	// A manual run records its result but leaves the cadence untouched.
 	await tasks.recordRun(task.id, { ...outcome, reschedule: false });
 	response.json(outcome);
+});
+/*
+ * Parcels. The list survives restarts and the poller refreshes it; adding a
+ * number registers it with AfterShip (the only quota-spending call). Every
+ * route is a no-op with a clear message when no AfterShip key is configured.
+ */
+app.get("/api/parcels", (_request, response) => {
+	response.json({
+		enabled: Boolean(config.aftershipApiKey),
+		parcels: parcels.list().map(parcelCard),
+	});
+});
+app.post("/api/parcels", async (request, response) => {
+	const body = request.body || {};
+	const result = await trackParcel(
+		String(body.trackingNumber ?? body.number ?? ""),
+		String(body.label ?? ""),
+		String(body.courier ?? body.slug ?? ""),
+	);
+	if (!result.ok) return response.status(400).json({ error: result.error });
+	response.status(result.existed ? 200 : 201).json(parcelCard(result.parcel));
+});
+app.delete("/api/parcels/:id", async (request, response) => {
+	response.status((await parcels.remove(request.params.id)) ? 204 : 404).end();
 });
 /* Tool catalogue for the /tools command — names, descriptions and parameter
  * keys only, so the UI can list capabilities without restating the schema. */
@@ -1228,6 +1271,78 @@ app.post("/api/chat", async (request, response) => {
 	}
 });
 
+/** A compact parcel for a status card in the console and tool results. */
+function parcelCard(parcel: Parcel) {
+	return {
+		id: parcel.id,
+		label: parcel.label,
+		trackingNumber: parcel.trackingNumber,
+		courier: parcel.courierName || parcel.slug,
+		tag: parcel.tag,
+		status: describeParcelTag(parcel.tag),
+		message: parcel.statusMessage,
+		location: parcel.location,
+		expectedDelivery: parcel.expectedDelivery,
+		delivered: parcel.delivered,
+		updatedAt: parcel.updatedAt,
+	};
+}
+
+type TrackResult =
+	| { ok: true; parcel: Parcel; existed: boolean }
+	| { ok: false; error: string };
+
+/**
+ * Register a tracking number with AfterShip and store it, or return the parcel
+ * already tracked for that number (idempotent). Shared by the model tool and
+ * the REST route; the only path that spends AfterShip quota.
+ */
+async function trackParcel(
+	trackingNumber: string,
+	label: string,
+	courier: string,
+): Promise<TrackResult> {
+	if (!config.aftershipApiKey)
+		return {
+			ok: false,
+			error:
+				"Parcel tracking is off. Set the AfterShip API key in the add-on configuration.",
+		};
+	const number = trackingNumber.trim();
+	if (!number) return { ok: false, error: "A tracking number is required." };
+	const existing = parcels.findByNumber(number);
+	if (existing) return { ok: true, parcel: existing, existed: true };
+	try {
+		const status = await createTracking(
+			config.aftershipApiKey,
+			number,
+			courier.trim() || undefined,
+		);
+		const parcel = await parcels.add({
+			trackingNumber: number,
+			slug: status.courierSlug,
+			courierName: status.courierName,
+			label: label.trim() || undefined,
+			tag: status.tag,
+			statusMessage: status.message,
+			location: status.location,
+			expectedDelivery: status.expectedDelivery,
+			delivered: status.delivered,
+			lastCheckedAt: new Date().toISOString(),
+			// The add response is the owner's first notice, so start caught up:
+			// the poller then only pings on a change from here.
+			lastNotifiedTag: status.tag,
+		});
+		return { ok: true, parcel, existed: false };
+	} catch (error) {
+		if (error instanceof AfterShipError) return { ok: false, error: error.message };
+		return {
+			ok: false,
+			error: error instanceof Error ? error.message : "Tracking failed.",
+		};
+	}
+}
+
 const tools = [
 	{
 		type: "function",
@@ -1463,6 +1578,39 @@ const tools = [
 				},
 				required: ["path", "body"],
 			},
+		},
+	},
+	{
+		type: "function",
+		function: {
+			name: "track_parcel",
+			description:
+				"Start tracking a parcel by its carrier tracking number and report its current status. The courier is auto-detected. Adding the same number twice just returns its current status. Use when the user wants to follow a package or delivery.",
+			parameters: {
+				type: "object",
+				properties: {
+					tracking_number: { type: "string", description: "The carrier tracking number." },
+					label: {
+						type: "string",
+						description: "A short human label, e.g. 'Keyboard from Amazon'.",
+					},
+					courier: {
+						type: "string",
+						description:
+							"Optional AfterShip courier slug (e.g. dhl, dpd) if auto-detection is wrong.",
+					},
+				},
+				required: ["tracking_number"],
+			},
+		},
+	},
+	{
+		type: "function",
+		function: {
+			name: "list_parcels",
+			description:
+				"List the parcels currently being tracked and their latest status. Use when the user asks where their packages or deliveries are.",
+			parameters: { type: "object", properties: {} },
 		},
 	},
 ];
@@ -2290,6 +2438,39 @@ async function executeTool(
 			};
 		}
 	}
+	if (name === "track_parcel") {
+		const result = await trackParcel(
+			String(args.tracking_number || args.number || ""),
+			String(args.label || ""),
+			String(args.courier || ""),
+		);
+		if (!result.ok) return { model: { error: result.error } };
+		const card = parcelCard(result.parcel);
+		return {
+			model: {
+				tracked: true,
+				already_tracking: result.existed,
+				...card,
+			},
+			view: { parcels: [card] },
+		};
+	}
+	if (name === "list_parcels") {
+		if (!config.aftershipApiKey)
+			return {
+				model: {
+					error:
+						"Parcel tracking is off. Set the AfterShip API key in the add-on configuration.",
+				},
+			};
+		const cards = parcels.list().map(parcelCard);
+		return {
+			model: cards.length
+				? cards
+				: { parcels: [], hint: "No parcels are being tracked yet." },
+			view: { parcels: cards },
+		};
+	}
 	return { model: { error: `Unknown tool: ${name}` } };
 }
 
@@ -2721,6 +2902,75 @@ function startTaskScheduler(intervalMs = 60_000): ReturnType<typeof setInterval>
 	return setInterval(() => void sweep(), intervalMs);
 }
 
+/**
+ * Refresh one parcel from AfterShip and notify the owner on a status change.
+ *
+ * Reads are free (they hit AfterShip's cache, not the carrier), so polling on a
+ * cadence costs no quota. A change from the tag the owner last saw is pinged as
+ * a one-shot reminder — the same delivery path /task uses, so it reaches HA,
+ * mobile, and Discord. Delivered parcels flip `delivered` so a later sweep skips
+ * them. Errors are swallowed per-parcel so one bad number cannot stall the sweep.
+ */
+async function refreshParcel(parcel: Parcel): Promise<void> {
+	const status = await getTracking(
+		config.aftershipApiKey,
+		parcel.slug,
+		parcel.trackingNumber,
+	);
+	const notice = parcelNotice(
+		parcel.label,
+		parcel.lastNotifiedTag,
+		status.tag,
+		status.message,
+	);
+	await parcels.update(parcel.id, {
+		tag: status.tag,
+		statusMessage: status.message,
+		location: status.location,
+		expectedDelivery: status.expectedDelivery,
+		delivered: status.delivered,
+		lastCheckedAt: new Date().toISOString(),
+		...(notice ? { lastNotifiedTag: status.tag } : {}),
+	});
+	if (notice) {
+		try {
+			await addReminder(notice, 0, process.env.OWNER_ID || "", "");
+		} catch (error) {
+			console.error(`Parcel "${parcel.label}" could not enqueue a notification:`, error);
+		}
+	}
+}
+
+/**
+ * Poll tracked, not-yet-delivered parcels on a cadence. Six hours is plenty for
+ * a package and cheap; a sweep still running when the next fires is skipped, not
+ * stacked. Does nothing without an AfterShip key.
+ */
+let parcelSweepRunning = false;
+function startParcelScheduler(
+	intervalMs = 6 * 60 * 60_000,
+): ReturnType<typeof setInterval> | undefined {
+	if (!config.aftershipApiKey) return undefined;
+	const sweep = async () => {
+		if (parcelSweepRunning) return;
+		parcelSweepRunning = true;
+		try {
+			for (const parcel of parcels.list()) {
+				if (parcel.delivered) continue;
+				try {
+					await refreshParcel(parcel);
+				} catch (error) {
+					console.error(`Parcel "${parcel.label}" refresh failed:`, error);
+				}
+			}
+		} finally {
+			parcelSweepRunning = false;
+		}
+	};
+	void sweep();
+	return setInterval(() => void sweep(), intervalMs);
+}
+
 /*
  * Revalidate every asset on every load.
  *
@@ -2754,4 +3004,6 @@ if (require.main === module) {
 	// Only the running server sweeps for due tasks; importing the app for a
 	// test must not start firing model turns.
 	startTaskScheduler();
+	// Parcel polling starts only when an AfterShip key is configured.
+	startParcelScheduler();
 }

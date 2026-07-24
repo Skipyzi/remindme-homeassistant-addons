@@ -89,12 +89,50 @@ async function main() {
 								)
 						: undefined,
 					discord: async () => {
-						const channel = await client.channels.fetch(reminder.channelId);
-						if (!channel?.isSendable())
-							throw new Error("Discord reminder channel unavailable");
-						await channel.send(
-							`⏰ <@${reminder.userId}>, reminder: **${reminder.message}**`,
-						);
+						/*
+						 * A reminder made in a channel answers there and mentions
+						 * whoever set it — that is how anyone (owner included) uses
+						 * a #reminders channel.
+						 */
+						if (reminder.channelId) {
+							const channel = await client.channels.fetch(reminder.channelId);
+							if (!channel?.isSendable())
+								throw new Error("Discord reminder channel unavailable");
+							await channel.send(
+								`⏰ <@${reminder.userId}>, reminder: **${reminder.message}**`,
+							);
+							return;
+						}
+						/*
+						 * No channel: a private reminder, e.g. one set from the LLM
+						 * console. Deliver it as a DM to its owner, so console and
+						 * Discord stay in sync for the same person.
+						 */
+						if (!reminder.userId)
+							throw new Error("Reminder has no Discord recipient");
+						try {
+							const user = await client.users.fetch(reminder.userId);
+							await user.send(`⏰ Reminder: **${reminder.message}**`);
+						} catch (error) {
+							/*
+							 * 50007 = "Cannot send messages to this user": they share
+							 * no server with the bot or have DMs closed. Nothing here
+							 * fixes that, so treat it as done rather than retrying the
+							 * DM every minute for ever.
+							 */
+							if (
+								error &&
+								typeof error === "object" &&
+								"code" in error &&
+								(error as { code?: number }).code === 50007
+							) {
+								console.warn(
+									`Cannot DM reminder to ${reminder.userId}; they must share a server with the bot and allow DMs.`,
+								);
+								return;
+							}
+							throw error;
+						}
 					},
 				},
 				/*
