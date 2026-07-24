@@ -59,6 +59,26 @@
 						</div>
 						<datalist id="group-list"></datalist>
 					</div>
+					<div id="editor-toolbar" class="editor-toolbar" role="toolbar" aria-label="Formatting">
+						<button type="button" data-action="bold" title="Bold (Ctrl+B)"><b>B</b></button>
+						<button type="button" data-action="italic" title="Italic (Ctrl+I)"><i>I</i></button>
+						<button type="button" data-action="strike" title="Strikethrough"><s>S</s></button>
+						<span class="tb-sep" aria-hidden="true"></span>
+						<button type="button" data-action="h1" title="Heading 1">H1</button>
+						<button type="button" data-action="h2" title="Heading 2">H2</button>
+						<button type="button" data-action="h3" title="Heading 3">H3</button>
+						<span class="tb-sep" aria-hidden="true"></span>
+						<button type="button" data-action="ul" title="Bullet list">•&nbsp;List</button>
+						<button type="button" data-action="ol" title="Numbered list">1.&nbsp;List</button>
+						<button type="button" data-action="task" title="Task list">☑&nbsp;Task</button>
+						<button type="button" data-action="quote" title="Quote">❝</button>
+						<span class="tb-sep" aria-hidden="true"></span>
+						<button type="button" data-action="link" title="Link (Ctrl+K)">🔗</button>
+						<button type="button" data-action="code" title="Inline code">&lt;/&gt;</button>
+						<button type="button" data-action="codeblock" title="Code block">{&nbsp;}</button>
+						<button type="button" data-action="table" title="Table">▦</button>
+						<button type="button" data-action="mermaid" title="Diagram (Mermaid)">◆&nbsp;Diagram</button>
+					</div>
 					<div id="edit-split" class="edit-split" data-mode="edit">
 						<textarea
 							id="note-body"
@@ -92,6 +112,13 @@
 					<div id="graph-mount" class="graph-mount"></div>
 				</section>
 			</main>
+		</div>
+		<div id="drop-overlay" class="drop-overlay" hidden>
+			<div class="drop-card">
+				<div class="drop-icon" aria-hidden="true">⬇</div>
+				<p>Drop Markdown to import</p>
+				<span>.md · .markdown · .txt</span>
+			</div>
 		</div>
 		<script type="module" src="bundle.js"></script>
 	</body>

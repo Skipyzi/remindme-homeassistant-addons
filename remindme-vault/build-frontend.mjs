@@ -19,6 +19,10 @@ const threeAddons = {
 	},
 };
 
+// Code splitting keeps mermaid (large, only needed when a note has a diagram)
+// out of the main bundle: it becomes a chunk fetched on demand. Splitting needs
+// an outdir rather than a single outfile; entryNames pins the main entry to the
+// stable public/bundle.js the page loads, chunks land under public/chunks/.
 await esbuild.build({
 	entryPoints: ["frontend/src/entry.js"],
 	bundle: true,
@@ -26,7 +30,10 @@ await esbuild.build({
 	target: ["es2020"],
 	minify: true,
 	legalComments: "none",
-	outfile: "public/bundle.js",
+	splitting: true,
+	outdir: "public",
+	entryNames: "bundle",
+	chunkNames: "chunks/[name]-[hash]",
 	plugins: [threeAddons],
 	logLevel: "info",
 });
