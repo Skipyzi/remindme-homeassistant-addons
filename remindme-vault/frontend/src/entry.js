@@ -316,6 +316,51 @@ function renderPreview() {
 			`[${(alias || target).trim()}](#wl:${encodeURIComponent(target.trim())})`,
 	);
 	$("preview").innerHTML = marked.parse(source);
+	void renderMermaid($("preview"));
+}
+
+// Mermaid is heavy, so it is a lazily-imported chunk pulled in only the first
+// time a diagram appears — a note with no ```mermaid fence never loads it.
+let mermaidReady = null;
+async function renderMermaid(root) {
+	const blocks = root.querySelectorAll("code.language-mermaid");
+	if (!blocks.length) return;
+	if (!mermaidReady)
+		mermaidReady = import("mermaid").then(({ default: mermaid }) => {
+			// securityLevel "strict" keeps note content from injecting scripts
+			// through a diagram.
+			mermaid.initialize({
+				startOnLoad: false,
+				theme: "dark",
+				securityLevel: "strict",
+			});
+			return mermaid;
+		});
+	let mermaid;
+	try {
+		mermaid = await mermaidReady;
+	} catch {
+		return; // chunk failed to load; leave the fenced code as-is.
+	}
+	let index = 0;
+	for (const block of blocks) {
+		const host = block.closest("pre") || block;
+		try {
+			const { svg } = await mermaid.render(
+				`mmd-${Date.now()}-${index++}`,
+				block.textContent,
+			);
+			const figure = document.createElement("div");
+			figure.className = "mermaid-diagram";
+			figure.innerHTML = svg;
+			host.replaceWith(figure);
+		} catch (error) {
+			const notice = document.createElement("pre");
+			notice.className = "mermaid-error";
+			notice.textContent = `Diagram error: ${error?.message || error}`;
+			host.replaceWith(notice);
+		}
+	}
 }
 
 function resolveWikilink(name) {
@@ -454,6 +499,195 @@ function setupResizers() {
 	});
 }
 
+/* ── Editor: toolbar, shortcuts, and Tab ────────────────────────────────── */
+
+const INDENT = "  ";
+
+// Every programmatic edit dispatches `input` so the preview refreshes and the
+// dirty state (whatever listens on input) tracks the change, exactly as typing
+// would.
+function afterEdit(ta) {
+	ta.focus();
+	ta.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
+// Wrap the selection (or a placeholder) in markers and leave the inner text
+// selected, so pressing Bold twice toggles nothing awkward and the user can
+// keep typing over the placeholder.
+function surround(before, after, placeholder) {
+	const ta = $("note-body");
+	const { selectionStart: s, selectionEnd: e, value } = ta;
+	const inner = value.slice(s, e) || placeholder;
+	ta.setRangeText(before + inner + after, s, e, "end");
+	ta.selectionStart = s + before.length;
+	ta.selectionEnd = s + before.length + inner.length;
+	afterEdit(ta);
+}
+
+// Prefix every line touched by the selection (Markdown block markers: headings,
+// lists, quotes).
+function linePrefix(prefix) {
+	const ta = $("note-body");
+	const { selectionStart: s, selectionEnd: e, value } = ta;
+	const lineStart = value.lastIndexOf("\n", s - 1) + 1;
+	const region = value.slice(lineStart, e);
+	ta.setRangeText(region.replace(/^/gm, prefix), lineStart, e, "select");
+	afterEdit(ta);
+}
+
+// Drop a block on its own line (code fences, tables, diagrams).
+function insertBlock(text) {
+	const ta = $("note-body");
+	const { selectionStart: s, selectionEnd: e, value } = ta;
+	const lead = s > 0 && value[s - 1] !== "\n" ? "\n" : "";
+	ta.setRangeText(`${lead}${text}`, s, e, "end");
+	afterEdit(ta);
+}
+
+const TOOLBAR = {
+	bold: () => surround("**", "**", "bold text"),
+	italic: () => surround("*", "*", "italic text"),
+	strike: () => surround("~~", "~~", "strikethrough"),
+	code: () => surround("`", "`", "code"),
+	link: () => surround("[", "](https://)", "text"),
+	h1: () => linePrefix("# "),
+	h2: () => linePrefix("## "),
+	h3: () => linePrefix("### "),
+	quote: () => linePrefix("> "),
+	ul: () => linePrefix("- "),
+	ol: () => linePrefix("1. "),
+	task: () => linePrefix("- [ ] "),
+	codeblock: () => insertBlock("```\ncode\n```\n"),
+	table: () =>
+		insertBlock(
+			"| Column | Column |\n| --- | --- |\n| cell | cell |\n| cell | cell |\n",
+		),
+	mermaid: () =>
+		insertBlock("```mermaid\nflowchart TD\n  A[Start] --> B[Done]\n```\n"),
+};
+
+// Tab indents rather than moving focus out of the note — Shift+Tab dedents.
+// A collapsed caret inserts one level; a range indents every line it spans.
+function handleEditorTab(event) {
+	event.preventDefault();
+	const ta = event.target;
+	const { selectionStart: s, selectionEnd: e, value } = ta;
+	if (!event.shiftKey && s === e) {
+		ta.setRangeText(INDENT, s, e, "end");
+	} else {
+		const lineStart = value.lastIndexOf("\n", s - 1) + 1;
+		const region = value.slice(lineStart, e);
+		const changed = event.shiftKey
+			? region.replace(/^(\t| {1,2})/gm, "")
+			: region.replace(/^/gm, INDENT);
+		ta.setRangeText(changed, lineStart, e, "select");
+	}
+	ta.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
+function handleEditorKeydown(event) {
+	if (event.key === "Tab") return handleEditorTab(event);
+	if (event.metaKey || event.ctrlKey) {
+		const key = event.key.toLowerCase();
+		if (key === "s") {
+			event.preventDefault();
+			return void saveNote();
+		}
+		const shortcut = { b: "bold", i: "italic", k: "link" }[key];
+		if (shortcut) {
+			event.preventDefault();
+			TOOLBAR[shortcut]();
+		}
+	}
+}
+
+/* ── Drag-and-drop import ───────────────────────────────────────────────── */
+
+const IMPORTABLE = /\.(md|markdown|txt)$/i;
+
+// Pull title/type/tags out of a file's own YAML frontmatter when present, so an
+// imported note keeps its metadata; otherwise the filename becomes the title
+// and the whole file is the body.
+function parseImported(name, text) {
+	let title = name.replace(IMPORTABLE, "");
+	let type = "";
+	let tags = "";
+	let body = text;
+	const match = text.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/);
+	if (match) {
+		body = match[2];
+		const meta = match[1];
+		const field = (key) =>
+			meta.match(new RegExp(`^${key}:\\s*(.+)$`, "m"))?.[1]?.trim() || "";
+		const rawTitle = field("title");
+		if (rawTitle) title = rawTitle.replace(/^["']|["']$/g, "");
+		type = field("type");
+		// Inline list `[a, b]` or a comma string; nested YAML lists are left to
+		// the server's own parse of the body if the user keeps the frontmatter.
+		tags = field("tags").replace(/^\[|\]$/g, "").trim();
+	}
+	return { title, type, tags, body };
+}
+
+async function importFiles(fileList) {
+	const files = [...fileList].filter((file) => IMPORTABLE.test(file.name));
+	if (!files.length)
+		return setStatus("Only .md, .markdown or .txt files can be imported.", true);
+	setStatus(`Importing ${files.length} file${files.length > 1 ? "s" : ""}…`);
+	const folder = state.selectedFolder.startsWith("#")
+		? ""
+		: state.selectedFolder;
+	let saved = 0;
+	let last = null;
+	for (const file of files) {
+		const { title, type, tags, body } = parseImported(file.name, await file.text());
+		const path = `${folder ? `${folder}/` : ""}${slug(title)}.md`;
+		const res = await fetch("api/vault/note", {
+			method: "PUT",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ path, title, type, tags, body }),
+		});
+		if (res.ok) {
+			saved++;
+			last = (await res.json()).path;
+		}
+	}
+	setStatus(`Imported ${saved} of ${files.length}.`, saved === 0);
+	await loadTree($("search").value.trim());
+	if (last) void openNote(last);
+}
+
+// Show a full-window overlay while files are dragged over the app, and import
+// on drop. Counter-based enter/leave so moving over child elements does not
+// flicker the overlay off.
+function setupDropImport() {
+	const overlay = $("drop-overlay");
+	let depth = 0;
+	const carriesFiles = (event) =>
+		Array.from(event.dataTransfer?.types || []).includes("Files");
+	window.addEventListener("dragenter", (event) => {
+		if (!carriesFiles(event)) return;
+		event.preventDefault();
+		depth += 1;
+		overlay.hidden = false;
+	});
+	window.addEventListener("dragover", (event) => {
+		if (carriesFiles(event)) event.preventDefault();
+	});
+	window.addEventListener("dragleave", (event) => {
+		if (!carriesFiles(event)) return;
+		depth = Math.max(0, depth - 1);
+		if (depth === 0) overlay.hidden = true;
+	});
+	window.addEventListener("drop", (event) => {
+		if (!carriesFiles(event)) return;
+		event.preventDefault();
+		depth = 0;
+		overlay.hidden = true;
+		if (event.dataTransfer?.files?.length) void importFiles(event.dataTransfer.files);
+	});
+}
+
 /* ── Wiring ─────────────────────────────────────────────────────────────── */
 
 function wire() {
@@ -490,16 +724,28 @@ function wire() {
 		if (path) void openNote(path);
 	});
 
-	const save = (event) => {
-		if ((event.metaKey || event.ctrlKey) && event.key === "s") {
+	$("note-body").addEventListener("keydown", handleEditorKeydown);
+	$("note-title").addEventListener("keydown", (event) => {
+		if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
 			event.preventDefault();
 			void saveNote();
 		}
-	};
-	$("note-body").addEventListener("keydown", save);
-	$("note-title").addEventListener("keydown", save);
+	});
+
+	// Formatting toolbar: a single delegated handler drives every button.
+	$("editor-toolbar").addEventListener("mousedown", (event) => {
+		// Keep focus in the textarea so the selection survives the click.
+		event.preventDefault();
+	});
+	$("editor-toolbar").addEventListener("click", (event) => {
+		const button = event.target.closest("button[data-action]");
+		if (!button) return;
+		const action = TOOLBAR[button.dataset.action];
+		if (action) action();
+	});
 
 	setupResizers();
+	setupDropImport();
 }
 
 wire();

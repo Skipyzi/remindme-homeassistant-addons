@@ -281,6 +281,76 @@ body {
 	gap: 2px;
 }
 /* The source/preview split; the mode attribute shows one or both. */
+.editor-toolbar {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 3px;
+	padding: 6px clamp(16px, 5vw, 64px);
+}
+.editor-toolbar button {
+	min-width: 28px;
+	height: 26px;
+	padding: 0 7px;
+	border: 1px solid var(--border);
+	border-radius: 6px;
+	background: var(--bg-2);
+	color: var(--muted);
+	font: inherit;
+	font-size: 12px;
+	line-height: 1;
+	cursor: pointer;
+}
+.editor-toolbar button:hover {
+	color: var(--text);
+	border-color: var(--accent-dim);
+}
+.editor-toolbar button:active {
+	background: var(--accent-dim);
+	color: #fff;
+}
+.editor-toolbar .tb-sep {
+	width: 1px;
+	align-self: stretch;
+	margin: 3px 4px;
+	background: var(--border);
+}
+.drop-overlay {
+	position: fixed;
+	inset: 0;
+	z-index: 50;
+	display: grid;
+	place-items: center;
+	background: color-mix(in srgb, var(--bg) 70%, transparent);
+	backdrop-filter: blur(2px);
+	/* Let the drop land on the window listener, not the overlay. */
+	pointer-events: none;
+}
+.drop-overlay[hidden] {
+	display: none;
+}
+.drop-card {
+	border: 2px dashed var(--accent);
+	border-radius: 14px;
+	padding: 28px 46px;
+	text-align: center;
+	background: var(--bg-2);
+	color: var(--text);
+	box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
+}
+.drop-icon {
+	font-size: 34px;
+	line-height: 1;
+	margin-bottom: 8px;
+}
+.drop-card p {
+	margin: 0 0 4px;
+	font-weight: 600;
+}
+.drop-card span {
+	color: var(--muted);
+	font-size: 12px;
+}
 .edit-split {
 	flex: 1;
 	min-height: 0;
@@ -496,6 +566,19 @@ body {
 .markdown pre code {
 	background: none;
 	padding: 0;
+}
+.markdown .mermaid-diagram {
+	margin: 0.9em 0;
+	text-align: center;
+}
+.markdown .mermaid-diagram svg {
+	max-width: 100%;
+	height: auto;
+}
+.markdown .mermaid-error {
+	color: var(--danger, #e5534b);
+	border: 1px solid var(--danger, #e5534b);
+	background: color-mix(in srgb, var(--danger, #e5534b) 12%, transparent);
 }
 .markdown blockquote {
 	margin: 0.7em 0;

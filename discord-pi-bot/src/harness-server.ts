@@ -52,10 +52,11 @@ import {
 	type Parcel,
 } from "./harness/parcelStore";
 import {
-	AfterShipError,
+	TrackingError,
 	createTracking,
+	deleteTracking,
 	getTracking,
-} from "./harness/aftership";
+} from "./harness/trackingmore";
 import { readSystemStats } from "./harness/systemStats";
 import { ArtifactStore, toDocument } from "./harness/artifacts";
 import { applyEdit, isEditFailure, modelView } from "./harness/artifactEdit";
@@ -150,10 +151,10 @@ void tasks.load();
 const persona = new PersonaStore();
 void persona.load();
 /*
- * Tracked parcels. AfterShip registers each number once and polls the carrier
+ * Tracked parcels. TrackingMore registers each number once and polls the carrier
  * itself; a scheduler here refreshes the cached status and pings the owner on a
- * change (see startParcelScheduler). Tracking is off unless an AfterShip key is
- * configured — every entry point checks config.aftershipApiKey first.
+ * change (see startParcelScheduler). Tracking is off unless an TrackingMore key is
+ * configured — every entry point checks config.trackingMoreApiKey first.
  */
 const parcels = new ParcelStore();
 void parcels.load();
@@ -546,12 +547,12 @@ app.post("/api/tasks/:id/run", async (request, response) => {
 });
 /*
  * Parcels. The list survives restarts and the poller refreshes it; adding a
- * number registers it with AfterShip (the only quota-spending call). Every
- * route is a no-op with a clear message when no AfterShip key is configured.
+ * number registers it with TrackingMore (the only quota-spending call). Every
+ * route is a no-op with a clear message when no TrackingMore key is configured.
  */
 app.get("/api/parcels", (_request, response) => {
 	response.json({
-		enabled: Boolean(config.aftershipApiKey),
+		enabled: Boolean(config.trackingMoreApiKey),
 		parcels: parcels.list().map(parcelCard),
 	});
 });
@@ -566,7 +567,11 @@ app.post("/api/parcels", async (request, response) => {
 	response.status(result.existed ? 200 : 201).json(parcelCard(result.parcel));
 });
 app.delete("/api/parcels/:id", async (request, response) => {
-	response.status((await parcels.remove(request.params.id)) ? 204 : 404).end();
+	const parcel = parcels.get(request.params.id);
+	if (!parcel) return response.status(404).end();
+	// Purge from the provider too, not just locally.
+	await purgeParcel(parcel);
+	response.status(204).end();
 });
 /* Tool catalogue for the /tools command — names, descriptions and parameter
  * keys only, so the UI can list capabilities without restating the schema. */
@@ -1293,20 +1298,20 @@ type TrackResult =
 	| { ok: false; error: string };
 
 /**
- * Register a tracking number with AfterShip and store it, or return the parcel
+ * Register a tracking number with TrackingMore and store it, or return the parcel
  * already tracked for that number (idempotent). Shared by the model tool and
- * the REST route; the only path that spends AfterShip quota.
+ * the REST route; the only path that spends TrackingMore quota.
  */
 async function trackParcel(
 	trackingNumber: string,
 	label: string,
 	courier: string,
 ): Promise<TrackResult> {
-	if (!config.aftershipApiKey)
+	if (!config.trackingMoreApiKey)
 		return {
 			ok: false,
 			error:
-				"Parcel tracking is off. Set the AfterShip API key in the add-on configuration.",
+				"Parcel tracking is off. Set the TrackingMore API key in the add-on configuration.",
 		};
 	const number = trackingNumber.trim();
 	if (!number) return { ok: false, error: "A tracking number is required." };
@@ -1314,13 +1319,14 @@ async function trackParcel(
 	if (existing) return { ok: true, parcel: existing, existed: true };
 	try {
 		const status = await createTracking(
-			config.aftershipApiKey,
+			config.trackingMoreApiKey,
 			number,
 			courier.trim() || undefined,
 		);
 		const parcel = await parcels.add({
 			trackingNumber: number,
 			slug: status.courierSlug,
+			providerId: status.providerId,
 			courierName: status.courierName,
 			label: label.trim() || undefined,
 			tag: status.tag,
@@ -1335,12 +1341,32 @@ async function trackParcel(
 		});
 		return { ok: true, parcel, existed: false };
 	} catch (error) {
-		if (error instanceof AfterShipError) return { ok: false, error: error.message };
+		if (error instanceof TrackingError) return { ok: false, error: error.message };
 		return {
 			ok: false,
 			error: error instanceof Error ? error.message : "Tracking failed.",
 		};
 	}
+}
+
+/**
+ * Stop tracking a parcel: purge it from TrackingMore's servers (best-effort, by
+ * its provider id) and remove the local record. Used when a parcel is delivered
+ * and when the owner forgets one, so delivery metadata does not linger with the
+ * provider longer than it is useful.
+ */
+async function purgeParcel(parcel: Parcel): Promise<void> {
+	if (config.trackingMoreApiKey && parcel.providerId) {
+		try {
+			await deleteTracking(config.trackingMoreApiKey, parcel.providerId);
+		} catch (error) {
+			console.error(
+				`Could not purge parcel "${parcel.label}" from TrackingMore:`,
+				error,
+			);
+		}
+	}
+	await parcels.remove(parcel.id);
 }
 
 const tools = [
@@ -1597,7 +1623,7 @@ const tools = [
 					courier: {
 						type: "string",
 						description:
-							"Optional AfterShip courier slug (e.g. dhl, dpd) if auto-detection is wrong.",
+							"Optional TrackingMore courier code (e.g. dhl, ups, hermes, dpd, gls) if auto-detection is wrong.",
 					},
 				},
 				required: ["tracking_number"],
@@ -2456,11 +2482,11 @@ async function executeTool(
 		};
 	}
 	if (name === "list_parcels") {
-		if (!config.aftershipApiKey)
+		if (!config.trackingMoreApiKey)
 			return {
 				model: {
 					error:
-						"Parcel tracking is off. Set the AfterShip API key in the add-on configuration.",
+						"Parcel tracking is off. Set the TrackingMore API key in the add-on configuration.",
 				},
 			};
 		const cards = parcels.list().map(parcelCard);
@@ -2903,9 +2929,9 @@ function startTaskScheduler(intervalMs = 60_000): ReturnType<typeof setInterval>
 }
 
 /**
- * Refresh one parcel from AfterShip and notify the owner on a status change.
+ * Refresh one parcel from TrackingMore and notify the owner on a status change.
  *
- * Reads are free (they hit AfterShip's cache, not the carrier), so polling on a
+ * Reads are free (they hit TrackingMore's cache, not the carrier), so polling on a
  * cadence costs no quota. A change from the tag the owner last saw is pinged as
  * a one-shot reminder — the same delivery path /task uses, so it reaches HA,
  * mobile, and Discord. Delivered parcels flip `delivered` so a later sweep skips
@@ -2913,7 +2939,7 @@ function startTaskScheduler(intervalMs = 60_000): ReturnType<typeof setInterval>
  */
 async function refreshParcel(parcel: Parcel): Promise<void> {
 	const status = await getTracking(
-		config.aftershipApiKey,
+		config.trackingMoreApiKey,
 		parcel.slug,
 		parcel.trackingNumber,
 	);
@@ -2923,15 +2949,6 @@ async function refreshParcel(parcel: Parcel): Promise<void> {
 		status.tag,
 		status.message,
 	);
-	await parcels.update(parcel.id, {
-		tag: status.tag,
-		statusMessage: status.message,
-		location: status.location,
-		expectedDelivery: status.expectedDelivery,
-		delivered: status.delivered,
-		lastCheckedAt: new Date().toISOString(),
-		...(notice ? { lastNotifiedTag: status.tag } : {}),
-	});
 	if (notice) {
 		try {
 			await addReminder(notice, 0, process.env.OWNER_ID || "", "");
@@ -2939,18 +2956,36 @@ async function refreshParcel(parcel: Parcel): Promise<void> {
 			console.error(`Parcel "${parcel.label}" could not enqueue a notification:`, error);
 		}
 	}
+	if (status.delivered) {
+		// Delivered: the owner has been told, so stop tracking and purge the
+		// record from TrackingMore's servers rather than leaving it to sit out
+		// their retention window.
+		await purgeParcel(parcel);
+		return;
+	}
+	await parcels.update(parcel.id, {
+		tag: status.tag,
+		statusMessage: status.message,
+		location: status.location,
+		expectedDelivery: status.expectedDelivery,
+		delivered: status.delivered,
+		// Backfill the provider id for parcels added before it was captured.
+		providerId: parcel.providerId || status.providerId,
+		lastCheckedAt: new Date().toISOString(),
+		...(notice ? { lastNotifiedTag: status.tag } : {}),
+	});
 }
 
 /**
  * Poll tracked, not-yet-delivered parcels on a cadence. Six hours is plenty for
  * a package and cheap; a sweep still running when the next fires is skipped, not
- * stacked. Does nothing without an AfterShip key.
+ * stacked. Does nothing without an TrackingMore key.
  */
 let parcelSweepRunning = false;
 function startParcelScheduler(
 	intervalMs = 6 * 60 * 60_000,
 ): ReturnType<typeof setInterval> | undefined {
-	if (!config.aftershipApiKey) return undefined;
+	if (!config.trackingMoreApiKey) return undefined;
 	const sweep = async () => {
 		if (parcelSweepRunning) return;
 		parcelSweepRunning = true;
@@ -3004,6 +3039,6 @@ if (require.main === module) {
 	// Only the running server sweeps for due tasks; importing the app for a
 	// test must not start firing model turns.
 	startTaskScheduler();
-	// Parcel polling starts only when an AfterShip key is configured.
+	// Parcel polling starts only when an TrackingMore key is configured.
 	startParcelScheduler();
 }

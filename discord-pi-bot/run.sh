@@ -40,8 +40,8 @@ export HA_NOTIFY_TARGET="$(get_option ha_notify_target)"
 # The companion remindme-vault editor add-on's URL, for deep-linking notes from
 # the chat console. Blank hides the link.
 export VAULT_UI_URL="$(get_option vault_url)"
-# AfterShip API key for parcel tracking. Blank disables tracking.
-export AFTERSHIP_API_KEY="$(get_option aftership_api_key)"
+# TrackingMore API key for parcel tracking. Blank disables tracking.
+export TRACKINGMORE_API_KEY="$(get_option trackingmore_api_key)"
 # Only /data is a persisted volume. Anything defaulting to ./data lands in
 # /app inside the image and is lost on every restart and update.
 export REMINDER_DATA_PATH=/data/reminders.json

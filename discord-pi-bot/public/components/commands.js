@@ -446,7 +446,7 @@
 				const { enabled, parcels } = await fetchParcels();
 				if (!enabled)
 					return say(
-						"Parcel tracking is off. Set the AfterShip API key in the add-on configuration.",
+						"Parcel tracking is off. Set the TrackingMore API key in the add-on configuration.",
 					);
 				if (!parcels.length)
 					return say("No parcels tracked. Add one with `/parcel add <number> [label]`.");
