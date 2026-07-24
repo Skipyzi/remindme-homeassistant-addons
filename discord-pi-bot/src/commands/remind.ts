@@ -74,80 +74,113 @@ export function nameIsReminderChannel(name: string | null | undefined): boolean 
 	return typeof name === "string" && name.toLowerCase().includes("reminder");
 }
 
-export function parseTime(
-	input: string,
-): { text: string; delayMs: number } | null {
-	const tomorrowMatch = input.match(/^(.+?)\s+tomorrow\s*$/i);
-	if (tomorrowMatch) {
+/**
+ * Set a date's time-of-day from a phrase like "9am", "17:00", "5pm", "8".
+ * Empty defaults to 09:00. Returns false only when the phrase was given but
+ * could not be read, so a caller can reject it.
+ */
+function applyTimeOfDay(date: Date, phrase?: string): boolean {
+	const text = (phrase || "").trim().toLowerCase();
+	if (!text) {
+		date.setHours(9, 0, 0, 0);
+		return true;
+	}
+	const match = text.match(/^(\d{1,2})(?::(\d{2}))?\s*(am|pm)?$/);
+	if (!match) return false;
+	let hour = Number(match[1]);
+	const minute = match[2] ? Number(match[2]) : 0;
+	const meridiem = match[3];
+	if (meridiem === "pm" && hour < 12) hour += 12;
+	if (meridiem === "am" && hour === 12) hour = 0;
+	if (hour > 23 || minute > 59) return false;
+	date.setHours(hour, minute, 0, 0);
+	return true;
+}
+
+const WEEKDAY_PREFIXES = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
+
+/**
+ * Read a standalone "when" phrase into a delay in ms from now, or null. Built
+ * for the /remind `when` field, so no leading verb or "in" is required:
+ * "30min", "2h", "1.5 hours", "3 days", "tomorrow", "tomorrow 8am",
+ * "friday", "next friday 6pm", "17:00", "on 2026-08-01 09:00".
+ */
+export function parseWhen(input: string): number | null {
+	const raw = input.trim();
+	if (!raw) return null;
+	const lower = raw.toLowerCase();
+	const now = Date.now();
+
+	// Relative duration, with or without a leading "in".
+	const duration = lower
+		.replace(/^in\s+/, "")
+		.match(
+			/^(\d+(?:\.\d+)?)\s*(m|mins?|minutes?|h|hrs?|hours?|d|days?|w|wks?|weeks?)$/,
+		);
+	if (duration) {
+		const value = Number(duration[1]);
+		const unit = duration[2];
+		const minutes = unit.startsWith("w")
+			? 7 * 24 * 60
+			: unit.startsWith("d")
+				? 24 * 60
+				: unit.startsWith("h")
+					? 60
+					: 1;
+		const ms = value * minutes * 60_000;
+		return ms > 0 ? ms : null;
+	}
+
+	// tomorrow [at] [time]
+	const tomorrow = lower.match(/^tomorrow(?:\s+(?:at\s+)?(.+))?$/);
+	if (tomorrow) {
 		const date = new Date();
 		date.setDate(date.getDate() + 1);
-		date.setHours(9, 0, 0, 0);
-		return {
-			text: tomorrowMatch[1].trim(),
-			delayMs: date.getTime() - Date.now(),
-		};
+		if (!applyTimeOfDay(date, tomorrow[1])) return null;
+		return date.getTime() - now;
 	}
 
-	const weekdayMatch = input.match(
-		/^(.+?)\s+(?:on|this|next)\s+(mon(?:day)?|tues?day|wednes?day|thur(?:s|st)day|fri(?:day)?|satur?day|sun(?:day)?)\s*$/i,
+	// [on|this|next] weekday [at] [time]
+	const weekday = lower.match(
+		/^(?:on\s+|this\s+|next\s+)?(mon|tue|wed|thu|fri|sat|sun)[a-z]*(?:\s+(?:at\s+)?(.+))?$/,
 	);
-	if (weekdayMatch) {
-		const names = [
-			"sunday",
-			"monday",
-			"tuesday",
-			"wednesday",
-			"thursday",
-			"friday",
-			"saturday",
-		];
-		const normalized = weekdayMatch[2]
-			.toLowerCase()
-			.replace("thurstday", "thursday");
-		const dayName = normalized.startsWith("thu") ? "thursday" : normalized;
-		const target = names.findIndex((name) =>
-			dayName.startsWith(name.slice(0, 3)),
-		);
+	if (weekday) {
+		const target = WEEKDAY_PREFIXES.indexOf(weekday[1]);
 		if (target >= 0) {
-			const now = new Date();
-			const date = new Date(now);
-			let days = (target - now.getDay() + 7) % 7;
+			const date = new Date();
+			let days = (target - date.getDay() + 7) % 7;
 			if (days === 0) days = 7;
-			date.setDate(now.getDate() + days);
-			date.setHours(9, 0, 0, 0);
-			return {
-				text: weekdayMatch[1].trim(),
-				delayMs: date.getTime() - Date.now(),
-			};
+			date.setDate(date.getDate() + days);
+			if (!applyTimeOfDay(date, weekday[2])) return null;
+			return date.getTime() - now;
 		}
 	}
 
-	const relative = input.match(
-		/^(.+?)\s+in\s+(\d+(?:\.\d+)?)\s*(minutes?|mins?|hours?|hrs?|days?|weeks?)\s*$/i,
-	);
-	if (relative) {
-		const value = Number(relative[2]);
-		const unit = relative[3].toLowerCase();
-		const multiplier = unit.startsWith("week")
-			? 7 * 24 * 60 * 60_000
-			: unit.startsWith("day")
-				? 24 * 60 * 60_000
-				: unit.startsWith("hour") || unit.startsWith("hr")
-					? 60 * 60_000
-					: 60_000;
-		return { text: relative[1].trim(), delayMs: value * multiplier };
-	}
-
-	const dateMatch = input.match(/^(.+?)\s+(?:on|at)\s+(.+)$/i);
-	if (dateMatch) {
-		const date = new Date(dateMatch[2]);
-		if (!Number.isNaN(date.getTime()) && date.getTime() > Date.now()) {
-			return {
-				text: dateMatch[1].trim(),
-				delayMs: date.getTime() - Date.now(),
-			};
+	// A bare time today ("17:00", "9am"), rolled to tomorrow if already past.
+	const timeOnly = lower
+		.replace(/^at\s+/, "")
+		.match(/^\d{1,2}(?::\d{2})?\s*(?:am|pm)?$/);
+	if (timeOnly) {
+		const date = new Date();
+		if (applyTimeOfDay(date, lower.replace(/^at\s+/, ""))) {
+			if (date.getTime() <= now) date.setDate(date.getDate() + 1);
+			return date.getTime() - now;
 		}
 	}
+
+	// An absolute date/time the platform can parse ("2026-08-01 09:00"). Guarded
+	// to strings that actually look like a date — a date separator or a month
+	// name — so a bare number like "45" is not read as the year 2045.
+	const candidate = raw.replace(/^on\s+/i, "");
+	const looksLikeDate =
+		/[-/:]/.test(candidate) ||
+		/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)/i.test(candidate);
+	if (looksLikeDate) {
+		const absolute = new Date(candidate);
+		if (!Number.isNaN(absolute.getTime()) && absolute.getTime() > now)
+			return absolute.getTime() - now;
+	}
+
 	return null;
 }
 
@@ -183,18 +216,22 @@ export async function reviewReminderIntent(
 }
 
 /**
- * Resolve a reminder's "what" and "when" into text and a delay, trying the
- * fast pattern parser first and the local model as a fallback. `when` is the
- * user's time phrase, e.g. "in 2 hours", "tomorrow", "on friday".
+ * Resolve the /remind fields into a message and a delay. The `when` field is a
+ * standalone time phrase, so it is parsed directly — no "in", no model. Only a
+ * genuinely freeform phrase the parser cannot read ("after lunch") falls back
+ * to the local model, and only if one is enabled.
  */
 export async function resolveReminder(
 	text: string,
 	when: string,
 ): Promise<{ text: string; delayMs: number } | null> {
-	const combined = `${text.trim()} ${when.trim()}`.trim();
-	const parsed = parseTime(combined) ?? (await reviewReminderIntent(combined));
-	if (!parsed || parsed.delayMs <= 0) return null;
-	return parsed;
+	const message = text.trim();
+	const direct = parseWhen(when);
+	if (direct != null && direct > 0) return { text: message, delayMs: direct };
+	const viaModel = await reviewReminderIntent(`${message} ${when.trim()}`.trim());
+	if (viaModel && viaModel.delayMs > 0)
+		return { text: message, delayMs: viaModel.delayMs };
+	return null;
 }
 
 export async function handleReminderDeleteButton(
