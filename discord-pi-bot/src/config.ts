@@ -1,6 +1,9 @@
 export const config = {
 	token: process.env.DISCORD_BOT_TOKEN || "",
 	ownerId: process.env.OWNER_ID || "",
+	/* Register slash commands to this one server for instant availability;
+	 * blank falls back to global registration (up to ~1h to propagate). */
+	guildId: process.env.DISCORD_GUILD_ID || "",
 	aiApiKey: process.env.OPENAI_API_KEY || "",
 	aiModel: process.env.AI_MODEL || "gpt-3.5-turbo",
 	aiSystemPrompt:

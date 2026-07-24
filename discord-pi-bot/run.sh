@@ -8,6 +8,9 @@ get_option() {
 
 export DISCORD_BOT_TOKEN="$(get_option discord_token)"
 export OWNER_ID="$(get_option owner_id)"
+# Register slash commands to this one guild for instant availability; blank
+# registers globally (up to ~1h to propagate).
+export DISCORD_GUILD_ID="$(get_option guild_id)"
 export PI_AGENT_WEBHOOK_URL="$(get_option pi_agent_webhook_url)"
 export LOCAL_LLM_ENABLED="$(get_option local_llm_enabled)"
 LOCAL_LLM_URL="$(get_option local_llm_url)"
