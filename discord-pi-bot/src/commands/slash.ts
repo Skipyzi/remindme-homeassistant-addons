@@ -43,7 +43,9 @@ const slashCommands = [
 		.addStringOption((option) =>
 			option
 				.setName("when")
-				.setDescription('When, e.g. "in 2 hours", "tomorrow", "on friday".')
+				.setDescription(
+					'When: "30min", "2h", "tomorrow", "friday 6pm", "2026-08-01 09:00".',
+				)
 				.setRequired(true),
 		),
 	new SlashCommandBuilder()
