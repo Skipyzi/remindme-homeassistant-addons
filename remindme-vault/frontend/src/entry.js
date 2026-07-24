@@ -208,6 +208,7 @@ async function openNote(path) {
 	setStatus("");
 	showEditor();
 	renderPreview();
+	resetHistory();
 	highlightActive();
 	void loadBacklinks(note.path);
 }
@@ -227,6 +228,7 @@ function newNote() {
 	setStatus("");
 	showEditor();
 	renderPreview();
+	resetHistory();
 	highlightActive();
 	$("note-title").focus();
 }
@@ -583,6 +585,7 @@ function handleEditorTab(event) {
 		ta.setRangeText(changed, lineStart, e, "select");
 	}
 	ta.dispatchEvent(new Event("input", { bubbles: true }));
+	commitHistory(event.shiftKey ? "dedent" : "indent");
 }
 
 function handleEditorKeydown(event) {
@@ -593,12 +596,172 @@ function handleEditorKeydown(event) {
 			event.preventDefault();
 			return void saveNote();
 		}
+		// Undo / redo — our own stack, since setRangeText bypasses the native one.
+		if (key === "z") {
+			event.preventDefault();
+			return event.shiftKey ? redo() : undo();
+		}
+		if (key === "y") {
+			event.preventDefault();
+			return redo();
+		}
 		const shortcut = { b: "bold", i: "italic", k: "link" }[key];
 		if (shortcut) {
 			event.preventDefault();
-			TOOLBAR[shortcut]();
+			runToolbar(shortcut);
 		}
 	}
+}
+
+/* ── History: undo, redo, and the timeline ──────────────────────────────── */
+
+// A custom history stack, because the toolbar and Tab use setRangeText, which
+// does not feed the textarea's native undo. One stack drives undo, redo, and a
+// clickable timeline of every step, reset whenever a note opens.
+const HISTORY_LIMIT = 200;
+const TYPING_COALESCE_MS = 600;
+const HISTORY_LABELS = {
+	opened: "Opened",
+	edit: "Typed",
+	indent: "Indent",
+	dedent: "Dedent",
+	bold: "Bold",
+	italic: "Italic",
+	strike: "Strikethrough",
+	code: "Inline code",
+	link: "Link",
+	h1: "Heading 1",
+	h2: "Heading 2",
+	h3: "Heading 3",
+	quote: "Quote",
+	ul: "Bullet list",
+	ol: "Numbered list",
+	task: "Task list",
+	codeblock: "Code block",
+	table: "Table",
+	mermaid: "Diagram",
+};
+
+let history = [];
+let historyIndex = -1;
+let typingTimer = 0;
+
+function snapshot(label) {
+	const ta = $("note-body");
+	return {
+		text: ta.value,
+		start: ta.selectionStart,
+		end: ta.selectionEnd,
+		time: Date.now(),
+		label,
+	};
+}
+
+function resetHistory() {
+	clearTimeout(typingTimer);
+	history = [snapshot("opened")];
+	historyIndex = 0;
+	renderTimeline();
+}
+
+// Record the current state. Consecutive typing coalesces into one entry so the
+// timeline is steps, not keystrokes; discrete actions always push their own.
+function commitHistory(label, { coalesce = false } = {}) {
+	clearTimeout(typingTimer);
+	const snap = snapshot(label);
+	const current = history[historyIndex];
+	if (current && current.text === snap.text) return;
+	if (
+		coalesce &&
+		current &&
+		current.label === "edit" &&
+		historyIndex === history.length - 1 &&
+		snap.time - current.time < TYPING_COALESCE_MS
+	) {
+		history[historyIndex] = { ...snap, label: "edit", time: current.time };
+	} else {
+		history = history.slice(0, historyIndex + 1);
+		history.push(snap);
+		if (history.length > HISTORY_LIMIT) history.shift();
+		historyIndex = history.length - 1;
+	}
+	renderTimeline();
+}
+
+function scheduleTypingCommit() {
+	clearTimeout(typingTimer);
+	typingTimer = window.setTimeout(
+		() => commitHistory("edit", { coalesce: true }),
+		TYPING_COALESCE_MS,
+	);
+}
+
+// Restore a snapshot without going through an input event, so restoring does
+// not itself get recorded.
+function applyHistory(index) {
+	const entry = history[index];
+	if (!entry) return;
+	historyIndex = index;
+	const ta = $("note-body");
+	ta.value = entry.text;
+	ta.selectionStart = entry.start;
+	ta.selectionEnd = entry.end;
+	ta.focus();
+	renderPreview();
+	renderTimeline();
+}
+
+function undo() {
+	clearTimeout(typingTimer);
+	if (historyIndex > 0) applyHistory(historyIndex - 1);
+}
+
+function redo() {
+	clearTimeout(typingTimer);
+	if (historyIndex < history.length - 1) applyHistory(historyIndex + 1);
+}
+
+function relativeTime(ms) {
+	const seconds = Math.round((Date.now() - ms) / 1000);
+	if (seconds < 5) return "just now";
+	if (seconds < 60) return `${seconds}s ago`;
+	const minutes = Math.round(seconds / 60);
+	if (minutes < 60) return `${minutes}m ago`;
+	return `${Math.round(minutes / 60)}h ago`;
+}
+
+function renderTimeline() {
+	const undoBtn = $("tb-undo");
+	const redoBtn = $("tb-redo");
+	if (undoBtn) undoBtn.disabled = historyIndex <= 0;
+	if (redoBtn) redoBtn.disabled = historyIndex >= history.length - 1;
+	const list = $("history-list");
+	if (!list || $("history-panel").hidden) return;
+	list.innerHTML = "";
+	// Newest at the top.
+	for (let i = history.length - 1; i >= 0; i -= 1) {
+		const entry = history[i];
+		const item = document.createElement("li");
+		item.className = `history-item${i === historyIndex ? " current" : ""}`;
+		item.dataset.index = String(i);
+		item.innerHTML = `<span class="h-label">${HISTORY_LABELS[entry.label] || entry.label}</span><span class="h-time">${relativeTime(entry.time)}</span>`;
+		list.appendChild(item);
+	}
+}
+
+function toggleTimeline() {
+	const panel = $("history-panel");
+	panel.hidden = !panel.hidden;
+	$("tb-history").classList.toggle("active", !panel.hidden);
+	renderTimeline();
+}
+
+// Run a formatting action, then record it as one timeline step.
+function runToolbar(action) {
+	const fn = TOOLBAR[action];
+	if (!fn) return;
+	fn();
+	commitHistory(action);
 }
 
 /* ── Drag-and-drop import ───────────────────────────────────────────────── */
@@ -713,6 +876,7 @@ function wire() {
 	$("note-body").addEventListener("input", () => {
 		clearTimeout(previewTimer);
 		previewTimer = window.setTimeout(renderPreview, 120);
+		scheduleTypingCommit();
 	});
 
 	// A wikilink in the preview opens the note it points at.
@@ -740,9 +904,19 @@ function wire() {
 	$("editor-toolbar").addEventListener("click", (event) => {
 		const button = event.target.closest("button[data-action]");
 		if (!button) return;
-		const action = TOOLBAR[button.dataset.action];
-		if (action) action();
+		const action = button.dataset.action;
+		if (action === "undo") return undo();
+		if (action === "redo") return redo();
+		if (action === "history") return toggleTimeline();
+		runToolbar(action);
 	});
+
+	// Timeline: jump to any recorded step; close button hides the panel.
+	$("history-list").addEventListener("click", (event) => {
+		const item = event.target.closest("li[data-index]");
+		if (item) applyHistory(Number(item.dataset.index));
+	});
+	$("history-close").addEventListener("click", toggleTimeline);
 
 	setupResizers();
 	setupDropImport();

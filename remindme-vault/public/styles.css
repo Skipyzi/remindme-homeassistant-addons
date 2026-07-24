@@ -315,6 +315,85 @@ body {
 	margin: 3px 4px;
 	background: var(--border);
 }
+.editor-toolbar button.active {
+	color: #fff;
+	background: var(--accent-dim);
+	border-color: var(--accent-dim);
+}
+.editor-toolbar button:disabled {
+	opacity: 0.4;
+	cursor: default;
+}
+/* The editor pane anchors the floating history panel. */
+.editor-pane {
+	position: relative;
+}
+.history-panel {
+	position: absolute;
+	top: 8px;
+	right: clamp(16px, 5vw, 64px);
+	z-index: 20;
+	width: 230px;
+	max-height: 60%;
+	display: flex;
+	flex-direction: column;
+	background: var(--bg-2);
+	border: 1px solid var(--border);
+	border-radius: 10px;
+	box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+	overflow: hidden;
+}
+.history-panel[hidden] {
+	display: none;
+}
+.history-head {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	padding: 8px 10px;
+	border-bottom: 1px solid var(--border);
+	font-size: 12px;
+	font-weight: 600;
+	color: var(--text);
+}
+.hp-close {
+	border: 0;
+	background: transparent;
+	color: var(--muted);
+	font-size: 13px;
+	cursor: pointer;
+}
+.hp-close:hover {
+	color: var(--text);
+}
+.history-list {
+	list-style: none;
+	margin: 0;
+	padding: 4px;
+	overflow-y: auto;
+}
+.history-item {
+	display: flex;
+	justify-content: space-between;
+	gap: 8px;
+	padding: 6px 8px;
+	border-radius: 6px;
+	font-size: 12px;
+	color: var(--muted);
+	cursor: pointer;
+}
+.history-item:hover {
+	background: var(--bg);
+	color: var(--text);
+}
+.history-item.current {
+	background: var(--accent-dim);
+	color: #fff;
+}
+.history-item .h-time {
+	font-size: 11px;
+	opacity: 0.7;
+}
 .drop-overlay {
 	position: fixed;
 	inset: 0;
