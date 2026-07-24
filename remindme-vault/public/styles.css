@@ -394,6 +394,195 @@ body {
 	font-size: 11px;
 	opacity: 0.7;
 }
+
+/* Outline panel reuses the history-panel frame; its list is heading-indented. */
+.outline-panel {
+	right: auto;
+	left: clamp(16px, 5vw, 64px);
+}
+.outline-list {
+	list-style: none;
+	margin: 0;
+	padding: 4px;
+	overflow-y: auto;
+}
+.outline-item {
+	padding: 5px 8px;
+	border-radius: 6px;
+	font-size: 12.5px;
+	color: var(--muted);
+	cursor: pointer;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+.outline-item:hover {
+	background: var(--bg);
+	color: var(--text);
+}
+.outline-item.lvl-2 { padding-left: 18px; }
+.outline-item.lvl-3 { padding-left: 30px; }
+.outline-item.lvl-4 { padding-left: 42px; }
+.outline-item.lvl-5,
+.outline-item.lvl-6 { padding-left: 54px; }
+.outline-empty {
+	padding: 8px;
+	color: var(--muted);
+	font-size: 12px;
+}
+
+/* Starred list in the explorer. */
+.starred {
+	padding: 8px 8px 4px;
+	border-bottom: 1px solid var(--border);
+}
+.starred h4 {
+	margin: 0 0 4px;
+	font-size: 11px;
+	color: var(--muted);
+	text-transform: uppercase;
+	letter-spacing: 0.06em;
+}
+.starred-list {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+}
+.starred-item {
+	padding: 4px 6px;
+	border-radius: 6px;
+	font-size: 12.5px;
+	color: var(--text);
+	cursor: pointer;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+.starred-item:hover {
+	background: var(--bg-2);
+}
+.star-btn.on {
+	color: #f5c518;
+}
+
+/* Command palette / quick switcher modal. */
+.palette {
+	position: fixed;
+	inset: 0;
+	z-index: 60;
+	display: flex;
+	justify-content: center;
+	padding-top: 12vh;
+	background: color-mix(in srgb, var(--bg) 55%, transparent);
+}
+.palette[hidden] {
+	display: none;
+}
+.palette-box {
+	width: min(560px, 92vw);
+	max-height: 60vh;
+	display: flex;
+	flex-direction: column;
+	background: var(--bg-2);
+	border: 1px solid var(--border);
+	border-radius: 12px;
+	box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+	overflow: hidden;
+}
+.palette-input {
+	border: 0;
+	border-bottom: 1px solid var(--border);
+	background: transparent;
+	color: var(--text);
+	font: inherit;
+	font-size: 15px;
+	padding: 12px 14px;
+}
+.palette-input:focus {
+	outline: none;
+}
+.palette-list {
+	list-style: none;
+	margin: 0;
+	padding: 4px;
+	overflow-y: auto;
+}
+.palette-item {
+	padding: 8px 10px;
+	border-radius: 6px;
+	font-size: 13px;
+	color: var(--muted);
+	cursor: pointer;
+}
+.palette-item.active,
+.palette-item:hover {
+	background: var(--accent-dim);
+	color: #fff;
+}
+
+/* Inline autocomplete popup, positioned at the caret. */
+.autocomplete {
+	position: fixed;
+	z-index: 60;
+	min-width: 160px;
+	max-width: 280px;
+	max-height: 220px;
+	overflow-y: auto;
+	list-style: none;
+	margin: 0;
+	padding: 4px;
+	background: var(--bg-2);
+	border: 1px solid var(--border);
+	border-radius: 8px;
+	box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+}
+.autocomplete[hidden] {
+	display: none;
+}
+.ac-item {
+	padding: 6px 9px;
+	border-radius: 6px;
+	font-size: 12.5px;
+	color: var(--muted);
+	cursor: pointer;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+.ac-item.active,
+.ac-item:hover {
+	background: var(--accent-dim);
+	color: #fff;
+}
+
+/* Callouts. */
+.markdown .callout {
+	margin: 0.8em 0;
+	border: 1px solid var(--accent-dim);
+	border-left-width: 4px;
+	border-radius: 8px;
+	padding: 10px 14px;
+	background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+.markdown .callout-head {
+	font-weight: 600;
+	margin-bottom: 4px;
+}
+.markdown .callout-body > :first-child { margin-top: 0; }
+.markdown .callout-body > :last-child { margin-bottom: 0; }
+.markdown .callout-warning {
+	border-color: #d9a441;
+	background: color-mix(in srgb, #d9a441 10%, transparent);
+}
+.markdown .callout-danger,
+.markdown .callout-bug {
+	border-color: var(--danger, #e5534b);
+	background: color-mix(in srgb, var(--danger, #e5534b) 10%, transparent);
+}
+.markdown .callout-success {
+	border-color: #3fb950;
+	background: color-mix(in srgb, #3fb950 10%, transparent);
+}
 .drop-overlay {
 	position: fixed;
 	inset: 0;

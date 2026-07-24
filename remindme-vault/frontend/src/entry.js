@@ -36,6 +36,7 @@ async function loadTree(query = "") {
 		// A search flattens to matching notes; the folder tree is for browsing.
 		state.notes = await fetchVaultNotes(query);
 		renderFlat(state.notes);
+		renderStarred();
 		return;
 	}
 	const res = await fetch("api/vault/tree");
@@ -49,6 +50,7 @@ async function loadTree(query = "") {
 	}));
 	updateGroupList();
 	renderTree();
+	renderStarred();
 }
 
 // Real folders and types share one namespace, so both feed the type/folder
@@ -209,6 +211,8 @@ async function openNote(path) {
 	showEditor();
 	renderPreview();
 	resetHistory();
+	updateStarButton();
+	renderOutline();
 	highlightActive();
 	void loadBacklinks(note.path);
 }
@@ -229,6 +233,8 @@ function newNote() {
 	showEditor();
 	renderPreview();
 	resetHistory();
+	updateStarButton();
+	renderOutline();
 	highlightActive();
 	$("note-title").focus();
 }
@@ -318,6 +324,7 @@ function renderPreview() {
 			`[${(alias || target).trim()}](#wl:${encodeURIComponent(target.trim())})`,
 	);
 	$("preview").innerHTML = marked.parse(source);
+	transformCallouts($("preview"));
 	void renderMermaid($("preview"));
 }
 
@@ -589,6 +596,14 @@ function handleEditorTab(event) {
 }
 
 function handleEditorKeydown(event) {
+	// The autocomplete popup, when open, owns the arrow/enter/tab/esc keys.
+	if (acOpen) {
+		if (event.key === "ArrowDown") return event.preventDefault(), moveAutocomplete(1);
+		if (event.key === "ArrowUp") return event.preventDefault(), moveAutocomplete(-1);
+		if (event.key === "Enter" || event.key === "Tab")
+			return event.preventDefault(), chooseAutocomplete();
+		if (event.key === "Escape") return event.preventDefault(), hideAutocomplete();
+	}
 	if (event.key === "Tab") return handleEditorTab(event);
 	if (event.metaKey || event.ctrlKey) {
 		const key = event.key.toLowerCase();
@@ -764,6 +779,406 @@ function runToolbar(action) {
 	commitHistory(action);
 }
 
+/* ── Fuzzy match (palettes + autocomplete) ──────────────────────────────── */
+
+// A light subsequence score: every query char must appear in order; contiguous
+// and start-of-word hits rank higher. Returns null when it does not match.
+function fuzzyScore(query, text) {
+	const q = query.toLowerCase();
+	const t = text.toLowerCase();
+	if (!q) return 0;
+	let qi = 0;
+	let score = 0;
+	let run = 0;
+	for (let ti = 0; ti < t.length && qi < q.length; ti += 1) {
+		if (t[ti] === q[qi]) {
+			run += 1;
+			score += run + (ti === 0 || /[\s/\-_]/.test(t[ti - 1]) ? 3 : 0);
+			qi += 1;
+		} else {
+			run = 0;
+		}
+	}
+	return qi === q.length ? score : null;
+}
+
+function fuzzyRank(query, items, key) {
+	return items
+		.map((item) => ({ item, score: fuzzyScore(query, key(item)) }))
+		.filter((entry) => entry.score !== null)
+		.sort((a, b) => b.score - a.score)
+		.map((entry) => entry.item);
+}
+
+/* ── Command palette + quick switcher ───────────────────────────────────── */
+
+let paletteItems = [];
+let paletteIndex = 0;
+let paletteRun = null;
+
+// Commands are gathered lazily so they can reference every action defined in the
+// module without ordering worries.
+function getCommands() {
+	return [
+		{ name: "New note", run: newNote },
+		{ name: "New folder", run: newFolder },
+		{ name: "Open daily note", run: openDailyNote },
+		{ name: "Toggle graph view", run: () => ($("graph-pane").hidden ? openGraph() : closeGraph()) },
+		{ name: "View: Edit", run: () => setMode("edit") },
+		{ name: "View: Split", run: () => setMode("split") },
+		{ name: "View: Read", run: () => setMode("read") },
+		{ name: "Insert diagram", run: () => runToolbar("mermaid") },
+		{ name: "Insert table", run: () => runToolbar("table") },
+		{ name: "Toggle outline", run: toggleOutline },
+		{ name: "Toggle history", run: toggleTimeline },
+		{ name: "Star / unstar this note", run: toggleStar },
+		{ name: "Save note", run: saveNote },
+		{ name: "Reload vault", run: reloadVault },
+	];
+}
+
+function openPalette(mode) {
+	const overlay = $("palette");
+	const input = $("palette-input");
+	overlay.hidden = false;
+	input.value = "";
+	if (mode === "command") {
+		input.placeholder = "Run a command…";
+		paletteRun = (item) => item.run();
+		renderPalette(getCommands(), (item) => item.name);
+	} else {
+		input.placeholder = "Open a note…";
+		paletteRun = (item) => void openNote(item.id);
+		renderPalette(state.notes, (item) => item.title || baseName(item.id));
+	}
+	paletteSource = mode;
+	input.focus();
+}
+
+let paletteSource = "switch";
+
+function renderPalette(items, label) {
+	paletteItems = items;
+	paletteIndex = 0;
+	paletteLabel = label;
+	const list = $("palette-list");
+	list.innerHTML = "";
+	items.slice(0, 50).forEach((item, i) => {
+		const li = document.createElement("li");
+		li.className = `palette-item${i === 0 ? " active" : ""}`;
+		li.dataset.index = String(i);
+		li.textContent = label(item);
+		list.appendChild(li);
+	});
+}
+
+let paletteLabel = (item) => item.name;
+
+function filterPalette(query) {
+	const source =
+		paletteSource === "command" ? getCommands() : state.notes;
+	const key =
+		paletteSource === "command"
+			? (item) => item.name
+			: (item) => item.title || baseName(item.id);
+	renderPalette(query ? fuzzyRank(query, source, key) : source, key);
+}
+
+function movePalette(delta) {
+	const items = $("palette-list").children;
+	if (!items.length) return;
+	items[paletteIndex]?.classList.remove("active");
+	paletteIndex = (paletteIndex + delta + items.length) % items.length;
+	const active = items[paletteIndex];
+	active.classList.add("active");
+	active.scrollIntoView({ block: "nearest" });
+}
+
+function choosePalette() {
+	const item = paletteItems[paletteIndex];
+	closePalette();
+	if (item) paletteRun(item);
+}
+
+function closePalette() {
+	$("palette").hidden = true;
+}
+
+/* ── Inline autocomplete: [[wikilinks]] and #tags ───────────────────────── */
+
+let acOpen = false;
+let acItems = [];
+let acIndex = 0;
+let acContext = null; // { kind, start } — where the token began
+
+function allTags() {
+	const tags = new Set();
+	for (const note of state.notes) for (const tag of note.tags || []) tags.add(tag);
+	return [...tags];
+}
+
+// Pixel position of the caret inside the textarea, via a hidden mirror element.
+function caretCoordinates(ta, position) {
+	const mirror = document.createElement("div");
+	const style = getComputedStyle(ta);
+	for (const prop of [
+		"boxSizing", "width", "paddingTop", "paddingRight", "paddingBottom",
+		"paddingLeft", "borderTopWidth", "borderRightWidth", "borderBottomWidth",
+		"borderLeftWidth", "fontFamily", "fontSize", "fontWeight", "lineHeight",
+		"letterSpacing", "textTransform",
+	]) {
+		mirror.style[prop] = style[prop];
+	}
+	mirror.style.position = "absolute";
+	mirror.style.visibility = "hidden";
+	mirror.style.whiteSpace = "pre-wrap";
+	mirror.style.wordWrap = "break-word";
+	const rect = ta.getBoundingClientRect();
+	mirror.style.left = `${rect.left}px`;
+	mirror.style.top = `${rect.top}px`;
+	mirror.textContent = ta.value.slice(0, position);
+	const marker = document.createElement("span");
+	marker.textContent = ta.value.slice(position) || ".";
+	mirror.appendChild(marker);
+	document.body.appendChild(mirror);
+	const markerRect = marker.getBoundingClientRect();
+	const lineHeight = parseFloat(style.lineHeight) || 18;
+	document.body.removeChild(mirror);
+	return {
+		top: markerRect.top - ta.scrollTop + lineHeight,
+		left: markerRect.left - ta.scrollLeft,
+	};
+}
+
+// Detect a [[… or #… token immediately before the caret (no closing/space).
+function autocompleteContext(ta) {
+	const upto = ta.value.slice(0, ta.selectionStart);
+	const wiki = upto.match(/\[\[([^\]\n]*)$/);
+	if (wiki) return { kind: "wiki", query: wiki[1], start: ta.selectionStart - wiki[1].length };
+	const tag = upto.match(/(?:^|\s)#([\w/-]*)$/);
+	if (tag) return { kind: "tag", query: tag[1], start: ta.selectionStart - tag[1].length };
+	return null;
+}
+
+function updateAutocomplete() {
+	const ta = $("note-body");
+	const context = autocompleteContext(ta);
+	if (!context) return hideAutocomplete();
+	if (context.kind === "wiki") {
+		acItems = fuzzyRank(context.query, state.notes, (n) => n.title || baseName(n.id))
+			.slice(0, 8)
+			.map((n) => ({ label: n.title || baseName(n.id), insert: n.title || baseName(n.id) }));
+	} else {
+		acItems = fuzzyRank(context.query, allTags(), (t) => t)
+			.slice(0, 8)
+			.map((t) => ({ label: `#${t}`, insert: t }));
+	}
+	if (!acItems.length) return hideAutocomplete();
+	acContext = context;
+	acIndex = 0;
+	const box = $("autocomplete");
+	box.innerHTML = "";
+	acItems.forEach((item, i) => {
+		const li = document.createElement("li");
+		li.className = `ac-item${i === 0 ? " active" : ""}`;
+		li.dataset.index = String(i);
+		li.textContent = item.label;
+		box.appendChild(li);
+	});
+	const coords = caretCoordinates(ta, context.start);
+	box.style.top = `${coords.top}px`;
+	box.style.left = `${coords.left}px`;
+	box.hidden = false;
+	acOpen = true;
+}
+
+function moveAutocomplete(delta) {
+	const box = $("autocomplete");
+	const items = box.children;
+	items[acIndex]?.classList.remove("active");
+	acIndex = (acIndex + delta + items.length) % items.length;
+	items[acIndex].classList.add("active");
+	items[acIndex].scrollIntoView({ block: "nearest" });
+}
+
+function chooseAutocomplete() {
+	const item = acItems[acIndex];
+	if (!item || !acContext) return hideAutocomplete();
+	const ta = $("note-body");
+	if (acContext.kind === "wiki") {
+		// Replace the typed query and close the [[ ]] link.
+		ta.setRangeText(`${item.insert}]]`, acContext.start, ta.selectionStart, "end");
+	} else {
+		ta.setRangeText(`${item.insert} `, acContext.start, ta.selectionStart, "end");
+	}
+	hideAutocomplete();
+	ta.dispatchEvent(new Event("input", { bubbles: true }));
+	commitHistory(acContext.kind === "wiki" ? "link" : "edit");
+}
+
+function hideAutocomplete() {
+	acOpen = false;
+	acContext = null;
+	$("autocomplete").hidden = true;
+}
+
+/* ── Outline (headings) ─────────────────────────────────────────────────── */
+
+function parseHeadings(text) {
+	const headings = [];
+	const lines = text.split("\n");
+	let inFence = false;
+	lines.forEach((line, index) => {
+		if (/^```/.test(line)) inFence = !inFence;
+		if (inFence) return;
+		const match = line.match(/^(#{1,6})\s+(.+)$/);
+		if (match) headings.push({ level: match[1].length, text: match[2].trim(), line: index });
+	});
+	return headings;
+}
+
+function renderOutline() {
+	if ($("outline-panel").hidden) return;
+	const list = $("outline-list");
+	const headings = parseHeadings($("note-body").value);
+	list.innerHTML = "";
+	if (!headings.length) {
+		list.innerHTML = '<li class="outline-empty">No headings.</li>';
+		return;
+	}
+	for (const heading of headings) {
+		const li = document.createElement("li");
+		li.className = `outline-item lvl-${heading.level}`;
+		li.dataset.line = String(heading.line);
+		li.textContent = heading.text;
+		list.appendChild(li);
+	}
+}
+
+function toggleOutline() {
+	const panel = $("outline-panel");
+	panel.hidden = !panel.hidden;
+	$("tb-outline").classList.toggle("active", !panel.hidden);
+	renderOutline();
+}
+
+function jumpToHeading(line) {
+	const ta = $("note-body");
+	const offset = ta.value.split("\n").slice(0, line).join("\n").length + (line ? 1 : 0);
+	ta.focus();
+	ta.selectionStart = ta.selectionEnd = offset;
+	// Scroll the caret line roughly into view.
+	const lineHeight = parseFloat(getComputedStyle(ta).lineHeight) || 18;
+	ta.scrollTop = Math.max(0, line * lineHeight - ta.clientHeight / 3);
+}
+
+/* ── Daily note ─────────────────────────────────────────────────────────── */
+
+async function openDailyNote() {
+	const today = new Date();
+	const date = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+	const path = `daily/${date}.md`;
+	const existing = await fetch(`api/vault/note?path=${encodeURIComponent(path)}`);
+	if (existing.ok) return void openNote(path);
+	// Create it, then open.
+	const res = await fetch("api/vault/note", {
+		method: "PUT",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify({ path, title: date, type: "daily", tags: "daily", body: `# ${date}\n\n` }),
+	});
+	if (res.ok) {
+		await loadTree($("search").value.trim());
+		void openNote((await res.json()).path);
+	}
+}
+
+/* ── Starred notes ──────────────────────────────────────────────────────── */
+
+function loadStarred() {
+	try {
+		return new Set(JSON.parse(localStorage.getItem("vault.starred") || "[]"));
+	} catch {
+		return new Set();
+	}
+}
+let starred = loadStarred();
+
+function isStarred(path) {
+	return path ? starred.has(path) : false;
+}
+
+function toggleStar() {
+	if (!state.current) return;
+	if (starred.has(state.current)) starred.delete(state.current);
+	else starred.add(state.current);
+	localStorage.setItem("vault.starred", JSON.stringify([...starred]));
+	updateStarButton();
+	renderStarred();
+}
+
+function updateStarButton() {
+	const btn = $("star-btn");
+	if (!btn) return;
+	const on = isStarred(state.current);
+	btn.textContent = on ? "★" : "☆";
+	btn.classList.toggle("on", on);
+	btn.disabled = !state.current;
+}
+
+function renderStarred() {
+	const wrap = $("starred");
+	const list = $("starred-list");
+	if (!wrap || !list) return;
+	const paths = [...starred];
+	wrap.hidden = paths.length === 0;
+	list.innerHTML = "";
+	for (const path of paths) {
+		const note = state.notes.find((n) => n.id === path);
+		const li = document.createElement("li");
+		li.className = "starred-item";
+		li.dataset.path = path;
+		li.textContent = note?.title || baseName(path);
+		list.appendChild(li);
+	}
+}
+
+function reloadVault() {
+	return (async () => {
+		await fetch("api/vault/reload", { method: "POST" });
+		await loadTree($("search").value.trim());
+	})();
+}
+
+/* ── Callouts ───────────────────────────────────────────────────────────── */
+
+const CALLOUT_ICON = {
+	note: "🗒", info: "ℹ", tip: "💡", warning: "⚠", danger: "⛔",
+	success: "✅", question: "❓", quote: "❝", bug: "🐞", example: "🧪",
+};
+
+// Obsidian callouts: a blockquote whose first line is `[!type] Optional title`.
+function transformCallouts(root) {
+	for (const quote of root.querySelectorAll("blockquote")) {
+		const first = quote.firstElementChild;
+		const match = first?.textContent.match(/^\[!(\w+)\]\s*(.*)$/);
+		if (!match) continue;
+		const type = match[1].toLowerCase();
+		const title = match[2].trim();
+		const box = document.createElement("div");
+		box.className = `callout callout-${type}`;
+		const head = document.createElement("div");
+		head.className = "callout-head";
+		head.textContent = `${CALLOUT_ICON[type] || "🗒"}  ${title || type[0].toUpperCase() + type.slice(1)}`;
+		box.appendChild(head);
+		first.remove();
+		const body = document.createElement("div");
+		body.className = "callout-body";
+		while (quote.firstChild) body.appendChild(quote.firstChild);
+		box.appendChild(body);
+		quote.replaceWith(box);
+	}
+}
+
 /* ── Drag-and-drop import ───────────────────────────────────────────────── */
 
 const IMPORTABLE = /\.(md|markdown|txt)$/i;
@@ -877,7 +1292,17 @@ function wire() {
 		clearTimeout(previewTimer);
 		previewTimer = window.setTimeout(renderPreview, 120);
 		scheduleTypingCommit();
+		updateAutocomplete();
+		renderOutline();
 	});
+	// Moving the caret can dismiss or move the autocomplete token.
+	$("note-body").addEventListener("keyup", (event) => {
+		if (["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key))
+			updateAutocomplete();
+	});
+	$("note-body").addEventListener("blur", () =>
+		window.setTimeout(hideAutocomplete, 150),
+	);
 
 	// A wikilink in the preview opens the note it points at.
 	$("preview").addEventListener("click", (event) => {
@@ -908,7 +1333,59 @@ function wire() {
 		if (action === "undo") return undo();
 		if (action === "redo") return redo();
 		if (action === "history") return toggleTimeline();
+		if (action === "outline") return toggleOutline();
 		runToolbar(action);
+	});
+
+	// Autocomplete: click a suggestion to insert it.
+	$("autocomplete").addEventListener("mousedown", (event) => {
+		const item = event.target.closest("li[data-index]");
+		if (!item) return;
+		event.preventDefault();
+		acIndex = Number(item.dataset.index);
+		chooseAutocomplete();
+	});
+
+	// Outline: jump to a heading; close button hides the panel.
+	$("outline-list").addEventListener("click", (event) => {
+		const item = event.target.closest("li[data-line]");
+		if (item) jumpToHeading(Number(item.dataset.line));
+	});
+	$("outline-close").addEventListener("click", toggleOutline);
+
+	// Starred: open, and the ⭐ toggle for the current note.
+	$("starred-list").addEventListener("click", (event) => {
+		const item = event.target.closest("li[data-path]");
+		if (item) void openNote(item.dataset.path);
+	});
+	$("star-btn").addEventListener("click", toggleStar);
+	$("rb-daily").addEventListener("click", () => void openDailyNote());
+
+	// Command palette (Ctrl+P) and quick switcher (Ctrl+O).
+	$("palette-input").addEventListener("input", (event) =>
+		filterPalette(event.target.value.trim()),
+	);
+	$("palette-input").addEventListener("keydown", (event) => {
+		if (event.key === "ArrowDown") return event.preventDefault(), movePalette(1);
+		if (event.key === "ArrowUp") return event.preventDefault(), movePalette(-1);
+		if (event.key === "Enter") return event.preventDefault(), choosePalette();
+		if (event.key === "Escape") return event.preventDefault(), closePalette();
+	});
+	$("palette-list").addEventListener("mousedown", (event) => {
+		const item = event.target.closest("li[data-index]");
+		if (!item) return;
+		event.preventDefault();
+		paletteIndex = Number(item.dataset.index);
+		choosePalette();
+	});
+	$("palette").addEventListener("mousedown", (event) => {
+		if (event.target === $("palette")) closePalette();
+	});
+	document.addEventListener("keydown", (event) => {
+		if (!(event.metaKey || event.ctrlKey)) return;
+		const key = event.key.toLowerCase();
+		if (key === "o") return event.preventDefault(), openPalette("switch");
+		if (key === "p") return event.preventDefault(), openPalette("command");
 	});
 
 	// Timeline: jump to any recorded step; close button hides the panel.
