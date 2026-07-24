@@ -1,7 +1,6 @@
 import {
 	type ChatInputCommandInteraction,
 	type Client,
-	EmbedBuilder,
 	MessageFlags,
 	SlashCommandBuilder,
 	version as discordJsVersion,
@@ -13,6 +12,7 @@ import {
 	listReminders,
 } from "../utils/reminderManager";
 import {
+	buildReminderCard,
 	nameIsReminderChannel,
 	reminderButtons,
 	resolveReminder,
@@ -176,21 +176,8 @@ async function runRemind(
 		// Private (DM or a non-reminder channel) reminders carry no channel.
 		inGuild ? interaction.channelId : "",
 	);
-	const timestamp = Math.floor(reminder.time.getTime() / 1000);
-	const card = new EmbedBuilder()
-		.setColor(0x5865f2)
-		.setTitle("⏰ Reminder set")
-		.setDescription(`**${reminder.message}**`)
-		.addFields(
-			{
-				name: "When",
-				value: `<t:${timestamp}:F>\n<t:${timestamp}:R>`,
-				inline: true,
-			},
-			{ name: "ID", value: `\`${reminder.id}\``, inline: true },
-		);
 	await interaction.editReply({
-		embeds: [card],
+		embeds: [buildReminderCard(reminder)],
 		components: [reminderButtons(reminder.id, reminder.userId)],
 	});
 }
