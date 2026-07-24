@@ -197,6 +197,8 @@ async function newFolder() {
 /* ── Editor ─────────────────────────────────────────────────────────────── */
 
 async function openNote(path) {
+	// Persist the current draft before loading another note, or it is lost.
+	await flushCurrent();
 	const res = await fetch(`api/vault/note?path=${encodeURIComponent(path)}`);
 	if (!res.ok) return;
 	const note = await res.json();
@@ -211,13 +213,16 @@ async function openNote(path) {
 	showEditor();
 	renderPreview();
 	resetHistory();
+	dirty = false;
 	updateStarButton();
 	renderOutline();
 	highlightActive();
 	void loadBacklinks(note.path);
 }
 
-function newNote() {
+async function newNote() {
+	// Don't discard an unsaved draft when starting a fresh note.
+	await flushCurrent();
 	const sel = state.selectedFolder;
 	const asType = sel.startsWith("#");
 	state.current = null;
@@ -233,6 +238,7 @@ function newNote() {
 	showEditor();
 	renderPreview();
 	resetHistory();
+	dirty = false;
 	updateStarButton();
 	renderOutline();
 	highlightActive();
@@ -267,7 +273,9 @@ async function saveNote() {
 	state.current = note.path;
 	$("tab-title").textContent = note.title || note.path;
 	$("delete-btn").disabled = false;
+	dirty = false;
 	setStatus("Saved.");
+	updateStarButton();
 	await loadTree($("search").value.trim());
 	highlightActive();
 	void loadBacklinks(note.path);
@@ -660,6 +668,28 @@ const HISTORY_LABELS = {
 let history = [];
 let historyIndex = -1;
 let typingTimer = 0;
+// Unsaved edits since the last save/open. Navigating away flushes them first so
+// a draft is never silently lost (e.g. clicking a [[link]] to open another note).
+let dirty = false;
+
+// Save the current note before leaving it. An existing or titled note is saved
+// as-is; a new, untitled note gets a title derived from its first line so its
+// content becomes a real note rather than being discarded.
+async function flushCurrent() {
+	if (!dirty) return;
+	const body = $("note-body").value;
+	if (!body.trim() && !$("note-title").value.trim()) {
+		dirty = false;
+		return;
+	}
+	if (!state.current && !$("note-title").value.trim()) {
+		const firstLine = body.split("\n").find((line) => line.trim()) || "Untitled";
+		$("note-title").value =
+			firstLine.replace(/^#+\s*/, "").slice(0, 80).trim() || "Untitled";
+	}
+	await saveNote();
+	dirty = false;
+}
 
 function snapshot(label) {
 	const ta = $("note-body");
@@ -1294,7 +1324,13 @@ function wire() {
 		scheduleTypingCommit();
 		updateAutocomplete();
 		renderOutline();
+		dirty = true;
 	});
+	// The title and metadata are part of the draft too.
+	for (const id of ["note-title", "note-type", "note-tags"])
+		$(id).addEventListener("input", () => {
+			dirty = true;
+		});
 	// Moving the caret can dismiss or move the autocomplete token.
 	$("note-body").addEventListener("keyup", (event) => {
 		if (["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key))

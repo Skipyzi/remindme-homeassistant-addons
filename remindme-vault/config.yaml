@@ -1,5 +1,5 @@
 name: RemindMe Vault
-version: "0.5.0"
+version: "0.5.1"
 slug: remindme_vault
 description: An editable Obsidian-format note vault with a 3D constellation view, served from Home Assistant
 arch:
