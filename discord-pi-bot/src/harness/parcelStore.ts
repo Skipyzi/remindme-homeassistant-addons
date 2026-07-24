@@ -25,6 +25,8 @@ export interface Parcel {
 	trackingNumber: string;
 	/** TrackingMore courier code, e.g. "dhl", "ups", "hermes". */
 	slug: string;
+	/** TrackingMore's own id, used to purge the tracking from their servers. */
+	providerId?: string;
 	courierName?: string;
 	/** A human label, e.g. "Keyboard from Amazon". */
 	label: string;
@@ -47,6 +49,7 @@ export type ParcelInput = Partial<
 		Parcel,
 		| "trackingNumber"
 		| "slug"
+		| "providerId"
 		| "courierName"
 		| "label"
 		| "tag"
@@ -117,6 +120,7 @@ export class ParcelStore {
 			id: randomUUID(),
 			trackingNumber: String(values.trackingNumber || "").trim(),
 			slug: String(values.slug || "").trim(),
+			providerId: values.providerId,
 			courierName: values.courierName,
 			label: String(values.label || "").trim() || "Parcel",
 			tag: values.tag || "Pending",

@@ -54,6 +54,7 @@ import {
 import {
 	TrackingError,
 	createTracking,
+	deleteTracking,
 	getTracking,
 } from "./harness/trackingmore";
 import { readSystemStats } from "./harness/systemStats";
@@ -566,7 +567,11 @@ app.post("/api/parcels", async (request, response) => {
 	response.status(result.existed ? 200 : 201).json(parcelCard(result.parcel));
 });
 app.delete("/api/parcels/:id", async (request, response) => {
-	response.status((await parcels.remove(request.params.id)) ? 204 : 404).end();
+	const parcel = parcels.get(request.params.id);
+	if (!parcel) return response.status(404).end();
+	// Purge from the provider too, not just locally.
+	await purgeParcel(parcel);
+	response.status(204).end();
 });
 /* Tool catalogue for the /tools command — names, descriptions and parameter
  * keys only, so the UI can list capabilities without restating the schema. */
@@ -1321,6 +1326,7 @@ async function trackParcel(
 		const parcel = await parcels.add({
 			trackingNumber: number,
 			slug: status.courierSlug,
+			providerId: status.providerId,
 			courierName: status.courierName,
 			label: label.trim() || undefined,
 			tag: status.tag,
@@ -1341,6 +1347,26 @@ async function trackParcel(
 			error: error instanceof Error ? error.message : "Tracking failed.",
 		};
 	}
+}
+
+/**
+ * Stop tracking a parcel: purge it from TrackingMore's servers (best-effort, by
+ * its provider id) and remove the local record. Used when a parcel is delivered
+ * and when the owner forgets one, so delivery metadata does not linger with the
+ * provider longer than it is useful.
+ */
+async function purgeParcel(parcel: Parcel): Promise<void> {
+	if (config.trackingMoreApiKey && parcel.providerId) {
+		try {
+			await deleteTracking(config.trackingMoreApiKey, parcel.providerId);
+		} catch (error) {
+			console.error(
+				`Could not purge parcel "${parcel.label}" from TrackingMore:`,
+				error,
+			);
+		}
+	}
+	await parcels.remove(parcel.id);
 }
 
 const tools = [
@@ -2923,15 +2949,6 @@ async function refreshParcel(parcel: Parcel): Promise<void> {
 		status.tag,
 		status.message,
 	);
-	await parcels.update(parcel.id, {
-		tag: status.tag,
-		statusMessage: status.message,
-		location: status.location,
-		expectedDelivery: status.expectedDelivery,
-		delivered: status.delivered,
-		lastCheckedAt: new Date().toISOString(),
-		...(notice ? { lastNotifiedTag: status.tag } : {}),
-	});
 	if (notice) {
 		try {
 			await addReminder(notice, 0, process.env.OWNER_ID || "", "");
@@ -2939,6 +2956,24 @@ async function refreshParcel(parcel: Parcel): Promise<void> {
 			console.error(`Parcel "${parcel.label}" could not enqueue a notification:`, error);
 		}
 	}
+	if (status.delivered) {
+		// Delivered: the owner has been told, so stop tracking and purge the
+		// record from TrackingMore's servers rather than leaving it to sit out
+		// their retention window.
+		await purgeParcel(parcel);
+		return;
+	}
+	await parcels.update(parcel.id, {
+		tag: status.tag,
+		statusMessage: status.message,
+		location: status.location,
+		expectedDelivery: status.expectedDelivery,
+		delivered: status.delivered,
+		// Backfill the provider id for parcels added before it was captured.
+		providerId: parcel.providerId || status.providerId,
+		lastCheckedAt: new Date().toISOString(),
+		...(notice ? { lastNotifiedTag: status.tag } : {}),
+	});
 }
 
 /**

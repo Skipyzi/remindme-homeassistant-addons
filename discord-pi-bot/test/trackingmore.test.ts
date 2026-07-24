@@ -3,6 +3,7 @@ import test from "node:test";
 import {
 	TrackingError,
 	createTracking,
+	deleteTracking,
 	getTracking,
 	normalizeTracking,
 } from "../src/harness/trackingmore.ts";
@@ -82,6 +83,35 @@ test("createTracking registers then reads back the status", async () => {
 	assert.equal(status.tag, "InfoReceived");
 	assert.ok(calls.some((call) => call.includes("/trackings/create")));
 	assert.ok(calls.some((call) => call.includes("/trackings/get")));
+});
+
+test("deleteTracking calls the delete endpoint with the api key header", async () => {
+	let seen = "";
+	let header = "";
+	const fetchLike = (async (url: string, init: RequestInit) => {
+		seen = `${init.method} ${String(url)}`;
+		header = (init.headers as Record<string, string>)["Tracking-Api-Key"];
+		return jsonResponse(200, { meta: { code: 200 } });
+	}) as unknown as typeof fetch;
+	await deleteTracking("KEY", "tm-abc123", fetchLike);
+	assert.match(seen, /^DELETE .*\/trackings\/tm-abc123$/);
+	assert.equal(header, "KEY");
+});
+
+test("deleteTracking tolerates an already-gone tracking (404)", async () => {
+	const fetchLike = (async () =>
+		jsonResponse(404, { meta: { code: 4017 } })) as unknown as typeof fetch;
+	await assert.doesNotReject(() => deleteTracking("KEY", "gone", fetchLike));
+});
+
+test("deleteTracking without an id makes no request", async () => {
+	let called = false;
+	const fetchLike = (async () => {
+		called = true;
+		return jsonResponse(200, {});
+	}) as unknown as typeof fetch;
+	await deleteTracking("KEY", "", fetchLike);
+	assert.equal(called, false);
 });
 
 test("createTracking is idempotent: 4016 already-exists still reads status", async () => {

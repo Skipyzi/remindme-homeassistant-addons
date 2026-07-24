@@ -43,6 +43,8 @@ export interface TrackingStatus {
 	courierName?: string;
 	expectedDelivery?: string;
 	delivered: boolean;
+	/** TrackingMore's own id for the tracking, needed to delete it server-side. */
+	providerId?: string;
 }
 
 type FetchLike = (
@@ -135,6 +137,7 @@ export function normalizeTracking(
 		courierName: slug || undefined,
 		expectedDelivery: expected || undefined,
 		delivered: tag === "Delivered",
+		providerId: item.id ? String(item.id) : undefined,
 	};
 }
 
@@ -212,4 +215,27 @@ export async function createTracking(
 	// 4016: already registered — not an error, just read its status.
 	if (!response.ok && metaCode(body) !== 4016) throwError(response, body);
 	return getTracking(apiKey, code, trackingNumber, fetchLike);
+}
+
+/**
+ * Delete a tracking from TrackingMore's servers by its provider id, so a
+ * delivered or forgotten parcel does not linger there. Best-effort: a missing
+ * id or a not-found tracking resolves quietly, since the goal is only that the
+ * record is gone.
+ */
+export async function deleteTracking(
+	apiKey: string,
+	providerId: string,
+	fetchLike: FetchLike = fetch,
+): Promise<void> {
+	if (!providerId) return;
+	const response = await fetchLike(
+		`${BASE_URL}/trackings/${encodeURIComponent(providerId)}`,
+		{ method: "DELETE", headers: headers(apiKey) },
+	);
+	// 404/410: already gone — that is the desired end state, not a failure.
+	if (!response.ok && response.status !== 404 && response.status !== 410) {
+		const body = await readBody(response);
+		throwError(response, body);
+	}
 }
