@@ -103,12 +103,13 @@ async function runRemind(
 	interaction: ChatInputCommandInteraction,
 ): Promise<void> {
 	/*
-	 * Acknowledge first. Parsing the time can call the local model, and adding
-	 * the reminder touches the shared file store; either can outrun Discord's
-	 * 3-second reply window, after which the interaction token is dead (10062).
-	 * Deferring acks immediately and gives ~15 minutes to edit in the result.
+	 * Acknowledge first with a real message, not deferReply — its placeholder
+	 * is Discord's "is thinking…", which reads oddly for a reminder. Parsing
+	 * the time can call the local model and the store write touches a locked
+	 * file; either can outrun Discord's 3-second window and kill the token
+	 * (10062). Replying now acks in time and the result edits this message.
 	 */
-	await interaction.deferReply(ephemeral);
+	await interaction.reply({ content: "⏰ Setting your reminder…", ...ephemeral });
 	const text = interaction.options.getString("text", true);
 	const when = interaction.options.getString("when", true);
 	/*
@@ -164,9 +165,10 @@ async function runRemind(
 async function runReminders(
 	interaction: ChatInputCommandInteraction,
 ): Promise<void> {
-	// Defer first: the shared file store is read/written under a lock, which
-	// can outrun the 3-second window on a busy Pi (10062).
-	await interaction.deferReply(ephemeral);
+	// Ack first with a real message (not the "is thinking…" defer): the shared
+	// store is read/written under a lock, which can outrun the 3-second window
+	// on a busy Pi (10062). The result edits this message.
+	await interaction.reply({ content: "📋 One moment…", ...ephemeral });
 	const sub = interaction.options.getSubcommand();
 	if (sub === "delete") {
 		const id = interaction.options.getString("id", true);
