@@ -24,7 +24,13 @@ import {
  * which all reached the same handlers and made it unclear what counted as a
  * command. These are registered with Discord once the client is ready.
  */
-export const slashCommands = [
+/*
+ * Not exported: the type of a SlashCommandBuilder's .toJSON() names a
+ * discord-api-types symbol from a nested (pnpm) path, which cannot be written
+ * portably into a .d.ts under `declaration: true` (TS2883). Keeping this
+ * module-private avoids emitting its type at all; it is only used here.
+ */
+const slashCommands = [
 	new SlashCommandBuilder()
 		.setName("remind")
 		.setDescription("Set a reminder.")
