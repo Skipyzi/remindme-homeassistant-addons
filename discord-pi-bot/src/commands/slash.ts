@@ -102,6 +102,13 @@ const ephemeral = { flags: MessageFlags.Ephemeral } as const;
 async function runRemind(
 	interaction: ChatInputCommandInteraction,
 ): Promise<void> {
+	/*
+	 * Acknowledge first. Parsing the time can call the local model, and adding
+	 * the reminder touches the shared file store; either can outrun Discord's
+	 * 3-second reply window, after which the interaction token is dead (10062).
+	 * Deferring acks immediately and gives ~15 minutes to edit in the result.
+	 */
+	await interaction.deferReply(ephemeral);
 	const text = interaction.options.getString("text", true);
 	const when = interaction.options.getString("when", true);
 	/*
@@ -114,21 +121,17 @@ async function runRemind(
 		channel && "name" in channel ? (channel.name as string | null) : null;
 	const inGuild = interaction.inGuild();
 	if (inGuild && !nameIsReminderChannel(channelName)) {
-		await interaction.reply({
-			content:
-				"In a server, set reminders in a channel with **reminder** in its name — or DM me for a private one.",
-			...ephemeral,
-		});
+		await interaction.editReply(
+			"In a server, set reminders in a channel with **reminder** in its name — or DM me for a private one.",
+		);
 		return;
 	}
 
 	const parsed = await resolveReminder(text, when);
 	if (!parsed) {
-		await interaction.reply({
-			content:
-				'I could not read a time from that. Try "in 30 minutes", "tomorrow", or "on 2026-08-01".',
-			...ephemeral,
-		});
+		await interaction.editReply(
+			'I could not read a time from that. Try "in 30 minutes", "tomorrow", or "on 2026-08-01".',
+		);
 		return;
 	}
 
@@ -152,43 +155,40 @@ async function runRemind(
 			},
 			{ name: "ID", value: `\`${reminder.id}\``, inline: true },
 		);
-	await interaction.reply({
+	await interaction.editReply({
 		embeds: [card],
 		components: [reminderButtons(reminder.id, reminder.userId)],
-		...ephemeral,
 	});
 }
 
 async function runReminders(
 	interaction: ChatInputCommandInteraction,
 ): Promise<void> {
+	// Defer first: the shared file store is read/written under a lock, which
+	// can outrun the 3-second window on a busy Pi (10062).
+	await interaction.deferReply(ephemeral);
 	const sub = interaction.options.getSubcommand();
 	if (sub === "delete") {
 		const id = interaction.options.getString("id", true);
-		await interaction.reply({
-			content: (await deleteReminder(id, interaction.user.id))
+		await interaction.editReply(
+			(await deleteReminder(id, interaction.user.id))
 				? "✅ Reminder deleted."
 				: "❌ No reminder with that ID that you own.",
-			...ephemeral,
-		});
+		);
 		return;
 	}
 	const reminders = await listReminders(interaction.user.id);
 	if (!reminders.length) {
-		await interaction.reply({
-			content: "You have no active reminders. Set one with `/remind`.",
-			...ephemeral,
-		});
+		await interaction.editReply(
+			"You have no active reminders. Set one with `/remind`.",
+		);
 		return;
 	}
 	const lines = reminders.map(
 		(reminder) =>
 			`• \`${reminder.id}\` — ${reminder.message} (<t:${Math.floor(reminder.time.getTime() / 1000)}:R>)`,
 	);
-	await interaction.reply({
-		content: `**Your reminders**\n${lines.join("\n")}`,
-		...ephemeral,
-	});
+	await interaction.editReply(`**Your reminders**\n${lines.join("\n")}`);
 }
 
 async function runPing(
