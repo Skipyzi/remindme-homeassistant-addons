@@ -1,5 +1,8 @@
 import type { Client, Interaction } from "discord.js";
-import { handleReminderDeleteButton } from "./remind";
+import {
+	handleReminderDeleteButton,
+	handleReminderSnoozeButton,
+} from "./remind";
 import { handleChatInputCommand, registerSlashCommands } from "./slash";
 
 /*
@@ -19,12 +22,16 @@ export function setupCommands(client: Client) {
 		}
 		if (interaction.isButton()) {
 			const parts = interaction.customId.split(":");
-			if (
-				parts[0] === "reminder" &&
-				parts[1] === "delete" &&
-				parts.length === 4
-			) {
+			if (parts[0] !== "reminder") return;
+			if (parts[1] === "delete" && parts.length === 4) {
 				await handleReminderDeleteButton(interaction, parts[2], parts[3]);
+			} else if (parts[1] === "snooze" && parts.length === 5) {
+				await handleReminderSnoozeButton(
+					interaction,
+					parts[2],
+					parts[3],
+					parts[4],
+				);
 			}
 		}
 	});

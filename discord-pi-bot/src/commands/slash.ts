@@ -1,7 +1,6 @@
 import {
 	type ChatInputCommandInteraction,
 	type Client,
-	EmbedBuilder,
 	MessageFlags,
 	SlashCommandBuilder,
 	version as discordJsVersion,
@@ -13,6 +12,7 @@ import {
 	listReminders,
 } from "../utils/reminderManager";
 import {
+	buildReminderCard,
 	nameIsReminderChannel,
 	reminderButtons,
 	resolveReminder,
@@ -99,16 +99,50 @@ export async function registerSlashCommands(client: Client): Promise<void> {
 
 const ephemeral = { flags: MessageFlags.Ephemeral } as const;
 
+/*
+ * Placeholder text shown for the instant the ack sits before the real result
+ * edits in. With playful_placeholders on (the default) it is a random surreal
+ * line — the bot "pondering your choices" is funnier than "is thinking…";
+ * off falls back to a plain, literal message.
+ */
+const REMIND_ACKS = [
+	"⏰ Pondering your choices…",
+	"⏰ Consulting the void…",
+	"⏰ Aligning the cosmic timers…",
+	"⏰ Negotiating with tomorrow…",
+	"⏰ Bribing a nearby clock…",
+	"⏰ Waking the reminder gnomes…",
+	"⏰ Folding time into a neat little note…",
+	"⏰ Teaching a goldfish to remember for you…",
+	"⏰ Asking the moon to keep an eye on it…",
+];
+const LIST_ACKS = [
+	"📋 Rifling through the archive…",
+	"📋 Summoning your past intentions…",
+	"📋 Dusting off the ledger…",
+	"📋 Interrogating the gnomes about what you forgot…",
+	"📋 Unrolling the scroll of things-to-do…",
+];
+
+function ack(pool: string[], plain: string): string {
+	if (!config.playfulPlaceholders) return plain;
+	return pool[Math.floor(Math.random() * pool.length)];
+}
+
 async function runRemind(
 	interaction: ChatInputCommandInteraction,
 ): Promise<void> {
 	/*
-	 * Acknowledge first. Parsing the time can call the local model, and adding
-	 * the reminder touches the shared file store; either can outrun Discord's
-	 * 3-second reply window, after which the interaction token is dead (10062).
-	 * Deferring acks immediately and gives ~15 minutes to edit in the result.
+	 * Acknowledge first with a real message, not deferReply — its placeholder
+	 * is Discord's "is thinking…", which reads oddly for a reminder. Parsing
+	 * the time can call the local model and the store write touches a locked
+	 * file; either can outrun Discord's 3-second window and kill the token
+	 * (10062). Replying now acks in time and the result edits this message.
 	 */
-	await interaction.deferReply(ephemeral);
+	await interaction.reply({
+		content: ack(REMIND_ACKS, "⏰ Setting your reminder…"),
+		...ephemeral,
+	});
 	const text = interaction.options.getString("text", true);
 	const when = interaction.options.getString("when", true);
 	/*
@@ -142,21 +176,8 @@ async function runRemind(
 		// Private (DM or a non-reminder channel) reminders carry no channel.
 		inGuild ? interaction.channelId : "",
 	);
-	const timestamp = Math.floor(reminder.time.getTime() / 1000);
-	const card = new EmbedBuilder()
-		.setColor(0x5865f2)
-		.setTitle("⏰ Reminder set")
-		.setDescription(`**${reminder.message}**`)
-		.addFields(
-			{
-				name: "When",
-				value: `<t:${timestamp}:F>\n<t:${timestamp}:R>`,
-				inline: true,
-			},
-			{ name: "ID", value: `\`${reminder.id}\``, inline: true },
-		);
 	await interaction.editReply({
-		embeds: [card],
+		embeds: [buildReminderCard(reminder)],
 		components: [reminderButtons(reminder.id, reminder.userId)],
 	});
 }
@@ -164,9 +185,13 @@ async function runRemind(
 async function runReminders(
 	interaction: ChatInputCommandInteraction,
 ): Promise<void> {
-	// Defer first: the shared file store is read/written under a lock, which
-	// can outrun the 3-second window on a busy Pi (10062).
-	await interaction.deferReply(ephemeral);
+	// Ack first with a real message (not the "is thinking…" defer): the shared
+	// store is read/written under a lock, which can outrun the 3-second window
+	// on a busy Pi (10062). The result edits this message.
+	await interaction.reply({
+		content: ack(LIST_ACKS, "📋 One moment…"),
+		...ephemeral,
+	});
 	const sub = interaction.options.getSubcommand();
 	if (sub === "delete") {
 		const id = interaction.options.getString("id", true);

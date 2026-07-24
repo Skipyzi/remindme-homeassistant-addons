@@ -237,6 +237,28 @@ export async function deleteReminder(
 	});
 }
 
+/**
+ * Move a reminder to a new time (snooze). Clears the notified flag and any
+ * delivery record so the scheduler arms it afresh and it fires again. Only the
+ * owner can reschedule their own reminder.
+ */
+export async function rescheduleReminder(
+	id: string,
+	userId: string,
+	newTime: Date,
+): Promise<Reminder | undefined> {
+	return mutate((list) => {
+		const match = list.find(
+			(reminder) => reminder.id === id && reminder.userId === userId,
+		);
+		if (!match) return { list, result: undefined };
+		match.time = newTime;
+		match.notified = false;
+		match.deliveryStatus = undefined;
+		return { list, result: match };
+	});
+}
+
 export async function cleanupExpiredReminders(): Promise<void> {
 	const expiry = Date.now() - RETENTION_MS;
 	await mutate((list) => ({
