@@ -4,6 +4,9 @@ export const config = {
 	/* Register slash commands to this one server for instant availability;
 	 * blank falls back to global registration (up to ~1h to propagate). */
 	guildId: process.env.DISCORD_GUILD_ID || "",
+	/* Show surreal, random placeholder text while a slash command is working
+	 * (e.g. "Pondering your choices…"). Default on; set false for plain text. */
+	playfulPlaceholders: process.env.PLAYFUL_PLACEHOLDERS !== "false",
 	aiApiKey: process.env.OPENAI_API_KEY || "",
 	aiModel: process.env.AI_MODEL || "gpt-3.5-turbo",
 	aiSystemPrompt:

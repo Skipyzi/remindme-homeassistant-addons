@@ -99,6 +99,36 @@ export async function registerSlashCommands(client: Client): Promise<void> {
 
 const ephemeral = { flags: MessageFlags.Ephemeral } as const;
 
+/*
+ * Placeholder text shown for the instant the ack sits before the real result
+ * edits in. With playful_placeholders on (the default) it is a random surreal
+ * line — the bot "pondering your choices" is funnier than "is thinking…";
+ * off falls back to a plain, literal message.
+ */
+const REMIND_ACKS = [
+	"⏰ Pondering your choices…",
+	"⏰ Consulting the void…",
+	"⏰ Aligning the cosmic timers…",
+	"⏰ Negotiating with tomorrow…",
+	"⏰ Bribing a nearby clock…",
+	"⏰ Waking the reminder gnomes…",
+	"⏰ Folding time into a neat little note…",
+	"⏰ Teaching a goldfish to remember for you…",
+	"⏰ Asking the moon to keep an eye on it…",
+];
+const LIST_ACKS = [
+	"📋 Rifling through the archive…",
+	"📋 Summoning your past intentions…",
+	"📋 Dusting off the ledger…",
+	"📋 Interrogating the gnomes about what you forgot…",
+	"📋 Unrolling the scroll of things-to-do…",
+];
+
+function ack(pool: string[], plain: string): string {
+	if (!config.playfulPlaceholders) return plain;
+	return pool[Math.floor(Math.random() * pool.length)];
+}
+
 async function runRemind(
 	interaction: ChatInputCommandInteraction,
 ): Promise<void> {
@@ -109,7 +139,10 @@ async function runRemind(
 	 * file; either can outrun Discord's 3-second window and kill the token
 	 * (10062). Replying now acks in time and the result edits this message.
 	 */
-	await interaction.reply({ content: "⏰ Setting your reminder…", ...ephemeral });
+	await interaction.reply({
+		content: ack(REMIND_ACKS, "⏰ Setting your reminder…"),
+		...ephemeral,
+	});
 	const text = interaction.options.getString("text", true);
 	const when = interaction.options.getString("when", true);
 	/*
@@ -168,7 +201,10 @@ async function runReminders(
 	// Ack first with a real message (not the "is thinking…" defer): the shared
 	// store is read/written under a lock, which can outrun the 3-second window
 	// on a busy Pi (10062). The result edits this message.
-	await interaction.reply({ content: "📋 One moment…", ...ephemeral });
+	await interaction.reply({
+		content: ack(LIST_ACKS, "📋 One moment…"),
+		...ephemeral,
+	});
 	const sub = interaction.options.getSubcommand();
 	if (sub === "delete") {
 		const id = interaction.options.getString("id", true);
