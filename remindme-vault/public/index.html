@@ -12,6 +12,7 @@
 			<nav class="ribbon" aria-label="Actions">
 				<button id="rb-new" class="ribbon-btn" title="New note" aria-label="New note">＋</button>
 				<button id="rb-folder" class="ribbon-btn" title="New folder" aria-label="New folder">🗀</button>
+				<button id="rb-daily" class="ribbon-btn" title="Daily note" aria-label="Daily note">📅</button>
 				<button id="rb-graph" class="ribbon-btn" title="Graph view" aria-label="Graph view">◕</button>
 				<button id="rb-reload" class="ribbon-btn" title="Reload vault" aria-label="Reload vault">⟳</button>
 			</nav>
@@ -21,7 +22,11 @@
 				<div class="explorer-head">
 					<input id="search" type="search" placeholder="Search notes…" aria-label="Search notes" />
 				</div>
-				<div id="tree" class="tree"></div>
+				<div id="starred" class="starred" hidden>
+						<h4>★ Starred</h4>
+						<ul id="starred-list" class="starred-list"></ul>
+					</div>
+					<div id="tree" class="tree"></div>
 			</aside>
 
 			<!-- Draggable divider: explorer ↔ workspace. -->
@@ -81,8 +86,16 @@
 						<span class="tb-sep" aria-hidden="true"></span>
 						<button type="button" id="tb-undo" data-action="undo" title="Undo (Ctrl+Z)" disabled>↶</button>
 						<button type="button" id="tb-redo" data-action="redo" title="Redo (Ctrl+Shift+Z)" disabled>↷</button>
+						<button type="button" id="tb-outline" data-action="outline" title="Outline">☰&nbsp;Outline</button>
 						<button type="button" id="tb-history" data-action="history" title="History timeline">⧗&nbsp;History</button>
 					</div>
+					<aside id="outline-panel" class="history-panel outline-panel" hidden>
+						<header class="history-head">
+							<span>Outline</span>
+							<button id="outline-close" class="hp-close" title="Close" aria-label="Close">✕</button>
+						</header>
+						<ul id="outline-list" class="outline-list"></ul>
+					</aside>
 					<aside id="history-panel" class="history-panel" hidden>
 						<header class="history-head">
 							<span>History</span>
@@ -104,6 +117,7 @@
 					<div class="editor-actions">
 						<button id="save-btn" class="btn">Save</button>
 						<button id="delete-btn" class="btn danger" disabled>Delete</button>
+						<button id="star-btn" class="btn star-btn" title="Star this note" disabled>☆</button>
 						<span id="save-status" class="save-status"></span>
 					</div>
 					<div class="backlinks">
@@ -123,6 +137,13 @@
 					<div id="graph-mount" class="graph-mount"></div>
 				</section>
 			</main>
+		</div>
+		<ul id="autocomplete" class="autocomplete" hidden></ul>
+		<div id="palette" class="palette" hidden>
+			<div class="palette-box">
+				<input id="palette-input" class="palette-input" type="text" placeholder="Open a note…" aria-label="Palette" />
+				<ul id="palette-list" class="palette-list"></ul>
+			</div>
 		</div>
 		<div id="drop-overlay" class="drop-overlay" hidden>
 			<div class="drop-card">
