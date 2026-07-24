@@ -78,7 +78,18 @@
 						<button type="button" data-action="codeblock" title="Code block">{&nbsp;}</button>
 						<button type="button" data-action="table" title="Table">▦</button>
 						<button type="button" data-action="mermaid" title="Diagram (Mermaid)">◆&nbsp;Diagram</button>
+						<span class="tb-sep" aria-hidden="true"></span>
+						<button type="button" id="tb-undo" data-action="undo" title="Undo (Ctrl+Z)" disabled>↶</button>
+						<button type="button" id="tb-redo" data-action="redo" title="Redo (Ctrl+Shift+Z)" disabled>↷</button>
+						<button type="button" id="tb-history" data-action="history" title="History timeline">⧗&nbsp;History</button>
 					</div>
+					<aside id="history-panel" class="history-panel" hidden>
+						<header class="history-head">
+							<span>History</span>
+							<button id="history-close" class="hp-close" title="Close" aria-label="Close">✕</button>
+						</header>
+						<ul id="history-list" class="history-list"></ul>
+					</aside>
 					<div id="edit-split" class="edit-split" data-mode="edit">
 						<textarea
 							id="note-body"
