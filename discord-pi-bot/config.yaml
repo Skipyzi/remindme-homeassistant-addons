@@ -1,5 +1,5 @@
 name: RemindMe Discord Bot
-version: "2.56.0"
+version: "2.57.0"
 slug: remindme_discord_bot
 description: Discord bot with reminders, pi-agent bridge, and local LLM support
 arch:
@@ -32,7 +32,7 @@ options:
   exa_api_key: ""
   ha_notify_target: ""
   vault_url: ""
-  aftership_api_key: ""
+  trackingmore_api_key: ""
 schema:
   discord_token: password
   owner_id: str
@@ -51,7 +51,7 @@ schema:
   exa_api_key: password
   ha_notify_target: str
   vault_url: str?
-  aftership_api_key: password
+  trackingmore_api_key: password
 map:
   - type: data
     read_only: false

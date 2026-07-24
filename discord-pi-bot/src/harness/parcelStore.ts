@@ -4,7 +4,7 @@ import { dirname } from "node:path";
 
 /*
  * Parcels the bot tracks for the owner. Each is a carrier tracking number plus
- * the last status AfterShip reported; a poller refreshes them and notifies on a
+ * the last status TrackingMore reported; a poller refreshes them and notifies on a
  * status change (see the scheduler, wired in a later slice). Persisted to /data
  * so the tracked list survives restarts, atomic-written like the other stores.
  */
@@ -23,7 +23,7 @@ export type ParcelTag =
 export interface Parcel {
 	id: string;
 	trackingNumber: string;
-	/** AfterShip courier slug, e.g. "dhl", "dpd-de". */
+	/** TrackingMore courier code, e.g. "dhl", "ups", "hermes". */
 	slug: string;
 	courierName?: string;
 	/** A human label, e.g. "Keyboard from Amazon". */
