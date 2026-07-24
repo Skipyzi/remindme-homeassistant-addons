@@ -6,6 +6,7 @@ import {
 	SlashCommandBuilder,
 	version as discordJsVersion,
 } from "discord.js";
+import { config } from "../config";
 import {
 	addReminder,
 	deleteReminder,
@@ -23,7 +24,13 @@ import {
  * which all reached the same handlers and made it unclear what counted as a
  * command. These are registered with Discord once the client is ready.
  */
-export const slashCommands = [
+/*
+ * Not exported: the type of a SlashCommandBuilder's .toJSON() names a
+ * discord-api-types symbol from a nested (pnpm) path, which cannot be written
+ * portably into a .d.ts under `declaration: true` (TS2883). Keeping this
+ * module-private avoids emitting its type at all; it is only used here.
+ */
+const slashCommands = [
 	new SlashCommandBuilder()
 		.setName("remind")
 		.setDescription("Set a reminder.")
@@ -63,12 +70,28 @@ export const slashCommands = [
 		.setDescription("Bot status and runtime information."),
 ].map((command) => command.toJSON());
 
-/** Register the slash commands with Discord. Global, so they work everywhere. */
+/**
+ * Register the slash commands with Discord.
+ *
+ * With a guild id set they are registered to that one server, where they
+ * appear immediately — the right choice for a personal bot. Without it they
+ * register globally, which works everywhere but can take up to an hour to
+ * show the first time.
+ */
 export async function registerSlashCommands(client: Client): Promise<void> {
 	if (!client.application) return;
 	try {
-		await client.application.commands.set(slashCommands);
-		console.log(`Registered ${slashCommands.length} slash commands.`);
+		if (config.guildId) {
+			await client.application.commands.set(slashCommands, config.guildId);
+			console.log(
+				`Registered ${slashCommands.length} slash commands to guild ${config.guildId}.`,
+			);
+		} else {
+			await client.application.commands.set(slashCommands);
+			console.log(
+				`Registered ${slashCommands.length} slash commands globally (up to ~1h to appear).`,
+			);
+		}
 	} catch (error) {
 		console.error("Failed to register slash commands:", error);
 	}
