@@ -8,6 +8,7 @@ import { Button } from "../components/ui/Button";
 import { Card } from "../components/ui/Card";
 import { EmptyState, ErrorState, LoadingState } from "../components/ui/StatePanel";
 import { GrowForm } from "../features/grows/GrowForm";
+import { GrowJournalSection } from "../features/journal/GrowJournalSection";
 import { growToDraft, type GrowDraft } from "../features/grows/types";
 
 export function GrowDetailContent({ growId }: { growId: string }) {
@@ -125,6 +126,8 @@ export function GrowDetailContent({ growId }: { growId: string }) {
 					</ul>
 				)}
 			</section>
+
+			<GrowJournalSection growId={record.id} />
 		</div>
 	);
 }

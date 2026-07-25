@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.4.0
+
+- Added Plant and Grow journal entries with type, tags, an optional related lifecycle stage, and an optional related issue.
+- Added Plant measurements for height, width, canopy and stem diameter, node count, container and plant weight, and named custom metrics.
+- Added Plant photo uploads with caption, tags, optional journal-entry and measurement links, and file-backed storage under `/data`.
+- Added a merged per-Plant Activity Timeline combining stage transitions, journal entries, measurements, and photos in one chronological feed.
+- Added a Plant detail Activity/Photos tabbed view with inline note, measurement, and photo composers, plus a Grow detail journal section.
+- Added Alembic migration `0005` for journal entries, measurements, and photos.
+- Preserved Home Assistant independence: all new record-keeping remains usable while Home Assistant is disconnected.
+
 ## 0.3.0
 
 - Added first-class Grows that belong to a Grow Space and support multiple simultaneous active cycles.

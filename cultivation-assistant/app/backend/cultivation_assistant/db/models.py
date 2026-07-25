@@ -352,3 +352,110 @@ class PlantStageTransition(UUIDPrimaryKeyMixin, Base):
         nullable=False,
     )
     plant: orm.Mapped[Plant] = orm.relationship(back_populates="transitions")
+    from_stage: orm.Mapped[LifecycleStage | None] = orm.relationship(
+        lazy="joined", foreign_keys=[from_stage_id]
+    )
+    to_stage: orm.Mapped[LifecycleStage] = orm.relationship(
+        lazy="joined", foreign_keys=[to_stage_id]
+    )
+
+
+class JournalEntry(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """A free-form note describing a Plant or a Grow."""
+
+    __tablename__ = "journal_entries"
+    __table_args__ = (
+        sa.CheckConstraint("subject_type IN ('plant', 'grow')", name="ck_journal_subject_type"),
+        sa.CheckConstraint(
+            "entry_type IN ('watered', 'fed', 'transplanted', 'topped', 'trained', "
+            "'defoliated', 'light_schedule_changed', 'flowering_initiated', "
+            "'first_flowers_observed', 'problem_observed', 'treatment_applied', "
+            "'harvested', 'drying_started', 'jarred', 'cure_milestone', 'note')",
+            name="ck_journal_entry_type",
+        ),
+        sa.Index("ix_journal_entries_subject", "subject_type", "subject_id", "occurred_at"),
+    )
+
+    subject_type: orm.Mapped[str] = orm.mapped_column(sa.String(20), nullable=False)
+    subject_id: orm.Mapped[str] = orm.mapped_column(sa.String(36), nullable=False)
+    entry_type: orm.Mapped[str] = orm.mapped_column(sa.String(40), nullable=False)
+    occurred_at: orm.Mapped[datetime] = orm.mapped_column(
+        sa.DateTime(timezone=True), nullable=False
+    )
+    title: orm.Mapped[str | None] = orm.mapped_column(sa.String(200))
+    notes: orm.Mapped[str | None] = orm.mapped_column(sa.Text)
+    tags: orm.Mapped[list[str]] = orm.mapped_column(
+        sa.JSON(), default=list, server_default="[]", nullable=False
+    )
+    related_stage_id: orm.Mapped[str | None] = orm.mapped_column(
+        sa.ForeignKey("lifecycle_stages.id", ondelete="RESTRICT")
+    )
+    related_issue: orm.Mapped[str | None] = orm.mapped_column(sa.Text)
+    related_stage: orm.Mapped[LifecycleStage | None] = orm.relationship(
+        lazy="joined", foreign_keys=[related_stage_id]
+    )
+
+
+class Measurement(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """A quantitative reading recorded against a Plant."""
+
+    __tablename__ = "measurements"
+    __table_args__ = (
+        sa.CheckConstraint(
+            "metric_type IN ('height', 'width', 'canopy_diameter', 'stem_diameter', "
+            "'node_count', 'container_weight', 'plant_weight', 'custom')",
+            name="ck_measurement_metric_type",
+        ),
+        sa.Index("ix_measurements_plant_order", "plant_id", "occurred_at"),
+    )
+
+    plant_id: orm.Mapped[str] = orm.mapped_column(
+        sa.ForeignKey("plants.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    metric_type: orm.Mapped[str] = orm.mapped_column(sa.String(40), nullable=False)
+    custom_metric_name: orm.Mapped[str | None] = orm.mapped_column(sa.String(120))
+    value: orm.Mapped[float] = orm.mapped_column(sa.Float(), nullable=False)
+    unit: orm.Mapped[str] = orm.mapped_column(sa.String(40), nullable=False)
+    occurred_at: orm.Mapped[datetime] = orm.mapped_column(
+        sa.DateTime(timezone=True), nullable=False
+    )
+    notes: orm.Mapped[str | None] = orm.mapped_column(sa.Text)
+
+
+class Photo(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """A Plant photo stored on disk and referenced by relative path."""
+
+    __tablename__ = "photos"
+    __table_args__ = (
+        sa.CheckConstraint(
+            "content_type IN ('image/jpeg', 'image/png', 'image/webp')",
+            name="ck_photo_content_type",
+        ),
+        sa.Index("ix_photos_plant_order", "plant_id", "occurred_at"),
+    )
+
+    plant_id: orm.Mapped[str] = orm.mapped_column(
+        sa.ForeignKey("plants.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    journal_entry_id: orm.Mapped[str | None] = orm.mapped_column(
+        sa.ForeignKey("journal_entries.id", ondelete="SET NULL"), index=True
+    )
+    measurement_id: orm.Mapped[str | None] = orm.mapped_column(
+        sa.ForeignKey("measurements.id", ondelete="SET NULL"), index=True
+    )
+    stage_id: orm.Mapped[str | None] = orm.mapped_column(
+        sa.ForeignKey("lifecycle_stages.id", ondelete="RESTRICT")
+    )
+    caption: orm.Mapped[str | None] = orm.mapped_column(sa.String(200))
+    tags: orm.Mapped[list[str]] = orm.mapped_column(
+        sa.JSON(), default=list, server_default="[]", nullable=False
+    )
+    file_path: orm.Mapped[str] = orm.mapped_column(sa.String(400), nullable=False)
+    content_type: orm.Mapped[str] = orm.mapped_column(sa.String(40), nullable=False)
+    file_size: orm.Mapped[int] = orm.mapped_column(sa.Integer(), nullable=False)
+    occurred_at: orm.Mapped[datetime] = orm.mapped_column(
+        sa.DateTime(timezone=True), nullable=False
+    )
+    stage: orm.Mapped[LifecycleStage | None] = orm.relationship(
+        lazy="joined", foreign_keys=[stage_id]
+    )
