@@ -1,7 +1,15 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { useParams } from "@tanstack/react-router";
 import { ArrowLeft } from "lucide-react";
 import { ApiError } from "../api/client";
+import {
+	useCreateMeasurement,
+	useCreatePlantJournalEntry,
+	useDeletePhoto,
+	usePhotos,
+	usePlantTimeline,
+	useUploadPhoto,
+} from "../api/journal";
 import { useCreateCultivar, useCultivars } from "../api/library";
 import { useLifecycleStages } from "../api/lifecycle";
 import {
@@ -10,12 +18,16 @@ import {
 	usePlant,
 	useTransitionPlantStage,
 	useUpdatePlant,
-	type PlantTransition,
 } from "../api/plants";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { Card } from "../components/ui/Card";
 import { ErrorState, LoadingState } from "../components/ui/StatePanel";
+import { ActivityTimeline } from "../features/journal/ActivityTimeline";
+import { JournalEntryComposer } from "../features/journal/JournalEntryComposer";
+import { MeasurementComposer } from "../features/journal/MeasurementComposer";
+import { PhotoGrid } from "../features/journal/PhotoGrid";
+import { PhotoUploadComposer } from "../features/journal/PhotoUploadComposer";
 import { PlantForm } from "../features/plants/PlantForm";
 import { StageTransitionDialog } from "../features/plants/StageTransitionDialog";
 import {
@@ -25,17 +37,15 @@ import {
 import type { PlantDraft } from "../features/plants/types";
 
 type Mode = "view" | "edit" | "duplicate" | "transition";
-
-function sortedHistory(transitions: PlantTransition[]): PlantTransition[] {
-	return [...transitions].sort((a, b) =>
-		a.effective_at < b.effective_at ? 1 : -1,
-	);
-}
+type ActivityTab = "activity" | "photos";
+type Composer = "note" | "measurement" | "photo" | null;
 
 export function PlantDetailContent({ plantId }: { plantId: string }) {
 	const plant = usePlant(plantId);
 	const [mode, setMode] = useState<Mode>("view");
 	const [draft, setDraft] = useState<PlantDraft | null>(null);
+	const [activityTab, setActivityTab] = useState<ActivityTab>("activity");
+	const [composer, setComposer] = useState<Composer>(null);
 
 	const cultivars = useCultivars({});
 	const stages = useLifecycleStages(false);
@@ -45,10 +55,12 @@ export function PlantDetailContent({ plantId }: { plantId: string }) {
 	const transition = useTransitionPlantStage();
 	const archivePlant = useArchivePlant();
 
-	const history = useMemo(
-		() => (plant.data ? sortedHistory(plant.data.stage_transitions) : []),
-		[plant.data],
-	);
+	const timeline = usePlantTimeline(plantId);
+	const photos = usePhotos(plantId);
+	const createJournalEntry = useCreatePlantJournalEntry(plantId);
+	const createMeasurement = useCreateMeasurement(plantId);
+	const uploadPhoto = useUploadPhoto(plantId);
+	const deletePhoto = useDeletePhoto(plantId);
 
 	if (plant.isLoading) return <LoadingState label="Loading plant" />;
 	if (plant.isError || !plant.data) {
@@ -207,25 +219,124 @@ export function PlantDetailContent({ plantId }: { plantId: string }) {
 			</Card>
 
 			<Card className="record-panel">
-				<h2>Lifecycle history</h2>
-				<ol className="transition-history">
-					{history.map((item) => (
-						<li key={item.id}>
-							<span className="transition-history__stage">
-								{stages.data?.find((stage) => stage.id === item.to_stage_id)
-									?.label ?? item.to_stage_id}
-							</span>
-							<span className="transition-history__meta">
-								Effective {item.effective_at} · recorded {item.created_at} ·{" "}
-								{item.source}
-							</span>
-							{item.notes && (
-								<span className="transition-history__notes">{item.notes}</span>
-							)}
-						</li>
-					))}
-				</ol>
+				<div className="record-panel__head">
+					<div className="tab-group" role="tablist">
+						<button
+							type="button"
+							role="tab"
+							aria-selected={activityTab === "activity"}
+							className={activityTab === "activity" ? "tab tab--active" : "tab"}
+							onClick={() => setActivityTab("activity")}
+						>
+							Activity
+						</button>
+						<button
+							type="button"
+							role="tab"
+							aria-selected={activityTab === "photos"}
+							className={activityTab === "photos" ? "tab tab--active" : "tab"}
+							onClick={() => setActivityTab("photos")}
+						>
+							Photos
+						</button>
+					</div>
+					<div className="record-actions">
+						<Button variant="secondary" onClick={() => setComposer("note")}>
+							Add note
+						</Button>
+						<Button variant="secondary" onClick={() => setComposer("measurement")}>
+							Log measurement
+						</Button>
+						<Button variant="secondary" onClick={() => setComposer("photo")}>
+							Add photo
+						</Button>
+					</div>
+				</div>
+
+				{activityTab === "activity" && (
+					<>
+						{timeline.isLoading && <LoadingState label="Loading activity" />}
+						{timeline.isError && (
+							<ErrorState
+								title="Activity unavailable"
+								description={
+									timeline.error?.message ?? "The activity feed could not be loaded."
+								}
+								actionLabel="Retry"
+								onAction={() => timeline.refetch()}
+							/>
+						)}
+						{timeline.data && <ActivityTimeline entries={timeline.data.items} />}
+					</>
+				)}
+
+				{activityTab === "photos" && (
+					<>
+						{photos.isLoading && <LoadingState label="Loading photos" />}
+						{photos.isError && (
+							<ErrorState
+								title="Photos unavailable"
+								description={
+									photos.error?.message ?? "The photos could not be loaded."
+								}
+								actionLabel="Retry"
+								onAction={() => photos.refetch()}
+							/>
+						)}
+						{photos.data && (
+							<PhotoGrid
+								photos={photos.data}
+								onDelete={(photoId) => deletePhoto.mutate(photoId)}
+								deleting={deletePhoto.isPending}
+							/>
+						)}
+					</>
+				)}
 			</Card>
+
+			{composer === "note" && (
+				<JournalEntryComposer
+					stages={stages.data ?? []}
+					onSubmit={(input) =>
+						createJournalEntry.mutate(input, { onSuccess: () => setComposer(null) })
+					}
+					onClose={() => setComposer(null)}
+					submitting={createJournalEntry.isPending}
+					submitError={
+						createJournalEntry.error instanceof ApiError
+							? createJournalEntry.error.message
+							: null
+					}
+				/>
+			)}
+
+			{composer === "measurement" && (
+				<MeasurementComposer
+					onSubmit={(input) =>
+						createMeasurement.mutate(input, { onSuccess: () => setComposer(null) })
+					}
+					onClose={() => setComposer(null)}
+					submitting={createMeasurement.isPending}
+					submitError={
+						createMeasurement.error instanceof ApiError
+							? createMeasurement.error.message
+							: null
+					}
+				/>
+			)}
+
+			{composer === "photo" && (
+				<PhotoUploadComposer
+					onSubmit={(input) =>
+						uploadPhoto.mutate(input, { onSuccess: () => setComposer(null) })
+					}
+					onClose={() => setComposer(null)}
+					submitting={uploadPhoto.isPending}
+					submitError={
+						uploadPhoto.error instanceof ApiError ? uploadPhoto.error.message : null
+					}
+				/>
+			)}
 
 			{mode === "transition" && (
 				<StageTransitionDialog

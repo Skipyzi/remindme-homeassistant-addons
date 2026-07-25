@@ -36,6 +36,16 @@ function jsonResponse(body: unknown, status = 200): Response {
 	});
 }
 
+function routedFetch(grow: unknown = growFixture) {
+	return vi.fn((input: RequestInfo | URL) => {
+		const url = String(input);
+		if (url.includes("journal-entries")) {
+			return Promise.resolve(jsonResponse({ items: [] }));
+		}
+		return Promise.resolve(jsonResponse(grow));
+	});
+}
+
 function renderDetail() {
 	const queryClient = new QueryClient({
 		defaultOptions: { queries: { retry: false } },
@@ -53,7 +63,7 @@ afterEach(() => {
 
 describe("GrowDetailContent", () => {
 	it("shows grow identity and its plants", async () => {
-		vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse(growFixture)));
+		vi.stubGlobal("fetch", routedFetch());
 
 		renderDetail();
 
@@ -63,10 +73,7 @@ describe("GrowDetailContent", () => {
 	});
 
 	it("shows an empty plant state", async () => {
-		vi.stubGlobal(
-			"fetch",
-			vi.fn().mockResolvedValue(jsonResponse({ ...growFixture, plants: [] })),
-		);
+		vi.stubGlobal("fetch", routedFetch({ ...growFixture, plants: [] }));
 
 		renderDetail();
 
@@ -75,7 +82,7 @@ describe("GrowDetailContent", () => {
 
 	it("opens the edit form", async () => {
 		const user = userEvent.setup();
-		vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse(growFixture)));
+		vi.stubGlobal("fetch", routedFetch());
 
 		renderDetail();
 		await screen.findByRole("heading", { name: "Summer run" });
@@ -88,11 +95,7 @@ describe("GrowDetailContent", () => {
 	it("warns when the grow space is inactive", async () => {
 		vi.stubGlobal(
 			"fetch",
-			vi
-				.fn()
-				.mockResolvedValue(
-					jsonResponse({ ...growFixture, grow_space_active: false }),
-				),
+			routedFetch({ ...growFixture, grow_space_active: false }),
 		);
 
 		renderDetail();
@@ -100,5 +103,15 @@ describe("GrowDetailContent", () => {
 		expect(
 			await screen.findByText(/grow space is currently inactive/i),
 		).toBeVisible();
+	});
+
+	it("shows the grow journal section", async () => {
+		vi.stubGlobal("fetch", routedFetch());
+
+		renderDetail();
+		await screen.findByRole("heading", { name: "Summer run" });
+
+		expect(screen.getByRole("heading", { name: /journal/i })).toBeVisible();
+		expect(await screen.findByText(/no journal entries yet/i)).toBeVisible();
 	});
 });

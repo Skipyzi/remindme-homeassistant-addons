@@ -24,6 +24,7 @@ from cultivation_assistant.home_assistant.client import (
 )
 from cultivation_assistant.home_assistant.state_cache import EntityStateCache
 from cultivation_assistant.home_assistant.subscription import HomeAssistantEventSubscriber
+from cultivation_assistant.journal.router import create_router as create_journal_router
 from cultivation_assistant.library.router import create_router as create_library_router
 from cultivation_assistant.lifecycle.router import create_router as create_lifecycle_router
 from cultivation_assistant.logging import configure_logging
@@ -151,6 +152,9 @@ def create_app(
     app.include_router(create_lifecycle_router(runtime_database), prefix="/api/v1")
     app.include_router(create_grows_router(runtime_database), prefix="/api/v1")
     app.include_router(create_plants_router(runtime_database), prefix="/api/v1")
+    app.include_router(
+        create_journal_router(runtime_database, runtime_settings.data_dir), prefix="/api/v1"
+    )
     if runtime_settings.frontend_dist.is_dir():
         app.mount(
             "/",
