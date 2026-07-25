@@ -138,12 +138,15 @@ export function GrowSpacesPage() {
 									<p>
 										{[
 											space.location,
-											growSpaceTypeLabels[space.space_type] ?? space.space_type.replaceAll("_", " "),
+											growSpaceTypeLabels[space.space_type] ??
+												space.space_type.replaceAll("_", " "),
 										]
 											.filter(Boolean)
 											.join(" · ")}
 									</p>
-									{dimensions && <p className="space-card__dimensions">{dimensions}</p>}
+									{dimensions && (
+										<p className="space-card__dimensions">{dimensions}</p>
+									)}
 									<div className="space-stats">
 										<span>
 											<Wifi size={15} />

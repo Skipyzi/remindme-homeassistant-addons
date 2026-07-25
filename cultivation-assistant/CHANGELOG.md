@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.3.0
+
+- Added first-class Grows that belong to a Grow Space and support multiple simultaneous active cycles.
+- Added minimal structured cultivars with an optional breeder so unknown or gifted genetics can be recorded.
+- Added installation-wide lifecycle stages with rename, reorder, enable/disable, and custom-stage support; disabling preserves history.
+- Added individually identifiable Plants with seed/clone identity, cultivation details, plan-versus-actual dates, and status.
+- Added append-only lifecycle stage transitions with deterministic current-stage projection and backward/skipped confirmation.
+- Added a Plant Duplicate workflow that reviews a prefilled draft without copying lifecycle history.
+- Added Grows and Plants register, Grow detail, Plant detail, and lifecycle stage settings routes.
+- Added Alembic migration `0004` for breeders, cultivars, lifecycle stages, grows, plants, and transitions.
+- Preserved Home Assistant independence: all new cultivation records remain usable while Home Assistant is disconnected.
+
 ## 0.2.1
 
 - Corrected editable Grow Space types to Indoor Tent, Greenhouse, Outdoor, and Room.

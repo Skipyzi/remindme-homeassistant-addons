@@ -41,7 +41,12 @@ export function calculateDimensionPreview(
 ): DimensionPreview | null {
 	const length = Number(dimensions.length);
 	const width = Number(dimensions.width);
-	if (!Number.isFinite(length) || length <= 0 || !Number.isFinite(width) || width <= 0) {
+	if (
+		!Number.isFinite(length) ||
+		length <= 0 ||
+		!Number.isFinite(width) ||
+		width <= 0
+	) {
 		return null;
 	}
 	const factor = metresPerUnit[dimensions.unit];

@@ -1,8 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-	calculateDimensionPreview,
-	convertDimensionValue,
-} from "./dimensions";
+import { calculateDimensionPreview, convertDimensionValue } from "./dimensions";
 
 describe("grow-space dimension helpers", () => {
 	it("converts centimetres to inches for editing", () => {

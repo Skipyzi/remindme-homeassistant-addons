@@ -32,9 +32,8 @@ export const growSpaceTypeOptions: readonly [GrowSpaceType, string][] = [
 	["room", "Room"],
 ];
 
-export const growSpaceTypeLabels: Record<string, string> = Object.fromEntries(
-	growSpaceTypeOptions,
-);
+export const growSpaceTypeLabels: Record<string, string> =
+	Object.fromEntries(growSpaceTypeOptions);
 
 export type WizardStep = "details" | "mappings" | "review";
 export type EditableGrowSpaceType = GrowSpaceType | LegacyGrowSpaceType;
@@ -86,7 +85,10 @@ export function validateGrowSpaceDetails(draft: GrowSpaceDetailsDraft) {
 		["Width", draft.width],
 		["Height", draft.height],
 	] as const) {
-		if (value.trim() && (!Number.isFinite(Number(value)) || Number(value) <= 0)) {
+		if (
+			value.trim() &&
+			(!Number.isFinite(Number(value)) || Number(value) <= 0)
+		) {
 			return `${label} must be a positive number.`;
 		}
 	}

@@ -40,9 +40,17 @@ export function GrowSpaceDetailsForm({
 	function changeUnit(event: ChangeEvent<HTMLSelectElement>) {
 		const nextUnit = event.target.value as DimensionUnit;
 		update({
-			length: convertDimensionValue(value.length, value.dimensionUnit, nextUnit),
+			length: convertDimensionValue(
+				value.length,
+				value.dimensionUnit,
+				nextUnit,
+			),
 			width: convertDimensionValue(value.width, value.dimensionUnit, nextUnit),
-			height: convertDimensionValue(value.height, value.dimensionUnit, nextUnit),
+			height: convertDimensionValue(
+				value.height,
+				value.dimensionUnit,
+				nextUnit,
+			),
 			dimensionUnit: nextUnit,
 		});
 	}
@@ -144,7 +152,9 @@ export function GrowSpaceDetailsForm({
 			<div className="calculated-measurements span-two" aria-live="polite">
 				<div>
 					<span>Calculated floor area</span>
-					<strong>{preview ? `${preview.areaM2} m²` : "Awaiting dimensions"}</strong>
+					<strong>
+						{preview ? `${preview.areaM2} m²` : "Awaiting dimensions"}
+					</strong>
 				</div>
 				<div>
 					<span>Calculated volume</span>

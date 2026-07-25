@@ -191,7 +191,8 @@ export function GrowSpaceWizard({
 									<strong>
 										{[draft.length, draft.width, draft.height]
 											.filter(Boolean)
-											.join(" × ")} {draft.dimensionUnit}
+											.join(" × ")}{" "}
+										{draft.dimensionUnit}
 									</strong>
 								</div>
 								<div>

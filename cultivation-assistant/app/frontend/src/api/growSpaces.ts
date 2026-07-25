@@ -5,6 +5,9 @@ import {
 	type QueryClient,
 } from "@tanstack/react-query";
 import { z } from "zod";
+import { ApiError, jsonHeaders, parseResponse } from "./client";
+
+export { ApiError };
 
 const compatibilitySchema = z.enum([
 	"compatible",
@@ -90,14 +93,6 @@ const entityDiscoverySchema = z.object({
 	items: z.array(entityCandidateSchema),
 });
 
-const errorEnvelopeSchema = z.object({
-	error: z.object({
-		code: z.string(),
-		message: z.string(),
-		details: z.record(z.string(), z.unknown()),
-	}),
-});
-
 export type GrowSpace = z.infer<typeof growSpaceSchema>;
 export type GrowSpaceSummary = z.infer<typeof growSpaceSummarySchema>;
 export type EntityMapping = z.infer<typeof entityMappingSchema>;
@@ -141,43 +136,6 @@ export interface GrowSpaceUpdateInput {
 	dimensions?: DimensionsInput;
 	active?: boolean;
 }
-
-export class ApiError extends Error {
-	constructor(
-		message: string,
-		readonly status: number,
-		readonly code: string,
-	) {
-		super(message);
-		this.name = "ApiError";
-	}
-}
-
-async function parseResponse<T>(
-	response: Response,
-	schema: z.ZodType<T>,
-	invalidMessage: string,
-): Promise<T> {
-	const payload: unknown = await response.json();
-	if (!response.ok) {
-		const parsedError = errorEnvelopeSchema.safeParse(payload);
-		throw new ApiError(
-			parsedError.success ? parsedError.data.error.message : "Request failed",
-			response.status,
-			parsedError.success ? parsedError.data.error.code : "request_failed",
-		);
-	}
-	const parsed = schema.safeParse(payload);
-	if (!parsed.success) {
-		throw new Error(invalidMessage);
-	}
-	return parsed.data;
-}
-
-const jsonHeaders = {
-	Accept: "application/json",
-	"Content-Type": "application/json",
-};
 
 export async function listGrowSpaces(
 	includeArchived = false,

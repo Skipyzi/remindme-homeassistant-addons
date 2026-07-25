@@ -8,6 +8,7 @@ import {
 	Sun,
 } from "lucide-react";
 import { useTheme } from "../app/theme-context";
+import { LifecycleStagesPanel } from "../features/lifecycle/LifecycleStagesPanel";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import {
@@ -143,6 +144,19 @@ export function SettingsPage() {
 									<option value="imperial">Imperial (°F, gal)</option>
 								</select>
 							</label>
+						</CardContent>
+					</Card>
+					<Card>
+						<CardHeader>
+							<div>
+								<CardTitle>Lifecycle stages</CardTitle>
+								<p>
+									Customize the installation-wide plant lifecycle stages.
+								</p>
+							</div>
+						</CardHeader>
+						<CardContent>
+							<LifecycleStagesPanel />
 						</CardContent>
 					</Card>
 					<div className="settings-actions">
