@@ -12,13 +12,7 @@ function DetailsHarness({ mode = "create" }: { mode?: "create" | "edit" }) {
 	const [value, setValue] = useState<GrowSpaceDetailsDraft>(
 		emptyGrowSpaceDetailsDraft,
 	);
-	return (
-		<GrowSpaceDetailsForm
-			mode={mode}
-			value={value}
-			onChange={setValue}
-		/>
-	);
+	return <GrowSpaceDetailsForm mode={mode} value={value} onChange={setValue} />;
 }
 
 describe("GrowSpaceDetailsForm", () => {

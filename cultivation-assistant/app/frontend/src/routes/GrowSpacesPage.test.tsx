@@ -90,12 +90,14 @@ describe("GrowSpacesPage", () => {
 	it("uses inactive lifecycle language", async () => {
 		vi.stubGlobal(
 			"fetch",
-			vi.fn().mockResolvedValue(
-				new Response(
-					JSON.stringify({ items: [{ ...summaryFixture, active: false }] }),
-					{ status: 200, headers: { "Content-Type": "application/json" } },
+			vi
+				.fn()
+				.mockResolvedValue(
+					new Response(
+						JSON.stringify({ items: [{ ...summaryFixture, active: false }] }),
+						{ status: 200, headers: { "Content-Type": "application/json" } },
+					),
 				),
-			),
 		);
 
 		renderPage();
