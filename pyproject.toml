@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=78"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sunrise-alarm"
+version = "0.1.0"
+requires-python = ">=3.14.2"
+dependencies = ["homeassistant==2026.7.4"]
+
+[project.optional-dependencies]
+test = [
+  "mypy>=1.17",
+  "pytest>=8.4",
+  "pytest-asyncio>=1.1",
+  "pytest-homeassistant-custom-component>=0.13.224",
+  "ruff>=0.12",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py314"
+line-length = 88
+
+[tool.ruff.lint]
+select = ["ALL"]
+ignore = ["ANN401", "COM812", "CPY001", "D107", "D203", "D213"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["ASYNC110", "D102", "D107", "FBT003", "PLR2004", "S101", "TC002"]
+
+[tool.mypy]
+python_version = "3.14"
+strict = true
+
+[tool.setuptools.packages.find]
+include = ["custom_components*"]
+namespaces = true

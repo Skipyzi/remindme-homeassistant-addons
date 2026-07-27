@@ -1,0 +1,166 @@
+{
+  "title": "Sunrise Alarm",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Alarm identity",
+        "description": "Home Assistant controls this sunrise schedule.",
+        "data": {
+          "name": "Alarm name",
+          "area_id": "Area",
+          "timezone": "Timezone"
+        }
+      },
+      "schedule": {
+        "title": "Wake schedule",
+        "data": {
+          "wake_time": "Wake time",
+          "weekdays": "Active weekdays",
+          "enabled": "Enable scheduling"
+        }
+      },
+      "lights": {
+        "title": "Sunrise lights",
+        "data": {
+          "lights": "Lights",
+          "duration_minutes": "Duration",
+          "start_brightness": "Initial brightness",
+          "end_brightness": "Final brightness",
+          "start_kelvin": "Initial colour temperature",
+          "end_kelvin": "Final colour temperature",
+          "curve": "Ramp curve",
+          "update_interval": "Update interval"
+        }
+      },
+      "behavior": {
+        "title": "Dismissal behavior",
+        "data": {
+          "stop_on_manual_off": "Stop when all controlled lights are switched off"
+        }
+      },
+      "review": {
+        "title": "Review alarm",
+        "description": "Next wake: {next_wake}\nSunrise start: {sunrise_start}",
+        "data": {
+          "action": "Action"
+        }
+      }
+    },
+    "error": {
+      "invalid_timezone": "Select a valid timezone.",
+      "no_weekdays": "Select at least one weekday.",
+      "no_lights": "Select at least one light.",
+      "invalid_brightness": "Final brightness must not be below initial brightness.",
+      "invalid_kelvin": "Colour temperature must be between 1,000 K and 10,000 K.",
+      "invalid_interval": "Update interval must be between 5 and 60 seconds."
+    }
+  },
+  "options": {
+    "step": {
+      "schedule": {
+        "title": "Wake schedule",
+        "data": {
+          "wake_time": "Wake time",
+          "weekdays": "Active weekdays",
+          "enabled": "Enable scheduling"
+        }
+      },
+      "lights": {
+        "title": "Sunrise lights",
+        "data": {
+          "lights": "Lights",
+          "duration_minutes": "Duration",
+          "start_brightness": "Initial brightness",
+          "end_brightness": "Final brightness",
+          "start_kelvin": "Initial colour temperature",
+          "end_kelvin": "Final colour temperature",
+          "curve": "Ramp curve",
+          "update_interval": "Update interval"
+        }
+      },
+      "behavior": {
+        "title": "Dismissal behavior",
+        "data": {
+          "stop_on_manual_off": "Stop when all controlled lights are switched off"
+        }
+      },
+      "review": {
+        "title": "Review changes",
+        "description": "Next wake: {next_wake}\nSunrise start: {sunrise_start}",
+        "data": {
+          "action": "Action"
+        }
+      }
+    },
+    "error": {
+      "no_weekdays": "Select at least one weekday.",
+      "no_lights": "Select at least one light.",
+      "invalid_brightness": "Final brightness must not be below initial brightness."
+    }
+  },
+  "services": {
+    "stop": {
+      "name": "Stop",
+      "description": "Stop the active sunrise."
+    },
+    "skip_next": {
+      "name": "Skip next",
+      "description": "Skip the next calculated occurrence."
+    },
+    "clear_skip": {
+      "name": "Clear skip",
+      "description": "Restore the skipped occurrence if it is still in the future."
+    },
+    "preview": {
+      "name": "Preview",
+      "description": "Run a shortened sunrise without changing the schedule.",
+      "fields": {
+        "duration": {
+          "name": "Duration",
+          "description": "Preview duration in seconds."
+        }
+      }
+    }
+  },
+  "entity": {
+    "switch": {
+      "enabled": {
+        "name": "Enabled"
+      }
+    },
+    "sensor": {
+      "next_alarm": {
+        "name": "Next alarm"
+      },
+      "status": {
+        "name": "Status"
+      }
+    },
+    "binary_sensor": {
+      "active": {
+        "name": "Active"
+      }
+    },
+    "time": {
+      "wake_time": {
+        "name": "Wake time"
+      }
+    },
+    "number": {
+      "duration": {
+        "name": "Sunrise duration"
+      }
+    },
+    "button": {
+      "stop": {
+        "name": "Stop"
+      },
+      "skip_next": {
+        "name": "Skip next"
+      },
+      "preview": {
+        "name": "Preview"
+      }
+    }
+  }
+}
