@@ -1,0 +1,26 @@
+stop:
+  target:
+    device:
+      integration: sunrise_alarm
+skip_next:
+  target:
+    device:
+      integration: sunrise_alarm
+clear_skip:
+  target:
+    device:
+      integration: sunrise_alarm
+preview:
+  target:
+    device:
+      integration: sunrise_alarm
+  fields:
+    duration:
+      required: false
+      default: 60
+      selector:
+        number:
+          min: 1
+          max: 600
+          step: 1
+          unit_of_measurement: s
