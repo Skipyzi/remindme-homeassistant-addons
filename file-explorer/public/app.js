@@ -22,8 +22,17 @@ let contextMenu;
 let hostVaultController;
 let contextBindings = [];
 let uploadDestination = null;
+let currentPreviewUrl = null;
 
 function setStatus(message, error = false) { elements.status.textContent = message; elements.status.style.color = error ? "var(--fe-error)" : ""; }
+function selectedRootDefinition() { return state.roots.find((root) => root.id === state.selectedRoot); }
+function releasePreview() { if (currentPreviewUrl) operations.revokePreview(currentPreviewUrl); currentPreviewUrl = null; }
+function updateRootCapabilities() {
+  const readOnly = selectedRootDefinition()?.readOnly === true;
+  document.querySelector("[data-new]").hidden = readOnly;
+  document.querySelector("[data-upload]").hidden = readOnly;
+  document.querySelector("[data-trash]").hidden = readOnly;
+}
 function closeTree() { elements.pane.dataset.open = "false"; elements.scrim.hidden = true; }
 function openTree() { elements.pane.dataset.open = "true"; elements.scrim.hidden = false; }
 document.querySelector("[data-open-tree]").addEventListener("click", openTree);
@@ -80,7 +89,8 @@ function renderTree(entries) {
 async function selectRoot(root) {
   state.selectedRoot = root.id;
   state.selectedPath = "";
-  renderRoots();
+  releasePreview();
+  renderRoots(); updateRootCapabilities();
   if (root.id === "host" && !hostVaultController?.isUnlocked()) {
     editor.discard(); currentEntry = null; renderBreadcrumbs(); renderTree([]);
     elements.fileName.textContent = "Host /";
@@ -96,7 +106,7 @@ async function loadDirectory(root, path) {
   if (editor.dirty && !confirm("Discard unsaved changes?")) return;
   try {
     setStatus("Loading…"); const entries = await state.loadDirectory(root, path);
-    editor.discard(); currentEntry = null;
+    releasePreview(); editor.discard(); currentEntry = null;
     renderRoots(); renderBreadcrumbs(); renderTree(entries); setStatus(`${entries.length} item${entries.length === 1 ? "" : "s"}`); closeTree();
   } catch (error) {
     if (root === "host" && error.code === "VAULT_SESSION_INVALID") {
@@ -113,11 +123,14 @@ function renderEditor() {
   const toolbar = document.createElement("div"); toolbar.className = "editor-toolbar";
   const dirty = document.createElement("span"); dirty.className = "dirty-mark"; dirty.textContent = "Unsaved"; dirty.hidden = !editor.dirty;
   const save = document.createElement("button"); save.className = "primary"; save.textContent = "Save changes";
-  const download = document.createElement("a"); download.textContent = "Download"; download.href = operations.downloadUrl(state.selectedRoot, currentEntry.path);
+  const download = document.createElement("button"); download.textContent = "Download";
+  download.addEventListener("click", () => void operations.download(state.selectedRoot, currentEntry.path));
   const move = document.createElement("button"); move.textContent = "Move / rename";
   const remove = document.createElement("button"); remove.className = "danger"; remove.textContent = "Move to trash";
-  toolbar.append(dirty, download, move, remove, save);
-  const textarea = document.createElement("textarea"); textarea.className = "file-editor"; textarea.value = editor.content; textarea.spellcheck = false;
+  const readOnly = selectedRootDefinition()?.readOnly === true;
+  if (readOnly) toolbar.append(download);
+  else toolbar.append(dirty, download, move, remove, save);
+  const textarea = document.createElement("textarea"); textarea.className = "file-editor"; textarea.value = editor.content; textarea.spellcheck = false; textarea.readOnly = readOnly;
   textarea.setAttribute("aria-label", "File content editor");
   textarea.addEventListener("input", () => { editor.update(textarea.value); dirty.hidden = !editor.dirty; });
   save.addEventListener("click", async () => { try { setStatus("Saving…"); await editor.save(); dirty.hidden = true; setStatus("Saved · backup created"); } catch (error) { setStatus(error.code === "FILE_CHANGED" ? "File changed outside the editor. Your text is preserved; reload or save under another name." : error.message, true); } });
@@ -128,12 +141,12 @@ function renderEditor() {
 
 async function openFile(entry) {
   if (editor.dirty && !confirm("Discard unsaved changes?")) return;
-  currentEntry = entry;
+  releasePreview(); currentEntry = entry;
   const image = /\.(png|jpe?g|gif|webp|svg)$/i.test(entry.name);
   if (image) {
     editor.discard(); elements.fileName.textContent = entry.name;
     const preview = document.createElement("div"); preview.className = "preview-shell";
-    const img = document.createElement("img"); img.src = operations.downloadUrl(state.selectedRoot, entry.path); img.alt = entry.name;
+    const img = document.createElement("img"); currentPreviewUrl = await operations.previewUrl(state.selectedRoot, entry.path); img.src = currentPreviewUrl; img.alt = entry.name;
     preview.append(img); elements.content.replaceWith(preview); elements.content = preview; closeTree(); return;
   }
   try { await editor.open(state.selectedRoot, entry.path, { force: true }); renderEditor(); closeTree(); setStatus(`${formatSize(entry.size)} · UTF-8`); }
@@ -155,7 +168,7 @@ hostVaultController = createHostVaultController({
     await loadDirectory("host", "");
   },
   onLocked: async () => {
-    storageMap.close();
+    storageMap.close(); releasePreview();
     await state.loadRoots().catch(() => undefined);
     if (state.selectedRoot === "host") {
       state.selectedPath = ""; renderRoots(); renderBreadcrumbs(); renderTree([]);

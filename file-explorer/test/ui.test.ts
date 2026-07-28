@@ -84,6 +84,44 @@ describe("explorer client", () => {
     ]);
   });
 
+  it("marks Host text, search, and storage operations as vault-scoped", async () => {
+    const api = { request: vi.fn().mockResolvedValue({ content: "NAME=HAOS\n", signature: "sig" }) };
+    const editor = createEditorState(api);
+    await editor.open("host", "etc/os-release");
+    expect(api.request).toHaveBeenLastCalledWith("api/text?root=host&path=etc%2Fos-release", { hostVault: true });
+
+    const operations = createOperations(api);
+    operations.search("host", "etc", "HAOS", new AbortController().signal);
+    expect(api.request).toHaveBeenLastCalledWith(expect.stringContaining("api/search?root=host"), expect.objectContaining({ hostVault: true }));
+    operations.startStorageScan("host", "mnt/data", true);
+    expect(api.request).toHaveBeenLastCalledWith("api/storage-map/scans", {
+      method: "POST",
+      body: JSON.stringify({ root: "host", path: "mnt/data", refresh: true }),
+      hostVault: true,
+    });
+  });
+
+  it("uses authenticated blobs for Host downloads and previews", async () => {
+    const response = () => new Response(new Blob(["host file"]), { status: 200 });
+    const api = { request: vi.fn(async () => response()) };
+    const operations = createOperations(api);
+    Object.defineProperty(URL, "createObjectURL", { configurable: true, value: vi.fn() });
+    Object.defineProperty(URL, "revokeObjectURL", { configurable: true, value: vi.fn() });
+    const createObjectURL = vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:host-file");
+    const revokeObjectURL = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => undefined);
+    const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
+
+    await operations.download("host", "etc/os-release");
+    expect(api.request).toHaveBeenCalledWith("api/download?root=host&path=etc%2Fos-release", { hostVault: true });
+    expect(createObjectURL).toHaveBeenCalled();
+    expect(click).toHaveBeenCalled();
+
+    await expect(operations.previewUrl("host", "usr/share/image.png")).resolves.toBe("blob:host-file");
+    operations.revokePreview("blob:host-file");
+    expect(revokeObjectURL).toHaveBeenCalledWith("blob:host-file");
+    createObjectURL.mockRestore(); revokeObjectURL.mockRestore(); click.mockRestore();
+  });
+
   it("preserves dirty text when a save conflicts", async () => {
     const api = {
       request: vi.fn()
@@ -143,16 +181,17 @@ describe("explorer client", () => {
     const api = { request: vi.fn() };
     const operations = createOperations(api);
 
-    operations.startStorageScan("share", true);
+    operations.startStorageScan("share", "", true);
     expect(api.request).toHaveBeenLastCalledWith("api/storage-map/scans", {
       method: "POST",
-      body: JSON.stringify({ root: "share", refresh: true }),
+      body: JSON.stringify({ root: "share", path: "", refresh: true }),
+      hostVault: false,
     });
     operations.storageScanStatus("job/1");
-    expect(api.request).toHaveBeenLastCalledWith("api/storage-map/scans/job%2F1");
+    expect(api.request).toHaveBeenLastCalledWith("api/storage-map/scans/job%2F1", { hostVault: false });
     operations.storageScanResult("job/1", "media/photos");
-    expect(api.request).toHaveBeenLastCalledWith("api/storage-map/scans/job%2F1/result?path=media%2Fphotos");
+    expect(api.request).toHaveBeenLastCalledWith("api/storage-map/scans/job%2F1/result?path=media%2Fphotos", { hostVault: false });
     operations.cancelStorageScan("job/1");
-    expect(api.request).toHaveBeenLastCalledWith("api/storage-map/scans/job%2F1", { method: "DELETE" });
+    expect(api.request).toHaveBeenLastCalledWith("api/storage-map/scans/job%2F1", { method: "DELETE", hostVault: false });
   });
 });

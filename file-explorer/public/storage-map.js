@@ -60,6 +60,7 @@ export function createStorageMap({
   let selectedRoot = null;
   let jobId = null;
   let currentPath = "";
+  let scanPath = "";
   let pollTimer = null;
   let isOpen = false;
 
@@ -96,8 +97,8 @@ export function createStorageMap({
       button.addEventListener("click", () => drill(segment.path));
       return button;
     }));
-    elements.up.disabled = path === "";
-    elements.root.disabled = path === "";
+    elements.up.disabled = path === scanPath;
+    elements.root.disabled = path === scanPath;
   }
 
   function renderLegend(nodes) {
@@ -176,6 +177,7 @@ export function createStorageMap({
     renderNodes(result.root.children, result.totalBytes);
     elements.cancel.hidden = true;
     if (result.incomplete) setStatus(`Incomplete · ${reasonLabel(result.incompleteReason)}`, true);
+    else if (result.excludedPaths?.length > 0) setStatus(`Scan complete · virtual filesystems excluded: /${result.excludedPaths.join(", /")}`);
     else if (result.warnings.length > 0) setStatus(`Complete with ${result.warnings.length} warning${result.warnings.length === 1 ? "" : "s"}`);
     else setStatus("Scan complete");
   }
@@ -219,20 +221,22 @@ export function createStorageMap({
 
   async function start(refresh) {
     clearPoll();
-    currentPath = "";
+    currentPath = scanPath;
     elements.canvas.replaceChildren();
     elements.details.hidden = true;
     setStatus("Starting storage scan…");
     try {
-      const response = await operations.startStorageScan(selectedRoot, refresh);
+      const response = await operations.startStorageScan(selectedRoot, scanPath, refresh);
       await applyJob(response.job);
     } catch (error) {
       setStatus(error.message, true);
     }
   }
 
-  async function open(root) {
+  async function open(root, path = "") {
     selectedRoot = root;
+    scanPath = path;
+    currentPath = path;
     isOpen = true;
     elements.view.hidden = false;
     elements.close.focus();
@@ -271,8 +275,11 @@ export function createStorageMap({
   elements.close.addEventListener("click", close);
   elements.refresh.addEventListener("click", () => void refresh());
   elements.cancel.addEventListener("click", () => void cancel());
-  elements.up.addEventListener("click", () => void drill(parentPath(currentPath)));
-  elements.root.addEventListener("click", () => void drill(""));
+  elements.up.addEventListener("click", () => {
+    const parent = parentPath(currentPath);
+    void drill(parent.length < scanPath.length ? scanPath : parent);
+  });
+  elements.root.addEventListener("click", () => void drill(scanPath));
 
   return { open, close, refresh, cancel, drill };
 }

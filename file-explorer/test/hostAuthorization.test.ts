@@ -10,11 +10,14 @@ import { createRootRegistry } from "../src/roots.js";
 import { SafetyService } from "../src/safety.js";
 import { SearchService } from "../src/search.js";
 import { createApp } from "../src/server.js";
+import { StorageScanner } from "../src/storageScanner.js";
+import { StorageScanService } from "../src/storageScanService.js";
 import { createFixtureRoots } from "./fixtures.js";
 
 let fixture: Awaited<ReturnType<typeof createFixtureRoots>>;
 let hostDirectory: string;
 let authorize: ReturnType<typeof vi.fn>;
+let storageScans: StorageScanService;
 let app: ReturnType<typeof createApp>;
 
 beforeEach(async () => {
@@ -27,6 +30,9 @@ beforeEach(async () => {
   authorize = vi.fn((token: string | undefined) => {
     if (token !== "host-token") throw new HostVaultError("VAULT_SESSION_INVALID", "Vault session is invalid");
     return { token, expiresAt: Date.now() + 900_000 };
+  });
+  storageScans = new StorageScanService(policy, new StorageScanner(), fixture.config.storageScan, {
+    hostLimits: fixture.config.hostStorageScan,
   });
   const hostVault = {
     authorize,
@@ -47,11 +53,13 @@ beforeEach(async () => {
     filesystem: new FilesystemService(),
     safety: new SafetyService(path.join(fixture.dataDir, "backups"), path.join(fixture.dataDir, "trash")),
     search: new SearchService(fixture.config),
+    storageScans,
     hostVault,
   } as never });
 });
 
 afterEach(async () => {
+  storageScans.dispose();
   await fixture.cleanup();
   await rm(hostDirectory, { recursive: true, force: true });
 });
@@ -89,6 +97,23 @@ describe("Host root authorization", () => {
   ])("rejects Host %s mutations as read-only", async (_name, makeRequest) => {
     const response = await makeRequest().expect(403);
     expect(response.body.error).toEqual({ code: "READ_ONLY_ROOT", message: "Root is read-only" });
+  });
+
+  it("owns Host storage jobs by the active vault token", async () => {
+    const started = await request(app).post("/api/storage-map/scans").set(vaultHeader)
+      .send({ root: "host", path: "etc", refresh: false }).expect(202);
+    await request(app).get(`/api/storage-map/scans/${started.body.job.id}`).set("X-File-Explorer-Vault", "wrong").expect(401);
+
+    let status: request.Response | undefined;
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      status = await request(app).get(`/api/storage-map/scans/${started.body.job.id}`).set(vaultHeader);
+      if (status.body.job?.resultAvailable) break;
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+    expect(status?.body.job.status).toBe("complete");
+    const result = await request(app).get(`/api/storage-map/scans/${started.body.job.id}/result`).set(vaultHeader).expect(200);
+    expect(result.body.result.requestedPath).toBe("etc");
+    expect(result.body.result.totalBytes).toBeGreaterThan(0);
   });
 
   it("keeps local roots usable while Host is locked", async () => {
