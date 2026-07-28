@@ -49,3 +49,18 @@ test("a global working indicator shows model ops from any view", () => {
 	assert.match(html, /class="model-working-spin"/);
 	assert.match(css, /@keyframes model-working-spin/);
 });
+
+test("models expose physical downloaded-file inventory", () => {
+	assert.match(html, /Downloaded models/);
+	assert.match(html, /x-for="item in modelInventory"/);
+	assert.match(html, /item\.source === 'legacy_cache'/);
+	assert.match(html, /item\.removable/);
+	assert.match(html, /removeInventoryItem\(item\)/);
+	assert.match(html, /No downloaded model files found/);
+	assert.match(component, /\.\/api\/models\/inventory/);
+	assert.match(component, /window\.confirm/);
+	assert.match(component, /loadInventory\(vm\)/);
+	assert.match(app, /removeInventoryItem\(item\)/);
+	assert.match(css, /\.model-inventory/);
+	assert.match(css, /\.model-inventory-row/);
+});
