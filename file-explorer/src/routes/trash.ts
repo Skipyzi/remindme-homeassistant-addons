@@ -17,7 +17,9 @@ export function createTrashRouter(context: FileContext): Router {
 
   router.delete("/files", async (request, response) => {
     const target = await context.policy.authorize(String(request.body.root ?? ""), String(request.body.path ?? ""), "write");
-    response.json({ trash: publicRecord(await context.safety.trash(target)) });
+    const trash = await context.safety.trash(target);
+    context.storageScans?.invalidate(target.root.id);
+    response.json({ trash: publicRecord(trash) });
   });
 
   router.get("/trash", async (_request, response) => {
@@ -31,11 +33,14 @@ export function createTrashRouter(context: FileContext): Router {
       : record.originalPath;
     const target = await context.policy.authorize(record.rootId, destination, "create");
     await context.safety.restore(record.id, target);
+    context.storageScans?.invalidate(record.rootId);
     response.json({ entry: await context.filesystem.metadata(target) });
   });
 
   router.delete("/trash/:id", async (request, response) => {
+    const record = await context.safety.readTrash(request.params.id);
     await context.safety.purge(request.params.id);
+    context.storageScans?.invalidate(record.rootId);
     response.status(204).end();
   });
 
