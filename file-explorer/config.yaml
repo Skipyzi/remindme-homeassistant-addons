@@ -1,5 +1,5 @@
 name: File Explorer
-version: "0.2.0"
+version: "0.3.0"
 slug: file_explorer
 description: Safe administrator-only file management through Home Assistant ingress
 arch:
@@ -32,6 +32,10 @@ options:
   storage_scan_timeout_seconds: 120
   storage_scan_cache_seconds: 60
   storage_map_max_nodes: 5000
+  host_scan_max_entries: 1000000
+  host_scan_timeout_seconds: 600
+  host_scan_cache_seconds: 300
+  host_map_max_nodes: 10000
 schema:
   enable_config: bool
   enable_share: bool
@@ -46,8 +50,17 @@ schema:
   storage_scan_timeout_seconds: int(5,600)
   storage_scan_cache_seconds: int(5,3600)
   storage_map_max_nodes: int(100,10000)
+  host_scan_max_entries: int(1000,1000000)
+  host_scan_timeout_seconds: int(5,600)
+  host_scan_cache_seconds: int(5,3600)
+  host_map_max_nodes: int(100,10000)
+privileged:
+  - SYS_ADMIN
+devices:
+  - /dev/fuse
 map:
-  - type: config
+  - type: homeassistant_config
+    path: /config
     read_only: false
   - type: share
     read_only: false

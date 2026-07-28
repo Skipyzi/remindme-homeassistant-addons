@@ -57,8 +57,8 @@ function safeEqual(left: string, right: string): boolean {
   return leftBuffer.length === rightBuffer.length && timingSafeEqual(leftBuffer, rightBuffer);
 }
 
-function fingerprintFrom(output: string): string | null {
-  return output.match(/(?:^|\s)(SHA256:[A-Za-z0-9+/]+={0,2})(?:\s|$)/)?.[1] ?? null;
+function fingerprintsFrom(output: string): string[] {
+  return [...output.matchAll(/(?:^|\s)(SHA256:[A-Za-z0-9+/]+={0,2})(?=\s|$)/g)].map((match) => match[1]);
 }
 
 export class SshfsMountAdapter {
@@ -80,8 +80,8 @@ export class SshfsMountAdapter {
         ["-lf", knownHostsPath, "-E", "sha256"],
         { timeout: 5_000, maxBuffer: 64 * 1024 },
       );
-      const observed = fingerprintFrom(inspected.stdout);
-      if (!observed || !safeEqual(observed, metadata.fingerprint)) {
+      const observed = fingerprintsFrom(inspected.stdout);
+      if (!observed.some((fingerprint) => safeEqual(fingerprint, metadata.fingerprint))) {
         throw new HostVaultError("HOST_KEY_MISMATCH", "Host key fingerprint does not match");
       }
       return knownHostsPath;

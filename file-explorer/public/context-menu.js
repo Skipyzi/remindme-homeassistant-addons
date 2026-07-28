@@ -116,6 +116,8 @@ export function createContextMenu({ element, onAction, longPressMs = 550 }) {
   let root = null;
   let longPressTimer = null;
   let longPressStart = null;
+  let suppressClickOrigin = null;
+  let suppressClickTimer = null;
 
   function cancelLongPress() {
     if (longPressTimer !== null) window.clearTimeout(longPressTimer);
@@ -206,6 +208,15 @@ export function createContextMenu({ element, onAction, longPressMs = 550 }) {
     if (!element.hidden && !element.contains(event.target) && event.target !== origin) close();
   }, { capture: true, signal: globalEvents.signal });
 
+  document.addEventListener("click", (event) => {
+    if (!suppressClickOrigin || (event.target !== suppressClickOrigin && !suppressClickOrigin.contains(event.target))) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    suppressClickOrigin = null;
+    if (suppressClickTimer !== null) window.clearTimeout(suppressClickTimer);
+    suppressClickTimer = null;
+  }, { capture: true, signal: globalEvents.signal });
+
   element.addEventListener("focusout", () => {
     queueMicrotask(() => {
       if (!element.hidden && !element.contains(document.activeElement) && document.activeElement !== origin) close({ restoreFocus: false });
@@ -232,6 +243,9 @@ export function createContextMenu({ element, onAction, longPressMs = 550 }) {
       longPressTimer = window.setTimeout(() => {
         if (!longPressStart) return;
         openAt(row, selectedEntry, selectedRoot, longPressStart.x, longPressStart.y);
+        suppressClickOrigin = row;
+        if (suppressClickTimer !== null) window.clearTimeout(suppressClickTimer);
+        suppressClickTimer = window.setTimeout(() => { suppressClickOrigin = null; suppressClickTimer = null; }, 1_000);
         cancelLongPress();
       }, longPressMs);
     }, { signal: events.signal });
@@ -251,6 +265,7 @@ export function createContextMenu({ element, onAction, longPressMs = 550 }) {
   function destroy() {
     close({ restoreFocus: false });
     globalEvents.abort();
+    if (suppressClickTimer !== null) window.clearTimeout(suppressClickTimer);
     for (const events of rowEvents) events.abort();
     rowEvents.clear();
   }

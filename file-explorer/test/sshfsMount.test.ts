@@ -72,6 +72,16 @@ describe("SshfsMountAdapter", () => {
     expect(handle.isAlive()).toBe(true);
   });
 
+  it("accepts the pinned fingerprint when keyscan returns multiple host key types", async () => {
+    const { adapter } = setup({
+      execFile: vi.fn(async (file: string) => file === "ssh-keyscan"
+        ? { stdout: "host ssh-rsa AAAARSA\nhost ssh-ed25519 AAAATEST\n", stderr: "" }
+        : { stdout: "3072 SHA256:OTHER host (RSA)\n256 SHA256:ZmFrZS1maW5nZXJwcmludA host (ED25519)\n", stderr: "" }),
+    });
+
+    await expect(adapter.verifyHost(metadata, "/runtime")).resolves.toContain("known_hosts");
+  });
+
   it("rejects a changed host fingerprint", async () => {
     const { adapter } = setup({
       execFile: vi.fn(async (file: string) => file === "ssh-keyscan"

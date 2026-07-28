@@ -165,11 +165,15 @@ describe("entry context menu interaction", () => {
     expect(document.activeElement).toBe(row);
   });
 
-  it("opens after a deliberate long press but not after movement", async () => {
+  it("opens after a deliberate long press without also activating the row", async () => {
     vi.useFakeTimers();
+    const activateRow = vi.fn();
+    row.addEventListener("click", activateRow);
     row.dispatchEvent(pointerEvent("pointerdown", { pointerType: "touch", pointerId: 1, clientX: 40, clientY: 50 }));
     await vi.advanceTimersByTimeAsync(550);
     expect(menu.hidden).toBe(false);
+    row.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    expect(activateRow).not.toHaveBeenCalled();
 
     controller.close({ restoreFocus: false });
     row.dispatchEvent(pointerEvent("pointerdown", { pointerType: "touch", pointerId: 2, clientX: 40, clientY: 50 }));
