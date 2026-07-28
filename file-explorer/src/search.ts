@@ -17,6 +17,10 @@ export interface SearchResponse {
 
 const ignoredNames = new Set([".git", "node_modules"]);
 
+export function safeSearchFailure(_error: unknown): string {
+  return "Read failed";
+}
+
 export class SearchService {
   constructor(private readonly config: ExplorerConfig) {}
 
@@ -60,7 +64,7 @@ export class SearchService {
           }
         }
       } catch (error) {
-        failures.push({ path: path.posix.join(input.target.relativePath, relative), message: error instanceof Error ? error.message : "Read failed" });
+        failures.push({ path: path.posix.join(input.target.relativePath, relative), message: safeSearchFailure(error) });
       }
     }
 

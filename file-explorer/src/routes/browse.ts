@@ -9,6 +9,7 @@ export interface BrowseContext {
   roots: ReadonlyMap<string, RootDefinition>;
   policy: PathPolicy;
   filesystem: FilesystemService;
+  hostVault?: { status(token?: string): Promise<{ state: string }> };
 }
 
 function queryValue(value: unknown, fallback = ""): string {
@@ -18,9 +19,14 @@ function queryValue(value: unknown, fallback = ""): string {
 export function createBrowseRouter(context: BrowseContext): Router {
   const router = Router();
 
-  router.get("/roots", (_request, response) => {
+  router.get("/roots", async (request, response) => {
+    const hostStatus = context.roots.has("host") && context.hostVault
+      ? await context.hostVault.status(request.get("X-File-Explorer-Vault"))
+      : null;
     response.json({
-      roots: [...context.roots.values()].map(({ id, label, readOnly }) => ({ id, label, readOnly })),
+      roots: [...context.roots.values()].map(({ id, label, readOnly }) => id === "host"
+        ? { id, label, readOnly, locked: hostStatus?.state !== "unlocked" }
+        : { id, label, readOnly }),
     });
   });
 

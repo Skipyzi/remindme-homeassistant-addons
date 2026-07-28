@@ -6,7 +6,7 @@ import { FilesystemService } from "../src/filesystem.js";
 import { PathPolicy } from "../src/pathPolicy.js";
 import { createRootRegistry } from "../src/roots.js";
 import { SafetyService } from "../src/safety.js";
-import { SearchService } from "../src/search.js";
+import { safeSearchFailure, SearchService } from "../src/search.js";
 import { createApp } from "../src/server.js";
 import { createFixtureRoots } from "./fixtures.js";
 
@@ -30,6 +30,9 @@ beforeEach(async () => {
 afterEach(async () => fixture.cleanup());
 
 describe("search API", () => {
+  it("sanitizes filesystem failures that may contain Host mount paths", () => {
+    expect(safeSearchFailure(new Error("ENOENT: no such file, lstat '/host/etc/secret'"))).toBe("Read failed");
+  });
   it("matches names and bounded text content", async () => {
     const response = await request(app).get("/api/search").query({ root: "config", path: "", q: "morning" });
     expect(response.status).toBe(200);

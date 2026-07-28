@@ -94,6 +94,14 @@ it("renders scan results and opens directories and real files", async () => {
   expect(document.querySelector("[data-storage-details]").textContent).toContain("Other .json files");
 });
 
+it("starts an exact subtree scan from Map this folder", async () => {
+  const { controller, operations } = setup();
+
+  await controller.open("host", "mnt/data");
+
+  expect(operations.startStorageScan).toHaveBeenCalledWith("host", "mnt/data", false);
+});
+
 it("shows running progress and cancels without closing", async () => {
   const running = { ...completeJob, status: "running", completedAt: null, resultAvailable: false };
   const { controller, operations } = setup({

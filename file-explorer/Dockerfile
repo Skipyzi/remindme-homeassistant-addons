@@ -9,6 +9,7 @@ COPY src ./src
 RUN pnpm build && pnpm prune --prod
 
 FROM ${BUILD_FROM}
+RUN apk add --no-cache openssh-client sshfs fuse3
 WORKDIR /app
 COPY --from=build /build/node_modules ./node_modules
 COPY --from=build /build/dist ./dist

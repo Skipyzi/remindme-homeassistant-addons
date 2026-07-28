@@ -82,6 +82,74 @@ describe("StorageScanner", () => {
     expect(result.progress.files).toBe(1);
   });
 
+  it.each(["ENOENT", "ESTALE"])("continues when an entry disappears with %s", async (code) => {
+    const scanTarget = await target();
+    const fs: StorageFs = {
+      async readdir() { return [{ name: "gone" }, { name: "kept.txt" }]; },
+      async lstat(targetPath) {
+        if (targetPath.endsWith("gone")) throw Object.assign(new Error("gone"), { code });
+        return fakeStats("file", 7);
+      },
+    };
+
+    const result = await new StorageScanner(fs).scan(scanTarget, limits, new AbortController().signal);
+
+    expect(result.root.size).toBe(7);
+    expect(result.warnings).toContainEqual({ code: "ENTRY_DISAPPEARED", path: "gone" });
+    expect(result.stopReason).toBeNull();
+  });
+
+  it("raises a safe typed error when SSHFS disconnects", async () => {
+    const scanTarget = await target();
+    const fs: StorageFs = {
+      async readdir() { throw Object.assign(new Error("transport details"), { code: "ENOTCONN" }); },
+      async lstat() { return fakeStats("file", 1); },
+    };
+
+    await expect(new StorageScanner(fs).scan(scanTarget, limits, new AbortController().signal))
+      .rejects.toMatchObject({ code: "HOST_CONNECTION_LOST", message: "Host connection lost" });
+  });
+
+  it("excludes Host virtual filesystems while including disk-backed paths", async () => {
+    const scanTarget = await target();
+    scanTarget.root = { ...scanTarget.root, id: "host", label: "Host /", readOnly: true };
+    for (const directory of ["proc", "sys", "dev", "run", "etc", "usr", "tmp", "mnt"]) {
+      await mkdir(path.join(scanTarget.absolutePath, directory));
+      await writeFile(path.join(scanTarget.absolutePath, directory, "data"), directory);
+    }
+
+    const result = await new StorageScanner().scan(
+      scanTarget,
+      limits,
+      new AbortController().signal,
+      () => undefined,
+      { excludedRelativePaths: ["proc", "sys", "dev", "run"] },
+    );
+
+    expect(result.root.size).toBe(Buffer.byteLength("etcusrtmpmnt"));
+    expect(result.excludedPaths).toEqual(["proc", "sys", "dev", "run"]);
+    expect(result.root.children.find((node) => node.relativePath === "proc")).toMatchObject({ excluded: true, size: 0 });
+    expect(result.root.children.find((node) => node.relativePath === "etc")?.size).toBe(3);
+  });
+
+  it("scans only the authorized subtree", async () => {
+    const scanTarget = await target();
+    await mkdir(path.join(scanTarget.absolutePath, "mnt", "data"), { recursive: true });
+    await writeFile(path.join(scanTarget.absolutePath, "outside.txt"), "outside");
+    await writeFile(path.join(scanTarget.absolutePath, "mnt", "data", "inside.txt"), "inside");
+    const subtree = {
+      ...scanTarget,
+      relativePath: "mnt/data",
+      absolutePath: path.join(scanTarget.absolutePath, "mnt", "data"),
+    };
+
+    const result = await new StorageScanner().scan(subtree, limits, new AbortController().signal);
+
+    expect(result.root.relativePath).toBe("mnt/data");
+    expect(result.root.size).toBe(6);
+    expect(JSON.stringify(result.root)).not.toContain("outside.txt");
+  });
+
   it("honors cancellation before touching the filesystem", async () => {
     const scanTarget = await target();
     const controller = new AbortController();

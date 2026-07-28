@@ -6,12 +6,12 @@ export function createExplorerState(api) {
     entries: new Map(),
     expanded: new Set(),
     async loadRoots() {
-      const result = await api.request("api/roots");
+      const result = await api.request("api/roots", { hostVault: true });
       this.roots = result.roots;
       return this.roots;
     },
     async loadDirectory(root, path) {
-      const result = await api.request(`api/entries?root=${encodeURIComponent(root)}&path=${encodeURIComponent(path)}`);
+      const result = await api.request(`api/entries?root=${encodeURIComponent(root)}&path=${encodeURIComponent(path)}`, { hostVault: root === "host" });
       this.selectedRoot = root;
       this.selectedPath = path;
       this.entries.set(`${root}:${path}`, result.entries);

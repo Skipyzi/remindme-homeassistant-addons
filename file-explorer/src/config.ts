@@ -15,6 +15,10 @@ interface RawOptions {
   storage_scan_timeout_seconds?: number;
   storage_scan_cache_seconds?: number;
   storage_map_max_nodes?: number;
+  host_scan_max_entries?: number;
+  host_scan_timeout_seconds?: number;
+  host_scan_cache_seconds?: number;
+  host_map_max_nodes?: number;
 }
 
 export interface RootPaths {
@@ -71,6 +75,12 @@ export async function loadConfig(
       timeoutMs: clamp(raw.storage_scan_timeout_seconds, 120, 5, 600) * 1_000,
       cacheTtlMs: clamp(raw.storage_scan_cache_seconds, 60, 5, 3_600) * 1_000,
       maxResultNodes: clamp(raw.storage_map_max_nodes, 5_000, 100, 10_000),
+    },
+    hostStorageScan: {
+      maxEntries: clamp(raw.host_scan_max_entries, 1_000_000, 1_000, 1_000_000),
+      timeoutMs: clamp(raw.host_scan_timeout_seconds, 600, 5, 600) * 1_000,
+      cacheTtlMs: clamp(raw.host_scan_cache_seconds, 300, 5, 3_600) * 1_000,
+      maxResultNodes: clamp(raw.host_map_max_nodes, 10_000, 100, 10_000),
     },
   };
 }

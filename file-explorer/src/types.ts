@@ -1,4 +1,4 @@
-export type RootId = "config" | "share" | "media";
+export type RootId = "config" | "share" | "media" | "host";
 export type PathIntent = "read" | "write" | "create";
 
 export interface RootDefinition {
@@ -26,6 +26,7 @@ export interface ExplorerConfig {
   searchTimeoutMs: number;
   retentionDays: number;
   storageScan: StorageScanLimits;
+  hostStorageScan: StorageScanLimits;
 }
 
 export interface AuthorizedPath {

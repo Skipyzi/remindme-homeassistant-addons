@@ -29,5 +29,10 @@ describe("server shell", () => {
     expect(response.text).toContain("data-storage-canvas");
     expect(response.text).toContain("data-storage-details");
     expect(response.text).toContain("data-storage-status");
+    expect(response.text).toContain("data-context-menu");
+    expect(response.text).toContain("data-host-vault");
+    expect(response.text).toContain("data-vault-setup-form");
+    expect(response.text).toContain("data-vault-unlock-form");
+    expect(response.text).toContain("data-host-lock");
   });
 });

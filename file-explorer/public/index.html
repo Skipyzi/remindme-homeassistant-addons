@@ -23,12 +23,43 @@
         <header class="content-header">
           <button class="icon-button mobile-tree" data-open-tree aria-label="Open file tree">☰</button>
           <div><span class="eyebrow">Selected file</span><strong data-file-name>Choose a file</strong></div>
-          <div class="header-actions"><button data-storage-open>Storage map</button><button data-search>Search</button><button data-trash>Trash</button><button data-upload>Upload</button><button class="primary" data-new>New</button><input data-upload-input type="file" hidden></div>
+          <div class="header-actions"><span class="vault-expiry" data-vault-expiry hidden></span><button data-host-lock hidden>Lock Host Vault</button><button data-storage-open>Storage map</button><button data-search>Search</button><button data-trash>Trash</button><button data-upload>Upload</button><button class="primary" data-new>New</button><input data-upload-input type="file" hidden></div>
         </header>
+        <section class="host-vault" data-host-vault hidden aria-labelledby="host-vault-title">
+          <div class="vault-trust-rail" aria-hidden="true"><span>HOST /</span><strong>22222</strong><span>READ ONLY</span></div>
+          <div class="vault-workspace">
+            <header><span class="eyebrow">Privileged connection</span><h1 id="host-vault-title">Host Vault</h1><p>Mount the Home Assistant OS filesystem only while you need it. Host files remain read-only in File Explorer.</p></header>
+            <div class="vault-notice"><strong>Root key boundary</strong><span>The dedicated debug SSH key can act as host root while this vault is unlocked. Lock it when you finish.</span></div>
+            <section data-vault-setup hidden>
+              <h2>Set up the connection</h2>
+              <form class="vault-form" data-vault-setup-form>
+                <label>Host<input name="host" value="172.30.32.1" required></label>
+                <label>Port<input name="port" type="number" value="22222" min="1" max="65535" required></label>
+                <label>Username<input name="username" value="root" required></label>
+                <label class="vault-wide">SHA-256 host fingerprint<input name="fingerprint" placeholder="SHA256:…" autocomplete="off" required></label>
+                <label class="vault-wide">Dedicated OpenSSH private key<textarea name="privateKey" rows="7" spellcheck="false" autocomplete="off" required></textarea></label>
+                <label>Vault passphrase<input name="passphrase" type="password" minlength="12" autocomplete="new-password" required></label>
+                <label>Confirm passphrase<input name="passphraseConfirmation" type="password" minlength="12" autocomplete="new-password" required></label>
+                <button class="primary vault-wide" type="submit">Verify and create vault</button>
+              </form>
+            </section>
+            <section data-vault-locked hidden>
+              <h2>Vault locked</h2>
+              <p data-vault-connection>Debug SSH is not mounted.</p>
+              <form class="vault-unlock" data-vault-unlock-form>
+                <label>Vault passphrase<input name="passphrase" type="password" autocomplete="current-password" required></label>
+                <button class="primary" type="submit">Unlock Host /</button>
+              </form>
+              <button class="danger-link" data-vault-reset type="button">Reset Host Vault</button>
+            </section>
+            <p class="vault-status" data-vault-status aria-live="polite"></p>
+          </div>
+        </section>
         <div class="empty-state" data-content><div class="empty-glyph" aria-hidden="true">⌑</div><h1>Open a file to begin</h1><p>Select a text file to edit it, or use the file menu to manage folders and media.</p></div>
         <footer class="status-bar" aria-live="polite" data-status>Ready</footer>
       </section>
       <div class="scrim" data-scrim hidden></div>
+      <div class="entry-context-menu" data-context-menu role="menu" aria-label="File actions" hidden></div>
       <section class="storage-map" data-storage-map hidden aria-label="Storage map">
         <header class="storage-map-header">
           <button data-storage-close aria-label="Close storage map">← Back</button>

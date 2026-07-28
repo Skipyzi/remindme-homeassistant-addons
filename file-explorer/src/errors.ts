@@ -13,6 +13,13 @@ export type ErrorCode =
   | "SCAN_JOB_EXPIRED"
   | "SCAN_NOT_READY";
 
+export class StorageScanFatalError extends Error {
+  constructor(public readonly code: "HOST_CONNECTION_LOST") {
+    super("Host connection lost");
+    this.name = "StorageScanFatalError";
+  }
+}
+
 export class DomainError extends Error {
   constructor(
     public readonly code: ErrorCode,
