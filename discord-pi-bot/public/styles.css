@@ -1976,6 +1976,91 @@ button.endpoint-row:not(.active) {
 	background: rgba(231, 71, 54, 0.08);
 	color: var(--akira-red) !important;
 }
+/* Physical storage reads like a drive ledger rather than another catalog:
+ * each file gets one ruled line, its lifecycle state in the narrow right rail. */
+.model-inventory {
+	border: 1px solid var(--oxidized-brass);
+	background: linear-gradient(
+		90deg,
+		rgba(176, 138, 72, 0.08),
+		rgba(9, 11, 13, 0.52) 28%
+	);
+	padding: 14px;
+}
+.model-inventory-head,
+.model-inventory-row {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+}
+.model-inventory-head {
+	justify-content: space-between;
+}
+.model-inventory-head h3 {
+	margin: 4px 0 0;
+}
+.model-inventory-list {
+	display: grid;
+	gap: 0;
+	margin-top: 10px;
+	border-bottom: 1px solid rgba(176, 138, 72, 0.2);
+}
+.model-inventory-row {
+	min-width: 0;
+	border-top: 1px solid rgba(176, 138, 72, 0.2);
+	padding: 9px 0 9px 10px;
+	box-shadow: inset 2px 0 var(--oxidized-brass);
+}
+.model-inventory-copy {
+	display: grid;
+	flex: 1;
+	min-width: 0;
+	gap: 2px;
+}
+.model-inventory-copy b,
+.model-inventory-copy small {
+	overflow-wrap: anywhere;
+}
+.model-inventory-copy small,
+.model-inventory-state,
+.model-inventory-warning {
+	color: var(--muted);
+	font:
+		9px ui-monospace,
+		Consolas,
+		monospace;
+}
+.model-inventory-state {
+	flex: none;
+	border: 1px solid var(--line);
+	padding: 3px 5px;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+}
+.model-inventory-state.protected {
+	border-color: var(--turquoise-neon);
+	color: var(--turquoise-neon);
+}
+.model-inventory-warning {
+	color: var(--akira-red) !important;
+}
+.model-inventory .danger:not(:disabled) {
+	border-color: var(--akira-red);
+	color: var(--akira-red);
+}
+.model-inventory button:disabled {
+	opacity: 0.38;
+	cursor: not-allowed;
+}
+@media (max-width: 520px) {
+	.model-inventory-row {
+		align-items: stretch;
+		flex-direction: column;
+	}
+	.model-inventory-state {
+		align-self: flex-start;
+	}
+}
 .model-yaml {
 	border: 1px solid rgba(72, 215, 196, 0.35);
 	background: rgba(9, 11, 13, 0.62);

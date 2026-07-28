@@ -1559,6 +1559,79 @@
                 </article></template
               >
             </div>
+            <section
+              class="model-inventory"
+              x-show="modelPairingConfigured"
+              aria-labelledby="model-inventory-title"
+            >
+              <div class="model-inventory-head">
+                <div>
+                  <div class="kicker">Persistent storage / physical files</div>
+                  <h3 id="model-inventory-title">Downloaded models</h3>
+                </div>
+                <button
+                  class="ghost"
+                  :disabled="modelInventoryLoading"
+                  @click="reloadModels()"
+                >
+                  Refresh
+                </button>
+              </div>
+              <p class="micro" x-show="modelInventoryLoading">
+                Scanning model storage…
+              </p>
+              <p
+                class="model-error"
+                role="alert"
+                x-show="modelInventoryError"
+                x-text="modelInventoryError"
+              ></p>
+              <template
+                x-for="warning in modelInventoryWarnings"
+                :key="warning.source"
+              >
+                <p class="model-inventory-warning" x-text="warning.message"></p>
+              </template>
+              <p
+                class="micro"
+                x-show="!modelInventoryLoading && !modelInventoryError && modelInventory.length === 0"
+              >
+                No downloaded model files found.
+              </p>
+              <div class="model-inventory-list">
+                <template x-for="item in modelInventory" :key="item.id">
+                  <article class="model-inventory-row">
+                    <div class="model-inventory-copy">
+                      <b x-text="item.name"></b>
+                      <small
+                        x-text="`${item.source === 'legacy_cache' ? 'Legacy cache' : 'Managed'} · ${formatModelBytes(item.size)}`"
+                      ></small>
+                      <small
+                        x-show="!item.validGguf"
+                        class="model-inventory-warning"
+                        >Invalid GGUF</small
+                      >
+                      <small
+                        x-show="item.catalogId"
+                        x-text="`Catalog: ${item.catalogId}`"
+                      ></small>
+                      <small x-show="!item.catalogId">Unknown model</small>
+                    </div>
+                    <span
+                      class="model-inventory-state"
+                      :class="{protected:item.active || item.inProgress}"
+                      x-text="item.active ? 'Running' : item.inProgress ? 'In progress' : item.removable ? 'Stored' : 'Protected'"
+                    ></span>
+                    <button
+                      class="ghost danger"
+                      :disabled="!item.removable || modelOperationBusy"
+                      @click="removeInventoryItem(item)"
+                      x-text="item.removable ? 'Remove' : 'In use'"
+                    ></button>
+                  </article>
+                </template>
+              </div>
+            </section>
             <section class="model-yaml" x-show="modelPairingConfigured">
               <div class="kicker">Manual activation (fallback)</div>
               <h3>Native Configuration YAML</h3>
