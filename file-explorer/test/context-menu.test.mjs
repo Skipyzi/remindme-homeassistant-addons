@@ -1,50 +1,116 @@
 // @vitest-environment jsdom
-import { describe, expect, it } from "vitest";
-import { actionsForEntry } from "../public/context-menu.js";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { actionsForEntry, createContextMenu } from "../public/context-menu.js";
 
 const actionIds = (entry, root) => actionsForEntry(entry, root).map(({ id }) => id);
 
 describe("entry context action policy", () => {
   it("offers the complete local file actions", () => {
     expect(actionIds({ type: "file" }, { id: "config", readOnly: false })).toEqual([
-      "open",
-      "preview-edit",
-      "download",
-      "move",
-      "copy-path",
-      "storage-details",
-      "trash",
+      "open", "preview-edit", "download", "move", "copy-path", "storage-details", "trash",
     ]);
   });
 
   it("offers the complete local folder actions", () => {
     expect(actionIds({ type: "directory" }, { id: "share", readOnly: false })).toEqual([
-      "open",
-      "new-file",
-      "new-folder",
-      "upload",
-      "move",
-      "copy-path",
-      "map-folder",
-      "trash",
+      "open", "new-file", "new-folder", "upload", "move", "copy-path", "map-folder", "trash",
     ]);
   });
 
   it("omits every mutation from Host files", () => {
     expect(actionIds({ type: "file" }, { id: "host", readOnly: true })).toEqual([
-      "open-readonly",
-      "download",
-      "copy-path",
-      "storage-details",
-      "show-in-map",
+      "open-readonly", "download", "copy-path", "storage-details", "show-in-map",
     ]);
   });
 
   it("omits every mutation from Host folders", () => {
     expect(actionIds({ type: "directory" }, { id: "host", readOnly: true })).toEqual([
-      "open",
-      "copy-path",
-      "map-folder",
+      "open", "copy-path", "map-folder",
     ]);
+  });
+});
+
+function pointerEvent(type, values = {}) {
+  const event = new Event(type, { bubbles: true, cancelable: true });
+  for (const [name, value] of Object.entries(values)) Object.defineProperty(event, name, { value });
+  return event;
+}
+
+describe("entry context menu interaction", () => {
+  let menu;
+  let row;
+  let controller;
+  let onAction;
+
+  beforeEach(() => {
+    document.body.innerHTML = '<button class="tree-item">notes.txt</button><div data-context-menu role="menu" hidden></div>';
+    row = document.querySelector(".tree-item");
+    menu = document.querySelector("[data-context-menu]");
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 800 });
+    Object.defineProperty(window, "innerHeight", { configurable: true, value: 600 });
+    Object.defineProperty(menu, "getBoundingClientRect", {
+      configurable: true,
+      value: () => ({ width: 220, height: 280, left: 0, top: 0, right: 220, bottom: 280 }),
+    });
+    Object.defineProperty(row, "getBoundingClientRect", {
+      configurable: true,
+      value: () => ({ left: 740, top: 560, right: 790, bottom: 590, width: 50, height: 30 }),
+    });
+    onAction = vi.fn();
+    controller = createContextMenu({ element: menu, onAction, longPressMs: 550 });
+    controller.bind(row, { name: "notes.txt", path: "notes.txt", type: "file" }, { id: "config", readOnly: false });
+  });
+
+  afterEach(() => {
+    controller.destroy();
+    vi.useRealTimers();
+  });
+
+  it("opens on right-click, clamps to the viewport, and focuses the first action", () => {
+    const allowed = row.dispatchEvent(new MouseEvent("contextmenu", {
+      bubbles: true,
+      cancelable: true,
+      clientX: 790,
+      clientY: 590,
+    }));
+
+    expect(allowed).toBe(false);
+    expect(menu.hidden).toBe(false);
+    expect(Number.parseFloat(menu.style.left)).toBeLessThanOrEqual(572);
+    expect(Number.parseFloat(menu.style.top)).toBeLessThanOrEqual(312);
+    expect(menu.querySelector('[role="menuitem"]')).toBe(document.activeElement);
+  });
+
+  it("supports keyboard navigation, activation, Escape, and focus restoration", async () => {
+    row.focus();
+    row.dispatchEvent(new KeyboardEvent("keydown", { key: "F10", shiftKey: true, bubbles: true, cancelable: true }));
+    const items = [...menu.querySelectorAll('[role="menuitem"]')];
+    expect(document.activeElement).toBe(items[0]);
+
+    menu.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true, cancelable: true }));
+    expect(document.activeElement).toBe(items[1]);
+    items[1].click();
+    await Promise.resolve();
+    expect(onAction).toHaveBeenCalledWith("preview-edit", expect.objectContaining({ path: "notes.txt" }), expect.objectContaining({ id: "config" }));
+    expect(menu.hidden).toBe(true);
+    expect(document.activeElement).toBe(row);
+
+    row.dispatchEvent(new KeyboardEvent("keydown", { key: "ContextMenu", bubbles: true, cancelable: true }));
+    menu.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+    expect(menu.hidden).toBe(true);
+    expect(document.activeElement).toBe(row);
+  });
+
+  it("opens after a deliberate long press but not after movement", async () => {
+    vi.useFakeTimers();
+    row.dispatchEvent(pointerEvent("pointerdown", { pointerType: "touch", pointerId: 1, clientX: 40, clientY: 50 }));
+    await vi.advanceTimersByTimeAsync(550);
+    expect(menu.hidden).toBe(false);
+
+    controller.close({ restoreFocus: false });
+    row.dispatchEvent(pointerEvent("pointerdown", { pointerType: "touch", pointerId: 2, clientX: 40, clientY: 50 }));
+    row.dispatchEvent(pointerEvent("pointermove", { pointerType: "touch", pointerId: 2, clientX: 70, clientY: 50 }));
+    await vi.advanceTimersByTimeAsync(550);
+    expect(menu.hidden).toBe(true);
   });
 });

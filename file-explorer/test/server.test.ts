@@ -29,5 +29,6 @@ describe("server shell", () => {
     expect(response.text).toContain("data-storage-canvas");
     expect(response.text).toContain("data-storage-details");
     expect(response.text).toContain("data-storage-status");
+    expect(response.text).toContain("data-context-menu");
   });
 });
