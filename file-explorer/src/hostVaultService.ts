@@ -192,11 +192,11 @@ export class HostVaultService {
     } : null);
     return {
       configured: vault !== null,
-      state: vault === null ? "unconfigured" : this.session ? "unlocked" : "locked",
+      state: vault === null ? "unconfigured" : validSession ? "unlocked" : "locked",
       connection,
       expiresAt: validSession && this.session ? new Date(this.session.expiresAt).toISOString() : null,
       lockoutRemainingMs: Math.max(0, this.lockoutUntil - this.dependencies.now()),
-      mountHealthy: Boolean(this.session && this.mountHandle?.isAlive()),
+      mountHealthy: validSession,
     };
   }
 

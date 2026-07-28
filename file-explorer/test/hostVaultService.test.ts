@@ -116,6 +116,14 @@ describe("HostVaultService", () => {
     await expect(fixture.service.unlock("vault phrase")).resolves.toMatchObject({ token: "token-1" });
   });
 
+  it("reports unlocked state only to the active browser session", async () => {
+    const fixture = setup();
+    await fixture.service.unlock("vault phrase");
+
+    expect((await fixture.service.status()).state).toBe("locked");
+    expect((await fixture.service.status("token-1")).state).toBe("unlocked");
+  });
+
   it("extends idle expiry only through authorized Host activity", async () => {
     const fixture = setup();
     await fixture.service.unlock("vault phrase");
@@ -137,7 +145,7 @@ describe("HostVaultService", () => {
     fixture.advance(900_001);
 
     fixture.tick();
-    await vi.waitFor(async () => expect((await fixture.service.status()).state).toBe("locked"));
+    await vi.waitFor(() => expect(fixture.handles[0].unmount).toHaveBeenCalled());
 
     expect(() => fixture.service.authorize("token-1")).toThrow("Vault session is invalid");
     expect(onLock).toHaveBeenCalled();
@@ -151,9 +159,9 @@ describe("HostVaultService", () => {
     fixture.handles[0].isAlive.mockReturnValue(false);
 
     fixture.tick();
-    await vi.waitFor(async () => expect((await fixture.service.status()).state).toBe("locked"));
+    await vi.waitFor(() => expect(fixture.handles[0].unmount).toHaveBeenCalled());
 
-    expect(fixture.handles[0].unmount).toHaveBeenCalled();
+    expect((await fixture.service.status("token-1")).state).toBe("locked");
     expect(() => fixture.service.authorize("token-1")).toThrow("Vault session is invalid");
   });
 

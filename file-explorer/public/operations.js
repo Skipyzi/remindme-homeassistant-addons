@@ -1,5 +1,10 @@
 export function createOperations(api) {
   return {
+    hostVaultStatus() { return api.request("api/host-vault/status", { hostVault: true }); },
+    setupHostVault(input) { return api.request("api/host-vault/setup", { method: "POST", body: JSON.stringify(input) }); },
+    unlockHostVault(passphrase) { return api.request("api/host-vault/unlock", { method: "POST", body: JSON.stringify({ passphrase }) }); },
+    lockHostVault() { return api.request("api/host-vault/lock", { method: "POST", hostVault: true }); },
+    resetHostVault(confirmation) { return api.request("api/host-vault", { method: "DELETE", body: JSON.stringify({ confirmation }) }); },
     create(root, path, type) { return api.request("api/files", { method: "POST", body: JSON.stringify({ root, path, type }) }); },
     move(root, source, target, targetRoot = root) { return api.request("api/move", { method: "POST", body: JSON.stringify({ root, source, target, targetRoot }) }); },
     trash(root, path) { return api.request("api/files", { method: "DELETE", body: JSON.stringify({ root, path }) }); },

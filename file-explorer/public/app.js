@@ -1,6 +1,7 @@
 import { createApi } from "./api.js";
 import { createEditorState } from "./editor.js";
 import { createContextMenu, createEntryActionHandlers } from "./context-menu.js";
+import { createHostVaultController } from "./host-vault.js";
 import { createOperations } from "./operations.js";
 import { createStorageMap } from "./storage-map.js";
 import { breadcrumbSegments, createExplorerState, nextTreeIndex, parentPath } from "./tree.js";
@@ -18,6 +19,7 @@ const elements = {
 let currentEntry = null;
 let searchController;
 let contextMenu;
+let hostVaultController;
 let contextBindings = [];
 let uploadDestination = null;
 
@@ -48,7 +50,8 @@ function renderRoots() {
     const button = document.createElement("button");
     button.className = "root-tab"; button.textContent = root.label;
     button.setAttribute("aria-current", String(root.id === state.selectedRoot));
-    button.addEventListener("click", () => loadDirectory(root.id, ""));
+    if (root.id === "host" && root.locked) button.dataset.locked = "true";
+    button.addEventListener("click", () => selectRoot(root));
     return button;
   }));
 }
@@ -74,13 +77,34 @@ function renderTree(entries) {
     return button;
   }));
 }
+async function selectRoot(root) {
+  state.selectedRoot = root.id;
+  state.selectedPath = "";
+  renderRoots();
+  if (root.id === "host" && !hostVaultController?.isUnlocked()) {
+    editor.discard(); currentEntry = null; renderBreadcrumbs(); renderTree([]);
+    elements.fileName.textContent = "Host /";
+    await hostVaultController.show();
+    closeTree();
+    return;
+  }
+  hostVaultController?.hide();
+  await loadDirectory(root.id, "");
+}
+
 async function loadDirectory(root, path) {
   if (editor.dirty && !confirm("Discard unsaved changes?")) return;
   try {
     setStatus("Loading…"); const entries = await state.loadDirectory(root, path);
     editor.discard(); currentEntry = null;
     renderRoots(); renderBreadcrumbs(); renderTree(entries); setStatus(`${entries.length} item${entries.length === 1 ? "" : "s"}`); closeTree();
-  } catch (error) { setStatus(error.message, true); }
+  } catch (error) {
+    if (root === "host" && error.code === "VAULT_SESSION_INVALID") {
+      sessionStorage.removeItem("file-explorer-host-vault-token");
+      await hostVaultController?.show().catch(() => undefined);
+    }
+    setStatus(error.message, true);
+  }
 }
 
 function renderEditor() {
@@ -122,6 +146,23 @@ const storageMap = createStorageMap({
   onOpenFile: (entry) => openFile(entry),
   onClose: () => storageButton.focus(),
   formatSize,
+});
+hostVaultController = createHostVaultController({
+  operations,
+  onUnlocked: async () => {
+    await state.loadRoots();
+    hostVaultController.hide();
+    await loadDirectory("host", "");
+  },
+  onLocked: async () => {
+    storageMap.close();
+    await state.loadRoots().catch(() => undefined);
+    if (state.selectedRoot === "host") {
+      state.selectedPath = ""; renderRoots(); renderBreadcrumbs(); renderTree([]);
+      elements.fileName.textContent = "Host /";
+      await hostVaultController.show().catch(() => undefined);
+    }
+  },
 });
 
 async function copyText(value) {
@@ -192,6 +233,6 @@ document.querySelector("[data-trash]").addEventListener("click", async () => {
   } catch (error) { setStatus(error.message, true); }
 });
 
-try { await state.loadRoots(); if (state.roots.length) await loadDirectory(state.roots[0].id, ""); else setStatus("No storage roots are enabled", true); }
+try { await state.loadRoots(); if (state.roots.length) await selectRoot(state.roots[0]); else setStatus("No storage roots are enabled", true); }
 catch (error) { setStatus(error.message, true); }
 finally { elements.app.setAttribute("aria-busy", "false"); }

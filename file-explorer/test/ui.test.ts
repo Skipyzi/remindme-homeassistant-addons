@@ -19,6 +19,44 @@ describe("explorer client", () => {
     expect(fetcher).toHaveBeenCalledWith("./api/health", expect.any(Object));
   });
 
+  it("attaches the vault token only to explicitly Host-scoped requests", async () => {
+    const fetcher = vi.fn().mockImplementation(async () => new Response(JSON.stringify({ ok: true }), { headers: { "content-type": "application/json" } }));
+    const api = createApi(fetcher, { getVaultToken: () => "browser-token" });
+
+    await api.request("api/health");
+    expect(fetcher).toHaveBeenLastCalledWith("./api/health", expect.objectContaining({ headers: {} }));
+    await api.request("api/entries?root=host", { hostVault: true });
+    expect(fetcher).toHaveBeenLastCalledWith("./api/entries?root=host", expect.objectContaining({
+      headers: { "X-File-Explorer-Vault": "browser-token" },
+    }));
+  });
+
+  it("exposes the Host Vault API operations", async () => {
+    const api = { request: vi.fn() };
+    const operations = createOperations(api);
+
+    operations.hostVaultStatus();
+    expect(api.request).toHaveBeenLastCalledWith("api/host-vault/status", { hostVault: true });
+    operations.setupHostVault({ host: "gateway" });
+    expect(api.request).toHaveBeenLastCalledWith("api/host-vault/setup", { method: "POST", body: JSON.stringify({ host: "gateway" }) });
+    operations.unlockHostVault("secret");
+    expect(api.request).toHaveBeenLastCalledWith("api/host-vault/unlock", { method: "POST", body: JSON.stringify({ passphrase: "secret" }) });
+    operations.lockHostVault();
+    expect(api.request).toHaveBeenLastCalledWith("api/host-vault/lock", { method: "POST", hostVault: true });
+    operations.resetHostVault("RESET HOST VAULT");
+    expect(api.request).toHaveBeenLastCalledWith("api/host-vault", { method: "DELETE", body: JSON.stringify({ confirmation: "RESET HOST VAULT" }) });
+  });
+
+  it("marks only Host directory loads as vault-scoped", async () => {
+    const api = { request: vi.fn().mockResolvedValue({ entries: [] }) };
+    const state = createExplorerState(api);
+
+    await state.loadDirectory("config", "automations");
+    expect(api.request).toHaveBeenLastCalledWith("api/entries?root=config&path=automations", { hostVault: false });
+    await state.loadDirectory("host", "etc");
+    expect(api.request).toHaveBeenLastCalledWith("api/entries?root=host&path=etc", { hostVault: true });
+  });
+
   it("loads a selected root directory", async () => {
     const api = { request: vi.fn().mockResolvedValue({ entries: [{ name: "automations", path: "automations", type: "directory" }] }) };
     const state = createExplorerState(api);
@@ -68,6 +106,13 @@ describe("explorer client", () => {
     expect(api.request).not.toHaveBeenCalled();
     await operations.purge("trash-1", true);
     expect(api.request).toHaveBeenCalledWith("api/trash/trash-1", { method: "DELETE" });
+  });
+
+  it("integrates Host Vault root selection into the application", async () => {
+    const appSource = await readFile(path.resolve("public/app.js"), "utf8");
+    expect(appSource).toContain('from "./host-vault.js"');
+    expect(appSource).toContain("createHostVaultController(");
+    expect(appSource).toContain("selectRoot(root)");
   });
 
   it("binds the context menu controller to rendered file rows", async () => {
