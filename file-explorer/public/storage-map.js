@@ -30,6 +30,7 @@ function reasonLabel(reason) {
   if (reason === "entry_limit") return "entry limit reached";
   if (reason === "timeout") return "scan timed out";
   if (reason === "cancelled") return "scan cancelled";
+  if (reason === "unreadable_entries") return "unreadable entries skipped";
   return "scan incomplete";
 }
 

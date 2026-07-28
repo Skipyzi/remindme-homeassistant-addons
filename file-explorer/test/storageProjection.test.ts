@@ -66,6 +66,16 @@ describe("storage result projection", () => {
     expect(result.root.children.reduce((sum, child) => sum + child.size, 0)).toBe(source.root.size);
   });
 
+  it("marks unreadable entries as incomplete", () => {
+    const source = tree([file("one.txt", 1)]);
+    source.warnings = [{ code: "PERMISSION_DENIED", path: "private" }];
+
+    const result = projectStorageResult(source, "", 50, "job-1");
+
+    expect(result.incomplete).toBe(true);
+    expect(result.incompleteReason).toBe("unreadable_entries");
+  });
+
   it("rejects unavailable and escaping result paths", () => {
     const source = tree([file("one.txt", 1)]);
     expect(() => projectStorageResult(source, "../outside", 50, "job-1")).toThrowError("Result path is unavailable");

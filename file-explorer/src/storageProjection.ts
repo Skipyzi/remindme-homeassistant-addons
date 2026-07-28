@@ -158,6 +158,7 @@ export function projectStorageResult(
   const source = sourceAt(tree.root, relativePath);
   const root = publicNode(source, idNamespace);
   root.children = compactChildren(source.children, Math.max(1, maxNodes - 1), idNamespace);
+  const hasUnreadableEntries = tree.warnings.some((warning) => warning.code === "PERMISSION_DENIED" || warning.code === "UNSUPPORTED_ENTRY");
   return {
     rootId: tree.rootId,
     requestedPath: source.relativePath,
@@ -167,8 +168,8 @@ export function projectStorageResult(
     totalDirectories: source.directoryCount,
     totalBytes: source.size,
     completedAt: tree.completedAt,
-    incomplete: tree.stopReason !== null,
-    incompleteReason: tree.stopReason,
+    incomplete: tree.stopReason !== null || hasUnreadableEntries,
+    incompleteReason: tree.stopReason ?? (hasUnreadableEntries ? "unreadable_entries" : null),
     warnings: tree.warnings,
   };
 }

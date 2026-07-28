@@ -59,7 +59,7 @@ export interface StorageMapResult {
   totalBytes: number;
   completedAt: string;
   incomplete: boolean;
-  incompleteReason: ScanStopReason;
+  incompleteReason: ScanStopReason | "unreadable_entries";
   warnings: StorageWarning[];
 }
 

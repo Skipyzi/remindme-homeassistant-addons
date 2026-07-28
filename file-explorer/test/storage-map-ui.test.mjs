@@ -112,14 +112,14 @@ it("shows running progress and cancels without closing", async () => {
 
 it("labels incomplete results and closes without cancelling", async () => {
   const partial = { ...completeJob, status: "partial", truncated: true, truncationReason: "entry_limit" };
-  const partialResult = { ...result, incomplete: true, incompleteReason: "entry_limit" };
+  const partialResult = { ...result, incomplete: true, incompleteReason: "unreadable_entries" };
   const { controller, operations, onClose } = setup({
     startStorageScan: vi.fn().mockResolvedValue({ job: partial }),
     storageScanResult: vi.fn().mockResolvedValue({ result: partialResult }),
   });
   await controller.open("share");
 
-  expect(document.querySelector("[data-storage-status]").textContent).toContain("Incomplete");
+  expect(document.querySelector("[data-storage-status]").textContent).toContain("unreadable entries skipped");
   controller.close();
   expect(operations.cancelStorageScan).not.toHaveBeenCalled();
   expect(onClose).toHaveBeenCalledOnce();
