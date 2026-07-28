@@ -33,3 +33,32 @@ export interface StorageScanTree {
   stopReason: ScanStopReason;
   completedAt: string;
 }
+
+export interface StorageMapNode {
+  id: string;
+  name: string;
+  relativePath: string | null;
+  kind: "file" | "directory" | "aggregate";
+  size: number;
+  fileCount: number;
+  directoryCount: number;
+  extension: string;
+  typeGroup: string;
+  openable: boolean;
+  aggregateCount: number;
+  children: StorageMapNode[];
+}
+
+export interface StorageMapResult {
+  rootId: string;
+  requestedPath: string;
+  root: StorageMapNode;
+  visibleNodeCount: number;
+  totalFiles: number;
+  totalDirectories: number;
+  totalBytes: number;
+  completedAt: string;
+  incomplete: boolean;
+  incompleteReason: ScanStopReason;
+  warnings: StorageWarning[];
+}

@@ -8,7 +8,8 @@ export type ErrorCode =
   | "TOO_LARGE"
   | "UNSUPPORTED_FILE"
   | "READ_ONLY_ROOT"
-  | "SEARCH_LIMIT_REACHED";
+  | "SEARCH_LIMIT_REACHED"
+  | "RESULT_PATH_UNAVAILABLE";
 
 export class DomainError extends Error {
   constructor(
