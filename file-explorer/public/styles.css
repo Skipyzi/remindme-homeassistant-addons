@@ -23,7 +23,11 @@ button:focus-visible, [role="treeitem"]:focus-visible { outline: 2px solid var(-
 .root-tabs { display: flex; gap: 6px; padding: 12px; overflow-x: auto; }
 .root-tab, .header-actions button, .tree-toolbar button { border: 0; border-radius: 8px; background: transparent; padding: 8px 11px; cursor: pointer; }
 .root-tab[aria-current="true"] { color: var(--fe-accent); background: var(--fe-hover); font-weight: 650; }
-.tree-toolbar { display: flex; align-items: center; justify-content: space-between; padding: 7px 12px; color: var(--fe-muted); border-block: 1px solid var(--fe-divider); font-size: 12px; }
+.tree-toolbar { display: flex; align-items: center; justify-content: flex-start; gap: 4px; padding: 7px 12px; color: var(--fe-muted); border-block: 1px solid var(--fe-divider); font-size: 12px; }
+.breadcrumbs { display: flex; min-width: 0; flex: 1; gap: 2px; overflow-x: auto; }
+.breadcrumbs button { flex: 0 0 auto; padding: 6px 7px; }
+.breadcrumbs button[aria-current="page"] { color: var(--fe-text); font-weight: 650; }
+.tree-toolbar button:disabled { opacity: .45; cursor: default; }
 .icon-button { border: 0; background: transparent; border-radius: 7px; min-width: 34px; min-height: 34px; cursor: pointer; }
 .icon-button:hover, .header-actions button:hover { background: var(--fe-hover); }
 .file-tree { padding: 8px; overflow: auto; height: calc(100dvh - 130px); }

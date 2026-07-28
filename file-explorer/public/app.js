@@ -1,7 +1,7 @@
 import { createApi } from "./api.js";
 import { createEditorState } from "./editor.js";
 import { createOperations } from "./operations.js";
-import { createExplorerState, nextTreeIndex } from "./tree.js";
+import { breadcrumbSegments, createExplorerState, nextTreeIndex, parentPath } from "./tree.js";
 
 const api = createApi();
 const state = createExplorerState(api);
@@ -9,8 +9,9 @@ const editor = createEditorState(api);
 const operations = createOperations(api);
 const elements = {
   app: document.querySelector("#app"), roots: document.querySelector("[data-roots]"), tree: document.querySelector("[data-tree]"),
-  path: document.querySelector("[data-path]"), status: document.querySelector("[data-status]"), pane: document.querySelector("[data-tree-pane]"),
-  scrim: document.querySelector("[data-scrim]"), content: document.querySelector("[data-content]"), fileName: document.querySelector("[data-file-name]"),
+  up: document.querySelector("[data-up]"), rootPath: document.querySelector("[data-root-path]"), breadcrumbs: document.querySelector("[data-breadcrumbs]"),
+  status: document.querySelector("[data-status]"), pane: document.querySelector("[data-tree-pane]"), scrim: document.querySelector("[data-scrim]"),
+  content: document.querySelector("[data-content]"), fileName: document.querySelector("[data-file-name]"),
 };
 let currentEntry = null;
 let searchController;
@@ -21,6 +22,21 @@ function openTree() { elements.pane.dataset.open = "true"; elements.scrim.hidden
 document.querySelector("[data-open-tree]").addEventListener("click", openTree);
 document.querySelector("[data-close-tree]").addEventListener("click", closeTree);
 elements.scrim.addEventListener("click", closeTree);
+elements.up.addEventListener("click", () => loadDirectory(state.selectedRoot, parentPath(state.selectedPath)));
+elements.rootPath.addEventListener("click", () => loadDirectory(state.selectedRoot, ""));
+
+function renderBreadcrumbs() {
+  const segments = breadcrumbSegments(state.selectedPath);
+  elements.breadcrumbs.replaceChildren(...segments.map((segment, index) => {
+    const button = document.createElement("button");
+    button.textContent = segment.label;
+    if (index === segments.length - 1) button.setAttribute("aria-current", "page");
+    button.addEventListener("click", () => loadDirectory(state.selectedRoot, segment.path));
+    return button;
+  }));
+  elements.up.disabled = state.selectedPath === "";
+  elements.rootPath.disabled = state.selectedPath === "";
+}
 
 function renderRoots() {
   elements.roots.replaceChildren(...state.roots.map((root) => {
@@ -52,8 +68,8 @@ async function loadDirectory(root, path) {
   if (editor.dirty && !confirm("Discard unsaved changes?")) return;
   try {
     setStatus("Loading…"); const entries = await state.loadDirectory(root, path);
-    editor.discard(); currentEntry = null; elements.path.textContent = path ? `/${path}` : "/";
-    renderRoots(); renderTree(entries); setStatus(`${entries.length} item${entries.length === 1 ? "" : "s"}`); closeTree();
+    editor.discard(); currentEntry = null;
+    renderRoots(); renderBreadcrumbs(); renderTree(entries); setStatus(`${entries.length} item${entries.length === 1 ? "" : "s"}`); closeTree();
   } catch (error) { setStatus(error.message, true); }
 }
 

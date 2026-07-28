@@ -11,7 +11,12 @@
       <aside class="tree-pane" data-tree-pane data-open="false" aria-label="Files">
         <header class="app-header"><span class="folder-mark" aria-hidden="true">▰</span><strong>File Explorer</strong><button class="icon-button mobile-close" data-close-tree aria-label="Close file tree">×</button></header>
         <nav class="root-tabs" data-roots aria-label="Storage roots"></nav>
-        <div class="tree-toolbar"><span data-path>/</span><button class="icon-button" data-refresh aria-label="Refresh folder">↻</button></div>
+        <div class="tree-toolbar">
+          <button class="icon-button" data-up aria-label="Go up one folder" disabled>↑</button>
+          <nav class="breadcrumbs" data-breadcrumbs aria-label="Current folder"></nav>
+          <button data-root-path aria-label="Go to root" disabled>Root</button>
+          <button class="icon-button" data-refresh aria-label="Refresh folder">↻</button>
+        </div>
         <div class="file-tree" data-tree role="tree" aria-label="Directory contents"></div>
       </aside>
       <section class="content-pane" aria-label="File content">

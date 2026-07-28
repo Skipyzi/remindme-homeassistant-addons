@@ -3,7 +3,12 @@ import { describe, expect, it, vi } from "vitest";
 import { createApi } from "../public/api.js";
 import { createEditorState } from "../public/editor.js";
 import { createOperations } from "../public/operations.js";
-import { createExplorerState, nextTreeIndex } from "../public/tree.js";
+import {
+  breadcrumbSegments,
+  createExplorerState,
+  nextTreeIndex,
+  parentPath,
+} from "../public/tree.js";
 
 describe("explorer client", () => {
   it("uses ingress-relative API URLs", async () => {
@@ -26,6 +31,17 @@ describe("explorer client", () => {
     expect(nextTreeIndex(2, "ArrowDown", 3)).toBe(2);
     expect(nextTreeIndex(2, "Home", 3)).toBe(0);
     expect(nextTreeIndex(0, "End", 3)).toBe(2);
+  });
+
+  it("builds safe parent paths and clickable breadcrumbs", () => {
+    expect(parentPath("")).toBe("");
+    expect(parentPath("media")).toBe("");
+    expect(parentPath("media/photos/2026")).toBe("media/photos");
+    expect(breadcrumbSegments("media/photos")).toEqual([
+      { label: "Root", path: "" },
+      { label: "media", path: "media" },
+      { label: "photos", path: "media/photos" },
+    ]);
   });
 
   it("preserves dirty text when a save conflicts", async () => {

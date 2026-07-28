@@ -20,6 +20,23 @@ export function createExplorerState(api) {
   };
 }
 
+export function parentPath(relativePath) {
+  const parts = relativePath.split("/").filter(Boolean);
+  parts.pop();
+  return parts.join("/");
+}
+
+export function breadcrumbSegments(relativePath) {
+  const segments = [{ label: "Root", path: "" }];
+  const parts = relativePath.split("/").filter(Boolean);
+  let current = "";
+  for (const part of parts) {
+    current = current ? `${current}/${part}` : part;
+    segments.push({ label: part, path: current });
+  }
+  return segments;
+}
+
 export function nextTreeIndex(current, key, count) {
   if (count <= 0) return -1;
   if (key === "Home") return 0;
