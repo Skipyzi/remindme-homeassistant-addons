@@ -1,5 +1,5 @@
 name: File Explorer
-version: "0.1.0"
+version: "0.1.1"
 slug: file_explorer
 description: Safe administrator-only file management through Home Assistant ingress
 arch:
