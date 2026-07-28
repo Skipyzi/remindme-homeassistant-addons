@@ -1,6 +1,7 @@
 import type { Stats } from "node:fs";
 import { lstat, readdir } from "node:fs/promises";
 import path from "node:path";
+import { StorageScanFatalError } from "./errors.js";
 import type { AuthorizedPath, StorageScanLimits } from "./types.js";
 import type {
   ScanStopReason,
@@ -34,9 +35,12 @@ function addWarning(warnings: StorageWarning[], warning: StorageWarning): void {
   if (warnings.length < 100) warnings.push(warning);
 }
 
-function isPermissionError(error: unknown): boolean {
+function recoverableWarning(error: unknown, relativePath: string): StorageWarning | null {
   const code = (error as NodeJS.ErrnoException | null)?.code;
-  return code === "EACCES" || code === "EPERM";
+  if (code === "ENOENT" || code === "ESTALE") return { code: "ENTRY_DISAPPEARED", path: relativePath };
+  if (code === "EACCES" || code === "EPERM") return { code: "PERMISSION_DENIED", path: relativePath };
+  if (code === "ENOTCONN") throw new StorageScanFatalError("HOST_CONNECTION_LOST");
+  return null;
 }
 
 function finalizeDirectory(node: StorageTreeNode): void {
@@ -104,8 +108,9 @@ export class StorageScanner {
       try {
         entries = await this.fs.readdir(current.absolutePath);
       } catch (error) {
-        if (!isPermissionError(error)) throw error;
-        addWarning(warnings, { code: "PERMISSION_DENIED", path: current.node.relativePath });
+        const warning = recoverableWarning(error, current.node.relativePath);
+        if (warning === null) throw error;
+        addWarning(warnings, warning);
         continue;
       }
 
@@ -120,8 +125,9 @@ export class StorageScanner {
         try {
           stats = await this.fs.lstat(childAbsolute);
         } catch (error) {
-          if (!isPermissionError(error)) throw error;
-          addWarning(warnings, { code: "PERMISSION_DENIED", path: relativePath });
+          const warning = recoverableWarning(error, relativePath);
+          if (warning === null) throw error;
+          addWarning(warnings, warning);
           continue;
         }
 

@@ -1,5 +1,5 @@
 export type ScanStopReason = "entry_limit" | "timeout" | "cancelled" | null;
-export type StorageWarningCode = "PERMISSION_DENIED" | "SYMLINK_SKIPPED" | "UNSUPPORTED_ENTRY";
+export type StorageWarningCode = "ENTRY_DISAPPEARED" | "PERMISSION_DENIED" | "SYMLINK_SKIPPED" | "UNSUPPORTED_ENTRY";
 
 export interface StorageWarning {
   code: StorageWarningCode;

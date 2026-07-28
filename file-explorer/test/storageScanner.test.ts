@@ -82,6 +82,34 @@ describe("StorageScanner", () => {
     expect(result.progress.files).toBe(1);
   });
 
+  it.each(["ENOENT", "ESTALE"])("continues when an entry disappears with %s", async (code) => {
+    const scanTarget = await target();
+    const fs: StorageFs = {
+      async readdir() { return [{ name: "gone" }, { name: "kept.txt" }]; },
+      async lstat(targetPath) {
+        if (targetPath.endsWith("gone")) throw Object.assign(new Error("gone"), { code });
+        return fakeStats("file", 7);
+      },
+    };
+
+    const result = await new StorageScanner(fs).scan(scanTarget, limits, new AbortController().signal);
+
+    expect(result.root.size).toBe(7);
+    expect(result.warnings).toContainEqual({ code: "ENTRY_DISAPPEARED", path: "gone" });
+    expect(result.stopReason).toBeNull();
+  });
+
+  it("raises a safe typed error when SSHFS disconnects", async () => {
+    const scanTarget = await target();
+    const fs: StorageFs = {
+      async readdir() { throw Object.assign(new Error("transport details"), { code: "ENOTCONN" }); },
+      async lstat() { return fakeStats("file", 1); },
+    };
+
+    await expect(new StorageScanner(fs).scan(scanTarget, limits, new AbortController().signal))
+      .rejects.toMatchObject({ code: "HOST_CONNECTION_LOST", message: "Host connection lost" });
+  });
+
   it("honors cancellation before touching the filesystem", async () => {
     const scanTarget = await target();
     const controller = new AbortController();
