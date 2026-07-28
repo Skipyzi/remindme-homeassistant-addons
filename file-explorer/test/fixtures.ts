@@ -32,6 +32,12 @@ export async function createFixtureRoots() {
       cacheTtlMs: 60_000,
       maxResultNodes: 5_000,
     },
+    hostStorageScan: {
+      maxEntries: 1_000_000,
+      timeoutMs: 600_000,
+      cacheTtlMs: 300_000,
+      maxResultNodes: 10_000,
+    },
   };
 
   return {

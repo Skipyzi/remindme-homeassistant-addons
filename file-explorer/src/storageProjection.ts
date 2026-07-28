@@ -80,9 +80,10 @@ function publicNode(source: StorageTreeNode, namespace: string): StorageMapNode 
     directoryCount: source.directoryCount,
     extension: type.extension,
     typeGroup: type.typeGroup,
-    openable: true,
+    openable: !source.excluded,
     aggregateCount: 0,
     children: [],
+    excluded: source.excluded,
   };
 }
 
@@ -171,5 +172,6 @@ export function projectStorageResult(
     incomplete: tree.stopReason !== null || hasUnreadableEntries,
     incompleteReason: tree.stopReason ?? (hasUnreadableEntries ? "unreadable_entries" : null),
     warnings: tree.warnings,
+    excludedPaths: tree.excludedPaths ?? [],
   };
 }

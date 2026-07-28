@@ -96,7 +96,9 @@ export async function createConfiguredApp(): Promise<Express> {
   const roots = createRootRegistry(config, { hostPath: "/host" });
   const policy = new PathPolicy(roots, [backupDir, trashDir]);
   const safety = new SafetyService(backupDir, trashDir);
-  const storageScans = new StorageScanService(policy, new StorageScanner(), config.storageScan);
+  const storageScans = new StorageScanService(policy, new StorageScanner(), config.storageScan, {
+    hostLimits: config.hostStorageScan,
+  });
   const hostVault = new HostVaultService({
     store: new HostVaultStore(path.join(dataDir, "host-vault.json")),
     mount: new SshfsMountAdapter(),

@@ -68,12 +68,18 @@ export class StorageScanner {
     limits: StorageScanLimits,
     signal: AbortSignal,
     onProgress: (progress: StorageScanProgress) => void = () => undefined,
+    options: { excludedRelativePaths?: readonly string[] } = {},
   ): Promise<StorageScanTree> {
     const startedAt = Date.now();
+    const excluded = new Set((options.excludedRelativePaths ?? []).map((item) => path.posix.normalize(item.replaceAll("\\", "/"))));
+    const excludedPaths = [...excluded].filter((item) => target.relativePath === ""
+      || target.relativePath === item
+      || target.relativePath.startsWith(`${item}/`)
+      || item.startsWith(`${target.relativePath}/`));
     const warnings: StorageWarning[] = [];
     const root: StorageTreeNode = {
-      name: target.root.label,
-      relativePath: "",
+      name: target.relativePath ? path.posix.basename(target.relativePath) : target.root.label,
+      relativePath: target.relativePath,
       kind: "directory",
       size: 0,
       fileCount: 0,
@@ -85,10 +91,13 @@ export class StorageScanner {
       files: 0,
       directories: 1,
       bytes: 0,
-      currentPath: "",
+      currentPath: target.relativePath,
       elapsedMs: 0,
     };
-    const stack = [{ absolutePath: target.absolutePath, node: root }];
+    if (excludedPaths.some((item) => target.relativePath === item || target.relativePath.startsWith(`${item}/`))) {
+      root.excluded = true;
+    }
+    const stack = root.excluded ? [] : [{ absolutePath: target.absolutePath, node: root }];
     let entriesVisited = 0;
     let stopReason: ScanStopReason = null;
 
@@ -120,7 +129,25 @@ export class StorageScanner {
         if (stopReason !== null) break;
         entriesVisited += 1;
         const childAbsolute = path.join(current.absolutePath, entry.name);
-        const relativePath = relativeDisplayPath(target.absolutePath, childAbsolute);
+        const childWithinTarget = relativeDisplayPath(target.absolutePath, childAbsolute);
+        const relativePath = target.relativePath
+          ? path.posix.join(target.relativePath, childWithinTarget)
+          : childWithinTarget;
+        if (excluded.has(relativePath)) {
+          current.node.children.push({
+            name: entry.name,
+            relativePath,
+            kind: "directory",
+            size: 0,
+            fileCount: 0,
+            directoryCount: 0,
+            extension: "",
+            children: [],
+            excluded: true,
+          });
+          progress.directories += 1;
+          continue;
+        }
         let stats: Stats;
         try {
           stats = await this.fs.lstat(childAbsolute);
@@ -181,6 +208,7 @@ export class StorageScanner {
       warnings,
       stopReason,
       completedAt: new Date().toISOString(),
+      excludedPaths,
     };
   }
 }

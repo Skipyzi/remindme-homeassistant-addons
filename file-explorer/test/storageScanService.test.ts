@@ -154,6 +154,30 @@ describe("StorageScanService", () => {
     service.dispose();
   });
 
+  it("owns Host subtree jobs by vault session and applies Host limits", async () => {
+    const hostLimits: StorageScanLimits = { maxEntries: 1_000_000, timeoutMs: 600_000, cacheTtlMs: 300_000, maxResultNodes: 10_000 };
+    const hostTree = tree("host");
+    hostTree.root.relativePath = "mnt/data";
+    hostTree.root.children[0].relativePath = "mnt/data/five.txt";
+    const scanner = { scan: vi.fn(async () => hostTree) };
+    const service = new StorageScanService(policy(), scanner, limits, { idFactory: ids(), hostLimits });
+
+    const started = await service.start("host", "mnt/data", false, "token-a");
+    await vi.waitFor(() => expect(service.snapshot(started.id, "token-a").status).toBe("complete"));
+
+    expect(scanner.scan).toHaveBeenCalledWith(
+      expect.objectContaining({ relativePath: "mnt/data", absolutePath: "/roots/host/mnt/data" }),
+      hostLimits,
+      expect.any(AbortSignal),
+      expect.any(Function),
+      { excludedRelativePaths: ["proc", "sys", "dev", "run"] },
+    );
+    expect(() => service.snapshot(started.id, "token-b")).toThrow("Vault session is invalid");
+    await expect(service.result(started.id, undefined, "token-a")).resolves.toMatchObject({ requestedPath: "mnt/data" });
+    expect(() => service.cancel(started.id, "token-b")).toThrow("Vault session is invalid");
+    service.dispose();
+  });
+
   it("retains a safe partial result after cancellation", async () => {
     const scanner = {
       scan: vi.fn(async (_target, _limits, signal: AbortSignal) => new Promise<StorageScanTree>((resolve) => {

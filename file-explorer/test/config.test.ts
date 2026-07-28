@@ -29,6 +29,12 @@ it("uses safe storage scan defaults", async () => {
     cacheTtlMs: 60_000,
     maxResultNodes: 5_000,
   });
+  expect(config.hostStorageScan).toEqual({
+    maxEntries: 1_000_000,
+    timeoutMs: 600_000,
+    cacheTtlMs: 300_000,
+    maxResultNodes: 10_000,
+  });
 });
 
 it("clamps storage scan options", async () => {
@@ -37,11 +43,21 @@ it("clamps storage scan options", async () => {
     storage_scan_timeout_seconds: 9_999,
     storage_scan_cache_seconds: 0,
     storage_map_max_nodes: 99_999,
+    host_scan_max_entries: 2,
+    host_scan_timeout_seconds: 1,
+    host_scan_cache_seconds: 99_999,
+    host_map_max_nodes: 2,
   });
   expect(config.storageScan).toEqual({
     maxEntries: 1_000,
     timeoutMs: 600_000,
     cacheTtlMs: 5_000,
     maxResultNodes: 10_000,
+  });
+  expect(config.hostStorageScan).toEqual({
+    maxEntries: 1_000,
+    timeoutMs: 5_000,
+    cacheTtlMs: 3_600_000,
+    maxResultNodes: 100,
   });
 });

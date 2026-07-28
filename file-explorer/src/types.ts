@@ -26,6 +26,7 @@ export interface ExplorerConfig {
   searchTimeoutMs: number;
   retentionDays: number;
   storageScan: StorageScanLimits;
+  hostStorageScan: StorageScanLimits;
 }
 
 export interface AuthorizedPath {

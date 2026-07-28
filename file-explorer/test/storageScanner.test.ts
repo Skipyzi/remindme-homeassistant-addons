@@ -110,6 +110,46 @@ describe("StorageScanner", () => {
       .rejects.toMatchObject({ code: "HOST_CONNECTION_LOST", message: "Host connection lost" });
   });
 
+  it("excludes Host virtual filesystems while including disk-backed paths", async () => {
+    const scanTarget = await target();
+    scanTarget.root = { ...scanTarget.root, id: "host", label: "Host /", readOnly: true };
+    for (const directory of ["proc", "sys", "dev", "run", "etc", "usr", "tmp", "mnt"]) {
+      await mkdir(path.join(scanTarget.absolutePath, directory));
+      await writeFile(path.join(scanTarget.absolutePath, directory, "data"), directory);
+    }
+
+    const result = await new StorageScanner().scan(
+      scanTarget,
+      limits,
+      new AbortController().signal,
+      () => undefined,
+      { excludedRelativePaths: ["proc", "sys", "dev", "run"] },
+    );
+
+    expect(result.root.size).toBe(Buffer.byteLength("etcusrtmpmnt"));
+    expect(result.excludedPaths).toEqual(["proc", "sys", "dev", "run"]);
+    expect(result.root.children.find((node) => node.relativePath === "proc")).toMatchObject({ excluded: true, size: 0 });
+    expect(result.root.children.find((node) => node.relativePath === "etc")?.size).toBe(3);
+  });
+
+  it("scans only the authorized subtree", async () => {
+    const scanTarget = await target();
+    await mkdir(path.join(scanTarget.absolutePath, "mnt", "data"), { recursive: true });
+    await writeFile(path.join(scanTarget.absolutePath, "outside.txt"), "outside");
+    await writeFile(path.join(scanTarget.absolutePath, "mnt", "data", "inside.txt"), "inside");
+    const subtree = {
+      ...scanTarget,
+      relativePath: "mnt/data",
+      absolutePath: path.join(scanTarget.absolutePath, "mnt", "data"),
+    };
+
+    const result = await new StorageScanner().scan(subtree, limits, new AbortController().signal);
+
+    expect(result.root.relativePath).toBe("mnt/data");
+    expect(result.root.size).toBe(6);
+    expect(JSON.stringify(result.root)).not.toContain("outside.txt");
+  });
+
   it("honors cancellation before touching the filesystem", async () => {
     const scanTarget = await target();
     const controller = new AbortController();

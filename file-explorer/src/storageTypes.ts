@@ -23,6 +23,7 @@ export interface StorageTreeNode {
   directoryCount: number;
   extension: string;
   children: StorageTreeNode[];
+  excluded?: boolean;
 }
 
 export interface StorageScanTree {
@@ -32,6 +33,7 @@ export interface StorageScanTree {
   warnings: StorageWarning[];
   stopReason: ScanStopReason;
   completedAt: string;
+  excludedPaths?: string[];
 }
 
 export interface StorageMapNode {
@@ -47,6 +49,7 @@ export interface StorageMapNode {
   openable: boolean;
   aggregateCount: number;
   children: StorageMapNode[];
+  excluded?: boolean;
 }
 
 export interface StorageMapResult {
@@ -61,6 +64,7 @@ export interface StorageMapResult {
   incomplete: boolean;
   incompleteReason: ScanStopReason | "unreadable_entries";
   warnings: StorageWarning[];
+  excludedPaths?: string[];
 }
 
 export type StorageJobStatus = "running" | "complete" | "partial" | "cancelled" | "failed";
@@ -68,6 +72,7 @@ export type StorageJobStatus = "running" | "complete" | "partial" | "cancelled" 
 export interface StorageJobSnapshot {
   id: string;
   root: string;
+  scanPath: string;
   status: StorageJobStatus;
   progress: StorageScanProgress;
   warnings: StorageWarning[];

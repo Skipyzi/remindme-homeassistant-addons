@@ -62,6 +62,21 @@ describe("storage map API", () => {
     expect(JSON.stringify(result.body)).not.toContain(fixture.base);
   });
 
+  it("starts and returns an exact folder subtree without a second result path", async () => {
+    const started = await request(app)
+      .post("/api/storage-map/scans")
+      .send({ root: "config", path: "automations", refresh: false })
+      .expect(202);
+    await waitForTerminalStatus(started.body.job.id);
+
+    const result = await request(app)
+      .get(`/api/storage-map/scans/${started.body.job.id}/result`)
+      .expect(200);
+
+    expect(result.body.result.requestedPath).toBe("automations");
+    expect(result.body.result.root.name).toBe("automations");
+  });
+
   it("rejects disabled roots, unknown jobs, and escaping result paths", async () => {
     await request(app).post("/api/storage-map/scans").send({ root: "share" }).expect(404);
     await request(app).get("/api/storage-map/scans/not-a-job").expect(404);
