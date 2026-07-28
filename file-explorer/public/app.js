@@ -1,6 +1,7 @@
 import { createApi } from "./api.js";
 import { createEditorState } from "./editor.js";
 import { createOperations } from "./operations.js";
+import { createStorageMap } from "./storage-map.js";
 import { breadcrumbSegments, createExplorerState, nextTreeIndex, parentPath } from "./tree.js";
 
 const api = createApi();
@@ -105,6 +106,17 @@ async function openFile(entry) {
   try { await editor.open(state.selectedRoot, entry.path, { force: true }); renderEditor(); closeTree(); setStatus(`${formatSize(entry.size)} · UTF-8`); }
   catch (error) { setStatus(error.message, true); }
 }
+
+const storageButton = document.querySelector("[data-storage-open]");
+const storageMap = createStorageMap({
+  operations,
+  onOpenFile: (entry) => openFile(entry),
+  onClose: () => storageButton.focus(),
+  formatSize,
+});
+storageButton.addEventListener("click", () => {
+  if (state.selectedRoot) void storageMap.open(state.selectedRoot);
+});
 
 document.querySelector("[data-refresh]").addEventListener("click", () => loadDirectory(state.selectedRoot, state.selectedPath));
 document.querySelector("[data-new]").addEventListener("click", async () => {
