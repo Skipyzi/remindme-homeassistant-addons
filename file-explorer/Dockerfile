@@ -2,7 +2,7 @@ ARG BUILD_FROM=node:22-alpine
 FROM ${BUILD_FROM} AS build
 WORKDIR /build
 RUN corepack enable
-COPY package.json pnpm-lock.yaml ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 RUN pnpm install --frozen-lockfile
 COPY tsconfig.json ./
 COPY src ./src
