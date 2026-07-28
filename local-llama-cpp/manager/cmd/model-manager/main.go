@@ -108,8 +108,8 @@ func main() {
 		Token:   pairingStore.Token,
 		Pairing: pairingStore,
 		Facts:   facts, Downloader: downloader, Supervisor: supervisor, Verified: verificationStore,
-		ModelDir: configured.models, CredentialPath: credentialPath,
-		CustomCatalogPath: customCatalogPath, InferenceURL: "http://127.0.0.1:8081",
+		ModelDir: configured.models, CacheDir: filepath.Join(filepath.Dir(configured.models), ".cache"),
+		CredentialPath: credentialPath, CustomCatalogPath: customCatalogPath, InferenceURL: "http://127.0.0.1:8081",
 	})
 	// Stream the supervisor's phase transitions onto the operation event feed,
 	// so a model switch shows activating → probing → active live.
