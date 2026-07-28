@@ -880,6 +880,25 @@ app.get("/api/models", async (_request, response) => {
 app.get("/api/models/status", async (_request, response) => {
 	await proxyModelManager(response, "/status");
 });
+app.get("/api/models/inventory", async (_request, response) => {
+	await proxyModelManager(response, "/models/inventory");
+});
+app.delete("/api/models/inventory/:id", async (request, response) => {
+	if (!/^[a-f0-9]{32}$/.test(request.params.id))
+		return response
+			.status(400)
+			.json(
+				safeModelError(
+					"invalid_inventory_target",
+					"Inventory item is invalid.",
+				),
+			);
+	await proxyModelManager(
+		response,
+		`/models/inventory/${encodeURIComponent(request.params.id)}`,
+		"DELETE",
+	);
+});
 app.post("/api/models/preflight", async (request, response) => {
 	const body = modelSelectionBody(request.body);
 	if (!body)
