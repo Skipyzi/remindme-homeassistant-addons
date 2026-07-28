@@ -3,7 +3,12 @@ import { describe, expect, it, vi } from "vitest";
 import { createApi } from "../public/api.js";
 import { createEditorState } from "../public/editor.js";
 import { createOperations } from "../public/operations.js";
-import { createExplorerState, nextTreeIndex } from "../public/tree.js";
+import {
+  breadcrumbSegments,
+  createExplorerState,
+  nextTreeIndex,
+  parentPath,
+} from "../public/tree.js";
 
 describe("explorer client", () => {
   it("uses ingress-relative API URLs", async () => {
@@ -28,6 +33,17 @@ describe("explorer client", () => {
     expect(nextTreeIndex(0, "End", 3)).toBe(2);
   });
 
+  it("builds safe parent paths and clickable breadcrumbs", () => {
+    expect(parentPath("")).toBe("");
+    expect(parentPath("media")).toBe("");
+    expect(parentPath("media/photos/2026")).toBe("media/photos");
+    expect(breadcrumbSegments("media/photos")).toEqual([
+      { label: "Root", path: "" },
+      { label: "media", path: "media" },
+      { label: "photos", path: "media/photos" },
+    ]);
+  });
+
   it("preserves dirty text when a save conflicts", async () => {
     const api = {
       request: vi.fn()
@@ -50,5 +66,22 @@ describe("explorer client", () => {
     expect(api.request).not.toHaveBeenCalled();
     await operations.purge("trash-1", true);
     expect(api.request).toHaveBeenCalledWith("api/trash/trash-1", { method: "DELETE" });
+  });
+
+  it("uses the storage scan job API contract", async () => {
+    const api = { request: vi.fn() };
+    const operations = createOperations(api);
+
+    operations.startStorageScan("share", true);
+    expect(api.request).toHaveBeenLastCalledWith("api/storage-map/scans", {
+      method: "POST",
+      body: JSON.stringify({ root: "share", refresh: true }),
+    });
+    operations.storageScanStatus("job/1");
+    expect(api.request).toHaveBeenLastCalledWith("api/storage-map/scans/job%2F1");
+    operations.storageScanResult("job/1", "media/photos");
+    expect(api.request).toHaveBeenLastCalledWith("api/storage-map/scans/job%2F1/result?path=media%2Fphotos");
+    operations.cancelStorageScan("job/1");
+    expect(api.request).toHaveBeenLastCalledWith("api/storage-map/scans/job%2F1", { method: "DELETE" });
   });
 });

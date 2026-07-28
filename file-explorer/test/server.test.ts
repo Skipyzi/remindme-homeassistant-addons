@@ -18,5 +18,16 @@ describe("server shell", () => {
     expect(response.status).toBe(200);
     expect(response.text).toContain('src="./app.js"');
     expect(response.text).toContain('href="./styles.css"');
+    expect(response.text).toContain("data-up");
+    expect(response.text).toContain("data-root-path");
+    expect(response.text).toContain("data-breadcrumbs");
+    expect(response.text).toContain("data-storage-open");
+    expect(response.text).toContain("data-storage-map");
+    expect(response.text).toContain("data-storage-close");
+    expect(response.text).toContain("data-storage-refresh");
+    expect(response.text).toContain("data-storage-cancel");
+    expect(response.text).toContain("data-storage-canvas");
+    expect(response.text).toContain("data-storage-details");
+    expect(response.text).toContain("data-storage-status");
   });
 });

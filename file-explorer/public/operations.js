@@ -10,6 +10,19 @@ export function createOperations(api) {
       return api.request(`api/trash/${encodeURIComponent(id)}`, { method: "DELETE" });
     },
     search(root, path, query, signal) { return api.request(`api/search?root=${encodeURIComponent(root)}&path=${encodeURIComponent(path)}&q=${encodeURIComponent(query)}`, { signal }); },
+    startStorageScan(root, refresh = false) {
+      return api.request("api/storage-map/scans", {
+        method: "POST",
+        body: JSON.stringify({ root, refresh }),
+      });
+    },
+    storageScanStatus(id) { return api.request(`api/storage-map/scans/${encodeURIComponent(id)}`); },
+    storageScanResult(id, path = "") {
+      return api.request(`api/storage-map/scans/${encodeURIComponent(id)}/result?path=${encodeURIComponent(path)}`);
+    },
+    cancelStorageScan(id) {
+      return api.request(`api/storage-map/scans/${encodeURIComponent(id)}`, { method: "DELETE" });
+    },
     async upload(root, path, file) {
       const response = await fetch(`./api/upload?root=${encodeURIComponent(root)}&path=${encodeURIComponent(path)}`, { method: "PUT", headers: { "content-type": "application/octet-stream" }, body: file });
       const body = await response.json();

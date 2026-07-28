@@ -9,6 +9,13 @@ export interface RootDefinition {
   readOnly: boolean;
 }
 
+export interface StorageScanLimits {
+  maxEntries: number;
+  timeoutMs: number;
+  cacheTtlMs: number;
+  maxResultNodes: number;
+}
+
 export interface ExplorerConfig {
   roots: RootDefinition[];
   dataDir: string;
@@ -18,6 +25,7 @@ export interface ExplorerConfig {
   searchMaxResults: number;
   searchTimeoutMs: number;
   retentionDays: number;
+  storageScan: StorageScanLimits;
 }
 
 export interface AuthorizedPath {

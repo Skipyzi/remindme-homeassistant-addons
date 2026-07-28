@@ -11,6 +11,10 @@ interface RawOptions {
   search_max_results?: number;
   search_timeout_seconds?: number;
   retention_days?: number;
+  storage_scan_max_entries?: number;
+  storage_scan_timeout_seconds?: number;
+  storage_scan_cache_seconds?: number;
+  storage_map_max_nodes?: number;
 }
 
 export interface RootPaths {
@@ -24,6 +28,11 @@ const defaultRootPaths: RootPaths = {
   share: "/share",
   media: "/media",
 };
+
+function clamp(value: number | undefined, fallback: number, minimum: number, maximum: number): number {
+  const candidate = Number.isFinite(value) ? Math.trunc(value as number) : fallback;
+  return Math.min(maximum, Math.max(minimum, candidate));
+}
 
 export async function loadConfig(
   optionsPath: string,
@@ -57,5 +66,11 @@ export async function loadConfig(
     searchMaxResults: raw.search_max_results ?? 500,
     searchTimeoutMs: (raw.search_timeout_seconds ?? 15) * 1_000,
     retentionDays: raw.retention_days ?? 30,
+    storageScan: {
+      maxEntries: clamp(raw.storage_scan_max_entries, 200_000, 1_000, 1_000_000),
+      timeoutMs: clamp(raw.storage_scan_timeout_seconds, 120, 5, 600) * 1_000,
+      cacheTtlMs: clamp(raw.storage_scan_cache_seconds, 60, 5, 3_600) * 1_000,
+      maxResultNodes: clamp(raw.storage_map_max_nodes, 5_000, 100, 10_000),
+    },
   };
 }

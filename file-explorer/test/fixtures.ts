@@ -26,6 +26,12 @@ export async function createFixtureRoots() {
     searchMaxResults: 500,
     searchTimeoutMs: 15_000,
     retentionDays: 30,
+    storageScan: {
+      maxEntries: 200_000,
+      timeoutMs: 120_000,
+      cacheTtlMs: 60_000,
+      maxResultNodes: 5_000,
+    },
   };
 
   return {

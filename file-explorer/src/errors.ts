@@ -8,7 +8,10 @@ export type ErrorCode =
   | "TOO_LARGE"
   | "UNSUPPORTED_FILE"
   | "READ_ONLY_ROOT"
-  | "SEARCH_LIMIT_REACHED";
+  | "SEARCH_LIMIT_REACHED"
+  | "RESULT_PATH_UNAVAILABLE"
+  | "SCAN_JOB_EXPIRED"
+  | "SCAN_NOT_READY";
 
 export class DomainError extends Error {
   constructor(
