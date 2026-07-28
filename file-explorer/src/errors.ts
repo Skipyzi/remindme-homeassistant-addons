@@ -9,7 +9,9 @@ export type ErrorCode =
   | "UNSUPPORTED_FILE"
   | "READ_ONLY_ROOT"
   | "SEARCH_LIMIT_REACHED"
-  | "RESULT_PATH_UNAVAILABLE";
+  | "RESULT_PATH_UNAVAILABLE"
+  | "SCAN_JOB_EXPIRED"
+  | "SCAN_NOT_READY";
 
 export class DomainError extends Error {
   constructor(

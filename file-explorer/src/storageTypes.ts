@@ -62,3 +62,19 @@ export interface StorageMapResult {
   incompleteReason: ScanStopReason;
   warnings: StorageWarning[];
 }
+
+export type StorageJobStatus = "running" | "complete" | "partial" | "cancelled" | "failed";
+
+export interface StorageJobSnapshot {
+  id: string;
+  root: string;
+  status: StorageJobStatus;
+  progress: StorageScanProgress;
+  warnings: StorageWarning[];
+  truncated: boolean;
+  truncationReason: ScanStopReason;
+  cached: boolean;
+  completedAt: string | null;
+  error: { code: string; message: string } | null;
+  resultAvailable: boolean;
+}
