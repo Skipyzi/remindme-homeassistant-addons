@@ -8,6 +8,7 @@ import { FilesystemService } from "./filesystem.js";
 import { HostVaultService } from "./hostVaultService.js";
 import { HostVaultStore } from "./hostVaultStore.js";
 import { HostVaultError } from "./hostVaultTypes.js";
+import { createHostRequestGuard } from "./hostRequestGuard.js";
 import { PathPolicy } from "./pathPolicy.js";
 import { createRootRegistry } from "./roots.js";
 import { createBrowseRouter, type BrowseContext } from "./routes/browse.js";
@@ -41,7 +42,10 @@ export function createApp(options: AppOptions = {}): Express {
     response.json({ ok: true, service: "file-explorer" });
   });
   if (options.context) {
-    if (options.context.hostVault) app.use("/api", createHostVaultRouter(options.context as BrowseContext & HostVaultContext));
+    if (options.context.hostVault) {
+      app.use("/api", createHostRequestGuard(options.context.hostVault));
+      app.use("/api", createHostVaultRouter(options.context as BrowseContext & HostVaultContext));
+    }
     app.use("/api", createBrowseRouter(options.context));
     if (options.context.safety) {
       const fileContext = options.context as FileContext;
@@ -89,7 +93,7 @@ export async function createConfiguredApp(): Promise<Express> {
   const backupDir = path.join(dataDir, "backups");
   const trashDir = path.join(dataDir, "trash");
   await Promise.all([mkdir(dataDir, { recursive: true }), mkdir(backupDir, { recursive: true }), mkdir(trashDir, { recursive: true })]);
-  const roots = createRootRegistry(config);
+  const roots = createRootRegistry(config, { hostPath: "/host" });
   const policy = new PathPolicy(roots, [backupDir, trashDir]);
   const safety = new SafetyService(backupDir, trashDir);
   const storageScans = new StorageScanService(policy, new StorageScanner(), config.storageScan);

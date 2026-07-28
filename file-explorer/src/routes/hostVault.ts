@@ -4,7 +4,7 @@ import type { HostVaultService } from "../hostVaultService.js";
 import { HostVaultError } from "../hostVaultTypes.js";
 
 export interface HostVaultContext {
-  hostVault: Pick<HostVaultService, "status" | "setup" | "unlock" | "lock" | "reset">;
+  hostVault: Pick<HostVaultService, "status" | "setup" | "unlock" | "lock" | "reset" | "authorize">;
 }
 
 function requiredString(value: unknown, name: string, maximumLength = 10_000): string {
