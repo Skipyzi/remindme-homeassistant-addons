@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { StorageScanFatalError } from "../src/errors.js";
 import { StorageScanService } from "../src/storageScanService.js";
 import type { ScanStopReason, StorageScanTree } from "../src/storageTypes.js";
 import type { AuthorizedPath, StorageScanLimits } from "../src/types.js";
@@ -126,6 +127,30 @@ describe("StorageScanService", () => {
 
     const cached = await service.start("config", false);
     expect(cached.id).toBe(refreshed.id);
+    service.dispose();
+  });
+
+  it("retains a typed safe failure and logs only safe diagnostics", async () => {
+    const failure = Object.assign(new StorageScanFatalError("HOST_CONNECTION_LOST"), {
+      details: "transport details",
+    });
+    const scanner = { scan: vi.fn(async () => { throw failure; }) };
+    const logger = { error: vi.fn() };
+    const service = new StorageScanService(policy(), scanner, limits, { idFactory: ids(), logger });
+
+    const started = await service.start("config", false);
+    await vi.waitFor(() => expect(service.snapshot(started.id).status).toBe("failed"));
+
+    expect(service.snapshot(started.id).error).toEqual({
+      code: "HOST_CONNECTION_LOST",
+      message: "Host connection lost",
+    });
+    expect(logger.error).toHaveBeenCalledWith("Storage scan failed", {
+      scanId: started.id,
+      root: "config",
+      code: "HOST_CONNECTION_LOST",
+    });
+    expect(JSON.stringify(logger.error.mock.calls)).not.toContain("transport details");
     service.dispose();
   });
 

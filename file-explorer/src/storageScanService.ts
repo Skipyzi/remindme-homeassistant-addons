@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { DomainError } from "./errors.js";
+import { DomainError, StorageScanFatalError } from "./errors.js";
 import type { PathPolicy } from "./pathPolicy.js";
 import { projectStorageResult } from "./storageProjection.js";
 import type { StorageScanner } from "./storageScanner.js";
@@ -27,6 +27,7 @@ interface StorageScannerLike {
 interface ServiceOptions {
   now?: () => number;
   idFactory?: () => string;
+  logger?: Pick<Console, "error">;
 }
 
 interface InternalJob {
@@ -45,6 +46,7 @@ export class StorageScanService {
   private readonly generations = new Map<string, number>();
   private readonly now: () => number;
   private readonly idFactory: () => string;
+  private readonly logger: Pick<Console, "error">;
   private readonly cleanupTimer: NodeJS.Timeout;
 
   constructor(
@@ -55,6 +57,7 @@ export class StorageScanService {
   ) {
     this.now = options.now ?? Date.now;
     this.idFactory = options.idFactory ?? randomUUID;
+    this.logger = options.logger ?? console;
     this.cleanupTimer = setInterval(() => this.cleanup(), Math.max(5_000, limits.cacheTtlMs));
     this.cleanupTimer.unref();
   }
@@ -132,11 +135,15 @@ export class StorageScanService {
         this.cacheByRoot.set(rootId, id);
         this.evictCaches();
       }
-    }, () => {
+    }, (error: unknown) => {
+      const safeError = error instanceof StorageScanFatalError
+        ? { code: error.code, message: error.message }
+        : { code: "SCAN_FAILED", message: "Storage scan failed" };
       snapshot.status = "failed";
-      snapshot.error = { code: "SCAN_FAILED", message: "Storage scan failed" };
+      snapshot.error = safeError;
       snapshot.completedAt = new Date().toISOString();
       job.expiresAt = this.now() + this.limits.cacheTtlMs;
+      this.logger.error("Storage scan failed", { scanId: id, root: rootId, code: safeError.code });
       if (this.activeByRoot.get(rootId) === id) this.activeByRoot.delete(rootId);
     });
 
