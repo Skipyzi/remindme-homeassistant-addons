@@ -49,6 +49,65 @@ export function actionsForEntry(entry, root) {
   return actionIds.map((id) => ({ ...ACTIONS[id] }));
 }
 
+function childPath(parent, name) {
+  return parent ? `${parent}/${name}` : name;
+}
+
+function parentPath(relativePath) {
+  const parts = relativePath.split("/").filter(Boolean);
+  parts.pop();
+  return parts.join("/");
+}
+
+export function createEntryActionHandlers({
+  operations,
+  openFile,
+  loadDirectory,
+  openStorageMap,
+  copyText,
+  prompt,
+  confirm,
+  setUploadDestination,
+  showStorageDetails,
+  refreshDirectory,
+}) {
+  async function run(actionId, entry, root) {
+    const allowed = actionsForEntry(entry, root).some((action) => action.id === actionId);
+    if (!allowed) throw new Error(root.readOnly ? "Action is unavailable on a read-only root" : "Action is unavailable");
+
+    if (actionId === "open" || actionId === "open-readonly" || actionId === "preview-edit") {
+      return entry.type === "directory" ? loadDirectory(root.id, entry.path) : openFile(entry);
+    }
+    if (actionId === "download") return operations.download(root.id, entry.path);
+    if (actionId === "copy-path") return copyText(root.id === "host" ? `/${entry.path}` : entry.path);
+    if (actionId === "storage-details") return showStorageDetails(entry, root);
+    if (actionId === "map-folder") return openStorageMap(root.id, entry.path);
+    if (actionId === "show-in-map") return openStorageMap(root.id, parentPath(entry.path));
+    if (actionId === "upload") return setUploadDestination(entry.path);
+
+    if (actionId === "move") {
+      const target = prompt("New relative path", entry.path);
+      if (!target || target === entry.path) return;
+      await operations.move(root.id, entry.path, target);
+      return refreshDirectory();
+    }
+    if (actionId === "trash") {
+      if (!confirm(`Move ${entry.name} to trash?`)) return;
+      await operations.trash(root.id, entry.path);
+      return refreshDirectory();
+    }
+    if (actionId === "new-file" || actionId === "new-folder") {
+      const type = actionId === "new-folder" ? "directory" : "file";
+      const name = prompt(`Name for the new ${type === "file" ? "file" : "folder"}`);
+      if (!name) return;
+      await operations.create(root.id, childPath(entry.path, name), type);
+      return refreshDirectory();
+    }
+  }
+
+  return { run };
+}
+
 export function createContextMenu({ element, onAction, longPressMs = 550 }) {
   const globalEvents = new AbortController();
   const rowEvents = new Set();

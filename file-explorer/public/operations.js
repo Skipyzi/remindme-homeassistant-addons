@@ -30,5 +30,14 @@ export function createOperations(api) {
       return body;
     },
     downloadUrl(root, path) { return `./api/download?root=${encodeURIComponent(root)}&path=${encodeURIComponent(path)}`; },
+    download(root, path) {
+      const link = document.createElement("a");
+      link.href = this.downloadUrl(root, path);
+      link.download = path.split("/").filter(Boolean).at(-1) ?? "download";
+      link.hidden = true;
+      document.body.append(link);
+      link.click();
+      link.remove();
+    },
   };
 }

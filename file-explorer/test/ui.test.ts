@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { createApi } from "../public/api.js";
 import { createEditorState } from "../public/editor.js";
@@ -66,6 +68,30 @@ describe("explorer client", () => {
     expect(api.request).not.toHaveBeenCalled();
     await operations.purge("trash-1", true);
     expect(api.request).toHaveBeenCalledWith("api/trash/trash-1", { method: "DELETE" });
+  });
+
+  it("binds the context menu controller to rendered file rows", async () => {
+    const appSource = await readFile(path.resolve("public/app.js"), "utf8");
+    expect(appSource).toContain('from "./context-menu.js"');
+    expect(appSource).toContain("createContextMenu(");
+    expect(appSource).toContain("contextMenu.bind(button, entry, root)");
+  });
+
+  it("downloads a selected file through an ingress-relative link", async () => {
+    const api = { request: vi.fn() };
+    const operations = createOperations(api);
+    const clicked: Array<{ href: string; download: string }> = [];
+    const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (this: HTMLAnchorElement) {
+      clicked.push({ href: this.getAttribute("href") ?? "", download: this.download });
+    });
+
+    await operations.download("config", "automations/morning.yaml");
+
+    expect(clicked).toEqual([{
+      href: "./api/download?root=config&path=automations%2Fmorning.yaml",
+      download: "morning.yaml",
+    }]);
+    click.mockRestore();
   });
 
   it("uses the storage scan job API contract", async () => {

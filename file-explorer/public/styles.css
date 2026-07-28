@@ -168,3 +168,6 @@ button:focus-visible, [role="treeitem"]:focus-visible { outline: 2px solid var(-
   }
   .entry-context-menu [role="menuitem"] { min-height: 44px; }
 }
+.storage-detail-card { align-self: start; margin: 20px; padding: 18px 20px; border: 1px solid var(--fe-divider); border-radius: 12px; background: var(--fe-surface); }
+.storage-detail-card h2 { margin: 0 0 14px; font-size: 18px; }
+.storage-detail-card p { margin: 7px 0; color: var(--fe-muted); overflow-wrap: anywhere; }

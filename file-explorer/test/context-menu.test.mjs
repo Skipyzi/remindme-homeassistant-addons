@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { actionsForEntry, createContextMenu } from "../public/context-menu.js";
+import { actionsForEntry, createContextMenu, createEntryActionHandlers } from "../public/context-menu.js";
 
 const actionIds = (entry, root) => actionsForEntry(entry, root).map(({ id }) => id);
 
@@ -35,6 +35,70 @@ function pointerEvent(type, values = {}) {
   for (const [name, value] of Object.entries(values)) Object.defineProperty(event, name, { value });
   return event;
 }
+
+describe("entry context action dispatch", () => {
+  function setup() {
+    const operations = {
+      create: vi.fn(),
+      download: vi.fn(),
+      move: vi.fn(),
+      trash: vi.fn(),
+    };
+    const dependencies = {
+      operations,
+      openFile: vi.fn(),
+      loadDirectory: vi.fn(),
+      openStorageMap: vi.fn(),
+      copyText: vi.fn(),
+      prompt: vi.fn(),
+      confirm: vi.fn(() => true),
+      setUploadDestination: vi.fn(),
+      showStorageDetails: vi.fn(),
+      refreshDirectory: vi.fn(),
+    };
+    return { operations, dependencies, handlers: createEntryActionHandlers(dependencies) };
+  }
+
+  it("dispatches file downloads, folder maps, and trash", async () => {
+    const { operations, dependencies, handlers } = setup();
+    const root = { id: "config", readOnly: false };
+    const file = { name: "notes.txt", path: "notes.txt", type: "file", size: 8 };
+    const folder = { name: "photos", path: "media/photos", type: "directory" };
+
+    await handlers.run("download", file, root);
+    expect(operations.download).toHaveBeenCalledWith("config", "notes.txt");
+
+    await handlers.run("map-folder", folder, root);
+    expect(dependencies.openStorageMap).toHaveBeenCalledWith("config", "media/photos");
+
+    await handlers.run("trash", file, root);
+    expect(operations.trash).toHaveBeenCalledWith("config", "notes.txt");
+    expect(dependencies.refreshDirectory).toHaveBeenCalled();
+  });
+
+  it("creates items and uploads inside the selected folder", async () => {
+    const { operations, dependencies, handlers } = setup();
+    const root = { id: "share", readOnly: false };
+    const folder = { name: "photos", path: "media/photos", type: "directory" };
+    dependencies.prompt.mockReturnValueOnce("cover.jpg").mockReturnValueOnce("edited");
+
+    await handlers.run("new-file", folder, root);
+    expect(operations.create).toHaveBeenCalledWith("share", "media/photos/cover.jpg", "file");
+    await handlers.run("new-folder", folder, root);
+    expect(operations.create).toHaveBeenCalledWith("share", "media/photos/edited", "directory");
+    await handlers.run("upload", folder, root);
+    expect(dependencies.setUploadDestination).toHaveBeenCalledWith("media/photos");
+  });
+
+  it("blocks crafted mutation action IDs on read-only roots", async () => {
+    const { operations, handlers } = setup();
+    const host = { id: "host", readOnly: true };
+    const file = { name: "os-release", path: "etc/os-release", type: "file" };
+
+    await expect(handlers.run("trash", file, host)).rejects.toThrow("read-only");
+    expect(operations.trash).not.toHaveBeenCalled();
+  });
+});
 
 describe("entry context menu interaction", () => {
   let menu;

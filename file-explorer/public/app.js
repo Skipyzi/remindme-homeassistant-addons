@@ -1,5 +1,6 @@
 import { createApi } from "./api.js";
 import { createEditorState } from "./editor.js";
+import { createContextMenu, createEntryActionHandlers } from "./context-menu.js";
 import { createOperations } from "./operations.js";
 import { createStorageMap } from "./storage-map.js";
 import { breadcrumbSegments, createExplorerState, nextTreeIndex, parentPath } from "./tree.js";
@@ -16,6 +17,9 @@ const elements = {
 };
 let currentEntry = null;
 let searchController;
+let contextMenu;
+let contextBindings = [];
+let uploadDestination = null;
 
 function setStatus(message, error = false) { elements.status.textContent = message; elements.status.style.color = error ? "var(--fe-error)" : ""; }
 function closeTree() { elements.pane.dataset.open = "false"; elements.scrim.hidden = true; }
@@ -50,6 +54,10 @@ function renderRoots() {
 }
 function formatSize(size) { return size < 1024 ? `${size} B` : size < 1048576 ? `${Math.round(size / 1024)} KB` : `${(size / 1048576).toFixed(1)} MB`; }
 function renderTree(entries) {
+  for (const unbind of contextBindings) unbind();
+  contextBindings = [];
+  contextMenu?.close({ restoreFocus: false });
+  const root = state.roots.find((item) => item.id === state.selectedRoot) ?? { id: state.selectedRoot, readOnly: false };
   elements.tree.replaceChildren(...entries.map((entry, index) => {
     const button = document.createElement("button");
     button.className = "tree-item"; button.setAttribute("role", "treeitem"); button.tabIndex = index === 0 ? 0 : -1;
@@ -62,6 +70,7 @@ function renderTree(entries) {
       if (next !== items.indexOf(button)) { event.preventDefault(); button.tabIndex = -1; items[next].tabIndex = 0; items[next].focus(); }
       if (event.key === "Enter") button.click();
     });
+    if (contextMenu) contextBindings.push(contextMenu.bind(button, entry, root));
     return button;
   }));
 }
@@ -114,6 +123,43 @@ const storageMap = createStorageMap({
   onClose: () => storageButton.focus(),
   formatSize,
 });
+
+async function copyText(value) {
+  if (navigator.clipboard?.writeText) return navigator.clipboard.writeText(value);
+  const field = document.createElement("textarea");
+  field.value = value; field.hidden = true; document.body.append(field); field.select();
+  document.execCommand("copy"); field.remove();
+}
+
+function showStorageDetails(entry, root) {
+  elements.fileName.textContent = entry.name;
+  const details = document.createElement("section"); details.className = "storage-detail-card";
+  const heading = document.createElement("h2"); heading.textContent = "Storage details";
+  const pathLine = document.createElement("p"); pathLine.textContent = `${root.id === "host" ? "/" : ""}${entry.path}`;
+  const sizeLine = document.createElement("p"); sizeLine.textContent = entry.type === "file" ? formatSize(entry.size) : "Folder size requires a storage map scan";
+  details.append(heading, pathLine, sizeLine); elements.content.replaceWith(details); elements.content = details;
+}
+
+const entryActions = createEntryActionHandlers({
+  operations,
+  openFile,
+  loadDirectory,
+  openStorageMap: (root, path) => storageMap.open(root, path),
+  copyText,
+  prompt: globalThis.prompt,
+  confirm: globalThis.confirm,
+  setUploadDestination: (path) => { uploadDestination = path; uploadInput.click(); },
+  showStorageDetails,
+  refreshDirectory: () => loadDirectory(state.selectedRoot, state.selectedPath),
+});
+contextMenu = createContextMenu({
+  element: document.querySelector("[data-context-menu]"),
+  onAction: async (actionId, entry, root) => {
+    try { await entryActions.run(actionId, entry, root); }
+    catch (error) { setStatus(error.message, true); }
+  },
+});
+
 storageButton.addEventListener("click", () => {
   if (state.selectedRoot) void storageMap.open(state.selectedRoot);
 });
@@ -126,8 +172,8 @@ document.querySelector("[data-new]").addEventListener("click", async () => {
   try { await operations.create(state.selectedRoot, target, type); await loadDirectory(state.selectedRoot, state.selectedPath); } catch (error) { setStatus(error.message, true); }
 });
 const uploadInput = document.querySelector("[data-upload-input]");
-document.querySelector("[data-upload]").addEventListener("click", () => uploadInput.click());
-uploadInput.addEventListener("change", async () => { const file = uploadInput.files[0]; if (!file) return; const target = state.selectedPath ? `${state.selectedPath}/${file.name}` : file.name; try { setStatus("Uploading…"); await operations.upload(state.selectedRoot, target, file); await loadDirectory(state.selectedRoot, state.selectedPath); } catch (error) { setStatus(error.message, true); } finally { uploadInput.value = ""; } });
+document.querySelector("[data-upload]").addEventListener("click", () => { uploadDestination = state.selectedPath; uploadInput.click(); });
+uploadInput.addEventListener("change", async () => { const file = uploadInput.files[0]; if (!file) return; const destination = uploadDestination ?? state.selectedPath; const target = destination ? `${destination}/${file.name}` : file.name; try { setStatus("Uploading…"); await operations.upload(state.selectedRoot, target, file); await loadDirectory(state.selectedRoot, state.selectedPath); } catch (error) { setStatus(error.message, true); } finally { uploadDestination = null; uploadInput.value = ""; } });
 document.querySelector("[data-search]").addEventListener("click", async () => {
   const query = prompt("Search names and text"); if (!query) return; searchController?.abort(); searchController = new AbortController();
   try { setStatus("Searching…"); const result = await operations.search(state.selectedRoot, state.selectedPath, query, searchController.signal); renderTree(result.results.map((item) => ({ ...item, name: item.path.split("/").at(-1), size: 0 }))); setStatus(`${result.results.length} result${result.results.length === 1 ? "" : "s"}${result.truncated ? " · limited" : ""}`); } catch (error) { if (error.name !== "AbortError") setStatus(error.message, true); }
