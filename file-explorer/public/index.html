@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>File Explorer</title>
+    <link rel="stylesheet" href="./styles.css">
+  </head>
+  <body>
+    <main id="app" class="explorer" aria-busy="true">
+      <aside class="tree-pane" data-tree-pane data-open="false" aria-label="Files">
+        <header class="app-header"><span class="folder-mark" aria-hidden="true">▰</span><strong>File Explorer</strong><button class="icon-button mobile-close" data-close-tree aria-label="Close file tree">×</button></header>
+        <nav class="root-tabs" data-roots aria-label="Storage roots"></nav>
+        <div class="tree-toolbar"><span data-path>/</span><button class="icon-button" data-refresh aria-label="Refresh folder">↻</button></div>
+        <div class="file-tree" data-tree role="tree" aria-label="Directory contents"></div>
+      </aside>
+      <section class="content-pane" aria-label="File content">
+        <header class="content-header">
+          <button class="icon-button mobile-tree" data-open-tree aria-label="Open file tree">☰</button>
+          <div><span class="eyebrow">Selected file</span><strong data-file-name>Choose a file</strong></div>
+          <div class="header-actions"><button data-search>Search</button><button data-trash>Trash</button><button data-upload>Upload</button><button class="primary" data-new>New</button><input data-upload-input type="file" hidden></div>
+        </header>
+        <div class="empty-state" data-content><div class="empty-glyph" aria-hidden="true">⌑</div><h1>Open a file to begin</h1><p>Select a text file to edit it, or use the file menu to manage folders and media.</p></div>
+        <footer class="status-bar" aria-live="polite" data-status>Ready</footer>
+      </section>
+      <div class="scrim" data-scrim hidden></div>
+    </main>
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

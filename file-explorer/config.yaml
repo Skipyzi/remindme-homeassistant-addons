@@ -1,0 +1,47 @@
+name: File Explorer
+version: "0.1.0"
+slug: file_explorer
+description: Safe administrator-only file management through Home Assistant ingress
+arch:
+  - aarch64
+  - amd64
+  - armv7
+build_from:
+  aarch64: node:22-alpine
+  amd64: node:22-alpine
+  armv7: node:22-alpine
+startup: application
+boot: auto
+init: false
+ingress: true
+ingress_port: 8091
+panel_icon: mdi:folder-cog-outline
+panel_title: File Explorer
+panel_admin: true
+options:
+  enable_config: true
+  enable_share: true
+  enable_media: true
+  text_edit_max_bytes: 1048576
+  search_file_max_bytes: 2097152
+  upload_max_bytes: 104857600
+  search_max_results: 500
+  search_timeout_seconds: 15
+  retention_days: 30
+schema:
+  enable_config: bool
+  enable_share: bool
+  enable_media: bool
+  text_edit_max_bytes: int(1024,10485760)
+  search_file_max_bytes: int(1024,10485760)
+  upload_max_bytes: int(1048576,1073741824)
+  search_max_results: int(10,5000)
+  search_timeout_seconds: int(1,120)
+  retention_days: int(1,365)
+map:
+  - type: config
+    read_only: false
+  - type: share
+    read_only: false
+  - type: media
+    read_only: false
