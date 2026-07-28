@@ -1,6 +1,6 @@
 # File Explorer Storage Map Design
 
-**Date:** 2026-07-28  
+**Date:** 2026-07-28
 **Status:** Approved design
 
 ## Summary
