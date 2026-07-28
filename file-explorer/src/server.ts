@@ -11,12 +11,15 @@ import { createBrowseRouter, type BrowseContext } from "./routes/browse.js";
 import { createFilesRouter, type FileContext } from "./routes/files.js";
 import { createTrashRouter } from "./routes/trash.js";
 import { createSearchRouter, type SearchContext } from "./routes/search.js";
+import { createStorageMapRouter, type StorageMapContext } from "./routes/storageMap.js";
 import { SafetyService } from "./safety.js";
 import { SearchService } from "./search.js";
+import { StorageScanner } from "./storageScanner.js";
+import { StorageScanService } from "./storageScanService.js";
 
 const moduleDir = path.dirname(fileURLToPath(import.meta.url));
 
-export type AppContext = BrowseContext & Partial<Pick<FileContext, "safety"> & Pick<SearchContext, "search">>;
+export type AppContext = BrowseContext & Partial<Pick<FileContext, "safety"> & Pick<SearchContext, "search"> & StorageMapContext>;
 
 export interface AppOptions {
   publicDir?: string;
@@ -40,6 +43,7 @@ export function createApp(options: AppOptions = {}): Express {
       app.use("/api", createTrashRouter(fileContext));
     }
     if (options.context.search) app.use("/api", createSearchRouter(options.context as SearchContext));
+    if (options.context.storageScans) app.use("/api", createStorageMapRouter(options.context as StorageMapContext));
   }
   app.use(express.static(publicDir, { index: "index.html", fallthrough: false }));
   app.use((error: unknown, _request: Request, response: Response, _next: NextFunction) => {
@@ -64,7 +68,9 @@ export async function createConfiguredApp(): Promise<Express> {
   const trashDir = path.join(dataDir, "trash");
   await Promise.all([mkdir(backupDir, { recursive: true }), mkdir(trashDir, { recursive: true })]);
   const roots = createRootRegistry(config);
+  const policy = new PathPolicy(roots, [backupDir, trashDir]);
   const safety = new SafetyService(backupDir, trashDir);
+  const storageScans = new StorageScanService(policy, new StorageScanner(), config.storageScan);
   await safety.purgeExpired(config.retentionDays);
   const retentionTimer = setInterval(() => {
     safety.purgeExpired(config.retentionDays).catch((error: unknown) => console.error("Retention cleanup failed", error));
@@ -74,10 +80,11 @@ export async function createConfiguredApp(): Promise<Express> {
     context: {
       config,
       roots,
-      policy: new PathPolicy(roots, [backupDir, trashDir]),
+      policy,
       filesystem: new FilesystemService(),
       safety,
       search: new SearchService(config),
+      storageScans,
     },
   });
 }
