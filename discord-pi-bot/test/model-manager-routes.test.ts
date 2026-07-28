@@ -11,6 +11,7 @@ test("model manager routes proxy safely", async (context) => {
 	process.env.MODEL_MANAGER_ENABLED = "true";
 	process.env.MODEL_MANAGER_URL = "http://homeassistant:8080/manager/v1";
 	process.env.MODEL_MANAGER_TOKEN_PATH = join(directory, "manager-token");
+	process.env.LOCAL_LLM_MODEL = "configured-fallback-model";
 
 	const pairedToken = "manager-secret-value-that-is-long-enough-123";
 	let pairingAuthorization = "unset";
@@ -178,15 +179,14 @@ test("model manager routes proxy safely", async (context) => {
 	);
 
 	await context.test(
-		"runtime status is the only active model authority",
+		"runtime status prefers the active manager model and otherwise uses configured inference",
 		async () => {
-			process.env.LOCAL_LLM_MODEL = "stale-configured-model";
 			managerActiveModel = undefined;
-			const unavailable = await nativeFetch(`${baseUrl}/api/status`).then(
+			const configured = await nativeFetch(`${baseUrl}/api/status`).then(
 				(response) => response.json(),
 			);
-			assert.equal(unavailable.model, "runtime-unavailable");
-			assert.equal(unavailable.modelName, "Runtime unavailable");
+			assert.equal(configured.model, "configured-fallback-model");
+			assert.equal(configured.modelName, "configured-fallback-model");
 			managerActiveModel = {
 				id: "qwen3-4b-q4",
 				family: "Qwen3 4B",
