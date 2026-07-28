@@ -67,4 +67,21 @@ describe("explorer client", () => {
     await operations.purge("trash-1", true);
     expect(api.request).toHaveBeenCalledWith("api/trash/trash-1", { method: "DELETE" });
   });
+
+  it("uses the storage scan job API contract", async () => {
+    const api = { request: vi.fn() };
+    const operations = createOperations(api);
+
+    operations.startStorageScan("share", true);
+    expect(api.request).toHaveBeenLastCalledWith("api/storage-map/scans", {
+      method: "POST",
+      body: JSON.stringify({ root: "share", refresh: true }),
+    });
+    operations.storageScanStatus("job/1");
+    expect(api.request).toHaveBeenLastCalledWith("api/storage-map/scans/job%2F1");
+    operations.storageScanResult("job/1", "media/photos");
+    expect(api.request).toHaveBeenLastCalledWith("api/storage-map/scans/job%2F1/result?path=media%2Fphotos");
+    operations.cancelStorageScan("job/1");
+    expect(api.request).toHaveBeenLastCalledWith("api/storage-map/scans/job%2F1", { method: "DELETE" });
+  });
 });
