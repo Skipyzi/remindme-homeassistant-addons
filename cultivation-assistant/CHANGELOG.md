@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.6.0
+
+- Added Home Assistant entity mapping for reservoirs: level percentage, liquid depth, distance to liquid, weight, water temperature, flow, low/empty/high/overflow level, leak, pump, and fill-valve roles.
+- Added a reservoir-scoped discovery endpoint that suggests compatible cached entities by device class, unit, and name, with a 503 response when Home Assistant is unavailable.
+- Added normalized live readings on reservoir summaries and details, with per-role unit conversion (temperature, length, weight, flow), binary on/off states, and staleness detection.
+- Added a sensor-mapping section to the reservoir detail page listing mapped entities with their live values and compatibility.
+- Added Alembic migration `0007` adding `stale_after_seconds` and `calibration` columns to reservoir entity mappings.
+- Preserved Home Assistant as the authority for physical safety: mappings are read-only observation and never grant direct equipment control.
+
+## 0.5.0
+
+- Added the Reservoirs register with audited create, list, detail, edit, and reversible Active/Inactive status driven by the existing reservoirs API.
+- Added a New Reservoir wizard covering reservoir type, optional grow-space link, capacity and thresholds, and tank geometry (rectangular, vertical cylinder, horizontal cylinder, or custom calibration table) with a live volume preview.
+- Added a Reservoir detail page with inline details and geometry editing, reversible archive/reactivate, and estimated full-tank volume.
+- Added a calibration-table editor that lists and replaces raw-reading-to-volume calibration points with client-side distinctness and minimum-two-point validation.
+- Reused the existing FastAPI reservoirs, geometry, and calibration endpoints; no backend changes were required.
+- Preserved Home Assistant as the authority for physical safety: sensor mapping, consumption forecasts, and irrigation events remain planned capabilities.
+
 ## 0.4.0
 
 - Added Plant and Grow journal entries with type, tags, an optional related lifecycle stage, and an optional related issue.

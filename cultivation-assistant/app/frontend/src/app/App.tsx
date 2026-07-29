@@ -16,6 +16,8 @@ import { OverviewPage } from "../routes/OverviewPage";
 import { PlantCreatePage } from "../routes/PlantCreatePage";
 import { PlantDetailPage } from "../routes/PlantDetailPage";
 import { PlantsPage } from "../routes/PlantsPage";
+import { ReservoirDetailPage } from "../routes/ReservoirDetailPage";
+import { ReservoirsPage } from "../routes/ReservoirsPage";
 import { SettingsPage } from "../routes/SettingsPage";
 
 const rootRoute = createRootRoute({ component: AppShell });
@@ -59,10 +61,19 @@ const plantDetailRoute = createRoute({
 	path: "/plants/$plantId",
 	component: PlantDetailPage,
 });
+const reservoirsRoute = createRoute({
+	getParentRoute: () => rootRoute,
+	path: "/reservoirs",
+	component: ReservoirsPage,
+});
+const reservoirDetailRoute = createRoute({
+	getParentRoute: () => rootRoute,
+	path: "/reservoirs/$reservoirId",
+	component: ReservoirDetailPage,
+});
 const placeholderPaths = [
 	"/timeline",
 	"/environment",
-	"/reservoirs",
 	"/feeding",
 	"/tasks",
 	"/costs",
@@ -85,6 +96,8 @@ const routeTree = rootRoute.addChildren([
 	growDetailRoute,
 	plantCreateRoute,
 	plantDetailRoute,
+	reservoirsRoute,
+	reservoirDetailRoute,
 	...placeholderRoutes,
 ]);
 const router = createRouter({ routeTree, history: createHashHistory() });
