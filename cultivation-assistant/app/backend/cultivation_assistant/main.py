@@ -30,6 +30,7 @@ from cultivation_assistant.lifecycle.router import create_router as create_lifec
 from cultivation_assistant.logging import configure_logging
 from cultivation_assistant.middleware import correlation_id_middleware
 from cultivation_assistant.plants.router import create_router as create_plants_router
+from cultivation_assistant.reservoirs.router import create_router as create_reservoirs_router
 from cultivation_assistant.runtime import RuntimeStatus
 
 
@@ -154,6 +155,9 @@ def create_app(
     app.include_router(create_plants_router(runtime_database), prefix="/api/v1")
     app.include_router(
         create_journal_router(runtime_database, runtime_settings.data_dir), prefix="/api/v1"
+    )
+    app.include_router(
+        create_reservoirs_router(runtime_database, state_cache, status), prefix="/api/v1"
     )
     if runtime_settings.frontend_dist.is_dir():
         app.mount(

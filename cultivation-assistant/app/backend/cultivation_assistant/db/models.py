@@ -459,3 +459,109 @@ class Photo(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     stage: orm.Mapped[LifecycleStage | None] = orm.relationship(
         lazy="joined", foreign_keys=[stage_id]
     )
+
+
+class Reservoir(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """A physical tank or bucket holding nutrient solution or water."""
+
+    __tablename__ = "reservoirs"
+    __table_args__ = (
+        sa.CheckConstraint(
+            "reservoir_type IN ('autopot_reservoir', 'dwc_bucket', 'rdwc_control_reservoir', "
+            "'irrigation_supply_tank', 'mixing_tank', 'top_off_tank', 'ro_source_water_tank', "
+            "'runoff_waste_tank', 'custom_reservoir')",
+            name="ck_reservoir_type",
+        ),
+        sa.CheckConstraint(
+            "geometry_shape IN ('rectangular', 'vertical_cylinder', 'horizontal_cylinder', "
+            "'custom_calibration_table')",
+            name="ck_reservoir_geometry_shape",
+        ),
+        sa.CheckConstraint("capacity_liters > 0", name="ck_reservoir_capacity"),
+        sa.CheckConstraint(
+            "usable_capacity_liters IS NULL OR usable_capacity_liters <= capacity_liters",
+            name="ck_reservoir_usable_capacity",
+        ),
+        sa.Index("ix_reservoirs_active_name", "active", "name"),
+    )
+
+    name: orm.Mapped[str] = orm.mapped_column(sa.String(160), nullable=False)
+    reservoir_type: orm.Mapped[str] = orm.mapped_column(sa.String(40), nullable=False)
+    primary_grow_space_id: orm.Mapped[str | None] = orm.mapped_column(
+        sa.ForeignKey("grow_spaces.id", ondelete="RESTRICT"), index=True
+    )
+    capacity_liters: orm.Mapped[Decimal] = orm.mapped_column(sa.Numeric(12, 4), nullable=False)
+    usable_capacity_liters: orm.Mapped[Decimal | None] = orm.mapped_column(sa.Numeric(12, 4))
+    minimum_safe_volume_liters: orm.Mapped[Decimal | None] = orm.mapped_column(sa.Numeric(12, 4))
+    refill_threshold_liters: orm.Mapped[Decimal | None] = orm.mapped_column(sa.Numeric(12, 4))
+    overflow_threshold_liters: orm.Mapped[Decimal | None] = orm.mapped_column(sa.Numeric(12, 4))
+    geometry_shape: orm.Mapped[str] = orm.mapped_column(sa.String(40), nullable=False)
+    geometry_unit: orm.Mapped[str | None] = orm.mapped_column(sa.String(8))
+    geometry_length_m: orm.Mapped[Decimal | None] = orm.mapped_column(sa.Numeric(12, 4))
+    geometry_width_m: orm.Mapped[Decimal | None] = orm.mapped_column(sa.Numeric(12, 4))
+    geometry_height_m: orm.Mapped[Decimal | None] = orm.mapped_column(sa.Numeric(12, 4))
+    geometry_diameter_m: orm.Mapped[Decimal | None] = orm.mapped_column(sa.Numeric(12, 4))
+    active: orm.Mapped[bool] = orm.mapped_column(
+        sa.Boolean, default=True, server_default=sa.true(), nullable=False
+    )
+    calibration_points: orm.Mapped[list[ReservoirCalibrationPoint]] = orm.relationship(
+        back_populates="reservoir",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        order_by="ReservoirCalibrationPoint.raw_value",
+    )
+    entity_mappings: orm.Mapped[list[ReservoirEntityMapping]] = orm.relationship(
+        back_populates="reservoir",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+
+
+class ReservoirCalibrationPoint(UUIDPrimaryKeyMixin, Base):
+    """One raw-reading-to-volume point in a reservoir's calibration table."""
+
+    __tablename__ = "reservoir_calibration_points"
+    __table_args__ = (
+        sa.UniqueConstraint(
+            "reservoir_id", "raw_value", name="uq_reservoir_calibration_raw_value"
+        ),
+    )
+
+    reservoir_id: orm.Mapped[str] = orm.mapped_column(
+        sa.ForeignKey("reservoirs.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    raw_value: orm.Mapped[Decimal] = orm.mapped_column(sa.Numeric(12, 4), nullable=False)
+    volume_liters: orm.Mapped[Decimal] = orm.mapped_column(sa.Numeric(12, 4), nullable=False)
+    reservoir: orm.Mapped[Reservoir] = orm.relationship(back_populates="calibration_points")
+
+
+class ReservoirEntityMapping(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Map one Home Assistant entity to one reservoir role."""
+
+    __tablename__ = "reservoir_entity_mappings"
+    __table_args__ = (
+        sa.UniqueConstraint(
+            "reservoir_id", "entity_id", "role", name="uq_reservoir_mapping_role"
+        ),
+        sa.CheckConstraint("priority >= 0", name="ck_reservoir_mapping_priority"),
+        sa.CheckConstraint("stale_after_seconds > 0", name="ck_reservoir_mapping_stale"),
+        sa.Index(
+            "ix_reservoir_mappings_role_priority", "reservoir_id", "role", "priority"
+        ),
+    )
+
+    reservoir_id: orm.Mapped[str] = orm.mapped_column(
+        sa.ForeignKey("reservoirs.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    entity_id: orm.Mapped[str] = orm.mapped_column(sa.String(255), nullable=False)
+    role: orm.Mapped[str] = orm.mapped_column(sa.String(40), nullable=False)
+    display_name: orm.Mapped[str | None] = orm.mapped_column(sa.String(160))
+    priority: orm.Mapped[int] = orm.mapped_column(default=100, nullable=False)
+    source_unit: orm.Mapped[str | None] = orm.mapped_column(sa.String(40))
+    normalized_unit: orm.Mapped[str | None] = orm.mapped_column(sa.String(40))
+    enabled: orm.Mapped[bool] = orm.mapped_column(
+        sa.Boolean, default=True, server_default=sa.true(), nullable=False
+    )
+    calibration: orm.Mapped[dict[str, Any] | None] = orm.mapped_column(sa.JSON)
+    stale_after_seconds: orm.Mapped[int] = orm.mapped_column(default=300, nullable=False)
+    reservoir: orm.Mapped[Reservoir] = orm.relationship(back_populates="entity_mappings")
