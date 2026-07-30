@@ -1,0 +1,143 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 560" width="900" height="560" role="img"
+     aria-label="Mockup of the terrain generation page showing the planner, storage estimate and guard table">
+  <style>
+    .bg { fill: #f4f5f7; }
+    .surface { fill: #ffffff; stroke: #d9dce3; }
+    .text { fill: #1d2129; font-family: system-ui, sans-serif; }
+    .muted { fill: #626b79; font-family: system-ui, sans-serif; font-size: 10px; }
+    .label { fill: #626b79; font-family: system-ui, sans-serif; font-size: 8px; letter-spacing: .06em; }
+    .value { fill: #1d2129; font-family: system-ui, sans-serif; font-size: 15px; font-weight: 600; }
+    .h2 { font-size: 11px; font-weight: 600; }
+    .th { fill: #626b79; font-family: system-ui, sans-serif; font-size: 8px; letter-spacing: .05em; font-weight: 600; }
+    .td { fill: #1d2129; font-family: system-ui, sans-serif; font-size: 9px; }
+    .field { fill: #ffffff; stroke: #d9dce3; }
+    .btn { fill: #f0f1f4; stroke: #d9dce3; }
+    .btn-primary { fill: #2f6f4f; stroke: #2f6f4f; }
+    .btn-text { fill: #1d2129; font-family: system-ui, sans-serif; font-size: 9px; }
+    .btn-text-primary { fill: #ffffff; font-family: system-ui, sans-serif; font-size: 9px; font-weight: 600; }
+  </style>
+
+  <rect class="bg" width="900" height="560"/>
+
+  <!-- planner -->
+  <rect class="surface" x="14" y="14" width="872" height="210" rx="9"/>
+  <text class="text h2" x="28" y="32">Plan a run</text>
+  <rect class="btn" x="700" y="20" width="72" height="18" rx="6"/>
+  <text class="btn-text" x="714" y="33">Re-estimate</text>
+  <rect class="btn-primary" x="780" y="20" width="96" height="18" rx="6"/>
+  <text class="btn-text-primary" x="792" y="33">Start generation</text>
+
+  <text class="label" x="28" y="52">WORLD</text>
+  <rect class="field" x="28" y="56" width="190" height="20" rx="6"/>
+  <text class="td" x="36" y="70">Survival (active)</text>
+
+  <text class="label" x="234" y="52">PROFILE</text>
+  <rect class="field" x="234" y="56" width="190" height="20" rx="6"/>
+  <text class="td" x="242" y="70">Gentle</text>
+
+  <text class="label" x="440" y="52">SHAPE</text>
+  <rect class="field" x="440" y="56" width="190" height="20" rx="6"/>
+  <text class="td" x="448" y="70">square</text>
+
+  <text class="label" x="646" y="52">GENERATION RADIUS (BLOCKS)</text>
+  <rect class="field" x="646" y="56" width="230" height="20" rx="6"/>
+  <text class="td" x="654" y="70">4500</text>
+
+  <text class="label" x="28" y="94">PLAYABLE WORLD BORDER RADIUS</text>
+  <rect class="field" x="28" y="98" width="190" height="20" rx="6"/>
+  <text class="td" x="36" y="112">4000</text>
+
+  <text class="label" x="234" y="94">SAFETY MARGIN (BLOCKS)</text>
+  <rect class="field" x="234" y="98" width="190" height="20" rx="6"/>
+  <text class="td" x="242" y="112">500</text>
+
+  <text class="label" x="440" y="94">CENTRE</text>
+  <rect class="field" x="440" y="98" width="92" height="20" rx="6"/>
+  <text class="td" x="448" y="112">0</text>
+  <rect class="field" x="538" y="98" width="92" height="20" rx="6"/>
+  <text class="td" x="546" y="112">0</text>
+  <text class="muted" x="646" y="112">☑ centre on the world spawn</text>
+
+  <text class="label" x="28" y="138">DIMENSIONS (GENERATED ONE AFTER ANOTHER)</text>
+  <text class="muted" x="28" y="154">☑ world   ☑ world_nether   ☐ world_the_end</text>
+
+  <!-- estimate tiles -->
+  <rect class="surface" x="28" y="164" width="200" height="48" rx="9"/>
+  <text class="label" x="40" y="180">CHUNKS</text>
+  <text class="value" x="40" y="198">636 802</text>
+  <text class="muted" x="40" y="208">318 401 per dimension × 2</text>
+
+  <rect class="surface" x="236" y="164" width="200" height="48" rx="9"/>
+  <text class="label" x="248" y="180">STORAGE ESTIMATE</text>
+  <text class="value" x="248" y="198">41 – 76 GiB</text>
+  <text class="muted" x="248" y="208">measured from this world</text>
+
+  <rect class="surface" x="444" y="164" width="200" height="48" rx="9"/>
+  <text class="label" x="456" y="180">NEEDS AT LEAST</text>
+  <text class="value" x="456" y="198">99 GiB</text>
+  <text class="muted" x="456" y="208">including the safety margin</text>
+
+  <rect class="surface" x="652" y="164" width="224" height="48" rx="9"/>
+  <text class="label" x="664" y="180">FREE SPACE</text>
+  <text class="value" x="664" y="198">184 GiB</text>
+  <text class="muted" x="664" y="208">sufficient</text>
+
+  <!-- notes -->
+  <rect x="14" y="234" width="872" height="26" rx="7" fill="#eaf1f9" stroke="#1e5b96"/>
+  <text class="muted" x="28" y="251" fill="#1e5b96">Based on 128 400 already generated chunks in this world (67 KiB per chunk). Estimated run time: about 4h 14m.</text>
+
+  <!-- guards -->
+  <rect class="surface" x="14" y="272" width="872" height="230" rx="9"/>
+  <text class="text h2" x="28" y="290">Guards</text>
+
+  <text class="th" x="28" y="308">GUARD</text>
+  <text class="th" x="220" y="308">NOW</text>
+  <text class="th" x="360" y="308">PAUSE RULE</text>
+  <text class="th" x="600" y="308">RECOVERY</text>
+  <line x1="28" y1="314" x2="872" y2="314" stroke="#d9dce3"/>
+
+  <text class="td" x="28" y="330">Players online</text>
+  <text class="td" x="220" y="330">0</text>
+  <text class="td" x="360" y="330">pause when above 0</text>
+  <text class="td" x="600" y="330">resume 10 min after the last player left</text>
+  <line x1="28" y1="336" x2="872" y2="336" stroke="#d9dce3"/>
+
+  <text class="td" x="28" y="352">TPS</text>
+  <text class="td" x="220" y="352">19.98</text>
+  <text class="td" x="360" y="352">pause below 18</text>
+  <text class="td" x="600" y="352">resume above 19</text>
+  <line x1="28" y1="358" x2="872" y2="358" stroke="#d9dce3"/>
+
+  <text class="td" x="28" y="374">MSPT</text>
+  <text class="td" x="220" y="374">11.2</text>
+  <text class="td" x="360" y="374">pause above 45 ms</text>
+  <line x1="28" y1="380" x2="872" y2="380" stroke="#d9dce3"/>
+
+  <text class="td" x="28" y="396">CPU temperature</text>
+  <text class="td" x="220" y="396">68.4 °C</text>
+  <text class="td" x="360" y="396">pause above 78 °C</text>
+  <text class="td" x="600" y="396">resume below 70 °C</text>
+  <line x1="28" y1="402" x2="872" y2="402" stroke="#d9dce3"/>
+
+  <text class="td" x="28" y="418">System CPU</text>
+  <text class="td" x="220" y="418">44 %</text>
+  <text class="td" x="360" y="418">pause above 75 %</text>
+  <text class="td" x="600" y="418">resume below 55 %</text>
+  <line x1="28" y1="424" x2="872" y2="424" stroke="#d9dce3"/>
+
+  <text class="td" x="28" y="440">Free disk</text>
+  <text class="td" x="220" y="440">184.2 GB</text>
+  <text class="td" x="360" y="440">cancel below 15 GB</text>
+  <text class="td" x="600" y="440">a full disk corrupts region files</text>
+  <line x1="28" y1="446" x2="872" y2="446" stroke="#d9dce3"/>
+
+  <text class="td" x="28" y="462">Allowed hours</text>
+  <text class="td" x="220" y="462">inside window</text>
+  <text class="td" x="360" y="462">00:30 – 06:00</text>
+  <text class="td" x="600" y="462">minimum dwell 120 s between changes</text>
+  <line x1="28" y1="468" x2="872" y2="468" stroke="#d9dce3"/>
+
+  <text class="muted" x="28" y="488">Pause and resume thresholds differ on purpose: the gap between them is what stops a job from flapping.</text>
+
+  <text class="muted" x="14" y="530">Chunky 1.4.28 installed from Modrinth · sha256 4f9c1b2e8a71… · verified against the published release hash</text>
+</svg>

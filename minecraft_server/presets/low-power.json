@@ -1,0 +1,29 @@
+{
+  "id": "low-power",
+  "name": "Low Power",
+  "description": "Smallest footprint. Use when Home Assistant needs the Raspberry Pi more than Minecraft does, or with up to five players on a shared Pi 5.",
+  "knobs": {
+    "view_distance": 5,
+    "simulation_distance": 4,
+    "max_players": 5,
+    "activation_range_animals": 16,
+    "activation_range_monsters": 24,
+    "activation_range_misc": 8,
+    "mob_spawn_range": 3,
+    "spawn_limit_monsters": 30,
+    "spawn_limit_animals": 6,
+    "spawn_limit_ambient": 1,
+    "chunk_send_rate": 15,
+    "chunk_load_rate": 10,
+    "max_concurrent_chunk_generates": 1,
+    "max_auto_save_chunks_per_tick": 8,
+    "autosave_ticks": 6000,
+    "sync_chunk_writes": false
+  },
+  "settings": {
+    "memory_min_mb": 1024,
+    "memory_max_mb": 2048,
+    "jvm_flags_profile": "low_power",
+    "maintenance_mode": false
+  }
+}

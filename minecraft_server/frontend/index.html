@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Minecraft Server</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-title">
+      <span class="logo" aria-hidden="true">▣</span>
+      <div>
+        <h1>Minecraft Server</h1>
+        <p id="subtitle" class="muted">connecting…</p>
+      </div>
+    </div>
+    <div class="topbar-state">
+      <span id="state-pill" class="pill pill-unknown">unknown</span>
+      <span id="stream-pill" class="pill pill-muted" title="Live update stream">live</span>
+    </div>
+  </header>
+
+  <nav class="tabs" id="tabs" role="tablist">
+    <button role="tab" data-view="dashboard" class="active">Dashboard</button>
+    <button role="tab" data-view="console">Console</button>
+    <button role="tab" data-view="config">Configuration</button>
+    <button role="tab" data-view="presets">Presets</button>
+    <button role="tab" data-view="worlds">Worlds</button>
+    <button role="tab" data-view="backups">Backups</button>
+    <button role="tab" data-view="generation">Terrain</button>
+    <button role="tab" data-view="settings">Settings</button>
+    <button role="tab" data-view="log">Activity</button>
+  </nav>
+
+  <div id="banner-area" class="banner-area" aria-live="polite"></div>
+  <main id="view" class="view" aria-live="polite"></main>
+
+  <div id="toasts" class="toasts" aria-live="assertive"></div>
+
+  <dialog id="dialog" class="dialog">
+    <form method="dialog" id="dialog-form">
+      <h2 id="dialog-title">Confirm</h2>
+      <div id="dialog-body"></div>
+      <footer class="dialog-actions">
+        <button value="cancel" class="btn">Cancel</button>
+        <button value="confirm" class="btn btn-danger" id="dialog-confirm">Confirm</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>

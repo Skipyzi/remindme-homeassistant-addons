@@ -1,0 +1,28 @@
+{
+  "id": "maintenance",
+  "name": "Maintenance",
+  "description": "Server is up for administration only: whitelist on, maintenance mode on, minimum load. Use while restoring, updating or inspecting a world.",
+  "knobs": {
+    "view_distance": 4,
+    "simulation_distance": 3,
+    "max_players": 2,
+    "whitelist": true,
+    "pvp": false,
+    "activation_range_animals": 8,
+    "activation_range_monsters": 8,
+    "activation_range_misc": 4,
+    "spawn_limit_monsters": 5,
+    "spawn_limit_animals": 2,
+    "spawn_limit_ambient": 0,
+    "chunk_send_rate": 10,
+    "chunk_load_rate": 10,
+    "max_concurrent_chunk_generates": 1,
+    "autosave_ticks": 6000
+  },
+  "settings": {
+    "memory_min_mb": 1024,
+    "memory_max_mb": 2048,
+    "jvm_flags_profile": "low_power",
+    "maintenance_mode": true
+  }
+}
