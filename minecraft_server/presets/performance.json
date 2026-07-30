@@ -1,0 +1,29 @@
+{
+  "id": "performance",
+  "name": "Performance",
+  "description": "Highest playable settings. Only sensible when Home Assistant is otherwise idle and the Pi has active cooling and NVMe storage. Pre-touches the whole heap at startup.",
+  "knobs": {
+    "view_distance": 9,
+    "simulation_distance": 6,
+    "max_players": 12,
+    "activation_range_animals": 32,
+    "activation_range_monsters": 32,
+    "activation_range_misc": 16,
+    "mob_spawn_range": 5,
+    "spawn_limit_monsters": 60,
+    "spawn_limit_animals": 10,
+    "spawn_limit_ambient": 2,
+    "chunk_send_rate": 40,
+    "chunk_load_rate": 25,
+    "max_concurrent_chunk_generates": 3,
+    "max_auto_save_chunks_per_tick": 16,
+    "autosave_ticks": 6000,
+    "sync_chunk_writes": false
+  },
+  "settings": {
+    "memory_min_mb": 3584,
+    "memory_max_mb": 3584,
+    "jvm_flags_profile": "performance",
+    "maintenance_mode": false
+  }
+}

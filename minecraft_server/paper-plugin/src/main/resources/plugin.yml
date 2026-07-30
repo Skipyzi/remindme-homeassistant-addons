@@ -1,0 +1,9 @@
+name: McBridge
+version: '${project.version}'
+main: dev.remindme.mcbridge.McBridgePlugin
+api-version: '1.20'
+description: Pushes server telemetry to the Home Assistant Minecraft add-on controller
+author: RemindMe add-ons
+load: POSTWORLD
+# No commands and no listeners: this plugin only reads server state and writes it
+# to a Unix domain socket owned by the add-on controller.

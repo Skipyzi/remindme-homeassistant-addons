@@ -1,0 +1,60 @@
+configuration:
+  server_port:
+    name: Server port
+    description: TCP port Minecraft listens on. Remove the port mapping in the add-on network section to keep the server LAN-only.
+  memory_min_mb:
+    name: Minimum heap (MB)
+    description: JVM -Xms. Keeping this equal to the maximum heap avoids heap resizing pauses.
+  memory_max_mb:
+    name: Maximum heap (MB)
+    description: JVM -Xmx. On an 8 GB Raspberry Pi 5 keep this at or below 3584 MB so Home Assistant keeps enough memory.
+  jvm_flags_profile:
+    name: JVM flag profile
+    description: Garbage collector tuning. balanced is recommended for a Pi 5; custom uses the flags below verbatim.
+  jvm_flags_custom:
+    name: Custom JVM flags
+    description: Space-separated flags, used only when the profile is set to custom. Validated before launch.
+  paper_version:
+    name: Paper version
+    description: Minecraft version to install, for example 1.21.4. Leave empty to use the latest stable release when you install the JAR.
+  auto_restart_on_crash:
+    name: Restart after a crash
+    description: Restart Minecraft automatically when it exits unexpectedly. Intentional stops are never restarted.
+  stop_timeout_seconds:
+    name: Graceful stop timeout (seconds)
+    description: How long to wait after the stop command before escalating to SIGTERM and finally SIGKILL.
+  mqtt_enabled:
+    name: Home Assistant entities (MQTT)
+    description: Publish sensors, buttons and selects through MQTT discovery.
+  mqtt_host:
+    name: MQTT host
+    description: Leave empty to use the MQTT broker add-on discovered through the Supervisor.
+  mqtt_port:
+    name: MQTT port
+    description: Broker port. Ignored when the Supervisor provides the connection.
+  mqtt_username:
+    name: MQTT username
+    description: Only needed when you point the add-on at an external broker.
+  mqtt_password:
+    name: MQTT password
+    description: Only needed when you point the add-on at an external broker.
+  mqtt_discovery_prefix:
+    name: MQTT discovery prefix
+    description: Must match the discovery prefix configured in the Home Assistant MQTT integration.
+  chunky_source:
+    name: Chunky source
+    description: Where the Chunky terrain generation plugin is downloaded from. modrinth verifies the published hash, url requires your own checksum, manual disables downloads.
+  chunky_download_url:
+    name: Chunky download URL
+    description: Direct URL to a Chunky JAR. Required when the source is set to url.
+  chunky_sha256:
+    name: Chunky SHA-256
+    description: Expected checksum of the downloaded JAR. Required when the source is set to url.
+  allow_direct_access:
+    name: Allow direct (non-Ingress) access
+    description: Off by default. When off, requests that do not arrive through Home Assistant Ingress may only read status, never change it.
+  log_level:
+    name: Controller log level
+    description: Verbosity of the controller log shown in the add-on log tab.
+network:
+  25565/tcp: Minecraft Java Edition

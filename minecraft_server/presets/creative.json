@@ -1,0 +1,30 @@
+{
+  "id": "creative",
+  "name": "Creative",
+  "description": "Building server: creative mode, no hostile mobs and a generous view distance. Hostile mob ticking is the cheapest thing to give up when nobody is fighting.",
+  "knobs": {
+    "gamemode": "creative",
+    "difficulty": "peaceful",
+    "view_distance": 8,
+    "simulation_distance": 5,
+    "max_players": 8,
+    "pvp": false,
+    "activation_range_animals": 16,
+    "activation_range_monsters": 16,
+    "activation_range_misc": 8,
+    "mob_spawn_range": 3,
+    "spawn_limit_monsters": 5,
+    "spawn_limit_animals": 4,
+    "spawn_limit_ambient": 0,
+    "chunk_send_rate": 30,
+    "chunk_load_rate": 20,
+    "max_concurrent_chunk_generates": 2,
+    "autosave_ticks": 6000
+  },
+  "settings": {
+    "memory_min_mb": 1024,
+    "memory_max_mb": 3072,
+    "jvm_flags_profile": "balanced",
+    "maintenance_mode": false
+  }
+}

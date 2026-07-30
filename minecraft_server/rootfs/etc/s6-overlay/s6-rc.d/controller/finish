@@ -1,0 +1,19 @@
+#!/command/with-contenv bashio
+# ==============================================================================
+# Controller exited. The controller shuts Minecraft down gracefully on SIGTERM,
+# so a clean exit (0) or a signalled exit (256) must halt the container instead
+# of being restarted in a loop.
+# ==============================================================================
+declare exit_code="${1}"
+declare exit_code_signal="${2}"
+
+if [[ "${exit_code}" -eq 256 ]]; then
+    bashio::log.warning "Controller stopped by signal ${exit_code_signal}"
+    exec /run/s6/basedir/bin/halt
+elif [[ "${exit_code}" -ne 0 ]]; then
+    bashio::log.error "Controller crashed with exit code ${exit_code}"
+    exec /run/s6/basedir/bin/halt
+fi
+
+bashio::log.info "Controller stopped cleanly"
+exec /run/s6/basedir/bin/halt

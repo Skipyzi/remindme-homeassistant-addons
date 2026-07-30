@@ -1,0 +1,22 @@
+#!/command/with-contenv bashio
+# ==============================================================================
+# Minecraft Server add-on: management controller
+# The controller is a long-running s6 service. Minecraft itself is a *child* of
+# the controller, so stopping Minecraft never stops this service or the web UI.
+# ==============================================================================
+set -e
+
+export MC_DATA_DIR="${MC_DATA_DIR:-/data}"
+export MC_OPTIONS_FILE="/data/options.json"
+export MC_LISTEN="${MC_LISTEN:-0.0.0.0:8099}"
+export MC_LOG_LEVEL="$(bashio::config 'log_level' 'info')"
+
+if bashio::services.available "mqtt"; then
+    export MC_MQTT_SERVICE_HOST="$(bashio::services 'mqtt' 'host')"
+    export MC_MQTT_SERVICE_PORT="$(bashio::services 'mqtt' 'port')"
+    export MC_MQTT_SERVICE_USERNAME="$(bashio::services 'mqtt' 'username')"
+    export MC_MQTT_SERVICE_PASSWORD="$(bashio::services 'mqtt' 'password')"
+fi
+
+bashio::log.info "Starting Minecraft controller on ${MC_LISTEN}"
+exec /usr/bin/mc-controller
