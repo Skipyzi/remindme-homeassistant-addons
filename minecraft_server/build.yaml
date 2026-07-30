@@ -1,6 +1,9 @@
 build_from:
-  aarch64: ghcr.io/home-assistant/aarch64-base:3.21
-  amd64: ghcr.io/home-assistant/amd64-base:3.21
+  # 3.23 is the first Alpine with both openjdk21-jre-headless and
+  # openjdk25-jre-headless, which the add-on needs to run Minecraft 1.21 and 26.x
+  # from the same image.
+  aarch64: ghcr.io/home-assistant/aarch64-base:3.23
+  amd64: ghcr.io/home-assistant/amd64-base:3.23
 labels:
   org.opencontainers.image.title: Minecraft Server
   org.opencontainers.image.description: Managed PaperMC server for Home Assistant OS

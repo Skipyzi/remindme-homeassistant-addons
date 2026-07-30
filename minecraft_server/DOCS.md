@@ -167,6 +167,24 @@ PaperMC update workflow.
 Updates: check versions, back up, stop, swap the JAR atomically, start, verify, roll back
 on failure. Automatic installation only happens if you enable scheduled updates.
 
+Version data comes from PaperMC's v3 API (`fill.papermc.io`); the retired v2 API now
+answers HTTP 410, and an add-on still using it cannot see any builds. Downloads use the
+URL published in the build metadata, restricted to PaperMC's own hosts, and are verified
+against the SHA-256 from that metadata.
+
+### Java versions
+
+Minecraft needs different Java feature releases per version: the 1.21 line runs on Java
+21, the 26.x releases declare Java 25. The image ships both, and the controller reads
+`version.json` out of the server JAR to pick the matching runtime. Consequences worth
+knowing:
+
+- Installing a build whose Java requirement this add-on cannot meet is refused *before*
+  the JAR is swapped, so you never end up with a server that will not boot.
+- The Settings tab shows what the installed JAR needs and what the image provides.
+- Starting a JAR that was copied in by hand and needs something newer fails with a plain
+  message rather than `UnsupportedClassVersionError`.
+
 ### Activity
 
 The recovery journal (what the controller was doing, phase by phase) and the audit log

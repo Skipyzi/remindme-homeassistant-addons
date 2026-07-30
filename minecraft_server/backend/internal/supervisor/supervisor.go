@@ -83,8 +83,12 @@ type Deps struct {
 	Backend  adapter.Backend
 	Log      *slog.Logger
 
-	// JavaBin allows tests (and unusual installations) to substitute the JVM.
+	// JavaBin is the fallback JVM used when ResolveJava is not set.
 	JavaBin string
+	// ResolveJava picks the JVM for the installed server JAR. Minecraft 26.x needs
+	// Java 25 while the 1.21 line needs 21, so the choice depends on the JAR, not
+	// on the container.
+	ResolveJava func(jarPath string) (string, error)
 	// ServerPort comes from the add-on options, not from settings, because the
 	// container port mapping is fixed at add-on start.
 	ServerPort int
@@ -405,8 +409,18 @@ func (s *Supervisor) Start() error {
 	if err != nil {
 		return err
 	}
+	javaBin := s.deps.JavaBin
+	if s.deps.ResolveJava != nil {
+		// A mismatch is reported here, before launch, instead of as an
+		// UnsupportedClassVersionError buried in the console.
+		resolved, err := s.deps.ResolveJava(s.deps.Paths.ServerJar())
+		if err != nil {
+			return err
+		}
+		javaBin = resolved
+	}
 	argv, err := s.deps.Backend.Argv(adapter.LaunchContext{
-		JavaBin:    s.deps.JavaBin,
+		JavaBin:    javaBin,
 		JarPath:    s.deps.Paths.ServerJar(),
 		WorkDir:    s.deps.Paths.Runtime(),
 		HeapMinMB:  settings.MemoryMinMB,

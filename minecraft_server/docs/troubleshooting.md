@@ -10,7 +10,8 @@ in Home Assistant shows the controller's own log.
 | "The Minecraft EULA has not been accepted yet" | Expected on a fresh install | Dashboard → **Accept EULA**, type `I-ACCEPT` |
 | "No server JAR is installed" | Paper was never downloaded | Dashboard → **Install PaperMC**, or Settings → Server version |
 | Console shows `FAILED TO BIND TO PORT` | Another process owns 25565 | Stop the other server, or change `server_port` in the add-on options |
-| Console shows `UnsupportedClassVersionError` | The Paper build needs a newer Java than the image | Install a Paper build for a version this add-on's Java 21 supports |
+| "this server needs Java N but only Java … is installed" | The JAR needs a newer Java feature release than the image provides | Install a Paper build for an older Minecraft version, or update the add-on. The image ships Java 21 and 25 |
+| Console shows `UnsupportedClassVersionError` | A JAR copied in by hand bypassed the launch check | Let the add-on install the JAR, or check the Settings tab for the required Java version |
 | Start hangs, then "did not finish starting" | Very slow storage, or Paper waiting on something | Look at the console; on an SD card the first start of a new world can exceed the five-minute watchdog |
 | "an orphaned Minecraft process could not be stopped" | A previous controller died and its child survived | Restart the add-on; the container restart clears it |
 
@@ -45,6 +46,7 @@ Everything else works without the plugin.
 
 | Symptom | Cause | Fix |
 | --- | --- | --- |
+| "PaperMC reports this API endpoint is gone (HTTP 410)" | The add-on is talking to PaperMC's retired v2 API | Update the add-on; current versions use the v3 (`fill.papermc.io`) API |
 | "restic is not installed in this container" | The image is broken or was built without restic | Rebuild or reinstall the add-on |
 | Backup refused: "could not flush the world" | The server did not confirm the flush in time | Retry; if it persists, back up offline, or accept a crash-consistent backup explicitly |
 | "world saving is currently disabled" warning | A backup was interrupted | Startup recovery re-enables saving; if the server is running, `save-on` in the console does it immediately |

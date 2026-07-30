@@ -3,6 +3,32 @@
 All notable changes to this add-on are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are semantic.
 
+## Unreleased
+
+### Fixed
+
+- PaperMC version and build discovery now uses the v3 (`fill.papermc.io`) API. The v2 API
+  was retired and answers HTTP 410, which made the update page report
+  "PaperMC API returned HTTP 410" and offer no builds. Download URLs now come from the
+  build metadata and are restricted to PaperMC's own hosts.
+- Version lists are sorted numerically, so 1.21.11 no longer sorts below 1.21.4, and
+  pre-releases are left out of the selectable versions.
+
+### Added
+
+- The image bundles Java 21 and Java 25, and the controller reads `version.json` from the
+  server JAR to launch with the runtime that build declares. Minecraft 26.x requires Java
+  25, which a Java-21-only image could not run.
+- A build that needs a Java release the container does not have is refused before the JAR
+  is swapped, and the Settings tab shows the required and available Java versions.
+
+### Changed
+
+- Base image moved to the Alpine 3.23 Home Assistant base, the first with both
+  `openjdk21-jre-headless` and `openjdk25-jre-headless`.
+- Both build stages now run on the build host and cross-compile, so an aarch64 image no
+  longer compiles Go and Java under emulation.
+
 ## 1.0.0 - 2026-07-30
 
 First release.
