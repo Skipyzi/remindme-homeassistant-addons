@@ -195,6 +195,13 @@ async function loadVersions(host, ctx) {
       installed.present
         ? `Installed: ${installed.version || 'unknown'} build ${installed.build || '?'} · ${bytes(installed.size_bytes)} · ${datetime(installed.modified_at)}`
         : 'No server JAR is installed yet.'),
+    installed.present
+      ? h('p', { class: 'muted' },
+        `Needs Java ${installed.required_java || 21}; this add-on ships ${installed.java_runtimes || 'unknown'}.`)
+      : null,
+    installed.java_problem
+      ? h('p', { class: 'banner error' }, installed.java_problem)
+      : null,
     data.update_available
       ? h('p', { class: 'banner info' },
         `PaperMC ${data.target_version} build ${data.latest_build} is available.`)
@@ -227,5 +234,5 @@ async function loadVersions(host, ctx) {
         },
       }, 'Install selected version')),
     h('p', { class: 'muted' },
-      'Downloads are verified against the SHA-256 published with the build. Automatic updates stay off unless you enable them above.'));
+      'Downloads are verified against the SHA-256 published with the build, and a build that needs a newer Java than this add-on ships is refused before anything is replaced. Automatic updates stay off unless you enable them above.'));
 }

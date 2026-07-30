@@ -30,7 +30,12 @@ docker run --rm --platform linux/arm64 --entrypoint /bin/sh "$tag" -c '
 
   [ -x /usr/bin/mc-controller ] || fail "the controller binary is missing"
   command -v java >/dev/null || fail "java is missing"
-  java -version 2>&1 | grep -q "21\." || fail "java 21 is required"
+  java -version 2>&1 | grep -q "21\." || fail "java 21 must be the default on PATH"
+  # Both runtimes are required: the 1.21 line needs Java 21, Minecraft 26.x
+  # declares Java 25, and the controller picks per server JAR.
+  [ -x /usr/lib/jvm/java-21-openjdk/bin/java ] || fail "java 21 runtime is missing"
+  [ -x /usr/lib/jvm/java-25-openjdk/bin/java ] || fail "java 25 runtime is missing"
+  /usr/lib/jvm/java-25-openjdk/bin/java -version 2>&1 | grep -q "25\." || fail "java 25 does not report version 25"
   command -v restic >/dev/null || fail "restic is missing"
   [ -s /opt/minecraft/assets/mcbridge.jar ] || fail "the mcbridge plugin is missing"
   [ -s /opt/minecraft/frontend/index.html ] || fail "the frontend is missing"
@@ -42,7 +47,7 @@ docker run --rm --platform linux/arm64 --entrypoint /bin/sh "$tag" -c '
   # The binary must actually run on this architecture.
   /usr/bin/mc-controller --version >/dev/null 2>&1 || true
 
-  echo "OK: aarch64 image contains the controller, java 21, restic, the plugin, the frontend and the presets"
+  echo "OK: aarch64 image contains the controller, java 21 and 25, restic, the plugin, the frontend and the presets"
 '
 
 echo

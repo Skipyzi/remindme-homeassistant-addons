@@ -75,6 +75,11 @@ the server faster.
 
 - Java Edition only; no proxy (Velocity/BungeeCord) setups.
 - One server instance per add-on installation.
+- The image bundles Java 21 and Java 25 because Minecraft needs different feature
+  releases per version (the 1.21 line runs on 21, the 26.x releases declare 25).
+  The controller reads the requirement out of the server JAR and launches with the
+  matching runtime; a build that needs something newer is refused with an
+  explanation instead of failing to boot.
 - Plugins other than Chunky and the bundled telemetry bridge are your responsibility:
   drop them in `/data/runtime/paper/plugins` and restart.
 - The container is Alpine based, so Java runs against musl. Paper works, but if you hit a

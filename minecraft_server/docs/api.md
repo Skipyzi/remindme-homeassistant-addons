@@ -72,9 +72,13 @@ Errors are `{"error": "...", "status": 409}`. Secrets are redacted from messages
 | `POST` | `/api/server/command` | `{"command": "list"}` |
 | `POST` | `/api/server/eula` | `{"accepted": true, "confirm": "I-ACCEPT"}` |
 | `POST` | `/api/server/maintenance` | `{"enabled": true}` |
-| `GET` | `/api/server/versions?version=1.21.4` | Installed JAR, available builds |
+| `GET` | `/api/server/versions?version=1.21.4` | Installed JAR (including `required_java`, `java_runtimes`, `java_supported`), available versions and the newest build |
 | `POST` | `/api/server/install` | Installs the newest stable build when none is present |
 | `POST` | `/api/server/update` | `{"version": "1.21.4", "build": 0, "confirm": "UPDATE"}` (`build: 0` means newest stable) |
+
+Version data comes from PaperMC's v3 API. A build is refused with `409` when it declares a
+Java feature release the container does not provide; that check runs after the download and
+checksum verification but before the JAR is swapped.
 
 Console commands are single-line only: a line break, control character or a command longer
 than 512 characters is rejected.

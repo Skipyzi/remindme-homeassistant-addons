@@ -26,6 +26,7 @@ import (
 	"github.com/skipyzi/remindme-homeassistant-addons/minecraft_server/backend/internal/events"
 	"github.com/skipyzi/remindme-homeassistant-addons/minecraft_server/backend/internal/generation"
 	"github.com/skipyzi/remindme-homeassistant-addons/minecraft_server/backend/internal/hass"
+	"github.com/skipyzi/remindme-homeassistant-addons/minecraft_server/backend/internal/javaruntime"
 	"github.com/skipyzi/remindme-homeassistant-addons/minecraft_server/backend/internal/mcconfig"
 	"github.com/skipyzi/remindme-homeassistant-addons/minecraft_server/backend/internal/presets"
 	"github.com/skipyzi/remindme-homeassistant-addons/minecraft_server/backend/internal/scheduler"
@@ -88,15 +89,34 @@ func run() error {
 	// broken with a placeholder that is filled in immediately below.
 	var worldManager *worlds.Manager
 
+	// The container bundles more than one JRE: Minecraft 26.x needs Java 25, the
+	// 1.21 line needs 21, and the JAR itself says which.
+	javaRuntimes := javaruntime.Discover()
+	log.Info("java runtimes available", "runtimes", javaruntime.Describe(javaRuntimes))
+	resolveJava := func(jarPath string) (string, error) {
+		info, err := paper.InspectJar(jarPath)
+		if err != nil {
+			log.Warn("could not read the server JAR metadata, assuming the default Java version",
+				"error", err, "assumed", paper.DefaultRequiredJava)
+		}
+		runtime, err := javaruntime.Select(javaRuntimes, info.RequiredJava)
+		if err != nil {
+			return "", err
+		}
+		log.Debug("selected java runtime", "major", runtime.Major, "required", info.RequiredJava)
+		return runtime.Path, nil
+	}
+
 	sup := supervisor.New(supervisor.Deps{
-		Paths:      env.Paths,
-		Settings:   settings,
-		Store:      st,
-		Bus:        bus,
-		Backend:    backend,
-		Log:        log,
-		ServerPort: options.ServerPort,
-		Flags:      paper.FlagProfile,
+		Paths:       env.Paths,
+		Settings:    settings,
+		Store:       st,
+		Bus:         bus,
+		Backend:     backend,
+		Log:         log,
+		ServerPort:  options.ServerPort,
+		Flags:       paper.FlagProfile,
+		ResolveJava: resolveJava,
 		ExtraArgs: func() []string {
 			if worldManager == nil {
 				return nil
@@ -216,6 +236,10 @@ func run() error {
 		Log:         log,
 		Backup:      backupHook,
 		ActiveWorld: func() string { return settings.Get().ActiveWorld },
+		CheckJava: func(jarPath string) error {
+			_, err := resolveJava(jarPath)
+			return err
+		},
 	})
 
 	commandService := commands.New(commands.Deps{

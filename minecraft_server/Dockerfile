@@ -1,11 +1,15 @@
 # syntax=docker/dockerfile:1
-ARG BUILD_FROM=ghcr.io/home-assistant/aarch64-base:3.21
+ARG BUILD_FROM=ghcr.io/home-assistant/aarch64-base:3.23
 ARG GO_VERSION=1.26
 
 # ---------------------------------------------------------------------------
 # Stage 1 - controller binary (pure Go, no cgo, cross-compiles to arm64)
+#
+# Pinned to the build host's own platform: the controller is cross-compiled with
+# GOARCH below, which is minutes faster than compiling under qemu emulation and
+# produces the same binary.
 # ---------------------------------------------------------------------------
-FROM golang:${GO_VERSION}-alpine AS backend
+FROM --platform=$BUILDPLATFORM golang:${GO_VERSION}-alpine AS backend
 ARG BUILD_ARCH=aarch64
 ARG BUILD_VERSION=dev
 ENV CGO_ENABLED=0 GOOS=linux
@@ -26,8 +30,11 @@ RUN set -eu; \
 
 # ---------------------------------------------------------------------------
 # Stage 2 - mcbridge Paper plugin (telemetry over a Unix socket)
+#
+# Also pinned to the build host: the output is architecture-independent Java
+# bytecode, so there is nothing to gain from emulating the target.
 # ---------------------------------------------------------------------------
-FROM maven:3.9-eclipse-temurin-21 AS plugin
+FROM --platform=$BUILDPLATFORM maven:3.9-eclipse-temurin-21 AS plugin
 WORKDIR /src
 COPY paper-plugin/ ./
 RUN mvn -B -q -DskipTests package && \
@@ -38,14 +45,20 @@ RUN mvn -B -q -DskipTests package && \
 # ---------------------------------------------------------------------------
 FROM ${BUILD_FROM}
 
-# Java 21 (Paper 1.20.5+ requirement), restic for deduplicated backups.
+# Two JREs on purpose: Paper for the Minecraft 1.21 line runs on Java 21, while
+# the 26.x releases declare java_version 25 in their version.json. The controller
+# reads that field and launches the server with the matching runtime, so both old
+# worlds and current versions work in the same image.
 RUN apk add --no-cache \
       openjdk21-jre-headless \
+      openjdk25-jre-headless \
       restic \
       ca-certificates \
       tzdata \
     && rm -rf /var/cache/apk/*
 
+# PATH points at Java 21 only as a default for anything that shells out to "java";
+# the controller always selects the runtime explicitly.
 ENV JAVA_HOME=/usr/lib/jvm/java-21-openjdk \
     PATH="/usr/lib/jvm/java-21-openjdk/bin:${PATH}" \
     MC_DATA_DIR=/data \
