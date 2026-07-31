@@ -245,6 +245,28 @@ func (m *Manager) LatestStable(ctx context.Context, version string) (Build, erro
 	return Build{}, fmt.Errorf("no builds published for %s", version)
 }
 
+// selectTarget resolves the build to install. Build 0 means "the newest stable
+// one", which is what the install button and scheduled updates ask for; anything
+// else has to match exactly.
+//
+// This lives next to pickStable on purpose: an earlier version of the install path
+// had its own copy of the channel check, and it kept matching the pre-v3 channel
+// name after the API started reporting "STABLE", so build 0 resolved to nothing.
+func selectTarget(builds []Build, build int, version string) (Build, error) {
+	if build == 0 {
+		if target, ok := pickStable(builds); ok {
+			return target, nil
+		}
+		return Build{}, fmt.Errorf("PaperMC has published no builds for %s", version)
+	}
+	for _, candidate := range builds {
+		if candidate.Build == build {
+			return candidate, nil
+		}
+	}
+	return Build{}, fmt.Errorf("build %d of %s not found", build, version)
+}
+
 // pickStable prefers a stable build and only falls back to a pre-release build
 // when a version has nothing else, which is the case for a freshly opened
 // Minecraft version.
@@ -325,19 +347,11 @@ func (m *Manager) Install(ctx context.Context, version string, build int, actor 
 	if err != nil {
 		return result, err
 	}
-	var target *Build
-	for i := range builds {
-		if build == 0 || builds[i].Build == build {
-			if build == 0 && builds[i].Channel != "default" {
-				continue
-			}
-			target = &builds[i]
-			break
-		}
+	selected, err := selectTarget(builds, build, version)
+	if err != nil {
+		return result, err
 	}
-	if target == nil {
-		return result, fmt.Errorf("build %d of %s not found", build, version)
-	}
+	target := &selected
 	result.Build = target.Build
 	result.SHA256 = target.SHA256
 	if target.SHA256 == "" {
