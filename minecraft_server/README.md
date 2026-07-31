@@ -1,15 +1,23 @@
 # Minecraft Server add-on
 
-Runs and manages an optimized [PaperMC](https://papermc.io/) server on Home Assistant OS,
-with a management web interface behind Ingress. Built for a Raspberry Pi 5 with 8 GB of
-RAM that also runs Home Assistant.
+Runs and manages an optimized Minecraft server on Home Assistant OS, with a management web
+interface behind Ingress. Built for a Raspberry Pi 5 with 8 GB of RAM that also runs Home
+Assistant.
+
+Two server flavours are supported: [PaperMC](https://papermc.io/) for current Minecraft,
+and [Better than Adventure!](https://www.betterthanadventure.net/) for its continuation of
+Beta 1.7.3. Each keeps its own worlds, configuration and installed server, so switching
+between them moves no data and is reversible.
 
 The management interface keeps running while Minecraft is stopped, so the add-on is also
 how you start the server in the first place.
 
 ## What it does
 
-- **Process supervision** — Paper runs as a child of the controller: live console,
+- **Server flavours** — PaperMC or Better than Adventure!, chosen in the UI. Features a
+  flavour does not have (plugins, terrain pre-generation, in-server telemetry) are hidden
+  rather than offered, and backups are tied to the flavour they were taken from.
+- **Process supervision** — the server runs as a child of the controller: live console,
   bounded log history, crash detection with exit codes, graceful stop with escalation,
   optional crash restart, no duplicate servers.
 - **Configuration** — structured forms for the settings that matter on a Pi, plus a
@@ -29,6 +37,9 @@ how you start the server in the first place.
   gets hot or busy, outside the allowed hours, and that cancel when the disk fills up.
 - **Home Assistant entities** — sensors, buttons and selects over MQTT discovery, routed
   through the same validation and audit trail as the web UI.
+- **Unprivileged server process** — the controller keeps root to manage `/data`, and the
+  Minecraft process is dropped to an ordinary user, which is what the server's own
+  "running as root" warning asks for.
 
 ## Installation
 

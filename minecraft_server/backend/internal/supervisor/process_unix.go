@@ -5,12 +5,22 @@ package supervisor
 import (
 	"os"
 	"syscall"
+
+	"github.com/skipyzi/remindme-homeassistant-addons/minecraft_server/backend/internal/privdrop"
 )
 
 // sysProcAttr puts Minecraft in its own process group so the controller can
-// signal the JVM and anything it spawned as a unit.
-func sysProcAttr() *syscall.SysProcAttr {
-	return &syscall.SysProcAttr{Setpgid: true}
+// signal the JVM and anything it spawned as a unit, and drops it to an
+// unprivileged user when one is configured.
+func sysProcAttr(account privdrop.Account) *syscall.SysProcAttr {
+	attr := &syscall.SysProcAttr{Setpgid: true}
+	if account.Enabled {
+		attr.Credential = &syscall.Credential{
+			Uid: uint32(account.UID),
+			Gid: uint32(account.GID),
+		}
+	}
+	return attr
 }
 
 func signalGroup(pid int, sig syscall.Signal) error {

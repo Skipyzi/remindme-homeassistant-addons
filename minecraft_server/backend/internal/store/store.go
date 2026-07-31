@@ -10,13 +10,14 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"time"
 
 	_ "modernc.org/sqlite" // pure-Go driver: no cgo, cross-compiles to arm64
 )
 
-const schemaVersion = 1
+const schemaVersion = 2
 
 type Store struct {
 	db        *sql.DB
@@ -147,6 +148,12 @@ func (s *Store) migrate() error {
 			finished_at TEXT NOT NULL DEFAULT ''
 		)`,
 		`CREATE INDEX IF NOT EXISTS backups_created ON backups(created_at DESC)`,
+		// Schema 2: which server flavour a backup was taken from. A world set
+		// written by PaperMC and one written by BTA are not interchangeable, and a
+		// restore across them would produce an unopenable world, so the flavour is
+		// recorded and checked. Existing rows predate multi-flavour support and
+		// were all Paper.
+		`ALTER TABLE backups ADD COLUMN flavour TEXT NOT NULL DEFAULT 'paper'`,
 		`CREATE TABLE IF NOT EXISTS gen_jobs (
 			id TEXT PRIMARY KEY,
 			world_id TEXT NOT NULL,
@@ -181,6 +188,12 @@ func (s *Store) migrate() error {
 	defer tx.Rollback()
 	for _, stmt := range stmts {
 		if _, err := tx.Exec(stmt); err != nil {
+			// ALTER TABLE ADD COLUMN has no IF NOT EXISTS in SQLite, so a column
+			// that is already there is the expected outcome on every start after
+			// the first.
+			if strings.HasPrefix(stmt, "ALTER TABLE") && strings.Contains(err.Error(), "duplicate column name") {
+				continue
+			}
 			return fmt.Errorf("migrate: %w", err)
 		}
 	}

@@ -62,7 +62,7 @@ func newFixture(t *testing.T) *fixture {
 	manager = NewManager(Deps{
 		Paths: env.Paths, Settings: env.Settings, Store: env.Store, Bus: env.Bus,
 		Supervisor: sup, Config: config, Log: env.Log, StartTimeout: 6 * time.Second,
-		ContainerArgs: paper.WorldContainerArgs,
+		Backend: backend,
 		Backup: func(ctx context.Context, worldID, kind, label string, lease *supervisor.Lease) error {
 			if failBackup {
 				return errors.New("simulated backup failure")
@@ -177,11 +177,11 @@ func TestImportRejectsSymlinkEntries(t *testing.T) {
 func TestImportNormalisesDimensionLayout(t *testing.T) {
 	f := newFixture(t)
 	archive := writeZip(t, map[string]string{
-		"myserver/world/level.dat":            "overworld",
-		"myserver/world/region/r.0.0.mca":     "chunks",
-		"myserver/world_nether/level.dat":     "nether",
-		"myserver/world_the_end/level.dat":    "end",
-		"myserver/server.properties":          "view-distance=7",
+		"myserver/world/level.dat":         "overworld",
+		"myserver/world/region/r.0.0.mca":  "chunks",
+		"myserver/world_nether/level.dat":  "nether",
+		"myserver/world_the_end/level.dat": "end",
+		"myserver/server.properties":       "view-distance=7",
 	})
 	result, err := f.manager.ImportZip(archive, "Imported World", "tester")
 	if err != nil {

@@ -12,12 +12,19 @@ import (
 // bootstrap defaults: on first start they seed Settings, which the web UI then
 // owns so that day-to-day changes do not require an add-on restart.
 type Options struct {
-	ServerPort          int    `json:"server_port"`
-	MemoryMinMB         int    `json:"memory_min_mb"`
-	MemoryMaxMB         int    `json:"memory_max_mb"`
-	JVMFlagsProfile     string `json:"jvm_flags_profile"`
-	JVMFlagsCustom      string `json:"jvm_flags_custom"`
-	PaperVersion        string `json:"paper_version"`
+	ServerPort      int    `json:"server_port"`
+	MemoryMinMB     int    `json:"memory_min_mb"`
+	MemoryMaxMB     int    `json:"memory_max_mb"`
+	JVMFlagsProfile string `json:"jvm_flags_profile"`
+	JVMFlagsCustom  string `json:"jvm_flags_custom"`
+	// Flavour seeds the server flavour on first start. Afterwards the web UI owns
+	// it, because switching is a stateful operation and not a restart-time one.
+	Flavour      string `json:"server_flavour"`
+	PaperVersion string `json:"paper_version"`
+	// RunServerAsRoot keeps the Minecraft process running as root. Add-on
+	// containers are root, and Minecraft warns about it on every start; the
+	// controller drops the server to an unprivileged user unless this is set.
+	RunServerAsRoot     bool   `json:"run_server_as_root"`
 	AutoRestartOnCrash  bool   `json:"auto_restart_on_crash"`
 	StopTimeoutSeconds  int    `json:"stop_timeout_seconds"`
 	MQTTEnabled         bool   `json:"mqtt_enabled"`
@@ -67,6 +74,7 @@ func DefaultOptions() Options {
 		MQTTPort:            1883,
 		MQTTDiscoveryPrefix: "homeassistant",
 		ChunkySource:        "modrinth",
+		Flavour:             DefaultFlavour,
 		LogLevel:            "info",
 	}
 }
@@ -99,6 +107,11 @@ func (o Options) Validate() error {
 		if _, err := ValidateJavaFlags(o.JVMFlagsCustom); err != nil {
 			return err
 		}
+	}
+	switch o.Flavour {
+	case "", DefaultFlavour, "bta":
+	default:
+		return fmt.Errorf("unknown server_flavour %q", o.Flavour)
 	}
 	switch o.ChunkySource {
 	case "modrinth", "manual":

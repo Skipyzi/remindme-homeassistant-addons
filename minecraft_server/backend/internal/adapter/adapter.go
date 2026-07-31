@@ -1,7 +1,8 @@
 // Package adapter isolates everything server-flavour specific: how the process
 // is launched, what its console output means and which configuration files it
-// owns. PaperMC is the only implementation today; PumpkinMC or Fabric can be
-// added by implementing Backend without touching the managers above it.
+// owns. PaperMC and Better than Adventure! are implemented today; another
+// flavour is a Backend implementation plus an entry in the flavours registry,
+// with no change to the managers above it.
 package adapter
 
 // LogKind classifies a console line.
@@ -69,14 +70,71 @@ type ConfigFile struct {
 	CreateIfMissing bool   `json:"create_if_missing"`
 }
 
+// WorldBinding is how a backend is told which world set to open.
+type WorldBinding string
+
+const (
+	// BindContainerArg passes the world set directory as a launch argument, which
+	// is what Paper's --world-container does. Switching is a change of arguments:
+	// no data moves and there is no half-switched state.
+	BindContainerArg WorldBinding = "container_arg"
+	// BindLevelLink is for servers that only ever look next to their working
+	// directory (Beta-era servers do). The controller points a link in the working
+	// directory at the active world set instead. Still no data movement, but the
+	// link has to be rewritten on every switch.
+	BindLevelLink WorldBinding = "level_link"
+)
+
+// Capabilities says which of the controller's features apply to a flavour. They
+// are not preferences: a false here means the feature cannot work, and the UI
+// hides it rather than offering something that will fail.
+type Capabilities struct {
+	// BukkitPlugins is true when the server loads Bukkit/Spigot plugins from a
+	// plugins directory. The bridge plugin and Chunky both need this.
+	BukkitPlugins bool `json:"bukkit_plugins"`
+	// BridgeTelemetry is true when the management plugin can report TPS, MSPT and
+	// heap use. Without it those come from log parsing only.
+	BridgeTelemetry bool `json:"bridge_telemetry"`
+	// TerrainGeneration is true when a pre-generation plugin exists for the
+	// flavour.
+	TerrainGeneration bool `json:"terrain_generation"`
+	// EULAFile is true when the server refuses to run until an eula.txt exists.
+	EULAFile bool `json:"eula_file"`
+	// ServerPortArg is true when the listen port is a launch argument. When false
+	// the port has to be written into the properties file instead.
+	ServerPortArg bool `json:"server_port_arg"`
+	// WorldBinding is how the active world set is selected.
+	WorldBinding WorldBinding `json:"world_binding"`
+	// Dimensions are the sub-directories of a world set, in backup and size
+	// reporting order. The first entry is the one that must exist for a world to
+	// be usable.
+	Dimensions []string `json:"dimensions"`
+	// Notes are shown in the UI to explain what this flavour does differently.
+	Notes []string `json:"notes,omitempty"`
+}
+
 // Backend is the server-flavour contract.
 type Backend interface {
 	// Name is the stable identifier ("paper").
 	Name() string
 	DisplayName() string
 
+	// Capabilities reports which controller features apply.
+	Capabilities() Capabilities
+
+	// JarName is the file name the installed server JAR is stored under, inside
+	// the flavour's runtime directory.
+	JarName() string
+
 	// Argv builds the launch command. It must never invoke a shell.
 	Argv(ctx LaunchContext) ([]string, error)
+
+	// WorldArgs returns the launch arguments that point the server at a world set
+	// directory. Backends that bind worlds another way return nil.
+	WorldArgs(dir string) []string
+
+	// FlagProfile resolves a JVM flag profile name into flags.
+	FlagProfile(profile string, heapMB int) ([]string, error)
 
 	// Parse turns one console line into a structured event.
 	Parse(line string) LogEvent

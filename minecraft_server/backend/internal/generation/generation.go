@@ -212,17 +212,21 @@ type Status struct {
 	Plugin          PluginStatus     `json:"plugin"`
 	EstimatedFinish string           `json:"estimated_finish,omitempty"`
 	RemainingSecs   int64            `json:"remaining_seconds,omitempty"`
+	// Supported is false for a server flavour that has no pre-generation plugin,
+	// which is what the UI uses to hide the whole tab rather than offering
+	// something that cannot work.
+	Supported bool `json:"supported"`
 }
 
 // GuardSnapshot is what the guards currently see, so the UI can explain a pause.
 type GuardSnapshot struct {
-	PlayersOnline   int     `json:"players_online"`
-	TPS             float64 `json:"tps"`
-	MSPT            float64 `json:"mspt"`
-	CPUTemperatureC float64 `json:"cpu_temperature_c"`
-	SystemCPUPct    float64 `json:"system_cpu_percent"`
-	DiskFreeGB      float64 `json:"disk_free_gb"`
-	WithinHours     bool    `json:"within_allowed_hours"`
+	PlayersOnline   int                     `json:"players_online"`
+	TPS             float64                 `json:"tps"`
+	MSPT            float64                 `json:"mspt"`
+	CPUTemperatureC float64                 `json:"cpu_temperature_c"`
+	SystemCPUPct    float64                 `json:"system_cpu_percent"`
+	DiskFreeGB      float64                 `json:"disk_free_gb"`
+	WithinHours     bool                    `json:"within_allowed_hours"`
 	Thresholds      appcfg.GenerationPolicy `json:"thresholds"`
 }
 
@@ -231,7 +235,11 @@ func (m *Manager) Status() Status {
 	cur := m.cur
 	m.mu.Unlock()
 
-	status := Status{Guard: m.guardSnapshot(m.policyFor(profileOf(cur))), Plugin: m.PluginStatus()}
+	status := Status{
+		Guard:     m.guardSnapshot(m.policyFor(profileOf(cur))),
+		Plugin:    m.PluginStatus(),
+		Supported: m.Supported(),
+	}
 	if cur == nil {
 		if job, ok, _ := m.deps.Store.ActiveJob(); ok {
 			status.Job = &job
@@ -296,7 +304,19 @@ func (m *Manager) guardSnapshot(policy appcfg.GenerationPolicy) GuardSnapshot {
 // ------------------------------------------------------------------- start ----
 
 // Start begins a generation job.
+// ErrUnsupported is returned for a server flavour that has no terrain
+// pre-generation plugin.
+var ErrUnsupported = errors.New("terrain pre-generation is not available for this server flavour")
+
+// Supported reports whether the active backend has a pre-generation plugin.
+func (m *Manager) Supported() bool {
+	return m.deps.Backend.Capabilities().TerrainGeneration
+}
+
 func (m *Manager) Start(ctx context.Context, params Params, actor string) (store.JobRecord, error) {
+	if !m.Supported() {
+		return store.JobRecord{}, ErrUnsupported
+	}
 	if err := params.Validate(); err != nil {
 		return store.JobRecord{}, err
 	}
@@ -392,7 +412,10 @@ func (m *Manager) Start(ctx context.Context, params Params, actor string) (store
 		Detail: fmt.Sprintf("job=%s profile=%s radius=%d shape=%s dimensions=%s chunks=%d estimate=%s",
 			job.ID, params.Profile, params.RadiusBlocks, params.Shape, strings.Join(dims, "+"),
 			estimate.Chunks, humanBytes(estimate.HighBytes))})
-	m.deps.Bus.Publish(events.TypeGenerationProgress, m.progressPayload(rt))
+	m.mu.Lock()
+	payload := m.progressPayload(rt)
+	m.mu.Unlock()
+	m.deps.Bus.Publish(events.TypeGenerationProgress, payload)
 	return job, nil
 }
 
@@ -430,11 +453,17 @@ func (m *Manager) startDimension(rt *runtime, index int) error {
 	if err := m.deps.Supervisor.SendMany(commands); err != nil {
 		return err
 	}
+	// The console pump writes progress into rt.job from another goroutine, so
+	// every read and write of it is under the manager lock. The commands above are
+	// sent without it: sending can block on the server.
+	m.mu.Lock()
 	rt.job.DimensionIndex = index
 	rt.job.Status = store.JobRunning
 	rt.job.PauseReason = ""
 	rt.chunkStart = rt.job.ChunksDone
-	return m.deps.Store.PutJob(rt.job)
+	job := rt.job
+	m.mu.Unlock()
+	return m.deps.Store.PutJob(job)
 }
 
 // ------------------------------------------------------------------ control ----
@@ -443,11 +472,12 @@ func (m *Manager) startDimension(rt *runtime, index int) error {
 func (m *Manager) Pause(reason, actor string) error {
 	m.mu.Lock()
 	rt := m.cur
+	paused := rt != nil && rt.job.Status == store.JobPaused
 	m.mu.Unlock()
 	if rt == nil {
 		return ErrNoActiveJob
 	}
-	if rt.job.Status == store.JobPaused {
+	if paused {
 		return nil
 	}
 	if err := m.deps.Supervisor.SendMany(m.deps.Backend.GenerationCommands(adapter.GenerationAction{Verb: "pause"})); err != nil {
@@ -475,11 +505,12 @@ func (m *Manager) Pause(reason, actor string) error {
 func (m *Manager) Resume(actor string) error {
 	m.mu.Lock()
 	rt := m.cur
+	running := rt != nil && rt.job.Status == store.JobRunning
 	m.mu.Unlock()
 	if rt == nil {
 		return ErrNoActiveJob
 	}
-	if rt.job.Status == store.JobRunning {
+	if running {
 		return nil
 	}
 	if !m.deps.Supervisor.IsRunning() {
@@ -507,6 +538,10 @@ func (m *Manager) Resume(actor string) error {
 func (m *Manager) Cancel(ctx context.Context, actor, reason string) error {
 	m.mu.Lock()
 	rt := m.cur
+	jobID := ""
+	if rt != nil {
+		jobID = rt.job.ID
+	}
 	m.mu.Unlock()
 	if rt == nil {
 		return ErrNoActiveJob
@@ -516,7 +551,7 @@ func (m *Manager) Cancel(ctx context.Context, actor, reason string) error {
 			m.log.Warn("could not send the cancel command", "error", err)
 		}
 	}
-	_ = m.deps.Store.Audit(store.AuditEntry{Actor: actor, Action: "generation.cancel", Target: rt.job.ID,
+	_ = m.deps.Store.Audit(store.AuditEntry{Actor: actor, Action: "generation.cancel", Target: jobID,
 		Detail: "reason=" + reason})
 	m.finish(ctx, store.JobCancelled, reason)
 	return nil
@@ -532,12 +567,17 @@ func (m *Manager) finish(ctx context.Context, status, detail string) {
 		return
 	}
 
+	// A console event that read m.cur just before it was cleared can still be
+	// inside updateProgress with this same runtime, so the job is finished under
+	// the lock as well.
+	m.mu.Lock()
 	rt.job.Status = status
 	rt.job.Detail = detail
 	rt.job.ElapsedMs = time.Since(rt.startedAt).Milliseconds()
 	if status == store.JobCompleted {
 		rt.job.Progress = 100
 	}
+	m.mu.Unlock()
 	_ = m.deps.Store.PutJob(rt.job)
 
 	if journalRaw, ok, _ := m.deps.Store.GetKV("generation.journal"); ok {

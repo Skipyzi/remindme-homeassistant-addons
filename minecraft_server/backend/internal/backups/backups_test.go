@@ -486,3 +486,41 @@ func waitFor(t *testing.T, timeout time.Duration, condition func() bool) {
 	}
 	t.Fatal("condition was not met in time")
 }
+
+// A repository that exists but cannot be opened must never be re-initialised:
+// doing so writes a fresh key over the existing one and makes every snapshot in
+// it unreadable.
+func TestEnsureRepoNeverReinitialisesAnExistingRepository(t *testing.T) {
+	dir := t.TempDir()
+	repo := filepath.Join(dir, "repo")
+	if err := os.MkdirAll(repo, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	config := filepath.Join(repo, "config")
+	if err := os.WriteFile(config, []byte("existing repository config"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	client := &Restic{
+		Bin:          testsupport.FakeBinary(t, "fakerestic"),
+		Repo:         repo,
+		PasswordFile: filepath.Join(dir, "restic.pass"),
+		CacheDir:     filepath.Join(dir, "cache"),
+		ExtraEnv:     []string{"FAKERESTIC_FAIL=cat"},
+	}
+
+	err := client.EnsureRepo(context.Background())
+	if err == nil {
+		t.Fatal("expected the unreadable repository to be reported")
+	}
+	if !strings.Contains(err.Error(), "could not be opened") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	raw, readErr := os.ReadFile(config)
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if string(raw) != "existing repository config" {
+		t.Fatalf("the existing repository config was overwritten: %q", raw)
+	}
+}

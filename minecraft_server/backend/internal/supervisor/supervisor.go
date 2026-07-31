@@ -23,6 +23,7 @@ import (
 	"github.com/skipyzi/remindme-homeassistant-addons/minecraft_server/backend/internal/adapter"
 	"github.com/skipyzi/remindme-homeassistant-addons/minecraft_server/backend/internal/appcfg"
 	"github.com/skipyzi/remindme-homeassistant-addons/minecraft_server/backend/internal/events"
+	"github.com/skipyzi/remindme-homeassistant-addons/minecraft_server/backend/internal/privdrop"
 	"github.com/skipyzi/remindme-homeassistant-addons/minecraft_server/backend/internal/store"
 )
 
@@ -103,6 +104,9 @@ type Deps struct {
 	// Flags resolves a JVM flag profile name into flags. Injected so the
 	// supervisor stays independent of any particular server flavour.
 	Flags func(profile string, heapMB int) ([]string, error)
+	// Account is the identity Minecraft runs as. The zero value keeps the
+	// controller's own identity, which inside an add-on container is root.
+	Account privdrop.Account
 	// ConsoleHistory is the number of console lines kept in memory.
 	ConsoleHistory int
 	// ReadyTimeout bounds how long a start may take before it counts as failed.
@@ -439,7 +443,7 @@ func (s *Supervisor) Start() error {
 	cmd := exec.Command(argv[0], argv[1:]...) // #nosec G204 - argv is built from validated values, never a shell string
 	cmd.Dir = s.deps.Paths.Runtime()
 	cmd.Env = s.childEnv()
-	cmd.SysProcAttr = sysProcAttr()
+	cmd.SysProcAttr = sysProcAttr(s.deps.Account)
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -529,11 +533,21 @@ func (s *Supervisor) childEnv() []string {
 	return env
 }
 
+// writeEULA records acceptance for backends that have an EULA file. Not every
+// flavour does: BTA is a standalone fork with no eula.txt, so there is nothing
+// to write - but the operator still has to have accepted, which is checked
+// before Start gets this far.
 func (s *Supervisor) writeEULA(settings appcfg.Settings) error {
 	if !settings.EULAAccepted {
 		return ErrEULANotAccepted
 	}
-	return os.WriteFile(s.deps.Paths.EulaFile(), []byte(s.deps.Backend.EULAAcceptedContent()), 0o644)
+	if !s.deps.Backend.Capabilities().EULAFile {
+		return nil
+	}
+	if err := os.WriteFile(s.deps.Paths.EulaFile(), []byte(s.deps.Backend.EULAAcceptedContent()), 0o644); err != nil {
+		return err
+	}
+	return s.deps.Account.EnsureOwnedFile(s.deps.Paths.EulaFile())
 }
 
 // reapOrphan handles the case where the controller was restarted (add-on update,
@@ -705,6 +719,13 @@ func (s *Supervisor) awaitExit(cmd *exec.Cmd, done chan struct{}) {
 			exitCode = -1
 		}
 	}
+	// The marker is cleared before the state changes, not after: anything that
+	// sees the process as stopped or crashed must not still be able to read
+	// "should be running". It stays set only when the controller itself was killed
+	// while Minecraft ran, which is exactly the case where the reconciler should
+	// start the server again.
+	_ = s.deps.Store.SetKV(kvDesiredRunning, "false")
+
 	s.mu.Lock()
 	intentional := s.intentionalStop
 	shuttingDown := s.shuttingDown
@@ -732,10 +753,6 @@ func (s *Supervisor) awaitExit(cmd *exec.Cmd, done chan struct{}) {
 	_ = os.Remove(s.deps.Paths.PidFile())
 	_ = s.deps.Store.SetKV(kvLastExitCode, strconv.Itoa(exitCode))
 	_ = s.deps.Store.SetKV(kvCrashCount, strconv.Itoa(crashCount))
-	// Any observed exit clears the marker. It stays set only when the controller
-	// itself was killed while Minecraft ran, which is exactly the case where the
-	// reconciler should start the server again.
-	_ = s.deps.Store.SetKV(kvDesiredRunning, "false")
 	_ = shuttingDown
 
 	// All bookkeeping for this exit finishes before waiters are released, so a

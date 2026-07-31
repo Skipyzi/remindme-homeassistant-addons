@@ -102,13 +102,20 @@ function renderControls(host, ctx) {
   }
 
   if (!status.jar.present) {
-    host.append(h('button', {
-      class: 'btn btn-primary',
-      onclick: (ev) => run(ev.target, async () => {
-        await api('api/server/install', { method: 'POST' });
-        await ctx.refreshStatus();
-      }, 'PaperMC installed'),
-    }, 'Install PaperMC'));
+    const name = status.flavour_name || 'the server';
+    host.append(h('div', { class: 'stack' },
+      h('button', {
+        class: 'btn btn-primary',
+        onclick: (ev) => run(ev.target, async () => {
+          await api('api/server/install', { method: 'POST' });
+          await ctx.refreshStatus();
+        }, `${name} installed`),
+      }, `Install the newest ${name}`),
+      // The button installs the newest stable build. Choosing a version is a
+      // deliberate act and lives with the rest of the version handling.
+      h('p', { class: 'muted' },
+        'This installs the newest stable build. To pick a specific version, or another server flavour, go to ',
+        h('a', { href: '#settings' }, 'Settings'), '.')));
   }
 
   host.append(

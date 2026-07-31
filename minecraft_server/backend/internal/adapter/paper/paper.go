@@ -10,7 +10,15 @@ import (
 	"strings"
 
 	"github.com/skipyzi/remindme-homeassistant-addons/minecraft_server/backend/internal/adapter"
+	"github.com/skipyzi/remindme-homeassistant-addons/minecraft_server/backend/internal/adapter/javaflags"
 )
+
+// FlagProfile is kept as a package function because the JVM flag profiles used
+// to live here.
+var FlagProfile = javaflags.FlagProfile
+
+// FlagProfiles lists the selectable profiles for the UI.
+var FlagProfiles = javaflags.FlagProfiles
 
 type Backend struct{}
 
@@ -18,6 +26,26 @@ func New() *Backend { return &Backend{} }
 
 func (b *Backend) Name() string        { return "paper" }
 func (b *Backend) DisplayName() string { return "PaperMC" }
+func (b *Backend) JarName() string     { return "paper.jar" }
+
+// Capabilities: Paper is the flavour every controller feature was written
+// against, so all of them apply.
+func (b *Backend) Capabilities() adapter.Capabilities {
+	return adapter.Capabilities{
+		BukkitPlugins:     true,
+		BridgeTelemetry:   true,
+		TerrainGeneration: true,
+		EULAFile:          true,
+		ServerPortArg:     true,
+		WorldBinding:      adapter.BindContainerArg,
+		Dimensions:        []string{"world", "world_nether", "world_the_end"},
+	}
+}
+
+// FlagProfile resolves a JVM flag profile name.
+func (b *Backend) FlagProfile(profile string, heapMB int) ([]string, error) {
+	return javaflags.FlagProfile(profile, heapMB)
+}
 
 // Argv builds the JVM command line.
 //
@@ -57,9 +85,13 @@ func (b *Backend) Argv(ctx adapter.LaunchContext) ([]string, error) {
 	return argv, nil
 }
 
-// WorldContainerArgs returns the Paper arguments that point the server at a
-// world set. Switching worlds is therefore a change of launch arguments - no
-// data is moved and nothing has to be swapped while the server is stopped.
+// WorldArgs returns the Paper arguments that point the server at a world set.
+// Switching worlds is therefore a change of launch arguments - no data is moved
+// and nothing has to be swapped while the server is stopped.
+func (b *Backend) WorldArgs(dir string) []string { return WorldContainerArgs(dir) }
+
+// WorldContainerArgs is the package-level form, kept because it reads better at
+// the call sites that build launch arguments.
 func WorldContainerArgs(dir string) []string {
 	return []string{"--world-container", filepath.ToSlash(dir)}
 }
@@ -138,24 +170,24 @@ func (b *Backend) ConfigFiles() []adapter.ConfigFile {
 // and memory use on a Pi far more than any JVM flag.
 func (b *Backend) DefaultProperties() map[string]string {
 	return map[string]string{
-		"level-name":              "world",
-		"motd":                    "Minecraft on Home Assistant",
-		"gamemode":                "survival",
-		"difficulty":              "normal",
-		"max-players":             "10",
-		"view-distance":           "7",
-		"simulation-distance":     "5",
-		"online-mode":             "true",
-		"white-list":              "false",
-		"pvp":                     "true",
-		"enable-command-block":    "false",
-		"spawn-protection":        "16",
-		"allow-flight":            "false",
-		"enable-rcon":             "false",
-		"sync-chunk-writes":       "false",
-		"max-tick-time":           "60000",
+		"level-name":                    "world",
+		"motd":                          "Minecraft on Home Assistant",
+		"gamemode":                      "survival",
+		"difficulty":                    "normal",
+		"max-players":                   "10",
+		"view-distance":                 "7",
+		"simulation-distance":           "5",
+		"online-mode":                   "true",
+		"white-list":                    "false",
+		"pvp":                           "true",
+		"enable-command-block":          "false",
+		"spawn-protection":              "16",
+		"allow-flight":                  "false",
+		"enable-rcon":                   "false",
+		"sync-chunk-writes":             "false",
+		"max-tick-time":                 "60000",
 		"network-compression-threshold": "256",
-		"enforce-secure-profile":  "true",
+		"enforce-secure-profile":        "true",
 	}
 }
 

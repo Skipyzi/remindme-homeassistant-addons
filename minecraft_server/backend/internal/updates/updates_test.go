@@ -57,7 +57,7 @@ func TestFlattenVersionsSortsNumericallyAndDropsPreReleases(t *testing.T) {
 	if err := json.Unmarshal([]byte(versionsPayload), &payload); err != nil {
 		t.Fatal(err)
 	}
-	versions := flattenVersions(payload.Versions)
+	versions := flattenVersions(payload.Versions, false)
 
 	if len(versions) == 0 {
 		t.Fatal("no versions parsed")
@@ -208,26 +208,22 @@ func TestBuildsAndVersionsAgainstAStubAPI(t *testing.T) {
 	}))
 	defer server.Close()
 
-	manager := NewManager(Deps{})
-	// Point the client at the stub by overriding the endpoint the manager uses.
-	base := server.URL + "/v3/projects/paper"
+	// Point the source at the stub by overriding the endpoint it uses.
+	source := &PaperSource{api: server.URL + "/v3/projects/paper"}
 
-	var versionsDoc struct {
-		Versions map[string][]string `json:"versions"`
-	}
-	if err := manager.getJSON(context.Background(), base, &versionsDoc); err != nil {
+	versions, err := source.Versions(context.Background(), false)
+	if err != nil {
 		t.Fatalf("versions: %v", err)
 	}
-	if len(flattenVersions(versionsDoc.Versions)) == 0 {
+	if len(versions) == 0 {
 		t.Fatal("expected versions from the stub")
 	}
-
-	var buildsDoc []fillBuild
-	if err := manager.getJSON(context.Background(), base+"/versions/1.21.4/builds", &buildsDoc); err != nil {
+	builds, err := source.Builds(context.Background(), "1.21.4")
+	if err != nil {
 		t.Fatalf("builds: %v", err)
 	}
-	if len(buildsDoc) != 2 {
-		t.Fatalf("expected two builds, got %d", len(buildsDoc))
+	if len(builds) != 2 {
+		t.Fatalf("expected two builds, got %d", len(builds))
 	}
 	if len(requested) != 2 {
 		t.Fatalf("expected two requests, got %v", requested)
@@ -240,8 +236,7 @@ func TestGoneStatusExplainsItself(t *testing.T) {
 	}))
 	defer server.Close()
 
-	manager := NewManager(Deps{})
-	err := manager.getJSON(context.Background(), server.URL+"/v2/projects/paper", &struct{}{})
+	err := httpGetJSON(context.Background(), server.URL+"/v2/projects/paper", nil, &struct{}{})
 	if err == nil {
 		t.Fatal("expected an error")
 	}
@@ -251,28 +246,29 @@ func TestGoneStatusExplainsItself(t *testing.T) {
 }
 
 func TestDownloadRefusesUnexpectedHosts(t *testing.T) {
-	manager := NewManager(Deps{})
+	source := NewPaperSource()
 	cases := []string{
 		"http://fill-data.papermc.io/v1/objects/x/paper.jar", // not https
 		"https://evil.example.com/paper.jar",                 // not an allow-listed host
 		"not a url at all",
 	}
 	for _, rawURL := range cases {
-		if _, err := manager.download(context.Background(), rawURL); err == nil {
+		if _, err := httpDownload(context.Background(), rawURL, source.DownloadHosts()); err == nil {
 			t.Errorf("expected %q to be refused", rawURL)
 		}
 	}
 }
 
 func TestValidVersionRejectsPathTricks(t *testing.T) {
+	source := NewPaperSource()
 	for _, version := range []string{"1.21.4", "26.1.2", "1.21.11-rc3"} {
-		if err := validVersion(version); err != nil {
+		if err := source.ValidVersion(version); err != nil {
 			t.Errorf("valid version %q rejected: %v", version, err)
 		}
 	}
 	for _, version := range []string{"", "../../etc/passwd", "1.21.4/builds", "1.21.4?x=1",
 		strings.Repeat("1", 25)} {
-		if err := validVersion(version); err == nil {
+		if err := source.ValidVersion(version); err == nil {
 			t.Errorf("expected %q to be rejected", version)
 		}
 	}

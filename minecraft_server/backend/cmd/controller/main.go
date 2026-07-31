@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -24,11 +25,13 @@ import (
 	"github.com/skipyzi/remindme-homeassistant-addons/minecraft_server/backend/internal/bridge"
 	"github.com/skipyzi/remindme-homeassistant-addons/minecraft_server/backend/internal/commands"
 	"github.com/skipyzi/remindme-homeassistant-addons/minecraft_server/backend/internal/events"
+	"github.com/skipyzi/remindme-homeassistant-addons/minecraft_server/backend/internal/flavours"
 	"github.com/skipyzi/remindme-homeassistant-addons/minecraft_server/backend/internal/generation"
 	"github.com/skipyzi/remindme-homeassistant-addons/minecraft_server/backend/internal/hass"
 	"github.com/skipyzi/remindme-homeassistant-addons/minecraft_server/backend/internal/javaruntime"
 	"github.com/skipyzi/remindme-homeassistant-addons/minecraft_server/backend/internal/mcconfig"
 	"github.com/skipyzi/remindme-homeassistant-addons/minecraft_server/backend/internal/presets"
+	"github.com/skipyzi/remindme-homeassistant-addons/minecraft_server/backend/internal/privdrop"
 	"github.com/skipyzi/remindme-homeassistant-addons/minecraft_server/backend/internal/scheduler"
 	"github.com/skipyzi/remindme-homeassistant-addons/minecraft_server/backend/internal/stats"
 	"github.com/skipyzi/remindme-homeassistant-addons/minecraft_server/backend/internal/store"
@@ -60,6 +63,13 @@ func run() error {
 		log.Error("add-on options are invalid, using defaults where possible", "error", optErr)
 	}
 
+	// A pre-flavour installation keeps its worlds one directory higher; move them
+	// before anything else looks at them.
+	if moved, err := env.Paths.MigrateLayout(); err != nil {
+		return err
+	} else if moved {
+		log.Info("moved existing worlds into the per-flavour layout", "flavour", appcfg.DefaultFlavour)
+	}
 	if err := env.Paths.EnsureLayout(); err != nil {
 		return err
 	}
@@ -75,7 +85,28 @@ func run() error {
 		return err
 	}
 	bus := events.NewBus()
-	backend := paper.New()
+
+	// The flavour is settled before anything else is built: it decides which
+	// directories under /data are in play. Every manager is handed the switchable
+	// backend, so a later switch is a pointer swap rather than a rebuild.
+	flavourName := settings.Get().Flavour
+	initial, err := flavours.New(flavourName)
+	if err != nil {
+		log.Error("configured server flavour is unknown, falling back to PaperMC",
+			"flavour", flavourName, "error", err)
+		initial, _ = flavours.New(appcfg.DefaultFlavour)
+	}
+	backend := flavours.NewSwitchable(initial)
+	env.Paths.SetFlavour(initial.Name(), initial.JarName())
+	if err := env.Paths.EnsureLayout(); err != nil {
+		return err
+	}
+	log.Info("server flavour", "flavour", initial.Name(), "name", initial.DisplayName())
+
+	// Minecraft runs as an unprivileged user unless the operator turns that off.
+	// The controller itself stays root: it owns /data and signals the JVM.
+	account := privdrop.Resolve(options.RunServerAsRoot)
+	log.Info("minecraft process identity", "identity", account.Describe())
 
 	// The bridge listens on a Unix socket inside /data; the plugin dials in.
 	bridgeSrv := bridge.New(env.Paths.BridgeSocket(), env.Paths.BridgeToken(), bus, log)
@@ -115,7 +146,8 @@ func run() error {
 		Backend:     backend,
 		Log:         log,
 		ServerPort:  options.ServerPort,
-		Flags:       paper.FlagProfile,
+		Flags:       backend.FlagProfile,
+		Account:     account,
 		ResolveJava: resolveJava,
 		ExtraArgs: func() []string {
 			if worldManager == nil {
@@ -127,7 +159,16 @@ func run() error {
 			if worldManager == nil {
 				return nil
 			}
-			return worldManager.PrepareRuntime()
+			if err := worldManager.PrepareRuntime(); err != nil {
+				return err
+			}
+			// The server writes into its runtime directory and its world set, and
+			// talks to the bridge through the run directory, so those have to
+			// belong to it once it is no longer root.
+			if err := account.EnsureOwned(env.Paths.Runtime(), env.Paths.Worlds(), env.Paths.Run()); err != nil {
+				return err
+			}
+			return account.EnsureOwnedFile(env.Paths.BridgeSocket())
 		},
 		ConsoleHistory: 3000,
 	})
@@ -196,10 +237,10 @@ func run() error {
 		Bus:        bus,
 		Supervisor: sup,
 		Config:     configManager,
-		Log:           log,
-		Backup:        backupHook,
-		Invalidate:    collector.Invalidate,
-		ContainerArgs: paper.WorldContainerArgs,
+		Log:        log,
+		Backup:     backupHook,
+		Invalidate: collector.Invalidate,
+		Backend:    backend,
 	})
 
 	generationManager := generation.NewManager(generation.Deps{
@@ -228,6 +269,10 @@ func run() error {
 	})
 
 	updateManager := updates.NewManager(updates.Deps{
+		Sources: map[string]updates.Source{
+			"paper": updates.NewPaperSource(),
+			"bta":   updates.NewBTASource(),
+		},
 		Paths:       env.Paths,
 		Settings:    settings,
 		Store:       st,
@@ -243,6 +288,9 @@ func run() error {
 	})
 
 	commandService := commands.New(commands.Deps{
+		Paths:      env.Paths,
+		Backend:    backend,
+		ServerPort: options.ServerPort,
 		Settings:   settings,
 		Store:      st,
 		Supervisor: sup,
@@ -285,6 +333,7 @@ func run() error {
 
 	apiServer := api.New(api.Deps{
 		Version:     buildVersion,
+		Backend:     backend,
 		Paths:       env.Paths,
 		Options:     options,
 		Settings:    settings,
@@ -337,8 +386,8 @@ func run() error {
 		})
 	}()
 
-	startupReconcile(ctx, log, env, st, sup, settings, configManager, worldManager, backupManager,
-		generationManager, backupManager.Init, resticClient)
+	startupReconcile(ctx, log, env, options, backend, st, sup, settings, configManager, worldManager,
+		backupManager, generationManager, backupManager.Init, resticClient)
 
 	select {
 	case err := <-serverErr:
@@ -368,6 +417,8 @@ func startupReconcile(
 	ctx context.Context,
 	log *slog.Logger,
 	env appcfg.Environment,
+	options appcfg.Options,
+	backend adapter.Backend,
 	st *store.Store,
 	sup *supervisor.Supervisor,
 	settings *appcfg.Store,
@@ -389,14 +440,22 @@ func startupReconcile(
 	// data silently, so it is handled first.
 	backupManager.ReconcileInterrupted(ctx)
 
-	if err := configManager.EnsureDefaults("controller"); err != nil {
+	caps := backend.Capabilities()
+	// A backend without a launch argument for the listen port gets it written into
+	// its properties file instead, on every start, so the add-on option stays the
+	// single place the port is configured.
+	enforced := map[string]string{}
+	if !caps.ServerPortArg {
+		enforced["server-port"] = strconv.Itoa(options.ServerPort)
+	}
+	if err := configManager.EnsureDefaults("controller", enforced); err != nil {
 		log.Warn("could not write default server properties", "error", err)
 	}
-	ensureBridgePlugin(log, env)
-	for _, name := range []string{"ops.json", "whitelist.json"} {
-		if err := configManager.EnsureJSONList(name); err != nil {
-			log.Warn("could not create configuration file", "file", name, "error", err)
-		}
+	if caps.BridgeTelemetry {
+		ensureBridgePlugin(log, env)
+	}
+	if err := configManager.EnsureListFiles(); err != nil {
+		log.Warn("could not create configuration files", "error", err)
 	}
 	if _, err := worldManager.EnsureActive(); err != nil {
 		log.Error("no usable world available", "error", err)

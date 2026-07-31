@@ -3,10 +3,58 @@
 All notable changes to this add-on are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are semantic.
 
-## Unreleased
+## 1.3.0 - 2026-07-31
+
+The PaperMC v3 API fix and the dual-JRE change below were released as 1.1.0 and 1.2.0
+without their own changelog sections; they are listed here because this is the first
+version whose changelog matches what shipped.
+
+### Added
+
+- **Better than Adventure! support.** The add-on can now run BTA, a continuation of
+  Minecraft Beta 1.7.3, alongside PaperMC. The flavour is chosen in Settings and switching
+  needs the server stopped plus a typed confirmation.
+  - Releases are installed from the project's GitHub releases, verified against the
+    SHA-256 asset digest GitHub publishes, with every redirect hop checked against an
+    allow-list.
+  - Each flavour has its own runtime directory, worlds, configuration, installed server
+    and active world, so switching moves no data and is reversible.
+  - Features BTA does not have are hidden rather than offered: no Bukkit plugins, no
+    Chunky pre-generation, and TPS and heap come from the process instead of from the
+    bridge plugin.
+  - BTA takes no launch arguments, so the listen port is written into `server.properties`,
+    and its world is bound by a link in the runtime directory rather than by
+    `--world-container`.
+- Backups record which flavour they were taken from, and a restore across flavours is
+  refused: the McRegion and Anvil world formats cannot be read by each other's server.
+- Pre-release versions can be offered in the version list with a new toggle in Settings.
+  They stay hidden by default.
+
+### Changed
+
+- The Minecraft process runs as an unprivileged user instead of root, which is what the
+  server's own startup warning asks for. Set `run_server_as_root` to keep the old
+  behaviour. The controller itself still runs as root: it owns `/data` and signals the JVM.
+- The dashboard's install button says it installs the newest stable build and points at
+  Settings for choosing a version, which was there all along but hard to find.
+- Worlds are stored under `/data/worlds/<flavour>/`. An existing installation's worlds are
+  moved into `/data/worlds/paper/` once, on the first start after the update.
 
 ### Fixed
 
+- **The backup repository is never re-initialised.** `restic init` was run whenever
+  `restic cat config` failed for any reason, not only when the repository was missing.
+  A transient failure therefore wrote a fresh config and key over a healthy repository
+  and made every snapshot in it unreadable. An existing repository that cannot be opened
+  is now reported instead.
+- A data race in the terrain-generation manager: the console goroutine wrote job progress
+  while `startDimension`, `Pause`, `Resume` and `Cancel` read the same fields without the
+  lock. Found by running the suite under the race detector for the first time.
+- The "server should be running" marker is cleared before the process state changes, so
+  nothing can observe a crashed server that still claims it should be running.
+- Two tests assumed Windows path and redirect behaviour and failed on Linux, which is the
+  only platform the add-on runs on. `Confine` now rejects a drive-letter prefix on every
+  platform.
 - PaperMC version and build discovery now uses the v3 (`fill.papermc.io`) API. The v2 API
   was retired and answers HTTP 410, which made the update page report
   "PaperMC API returned HTTP 410" and offer no builds. Download URLs now come from the

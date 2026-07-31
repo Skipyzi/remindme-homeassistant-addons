@@ -3,7 +3,6 @@ package api
 import (
 	"net/http"
 
-	"github.com/skipyzi/remindme-homeassistant-addons/minecraft_server/backend/internal/mcconfig"
 	"github.com/skipyzi/remindme-homeassistant-addons/minecraft_server/backend/internal/presets"
 )
 
@@ -149,7 +148,7 @@ func (s *Server) handlePresetsList(w http.ResponseWriter, r *http.Request) {
 	s.ok(w, map[string]any{
 		"presets": list,
 		"active":  s.deps.Settings.Get().ActivePreset,
-		"catalog": mcconfig.KnobCatalog(),
+		"catalog": s.deps.Config.Catalog(),
 	})
 }
 

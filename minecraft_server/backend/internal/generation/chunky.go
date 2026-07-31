@@ -47,10 +47,16 @@ type PluginStatus struct {
 	// Available is what the configured source offers for the running server
 	// version, filled in by CheckForUpdate.
 	Available string `json:"available_version,omitempty"`
+	// Problem explains why the plugin cannot be installed at all.
+	Problem string `json:"problem,omitempty"`
 }
 
 func (m *Manager) PluginStatus() PluginStatus {
 	status := PluginStatus{FileName: pluginFileName}
+	if !m.Supported() {
+		status.Problem = ErrUnsupported.Error()
+		return status
+	}
 	path := filepath.Join(m.deps.Paths.Plugins(), pluginFileName)
 	st, err := os.Stat(path)
 	if err != nil {
@@ -117,6 +123,9 @@ type modrinthVersion struct {
 // hash - not the file we just downloaded - is what the download is checked
 // against.
 func (m *Manager) InstallPlugin(ctx context.Context, actor string) (PluginStatus, error) {
+	if !m.Supported() {
+		return PluginStatus{}, ErrUnsupported
+	}
 	opts := m.deps.Options
 	switch opts.ChunkySource {
 	case "manual":

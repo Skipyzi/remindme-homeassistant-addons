@@ -15,6 +15,13 @@ export async function render(ctx) {
       api('api/generation'), api('api/worlds'), api('api/generation/jobs?limit=20'),
     ]);
     clear(host);
+    if (status.supported === false) {
+      host.append(card('Terrain generation', null,
+        h('p', { class: 'banner info' },
+          'Terrain pre-generation needs a server plugin, and there is none for this server flavour. '
+          + 'The world is generated as players explore it instead.')));
+      return;
+    }
     host.append(
       statusHost,
       pluginCard(status.plugin, reload),

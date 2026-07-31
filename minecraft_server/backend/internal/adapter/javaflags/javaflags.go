@@ -1,4 +1,6 @@
-package paper
+// Package javaflags holds the JVM flag profiles. They are about the JVM rather
+// than about any particular server flavour, so every backend shares them.
+package javaflags
 
 import "fmt"
 

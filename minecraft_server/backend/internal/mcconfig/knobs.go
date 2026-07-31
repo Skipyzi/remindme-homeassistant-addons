@@ -125,14 +125,89 @@ func KnobCatalog() []Knob {
 	}
 }
 
+// btaKnobCatalog is the Better than Adventure! set. It is a separate list rather
+// than a filtered one: BTA is a Beta 1.7.3 fork, so even the settings that exist
+// in both have different names ("default-gamemode") and different types
+// (difficulty is a number), and most of the Paper tuning simply has no
+// counterpart.
+func btaKnobCatalog() []Knob {
+	return []Knob{
+		{Key: "motd", Label: "MOTD", Group: "gameplay", File: "server.properties", Path: "motd", Type: "string",
+			Description: "Message shown in the server list", Restart: true},
+		{Key: "gamemode", Label: "Game mode", Group: "gameplay", File: "server.properties", Path: "default-gamemode",
+			Type: "enum", Enum: []string{"survival", "creative"}, Description: "Default game mode for new players", Restart: true},
+		{Key: "difficulty", Label: "Difficulty", Group: "gameplay", File: "server.properties", Path: "difficulty",
+			Type: "int", Min: 0, Max: 3, Description: "0 peaceful, 1 easy, 2 normal, 3 hard", Restart: true},
+		{Key: "max_players", Label: "Maximum players", Group: "gameplay", File: "server.properties", Path: "max-players",
+			Type: "int", Min: 1, Max: 100, Description: "Player slots", Restart: true},
+		{Key: "online_mode", Label: "Online mode", Group: "gameplay", File: "server.properties", Path: "online-mode",
+			Type: "bool", Description: "Verify players against Mojang authentication", Restart: true},
+		{Key: "whitelist", Label: "Whitelist", Group: "gameplay", File: "server.properties", Path: "white-list",
+			Type: "bool", Description: "Only players on the whitelist may join", Restart: true},
+		{Key: "pvp", Label: "PvP", Group: "gameplay", File: "server.properties", Path: "pvp", Type: "bool",
+			Description: "Allow players to damage each other", Restart: true},
+		{Key: "spawn_protection", Label: "Spawn protection", Group: "gameplay", File: "server.properties",
+			Path: "spawn-protection", Type: "int", Min: 0, Max: 1000, Unit: "blocks",
+			Description: "Radius around spawn that non-operators cannot build in", Restart: true},
+		{Key: "view_distance", Label: "View distance", Group: "performance", File: "server.properties",
+			Path: "view-distance", Type: "int", Min: 3, Max: 15, Unit: "chunks",
+			Description: "Chunks sent to players. A Beta-era server ticks all of them on one thread, so this is the setting that matters", Restart: true},
+		{Key: "spawn_animals", Label: "Spawn animals", Group: "entities", File: "server.properties",
+			Path: "spawn-animals", Type: "bool", Description: "Allow animals to spawn", Restart: true},
+		{Key: "spawn_monsters", Label: "Spawn monsters", Group: "entities", File: "server.properties",
+			Path: "spawn-monsters", Type: "bool", Description: "Allow monsters to spawn", Restart: true},
+		{Key: "summon_limit", Label: "Summon limit", Group: "entities", File: "server.properties",
+			Path: "summon-limit", Type: "int", Min: 1, Max: 500, Description: "Maximum entities a single summon may create", Restart: true},
+		{Key: "allow_nether", Label: "Allow the Nether", Group: "gameplay", File: "server.properties",
+			Path: "allow-nether", Type: "bool", Description: "Enable the Nether dimension", Restart: true},
+		{Key: "allow_paradise", Label: "Allow Paradise", Group: "gameplay", File: "server.properties",
+			Path: "allow-paradise", Type: "bool", Description: "Enable the Paradise dimension", Restart: true},
+		{Key: "sleep_percentage", Label: "Sleep percentage", Group: "gameplay", File: "server.properties",
+			Path: "sleep-percentage", Type: "int", Min: 1, Max: 100, Unit: "%",
+			Description: "Share of players that must sleep to skip the night", Restart: true},
+	}
+}
+
+// catalog is the knob set of the active flavour.
+func (m *Manager) catalog() []Knob {
+	if m.backend != nil && m.backend.Name() == "bta" {
+		return btaKnobCatalog()
+	}
+	return KnobCatalog()
+}
+
+// CatalogFor returns the knob set of a backend, for the API and the presets.
+func CatalogFor(name string) []Knob {
+	if name == "bta" {
+		return btaKnobCatalog()
+	}
+	return KnobCatalog()
+}
+
 // KnobByKey indexes the catalog.
-func KnobByKey() map[string]Knob {
-	out := make(map[string]Knob)
-	for _, k := range KnobCatalog() {
+func KnobByKey() map[string]Knob { return byKey(KnobCatalog()) }
+
+// KnobsByKeyFor indexes the catalog of one flavour.
+func KnobsByKeyFor(name string) map[string]Knob { return byKey(CatalogFor(name)) }
+
+func byKey(knobs []Knob) map[string]Knob {
+	out := make(map[string]Knob, len(knobs))
+	for _, k := range knobs {
 		out[k.Key] = k
 	}
 	return out
 }
+
+// BackendName is the flavour the manager is configured for.
+func (m *Manager) BackendName() string {
+	if m.backend == nil {
+		return ""
+	}
+	return m.backend.Name()
+}
+
+// Catalog is the active flavour's knob set.
+func (m *Manager) Catalog() []Knob { return m.catalog() }
 
 // KnobValue is a knob plus its current value.
 type KnobValue struct {
@@ -151,7 +226,7 @@ func (m *Manager) Knobs() ([]KnobValue, error) {
 	}
 	yamlCache := map[string][]byte{}
 
-	catalog := KnobCatalog()
+	catalog := m.catalog()
 	out := make([]KnobValue, 0, len(catalog))
 	for _, knob := range catalog {
 		kv := KnobValue{Knob: knob, Source: "missing"}
@@ -201,7 +276,7 @@ func (m *Manager) KnobValues() (map[string]any, error) {
 // SetKnobs validates and applies a batch of knob changes. Changes are grouped per
 // file so each file is written exactly once, atomically, with one snapshot.
 func (m *Manager) SetKnobs(changes map[string]any, actor string) ([]WriteResult, error) {
-	catalog := KnobByKey()
+	catalog := byKey(m.catalog())
 	byFile := map[string]map[string]any{}
 	keys := make([]string, 0, len(changes))
 	for k := range changes {
@@ -374,20 +449,36 @@ func coerce(knob Knob, raw string) any {
 
 // ------------------------------------------------------------ ops/whitelist --
 
-// EnsureJSONList creates ops.json / whitelist.json when Paper has not yet, so the
-// editor never shows a missing file.
-func (m *Manager) EnsureJSONList(name string) error {
-	spec, full, err := m.resolve(name)
-	if err != nil {
-		return err
+// EnsureListFiles creates the operator and whitelist files the server has not
+// written yet, so the editor never shows a missing file. The empty form differs
+// per flavour: a modern server keeps them as JSON arrays, a Beta-era one as an
+// empty text file with one name per line.
+func (m *Manager) EnsureListFiles() error {
+	for _, spec := range m.backend.ConfigFiles() {
+		if !spec.CreateIfMissing {
+			continue
+		}
+		var empty []byte
+		switch spec.Format {
+		case "json":
+			empty = []byte("[]\n")
+		case "lines":
+			empty = []byte{}
+		default:
+			continue
+		}
+		_, full, err := m.resolve(spec.Name)
+		if err != nil {
+			return err
+		}
+		if _, err := os.Stat(full); err == nil {
+			continue
+		}
+		if err := atomicfs.WriteFile(full, empty, 0o644); err != nil {
+			return err
+		}
 	}
-	if spec.Format != "json" || !spec.CreateIfMissing {
-		return nil
-	}
-	if _, err := os.Stat(full); err == nil {
-		return nil
-	}
-	return atomicfs.WriteFile(full, []byte("[]\n"), 0o644)
+	return nil
 }
 
 // ApplyRuntimeToggle applies settings that Minecraft can change live, so simple

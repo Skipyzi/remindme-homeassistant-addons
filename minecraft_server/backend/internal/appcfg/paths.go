@@ -4,31 +4,103 @@ package appcfg
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 )
+
+// DefaultFlavour is the server flavour an installation that predates multi
+// flavour support is on, and the one a new installation starts with.
+const DefaultFlavour = "paper"
+
+// flavourRef is shared by every copy of a Paths value. Paths is passed around by
+// value, so the active flavour has to live behind a pointer for a switch to
+// reach the managers that were handed a copy at construction time.
+type flavourRef struct {
+	mu      sync.RWMutex
+	name    string
+	jarName string
+}
 
 // Paths is the canonical /data layout. Every other package resolves files
 // through this struct so no path is ever assembled from user input.
+//
+// The parts that belong to one server flavour - the runtime directory, the
+// server JAR and the worlds - are nested under the flavour name so two flavours
+// can be installed side by side without their world formats ever meeting.
 type Paths struct {
-	Data string
+	Data    string
+	flavour *flavourRef
 }
 
-func NewPaths(data string) Paths { return Paths{Data: filepath.Clean(data)} }
+func NewPaths(data string) Paths {
+	return Paths{
+		Data:    filepath.Clean(data),
+		flavour: &flavourRef{name: DefaultFlavour, jarName: DefaultFlavour + ".jar"},
+	}
+}
+
+// Flavour is the active server flavour.
+func (p Paths) Flavour() string {
+	if p.flavour == nil {
+		return DefaultFlavour
+	}
+	p.flavour.mu.RLock()
+	defer p.flavour.mu.RUnlock()
+	return p.flavour.name
+}
+
+// SetFlavour points every copy of this Paths value at another flavour. It is
+// only ever called while Minecraft is stopped: the caller holds the supervisor
+// lease, and EnsureLayout has to be run afterwards.
+func (p Paths) SetFlavour(name, jarName string) {
+	if p.flavour == nil || name == "" {
+		return
+	}
+	p.flavour.mu.Lock()
+	defer p.flavour.mu.Unlock()
+	p.flavour.name = name
+	p.flavour.jarName = jarName
+}
+
+func (p Paths) jarName() string {
+	if p.flavour == nil {
+		return DefaultFlavour + ".jar"
+	}
+	p.flavour.mu.RLock()
+	defer p.flavour.mu.RUnlock()
+	if p.flavour.jarName == "" {
+		return p.flavour.name + ".jar"
+	}
+	return p.flavour.jarName
+}
 
 func (p Paths) join(parts ...string) string {
 	return filepath.Join(append([]string{p.Data}, parts...)...)
 }
 
 // Runtime is the working directory of the Minecraft process.
-func (p Paths) Runtime() string     { return p.join("runtime", "paper") }
+func (p Paths) Runtime() string     { return p.join("runtime", p.Flavour()) }
 func (p Paths) RuntimeLogs() string { return filepath.Join(p.Runtime(), "logs") }
 func (p Paths) Plugins() string     { return filepath.Join(p.Runtime(), "plugins") }
-func (p Paths) ServerJar() string   { return filepath.Join(p.Runtime(), "paper.jar") }
+func (p Paths) ServerJar() string   { return filepath.Join(p.Runtime(), p.jarName()) }
 func (p Paths) EulaFile() string    { return filepath.Join(p.Runtime(), "eula.txt") }
 
-func (p Paths) Worlds() string          { return p.join("worlds") }
+// HasServerJar reports whether another flavour already has a server installed,
+// without making it active.
+func (p Paths) HasServerJar(flavour, jarName string) bool {
+	if flavour == "" || jarName == "" {
+		return false
+	}
+	_, err := os.Stat(filepath.Join(p.join("runtime", flavour), jarName))
+	return err == nil
+}
+
+// WorldsRoot holds one directory per flavour.
+func (p Paths) WorldsRoot() string      { return p.join("worlds") }
+func (p Paths) Worlds() string          { return filepath.Join(p.WorldsRoot(), p.Flavour()) }
 func (p Paths) World(id string) string  { return filepath.Join(p.Worlds(), id) }
 func (p Paths) Backups() string         { return p.join("backups") }
 func (p Paths) ResticRepo() string      { return filepath.Join(p.Backups(), "repo") }
@@ -59,6 +131,7 @@ func (p Paths) EnsureLayout() error {
 		{p.Runtime(), 0o755},
 		{p.RuntimeLogs(), 0o755},
 		{p.Plugins(), 0o755},
+		{p.WorldsRoot(), 0o755},
 		{p.Worlds(), 0o755},
 		{p.Backups(), 0o755},
 		{p.Staging(), 0o755},
@@ -83,6 +156,64 @@ func (p Paths) EnsureLayout() error {
 	return nil
 }
 
+// layoutMarker records which /data layout is on disk. Its absence means the
+// pre-flavour layout, where worlds and the runtime directory were not nested
+// under a flavour name.
+const layoutMarker = ".layout"
+
+// MigrateLayout moves an installation created before multi-flavour support into
+// the nested layout. It is a rename of two directories, it happens before
+// anything else touches /data, and it is a no-op once the marker exists.
+//
+// Everything that existed before was PaperMC, so that is where it goes.
+func (p Paths) MigrateLayout() (bool, error) {
+	marker := filepath.Join(p.WorldsRoot(), layoutMarker)
+	if _, err := os.Stat(marker); err == nil {
+		return false, nil
+	}
+	moved := false
+
+	// /data/worlds/<id> -> /data/worlds/paper/<id>
+	entries, err := os.ReadDir(p.WorldsRoot())
+	if err != nil && !os.IsNotExist(err) {
+		return false, err
+	}
+	legacy := make([]string, 0, len(entries))
+	for _, e := range entries {
+		if !e.IsDir() || e.Name() == DefaultFlavour {
+			continue
+		}
+		legacy = append(legacy, e.Name())
+	}
+	if len(legacy) > 0 {
+		target := filepath.Join(p.WorldsRoot(), DefaultFlavour)
+		if err := os.MkdirAll(target, 0o755); err != nil {
+			return false, err
+		}
+		for _, name := range legacy {
+			from := filepath.Join(p.WorldsRoot(), name)
+			to := filepath.Join(target, name)
+			if _, err := os.Stat(to); err == nil {
+				// Already migrated under the same name; leave both alone rather
+				// than merging two world directories.
+				continue
+			}
+			if err := os.Rename(from, to); err != nil {
+				return moved, fmt.Errorf("move world %q into the paper layout: %w", name, err)
+			}
+			moved = true
+		}
+	}
+
+	if err := os.MkdirAll(p.WorldsRoot(), 0o755); err != nil {
+		return moved, err
+	}
+	if err := os.WriteFile(marker, []byte("flavour-nested\n"), 0o644); err != nil {
+		return moved, err
+	}
+	return moved, nil
+}
+
 // ErrUnsafePath is returned for any path that escapes its intended root.
 var ErrUnsafePath = errors.New("unsafe path")
 
@@ -101,7 +232,14 @@ func Confine(root, rel string) (string, error) {
 	if strings.HasPrefix(rel, "/") || filepath.IsAbs(rel) {
 		return "", ErrUnsafePath
 	}
+	// A drive-letter prefix is never a legitimate relative name. VolumeName only
+	// recognises one on Windows, so it is checked here as well: the add-on runs on
+	// Linux, and "C:/Windows/System32" would otherwise be accepted there as an
+	// ordinary relative path.
 	if vol := filepath.VolumeName(rel); vol != "" {
+		return "", ErrUnsafePath
+	}
+	if len(rel) >= 2 && rel[1] == ':' {
 		return "", ErrUnsafePath
 	}
 	for _, seg := range strings.Split(rel, "/") {

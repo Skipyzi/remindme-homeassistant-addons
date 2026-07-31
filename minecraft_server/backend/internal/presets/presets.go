@@ -159,6 +159,12 @@ func (m *Manager) Get(id string) (Preset, error) {
 	return Preset{}, fmt.Errorf("%w: %s", ErrNotFound, id)
 }
 
+// catalog is the knob set of the flavour in use; a preset can only name settings
+// that flavour actually has.
+func (m *Manager) catalog() map[string]mcconfig.Knob {
+	return mcconfig.KnobsByKeyFor(m.config.BackendName())
+}
+
 // Save stores a user preset. Built-in ids may be shadowed deliberately.
 func (m *Manager) Save(p Preset, actor string) (Preset, error) {
 	if err := atomicfs.SafeName(p.ID); err != nil {
@@ -167,7 +173,7 @@ func (m *Manager) Save(p Preset, actor string) (Preset, error) {
 	if p.Name == "" {
 		p.Name = p.ID
 	}
-	catalog := mcconfig.KnobByKey()
+	catalog := m.catalog()
 	for key := range p.Knobs {
 		if _, ok := catalog[key]; !ok {
 			return Preset{}, fmt.Errorf("unknown setting %q in preset", key)
@@ -216,7 +222,7 @@ func (m *Manager) Diff(id string) (Diff, error) {
 	if err != nil {
 		return Diff{}, err
 	}
-	catalog := mcconfig.KnobByKey()
+	catalog := m.catalog()
 	settings := m.settings.Get()
 	overrides := settings.PresetOverrides["knobs"]
 

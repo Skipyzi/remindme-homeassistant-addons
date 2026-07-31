@@ -67,6 +67,15 @@ func (m *Manager) Restore(ctx context.Context, req RestoreRequest, actor string)
 	if worldID == "" {
 		return result, errors.New("no target world")
 	}
+	// A world set written by one flavour is not readable by another - McRegion
+	// against the modern Anvil format, and entirely different level data - so a
+	// cross-flavour restore is refused rather than left to fail as a corrupt
+	// world later.
+	if recorded := record.Flavour; recorded != "" && recorded != m.deps.Paths.Flavour() {
+		return result, fmt.Errorf(
+			"this backup was taken from the %s server and cannot be restored into the %s one; "+
+				"switch the server flavour first", recorded, m.deps.Paths.Flavour())
+	}
 	result.WorldID = worldID
 	worldDir, err := m.deps.WorldDir(worldID)
 	if err != nil {

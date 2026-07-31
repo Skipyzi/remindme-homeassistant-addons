@@ -6,7 +6,7 @@ build_from:
   amd64: ghcr.io/home-assistant/amd64-base:3.23
 labels:
   org.opencontainers.image.title: Minecraft Server
-  org.opencontainers.image.description: Managed PaperMC server for Home Assistant OS
+  org.opencontainers.image.description: Managed Minecraft server (PaperMC or Better than Adventure!) for Home Assistant OS
   org.opencontainers.image.source: https://github.com/skipyzi/remindme-homeassistant-addons
   org.opencontainers.image.licenses: MIT
 args:

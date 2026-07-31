@@ -193,10 +193,10 @@ func TestSetKnobsWritesEveryFileOnceAndValidatesRanges(t *testing.T) {
 	manager, _ := newManager(t)
 
 	results, err := manager.SetKnobs(map[string]any{
-		"view_distance":            6,
-		"simulation_distance":      4,
-		"spawn_limit_monsters":     40,
-		"chunk_send_rate":          20.0,
+		"view_distance":                  6,
+		"simulation_distance":            4,
+		"spawn_limit_monsters":           40,
+		"chunk_send_rate":                20.0,
 		"max_concurrent_chunk_generates": 2.0,
 	}, "tester")
 	if err != nil {
@@ -262,7 +262,7 @@ func TestEnsureDefaultsOnlyFillsMissingKeys(t *testing.T) {
 	if _, err := manager.Write("server.properties", "view-distance=3\n", "tester"); err != nil {
 		t.Fatal(err)
 	}
-	if err := manager.EnsureDefaults("controller"); err != nil {
+	if err := manager.EnsureDefaults("controller", nil); err != nil {
 		t.Fatalf("defaults: %v", err)
 	}
 	props, err := manager.Properties()

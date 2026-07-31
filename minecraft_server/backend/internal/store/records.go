@@ -58,20 +58,23 @@ const (
 // BackupRecord is the controller's view of a restic snapshot: the labels, notes,
 // timings and consistency information restic itself does not track.
 type BackupRecord struct {
-	ID          string    `json:"id"`
-	SnapshotID  string    `json:"snapshot_id"`
-	WorldID     string    `json:"world_id"`
-	Kind        string    `json:"kind"`
-	Label       string    `json:"label"`
-	Notes       string    `json:"notes"`
-	Status      string    `json:"status"`
-	Consistency string    `json:"consistency"`
-	SizeBytes   int64     `json:"size_bytes"`
-	AddedBytes  int64     `json:"added_bytes"`
-	DurationMs  int64     `json:"duration_ms"`
-	Verified    bool      `json:"verified"`
-	CreatedAt   time.Time `json:"created_at"`
-	FinishedAt  time.Time `json:"finished_at"`
+	ID          string `json:"id"`
+	SnapshotID  string `json:"snapshot_id"`
+	WorldID     string `json:"world_id"`
+	Kind        string `json:"kind"`
+	Label       string `json:"label"`
+	Notes       string `json:"notes"`
+	Status      string `json:"status"`
+	Consistency string `json:"consistency"`
+	// Flavour is the server flavour the world was written by. A restore into
+	// another flavour is refused: the world formats are not interchangeable.
+	Flavour    string    `json:"flavour"`
+	SizeBytes  int64     `json:"size_bytes"`
+	AddedBytes int64     `json:"added_bytes"`
+	DurationMs int64     `json:"duration_ms"`
+	Verified   bool      `json:"verified"`
+	CreatedAt  time.Time `json:"created_at"`
+	FinishedAt time.Time `json:"finished_at"`
 }
 
 func (s *Store) PutBackup(b BackupRecord) error {
@@ -87,17 +90,17 @@ func (s *Store) PutBackup(b BackupRecord) error {
 		verified = 1
 	}
 	_, err := s.db.Exec(`INSERT INTO backups
-		(id,snapshot_id,world_id,kind,label,notes,status,consistency,size_bytes,added_bytes,duration_ms,verified,created_at,finished_at)
-		VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+		(id,snapshot_id,world_id,kind,label,notes,status,consistency,size_bytes,added_bytes,duration_ms,verified,created_at,finished_at,flavour)
+		VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 		ON CONFLICT(id) DO UPDATE SET
 			snapshot_id=excluded.snapshot_id, world_id=excluded.world_id, kind=excluded.kind,
 			label=excluded.label, notes=excluded.notes, status=excluded.status,
 			consistency=excluded.consistency, size_bytes=excluded.size_bytes,
 			added_bytes=excluded.added_bytes, duration_ms=excluded.duration_ms,
-			verified=excluded.verified, finished_at=excluded.finished_at`,
+			verified=excluded.verified, finished_at=excluded.finished_at, flavour=excluded.flavour`,
 		b.ID, b.SnapshotID, b.WorldID, b.Kind, b.Label, b.Notes, b.Status, b.Consistency,
 		b.SizeBytes, b.AddedBytes, b.DurationMs, verified,
-		b.CreatedAt.UTC().Format(time.RFC3339Nano), finished)
+		b.CreatedAt.UTC().Format(time.RFC3339Nano), finished, flavourOr(b.Flavour))
 	return err
 }
 
@@ -106,7 +109,7 @@ func (s *Store) ListBackups(limit int) ([]BackupRecord, error) {
 		limit = 200
 	}
 	rows, err := s.db.Query(`SELECT id,snapshot_id,world_id,kind,label,notes,status,consistency,
-		size_bytes,added_bytes,duration_ms,verified,created_at,finished_at
+		size_bytes,added_bytes,duration_ms,verified,created_at,finished_at,flavour
 		FROM backups ORDER BY created_at DESC LIMIT ?`, limit)
 	if err != nil {
 		return nil, err
@@ -125,7 +128,8 @@ func (s *Store) ListBackups(limit int) ([]BackupRecord, error) {
 
 func (s *Store) GetBackup(id string) (BackupRecord, bool, error) {
 	row := s.db.QueryRow(`SELECT id,snapshot_id,world_id,kind,label,notes,status,consistency,
-		size_bytes,added_bytes,duration_ms,verified,created_at,finished_at FROM backups WHERE id=? OR snapshot_id=?`, id, id)
+		size_bytes,added_bytes,duration_ms,verified,created_at,finished_at,flavour
+		FROM backups WHERE id=? OR snapshot_id=?`, id, id)
 	b, err := scanBackup(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return b, false, nil
@@ -144,7 +148,7 @@ func (s *Store) DeleteBackup(id string) error {
 // LastSuccessfulBackup is shown on the dashboard and published to Home Assistant.
 func (s *Store) LastSuccessfulBackup() (BackupRecord, bool, error) {
 	row := s.db.QueryRow(`SELECT id,snapshot_id,world_id,kind,label,notes,status,consistency,
-		size_bytes,added_bytes,duration_ms,verified,created_at,finished_at
+		size_bytes,added_bytes,duration_ms,verified,created_at,finished_at,flavour
 		FROM backups WHERE status=? ORDER BY created_at DESC LIMIT 1`, BackupComplete)
 	b, err := scanBackup(row)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -156,12 +160,22 @@ func (s *Store) LastSuccessfulBackup() (BackupRecord, bool, error) {
 	return b, true, nil
 }
 
+// flavourOr defaults a missing flavour to the one that existed before the
+// setting did.
+func flavourOr(v string) string {
+	if v == "" {
+		return "paper"
+	}
+	return v
+}
+
 func scanBackup(row rowScanner) (BackupRecord, error) {
 	var b BackupRecord
 	var verified int
 	var created, finished string
 	if err := row.Scan(&b.ID, &b.SnapshotID, &b.WorldID, &b.Kind, &b.Label, &b.Notes, &b.Status,
-		&b.Consistency, &b.SizeBytes, &b.AddedBytes, &b.DurationMs, &verified, &created, &finished); err != nil {
+		&b.Consistency, &b.SizeBytes, &b.AddedBytes, &b.DurationMs, &verified, &created, &finished,
+		&b.Flavour); err != nil {
 		return b, err
 	}
 	b.Verified = verified == 1

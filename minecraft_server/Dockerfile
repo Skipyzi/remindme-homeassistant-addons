@@ -57,6 +57,13 @@ RUN apk add --no-cache \
       tzdata \
     && rm -rf /var/cache/apk/*
 
+# The add-on container runs as root, and so would the Minecraft server, which
+# every server warns about at startup - with reason: a plugin, a mod or a world
+# exploit would run with full container privileges. The controller keeps root
+# (it owns /data and signals the JVM) and launches the server as this user.
+RUN addgroup -g 1000 minecraft \
+    && adduser -u 1000 -G minecraft -D -H -s /sbin/nologin minecraft
+
 # PATH points at Java 21 only as a default for anything that shells out to "java";
 # the controller always selects the runtime explicitly.
 ENV JAVA_HOME=/usr/lib/jvm/java-21-openjdk \
@@ -65,6 +72,8 @@ ENV JAVA_HOME=/usr/lib/jvm/java-21-openjdk \
     MC_FRONTEND_DIR=/opt/minecraft/frontend \
     MC_ASSETS_DIR=/opt/minecraft/assets \
     MC_LISTEN=0.0.0.0:8099 \
+    MC_SERVER_UID=1000 \
+    MC_SERVER_GID=1000 \
     LANG=C.UTF-8
 
 COPY --from=backend /out/mc-controller /usr/bin/mc-controller

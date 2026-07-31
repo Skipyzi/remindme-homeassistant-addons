@@ -23,12 +23,14 @@ add-on.
 
 | Option | Default | Meaning |
 | --- | --- | --- |
+| `server_flavour` | `paper` | Which server to run on a fresh installation: `paper` or `bta`. After the first start the web UI owns this; see [Server flavours](#server-flavours). |
 | `server_port` | `25565` | Port Minecraft listens on. Remove the port mapping in the network section to keep the server LAN-only. |
 | `memory_min_mb` | `1024` | Initial JVM heap (`-Xms`). |
 | `memory_max_mb` | `3072` | Maximum JVM heap (`-Xmx`). Keep at or below 3584 on an 8 GB Pi. |
 | `jvm_flags_profile` | `balanced` | `low_power`, `balanced`, `performance` or `custom`. |
 | `jvm_flags_custom` | empty | Used only with `custom`. Heap flags are rejected; they are managed above. |
 | `paper_version` | empty | Minecraft version to install. Empty means the newest stable release. |
+| `run_server_as_root` | `false` | Keep the Minecraft process running as root. Off means the server runs as an unprivileged user, which is why the "running as root" warning is gone. |
 | `auto_restart_on_crash` | `false` | Restart after an unexpected exit. Gives up after three consecutive crashes. |
 | `stop_timeout_seconds` | `120` | Grace period before SIGTERM, then SIGKILL. |
 | `mqtt_enabled` | `true` | Publish Home Assistant entities over MQTT discovery. |
@@ -38,6 +40,37 @@ add-on.
 | `chunky_download_url` / `chunky_sha256` | empty | Required when `chunky_source` is `url`. |
 | `allow_direct_access` | `false` | When off, requests that do not arrive through Ingress may read status but never change anything. |
 | `log_level` | `info` | Controller log verbosity in the add-on log tab. |
+
+## Server flavours
+
+The add-on can run more than one kind of server. The flavour is chosen in **Settings →
+Server flavour**; switching needs Minecraft stopped and the flavour name typed as
+confirmation.
+
+| | PaperMC | Better than Adventure! |
+| --- | --- | --- |
+| Minecraft | current releases | a fork of Beta 1.7.3 |
+| Source | `fill.papermc.io`, checksum from the build metadata | GitHub releases, checksum from the asset digest |
+| Plugins | Bukkit/Spigot | none |
+| Terrain pre-generation | Chunky | not available |
+| TPS and heap telemetry | from the bridge plugin | from the process only |
+| World format | Anvil, three directories per world set | McRegion, one directory with the other dimensions nested inside it |
+| Listen port | launch argument | written into `server.properties` |
+| Configuration | `server.properties`, `bukkit.yml`, `spigot.yml`, the two Paper files, JSON lists | `server.properties` and text lists (`ops.txt`, `white-list.txt`) |
+
+Each flavour keeps its own runtime directory, its own worlds, its own installed server
+and its own active world, so **switching moves no data and is reversible**: switching back
+finds everything exactly as it was left. Nothing is shared except the backup repository,
+and every snapshot records the flavour it came from - restoring a PaperMC backup into a
+BTA world (or the other way round) is refused, because the world formats cannot be read
+across the two.
+
+The features a flavour does not have are hidden rather than offered: with BTA selected the
+Terrain tab explains that pre-generation needs a plugin that does not exist for it, and the
+Configuration tab lists BTA's own settings.
+
+Better than Adventure! runs on the Java 21 runtime in the image, and only contacts its own
+stats API when you set a `stats-token`, which the add-on leaves empty.
 
 ## The management interface
 
@@ -161,8 +194,13 @@ full disk corrupts region files. A job survives an add-on restart and is adopted
 ### Settings
 
 Heap, JVM profile, stop timeout, crash restart, start-on-boot, daily restart (with in-game
-warnings), daily backup, idle shutdown, retention, the generation safety policy, and the
-PaperMC update workflow.
+warnings), daily backup, idle shutdown, retention, the generation safety policy, the
+[server flavour](#server-flavours) and the server update workflow.
+
+**Server version** is where you choose which version to install. The dashboard's install
+button always takes the newest stable build; the dropdown here installs a specific one.
+Pre-release versions are left out of the list unless you turn on *Offer pre-release
+versions*.
 
 Updates: check versions, back up, stop, swap the JAR atomically, start, verify, roll back
 on failure. Automatic installation only happens if you enable scheduled updates.
@@ -234,8 +272,9 @@ entities: they require a typed confirmation.
 
 ```text
 /data/
-├── runtime/paper/        server working directory (JAR, configs, plugins, logs)
-├── worlds/<id>/          world sets plus meta.json
+├── runtime/<flavour>/    server working directory (JAR, configs, plugins, logs)
+├── worlds/<flavour>/<id>/  world sets plus meta.json, one tree per flavour
+├── worlds/.layout        marker: worlds are nested per flavour
 ├── backups/repo/         restic repository
 ├── staging/              hardlink snapshots, restore staging, uploads
 ├── presets/              your presets
@@ -247,6 +286,10 @@ entities: they require a typed confirmation.
 ├── audit/audit.log       human-readable operation log
 └── controller.db         SQLite state
 ```
+
+An installation created before flavours existed keeps its worlds directly under
+`/data/worlds/`. They are moved into `/data/worlds/paper/` once, on the first start after
+the update, before anything else reads them.
 
 ## Reliability
 

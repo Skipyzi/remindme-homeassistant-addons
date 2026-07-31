@@ -156,6 +156,7 @@ func (m *Manager) Create(ctx context.Context, req CreateRequest, actor string, p
 	record := store.BackupRecord{
 		ID: recordID, WorldID: req.WorldID, Kind: req.Kind, Label: req.Label, Notes: req.Notes,
 		Status: store.BackupRunning, Consistency: "unknown", CreatedAt: time.Now().UTC(),
+		Flavour: m.deps.Paths.Flavour(),
 	}
 	if err := m.deps.Store.PutBackup(record); err != nil {
 		return record, err
@@ -193,10 +194,15 @@ func (m *Manager) Create(ctx context.Context, req CreateRequest, actor string, p
 	}
 
 	stagingRoot := filepath.Join(m.deps.Paths.Staging(), "live")
-	staging := filepath.Join(stagingRoot, req.WorldID)
 	// The staging path is stable per world on purpose: restic then recognises the
 	// previous snapshot as the parent and only re-reads region files that actually
-	// changed.
+	// changed. PaperMC keeps the original path so repositories that predate
+	// multi-flavour support keep their parent chain; anything else is nested under
+	// its flavour, because two flavours can have a world of the same name.
+	staging := filepath.Join(stagingRoot, req.WorldID)
+	if flavour := m.deps.Paths.Flavour(); flavour != appcfg.DefaultFlavour {
+		staging = filepath.Join(stagingRoot, flavour, req.WorldID)
+	}
 	if err := os.RemoveAll(staging); err != nil {
 		return fail(err)
 	}
@@ -238,7 +244,8 @@ func (m *Manager) Create(ctx context.Context, req CreateRequest, actor string, p
 	_ = m.deps.Store.JournalPhase(journalID, "restic", nil)
 	m.publishProgress("backup", recordID, 10, "deduplicating and compressing")
 
-	tags := []string{"world:" + req.WorldID, "kind:" + req.Kind, "record:" + recordID}
+	tags := []string{"world:" + req.WorldID, "kind:" + req.Kind, "record:" + recordID,
+		"flavour:" + m.deps.Paths.Flavour()}
 	summary, err := m.deps.Restic.Backup(opCtx, staging, tags, func(p Progress) {
 		// restic's own progress covers 10-90% of the operation for the user.
 		m.publishProgress("backup", recordID, 10+p.PercentDone*0.8, fmt.Sprintf("%s", humanBytes(p.BytesDone)))

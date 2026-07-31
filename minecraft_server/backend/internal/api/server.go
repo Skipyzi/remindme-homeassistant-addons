@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/skipyzi/remindme-homeassistant-addons/minecraft_server/backend/internal/adapter"
 	"github.com/skipyzi/remindme-homeassistant-addons/minecraft_server/backend/internal/appcfg"
 	"github.com/skipyzi/remindme-homeassistant-addons/minecraft_server/backend/internal/backups"
 	"github.com/skipyzi/remindme-homeassistant-addons/minecraft_server/backend/internal/bridge"
@@ -39,6 +40,8 @@ const requestHeader = "X-Minecraft-Addon"
 const requestHeaderValue = "1"
 
 type Deps struct {
+	// Backend is the active server flavour, so the UI can adapt to what it can do.
+	Backend     adapter.Backend
 	Version     string
 	Paths       appcfg.Paths
 	Options     appcfg.Options
@@ -101,6 +104,8 @@ func (s *Server) routes() {
 	m.HandleFunc("GET /api/server/versions", s.handleServerVersions)
 	m.HandleFunc("POST /api/server/install", s.handleServerInstall)
 	m.HandleFunc("POST /api/server/update", s.handleServerUpdate)
+	m.HandleFunc("GET /api/server/flavours", s.handleFlavours)
+	m.HandleFunc("POST /api/server/flavour", s.handleSwitchFlavour)
 
 	// Configuration.
 	m.HandleFunc("GET /api/config", s.handleConfigGet)
