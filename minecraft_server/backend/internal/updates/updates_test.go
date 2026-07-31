@@ -149,6 +149,49 @@ func TestPickStablePrefersStableOverPreRelease(t *testing.T) {
 	}
 }
 
+func TestSelectTargetResolvesBuildZeroToTheNewestStableBuild(t *testing.T) {
+	var payload []fillBuild
+	if err := json.Unmarshal([]byte(buildsPayload), &payload); err != nil {
+		t.Fatal(err)
+	}
+	builds := make([]Build, 0, len(payload))
+	for _, b := range payload {
+		builds = append(builds, b.toBuild())
+	}
+
+	// Build 0 is what the install button and scheduled updates send. It regressed
+	// once because the channel check still compared against the pre-v3 name, and
+	// installing then failed with "build 0 of <version> not found".
+	target, err := selectTarget(builds, 0, "1.21.4")
+	if err != nil {
+		t.Fatalf("build 0 must resolve: %v", err)
+	}
+	if target.Build != 232 || target.Channel != "stable" {
+		t.Fatalf("expected the stable build 232, got %+v", target)
+	}
+
+	// An explicit build is taken as given, even a pre-release one.
+	target, err = selectTarget(builds, 233, "1.21.4")
+	if err != nil || target.Build != 233 {
+		t.Fatalf("expected build 233, got %+v (%v)", target, err)
+	}
+
+	if _, err := selectTarget(builds, 999, "1.21.4"); err == nil {
+		t.Fatal("expected an unknown build to be rejected")
+	}
+	if _, err := selectTarget(nil, 0, "1.21.4"); err == nil {
+		t.Fatal("expected an empty build list to be reported")
+	}
+}
+
+func TestSelectTargetAcceptsAVersionWithOnlyPreReleases(t *testing.T) {
+	builds := []Build{{Build: 7, Channel: "alpha", SHA256: "x", URL: "https://fill-data.papermc.io/a"}}
+	target, err := selectTarget(builds, 0, "26.3")
+	if err != nil || target.Build != 7 {
+		t.Fatalf("a freshly opened version has only pre-releases and must still install: %+v (%v)", target, err)
+	}
+}
+
 func TestBuildsAndVersionsAgainstAStubAPI(t *testing.T) {
 	var requested []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
