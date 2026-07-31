@@ -3,7 +3,11 @@
 All notable changes to this add-on are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are semantic.
 
-## Unreleased
+## 1.3.0 - 2026-07-31
+
+The PaperMC v3 API fix and the dual-JRE change below were released as 1.1.0 and 1.2.0
+without their own changelog sections; they are listed here because this is the first
+version whose changelog matches what shipped.
 
 ### Added
 
