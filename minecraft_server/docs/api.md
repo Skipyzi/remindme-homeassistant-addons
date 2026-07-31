@@ -75,6 +75,8 @@ Errors are `{"error": "...", "status": 409}`. Secrets are redacted from messages
 | `GET` | `/api/server/versions?version=1.21.4` | Installed JAR (including `required_java`, `java_runtimes`, `java_supported`), available versions and the newest build |
 | `POST` | `/api/server/install` | Installs the newest stable build when none is present |
 | `POST` | `/api/server/update` | `{"version": "1.21.4", "build": 0, "confirm": "UPDATE"}` (`build: 0` means newest stable) |
+| `GET` | `/api/server/flavours` | Available server flavours, their capabilities, which are installed and whether a switch is currently possible |
+| `POST` | `/api/server/flavour` | `{"flavour": "bta", "confirm": "bta"}` - the confirmation is the flavour name. Minecraft must be stopped |
 
 Version data comes from PaperMC's v3 API. A build is refused with `409` when it declares a
 Java feature release the container does not provide; that check runs after the download and

@@ -140,6 +140,13 @@ export async function render(ctx) {
     h('label', { class: 'inline' }, bindGen('backup_after_completion', checkbox(gen.backup_after_completion)),
       h('span', {}, 'Back up after a generation run completes')));
 
+  const flavourHost = h('div', {});
+  const flavourCard = card('Server flavour', null, flavourHost);
+  loadFlavours(flavourHost, ctx).catch((err) => {
+    clear(flavourHost);
+    flavourHost.append(h('p', { class: 'banner error' }, err.message));
+  });
+
   const updateHost = h('div', {});
   const updateCard = card('Server version',
     h('button', {
@@ -159,7 +166,7 @@ export async function render(ctx) {
     card('Settings', h('div', { class: 'card-actions' }, saveButton),
       h('p', { class: 'muted' },
         'Everything here is stored in /data/config/settings.json and survives add-on updates.')),
-    runtime, schedules, backupSettings, generationSettings, updateCard, optionsCard);
+    runtime, schedules, backupSettings, generationSettings, flavourCard, updateCard, optionsCard);
 
   loadVersions(updateHost, ctx).catch(() => {});
   return { element };
@@ -169,6 +176,63 @@ function checkbox(value) {
   const input = h('input', { type: 'checkbox' });
   input.checked = Boolean(value);
   return input;
+}
+
+// The flavour picker. Switching is deliberately a separate, confirmed action
+// rather than a saved setting: it changes which worlds and which configuration
+// the add-on is looking at.
+async function loadFlavours(host, ctx) {
+  clear(host);
+  const data = await api('api/server/flavours');
+  const cards = (data.available || []).map((flavour) => {
+    const active = flavour.name === data.active;
+    const caps = flavour.capabilities || {};
+    const missing = [];
+    if (!caps.bukkit_plugins) missing.push('no plugins');
+    if (!caps.terrain_generation) missing.push('no terrain pre-generation');
+    if (!caps.bridge_telemetry) missing.push('no in-server telemetry');
+
+    return h('div', { class: 'card-inset' },
+      h('div', { class: 'row' },
+        h('strong', {}, flavour.display_name),
+        active ? h('span', { class: 'tag' }, 'active') : null,
+        data.installed && data.installed[flavour.name]
+          ? h('span', { class: 'tag' }, 'installed')
+          : null),
+      h('p', { class: 'muted' }, flavour.summary),
+      missing.length ? h('p', { class: 'muted' }, missing.join(' · ')) : null,
+      active ? null : h('button', {
+        class: 'btn btn-small',
+        disabled: Boolean(data.running),
+        onclick: async (ev) => {
+          const { confirmAction } = await import('../lib.js');
+          const answer = await confirmAction({
+            title: `Switch to ${flavour.display_name}?`,
+            body: 'Each flavour keeps its own worlds, configuration and installed server, so nothing is '
+              + 'deleted and switching back restores exactly what is there now. Their world formats are '
+              + 'not interchangeable, so backups stay tied to the flavour they were taken from.',
+            phrase: flavour.name,
+            confirmLabel: 'Switch',
+          });
+          if (!answer.confirmed) return;
+          await run(ev.target, async () => {
+            await api('api/server/flavour', {
+              method: 'POST',
+              body: { flavour: flavour.name, confirm: answer.phrase },
+            });
+            toast(`Now running ${flavour.display_name}.`, 'ok', 8000);
+            await ctx.refreshStatus();
+            await loadFlavours(host, ctx);
+          });
+        },
+      }, `Switch to ${flavour.display_name}`));
+  });
+
+  host.append(
+    h('div', { class: 'stack' }, cards),
+    data.running
+      ? h('p', { class: 'banner info' }, 'Stop Minecraft to switch flavours.')
+      : null);
 }
 
 async function loadVersions(host, ctx) {
@@ -185,6 +249,19 @@ async function loadVersions(host, ctx) {
   clear(host);
 
   const installed = data.installed;
+  const project = data.project || 'the server project';
+  const preReleaseToggle = h('input', { type: 'checkbox' });
+  preReleaseToggle.checked = Boolean(data.include_pre_releases);
+  preReleaseToggle.addEventListener('change', async () => {
+    preReleaseToggle.disabled = true;
+    try {
+      await api('api/settings', { method: 'PUT', body: { include_pre_releases: preReleaseToggle.checked } });
+      await loadVersions(host, ctx);
+    } finally {
+      preReleaseToggle.disabled = false;
+    }
+  });
+
   const versionSelect = h('select', {},
     (data.versions || []).slice(0, 30).map((version) => h('option', {
       value: version, selected: version === data.target_version,
@@ -204,9 +281,11 @@ async function loadVersions(host, ctx) {
       : null,
     data.update_available
       ? h('p', { class: 'banner info' },
-        `PaperMC ${data.target_version} build ${data.latest_build} is available.`)
+        `${project} ${data.target_version} build ${data.latest_build} is available.`)
       : h('p', { class: 'muted' }, 'The installed build is current.'),
     data.error ? h('p', { class: 'banner warn' }, data.error) : null,
+    h('label', { class: 'inline' }, preReleaseToggle,
+      h('span', {}, 'Offer pre-release versions (release candidates and snapshots)')),
     h('div', { class: 'row' },
       versionSelect,
       h('button', {
@@ -214,7 +293,7 @@ async function loadVersions(host, ctx) {
         onclick: async (ev) => {
           const { confirmAction } = await import('../lib.js');
           const answer = await confirmAction({
-            title: `Install PaperMC ${versionSelect.value}?`,
+            title: `Install ${project} ${versionSelect.value}?`,
             body: 'The world and configuration are backed up, the server is stopped, the JAR is replaced atomically and the server is started again. If it fails to start, the previous JAR is restored.',
             phrase: 'UPDATE',
             confirmLabel: 'Install',

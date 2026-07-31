@@ -9,14 +9,15 @@ import (
 // controller died in the middle of that operation and reconciliation must clean
 // up after it.
 const (
-	OpBackup      = "backup"
-	OpRestore     = "restore"
-	OpWorldSwitch = "world_switch"
-	OpWorldImport = "world_import"
-	OpWorldDelete = "world_delete"
-	OpGeneration  = "generation"
-	OpUpdate      = "server_update"
-	OpConfigWrite = "config_write"
+	OpBackup        = "backup"
+	OpRestore       = "restore"
+	OpWorldSwitch   = "world_switch"
+	OpWorldImport   = "world_import"
+	OpWorldDelete   = "world_delete"
+	OpGeneration    = "generation"
+	OpUpdate        = "server_update"
+	OpConfigWrite   = "config_write"
+	OpFlavourSwitch = "flavour_switch"
 )
 
 const (

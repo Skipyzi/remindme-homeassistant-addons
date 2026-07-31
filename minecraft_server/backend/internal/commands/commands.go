@@ -15,6 +15,7 @@ import (
 
 	"github.com/skipyzi/remindme-homeassistant-addons/minecraft_server/backend/internal/appcfg"
 	"github.com/skipyzi/remindme-homeassistant-addons/minecraft_server/backend/internal/backups"
+	"github.com/skipyzi/remindme-homeassistant-addons/minecraft_server/backend/internal/flavours"
 	"github.com/skipyzi/remindme-homeassistant-addons/minecraft_server/backend/internal/generation"
 	"github.com/skipyzi/remindme-homeassistant-addons/minecraft_server/backend/internal/mcconfig"
 	"github.com/skipyzi/remindme-homeassistant-addons/minecraft_server/backend/internal/presets"
@@ -37,7 +38,14 @@ func (e ErrConfirmation) Error() string {
 var ErrMaintenance = errors.New("maintenance mode is enabled; disable it first")
 
 type Deps struct {
-	Settings   *appcfg.Store
+	Paths    appcfg.Paths
+	Settings *appcfg.Store
+	// Backend is the switchable backend every manager was given, so a flavour
+	// switch is a pointer swap here rather than a rebuild of the controller.
+	Backend *flavours.Switchable
+	// ServerPort comes from the add-on options; a backend without a launch
+	// argument for it needs it written into its properties file.
+	ServerPort int
 	Store      *store.Store
 	Supervisor *supervisor.Supervisor
 	Config     *mcconfig.Manager
@@ -301,22 +309,23 @@ func (s *Service) UpdateSettings(actor string, patch SettingsPatch) (appcfg.Sett
 
 // SettingsPatch is a partial update; nil fields are left alone.
 type SettingsPatch struct {
-	MemoryMinMB          *int                      `json:"memory_min_mb"`
-	MemoryMaxMB          *int                      `json:"memory_max_mb"`
-	JVMFlagsProfile      *string                   `json:"jvm_flags_profile"`
-	JVMFlagsCustom       *string                   `json:"jvm_flags_custom"`
-	AutoRestartOnCrash   *bool                     `json:"auto_restart_on_crash"`
-	StopTimeoutSeconds   *int                      `json:"stop_timeout_seconds"`
-	StartOnBoot          *bool                     `json:"start_on_boot"`
-	IdleShutdownMinutes  *int                      `json:"idle_shutdown_minutes"`
-	RestartSchedule      *string                   `json:"restart_schedule"`
-	BackupSchedule       *string                   `json:"backup_schedule"`
-	BackupRetention      *appcfg.Retention         `json:"backup_retention"`
-	BackupVerify         *bool                     `json:"backup_verify_after_write"`
-	BackupBeforeConfig   *bool                     `json:"backup_before_config_edit"`
-	ScheduledUpdate      *bool                     `json:"scheduled_update"`
-	GenerationProfile    *string                   `json:"generation_profile"`
-	Generation           *appcfg.GenerationPolicy  `json:"generation"`
+	MemoryMinMB         *int                     `json:"memory_min_mb"`
+	MemoryMaxMB         *int                     `json:"memory_max_mb"`
+	JVMFlagsProfile     *string                  `json:"jvm_flags_profile"`
+	JVMFlagsCustom      *string                  `json:"jvm_flags_custom"`
+	AutoRestartOnCrash  *bool                    `json:"auto_restart_on_crash"`
+	StopTimeoutSeconds  *int                     `json:"stop_timeout_seconds"`
+	StartOnBoot         *bool                    `json:"start_on_boot"`
+	IdleShutdownMinutes *int                     `json:"idle_shutdown_minutes"`
+	RestartSchedule     *string                  `json:"restart_schedule"`
+	BackupSchedule      *string                  `json:"backup_schedule"`
+	BackupRetention     *appcfg.Retention        `json:"backup_retention"`
+	BackupVerify        *bool                    `json:"backup_verify_after_write"`
+	BackupBeforeConfig  *bool                    `json:"backup_before_config_edit"`
+	ScheduledUpdate     *bool                    `json:"scheduled_update"`
+	IncludePreReleases  *bool                    `json:"include_pre_releases"`
+	GenerationProfile   *string                  `json:"generation_profile"`
+	Generation          *appcfg.GenerationPolicy `json:"generation"`
 }
 
 func (p SettingsPatch) apply(cfg *appcfg.Settings) {
@@ -327,6 +336,7 @@ func (p SettingsPatch) apply(cfg *appcfg.Settings) {
 	setBool(&cfg.AutoRestartOnCrash, p.AutoRestartOnCrash)
 	setInt(&cfg.StopTimeoutSeconds, p.StopTimeoutSeconds)
 	setBool(&cfg.StartOnBoot, p.StartOnBoot)
+	setBool(&cfg.IncludePreReleases, p.IncludePreReleases)
 	setInt(&cfg.IdleShutdownMinutes, p.IdleShutdownMinutes)
 	setString(&cfg.RestartSchedule, p.RestartSchedule)
 	setString(&cfg.BackupSchedule, p.BackupSchedule)

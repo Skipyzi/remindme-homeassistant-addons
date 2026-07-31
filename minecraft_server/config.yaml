@@ -1,7 +1,7 @@
 name: Minecraft Server
-version: "1.2.0"
+version: "1.0.0"
 slug: minecraft_server
-description: Managed PaperMC server with world, backup and Chunky terrain-generation management
+description: Managed Minecraft server (PaperMC or Better than Adventure!) with world, backup and terrain-generation management
 url: https://github.com/skipyzi/remindme-homeassistant-addons/tree/main/minecraft_server
 arch:
   - aarch64
@@ -26,12 +26,14 @@ map:
   - type: data
     read_only: false
 options:
+  server_flavour: paper
   server_port: 25565
   memory_min_mb: 1024
   memory_max_mb: 3072
   jvm_flags_profile: balanced
   jvm_flags_custom: ""
   paper_version: ""
+  run_server_as_root: false
   auto_restart_on_crash: false
   stop_timeout_seconds: 120
   mqtt_enabled: true
@@ -46,12 +48,14 @@ options:
   allow_direct_access: false
   log_level: info
 schema:
+  server_flavour: list(paper|bta)
   server_port: port
   memory_min_mb: int(512,12288)
   memory_max_mb: int(768,14336)
   jvm_flags_profile: list(low_power|balanced|performance|custom)
   jvm_flags_custom: str?
   paper_version: str?
+  run_server_as_root: bool
   auto_restart_on_crash: bool
   stop_timeout_seconds: int(15,900)
   mqtt_enabled: bool

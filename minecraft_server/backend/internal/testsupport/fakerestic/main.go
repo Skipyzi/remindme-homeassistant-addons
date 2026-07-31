@@ -7,7 +7,7 @@
 // file is not already in the index, which is exactly the property the controller
 // promises: unchanged region files cost nothing.
 //
-// FAKERESTIC_FAIL selects a failure mode: "backup", "restore", "check".
+// FAKERESTIC_FAIL selects a failure mode: "backup", "restore", "check", "cat".
 package main
 
 import (
@@ -43,6 +43,11 @@ func main() {
 		must(os.MkdirAll(filepath.Join(repo, "snapshots"), 0o700))
 		must(os.WriteFile(filepath.Join(repo, "config"), []byte("{\"version\":2}\n"), 0o600))
 	case "cat":
+		// "cat" stands in for a repository that exists but cannot be opened, which
+		// is the case EnsureRepo must not treat as "not initialised yet".
+		if os.Getenv("FAKERESTIC_FAIL") == "cat" {
+			fail("config or key is damaged: ciphertext verification failed")
+		}
 		if _, err := os.Stat(filepath.Join(repo, "config")); err != nil {
 			fail("repository does not exist")
 		}

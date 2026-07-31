@@ -99,6 +99,9 @@ func TestActorIdentifiesTheHomeAssistantUser(t *testing.T) {
 	}
 }
 
+// statusAnyRedirect stands for "any 3xx" in the table below.
+const statusAnyRedirect = -1
+
 func TestStaticFilesAreServedAndConfined(t *testing.T) {
 	frontend := t.TempDir()
 	if err := os.WriteFile(filepath.Join(frontend, "index.html"), []byte("<h1>app</h1>"), 0o644); err != nil {
@@ -126,9 +129,11 @@ func TestStaticFilesAreServedAndConfined(t *testing.T) {
 		{"/worlds", http.StatusOK, "<h1>app</h1>"},
 		// Anything that tries to leave the frontend directory is redirected by the
 		// router, refused, or falls back to the shell - never served.
-		{"/../secret.txt", http.StatusTemporaryRedirect, ""},
+		// The redirect status differs between Go's path handling on Linux and on
+		// Windows; what matters is that it redirects rather than serving the file.
+		{"/../secret.txt", statusAnyRedirect, ""},
 		{"/%2e%2e/secret.txt", http.StatusBadRequest, ""},
-		{"/subdir/../secret.txt", http.StatusTemporaryRedirect, ""},
+		{"/subdir/../secret.txt", statusAnyRedirect, ""},
 		{"/api/does-not-exist", http.StatusNotFound, ""},
 	}
 	for _, tc := range cases {
@@ -136,7 +141,12 @@ func TestStaticFilesAreServedAndConfined(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, tc.path, nil)
 			rec := httptest.NewRecorder()
 			handler.ServeHTTP(rec, req)
-			if rec.Code != tc.wantCode {
+			switch {
+			case tc.wantCode == statusAnyRedirect:
+				if rec.Code < 300 || rec.Code > 399 {
+					t.Fatalf("status %d, want a redirect (%s)", rec.Code, rec.Body.String())
+				}
+			case rec.Code != tc.wantCode:
 				t.Fatalf("status %d, want %d (%s)", rec.Code, tc.wantCode, rec.Body.String())
 			}
 			if tc.wantBody != "" && rec.Body.String() != tc.wantBody {
@@ -170,18 +180,18 @@ func TestIngressPathsWithAPrefixStillResolve(t *testing.T) {
 func TestStatusForErrorMapsDomainErrors(t *testing.T) {
 	cases := map[error]int{
 		commands.ErrConfirmation{Expected: "DELETE", Action: "x"}: http.StatusPreconditionRequired,
-		supervisor.ErrBusy:               http.StatusConflict,
-		supervisor.ErrAlreadyRunning:     http.StatusConflict,
-		supervisor.ErrNotRunning:         http.StatusConflict,
-		supervisor.ErrEULANotAccepted:    http.StatusConflict,
-		generation.ErrNoPlugin:           http.StatusConflict,
-		generation.ErrLowDisk:            http.StatusConflict,
-		worlds.ErrNotFound:               http.StatusNotFound,
-		backups.ErrNotFound:              http.StatusNotFound,
-		worlds.ErrExists:                 http.StatusConflict,
-		worlds.ErrUnsafeArchive:          http.StatusBadRequest,
-		appcfg.ErrUnsafePath:             http.StatusBadRequest,
-		errors.New("something else"):     http.StatusBadRequest,
+		supervisor.ErrBusy:            http.StatusConflict,
+		supervisor.ErrAlreadyRunning:  http.StatusConflict,
+		supervisor.ErrNotRunning:      http.StatusConflict,
+		supervisor.ErrEULANotAccepted: http.StatusConflict,
+		generation.ErrNoPlugin:        http.StatusConflict,
+		generation.ErrLowDisk:         http.StatusConflict,
+		worlds.ErrNotFound:            http.StatusNotFound,
+		backups.ErrNotFound:           http.StatusNotFound,
+		worlds.ErrExists:              http.StatusConflict,
+		worlds.ErrUnsafeArchive:       http.StatusBadRequest,
+		appcfg.ErrUnsafePath:          http.StatusBadRequest,
+		errors.New("something else"):  http.StatusBadRequest,
 	}
 	for err, want := range cases {
 		if got := statusForError(err); got != want {

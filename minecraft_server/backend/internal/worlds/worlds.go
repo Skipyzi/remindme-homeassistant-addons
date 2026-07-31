@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/skipyzi/remindme-homeassistant-addons/minecraft_server/backend/internal/adapter"
 	"github.com/skipyzi/remindme-homeassistant-addons/minecraft_server/backend/internal/appcfg"
 	"github.com/skipyzi/remindme-homeassistant-addons/minecraft_server/backend/internal/atomicfs"
 	"github.com/skipyzi/remindme-homeassistant-addons/minecraft_server/backend/internal/events"
@@ -23,7 +24,9 @@ import (
 	"github.com/skipyzi/remindme-homeassistant-addons/minecraft_server/backend/internal/supervisor"
 )
 
-// Dimensions are the directory names Bukkit uses inside a world container.
+// Dimensions are the directory names Bukkit uses inside a world container. It
+// is the default for backends that do not say otherwise; BTA, for example, has
+// one directory with its dimensions nested inside it.
 var Dimensions = []string{"world", "world_nether", "world_the_end"}
 
 var (
@@ -82,9 +85,9 @@ type Deps struct {
 	Backup     BackupFunc
 	// Invalidate asks the stats collector to re-measure a directory.
 	Invalidate func(name, path string)
-	// ContainerArgs turns a world directory into the launch arguments that point
-	// the server at it (for Paper: --world-container <dir>).
-	ContainerArgs func(dir string) []string
+	// Backend supplies the world set layout and how the active world is bound to
+	// the server.
+	Backend adapter.Backend
 	// StartTimeout bounds the health check after a world switch.
 	StartTimeout time.Duration
 }
@@ -102,6 +105,24 @@ func NewManager(d Deps) *Manager {
 		d.StartTimeout = 5 * time.Minute
 	}
 	return &Manager{deps: d, log: d.Log.With("component", "worlds")}
+}
+
+// dimensions is the world set layout of the active backend.
+func (m *Manager) dimensions() []string {
+	if m.deps.Backend != nil {
+		if dims := m.deps.Backend.Capabilities().Dimensions; len(dims) > 0 {
+			return dims
+		}
+	}
+	return Dimensions
+}
+
+// binding is how the active backend is pointed at a world set.
+func (m *Manager) binding() adapter.WorldBinding {
+	if m.deps.Backend == nil {
+		return adapter.BindContainerArg
+	}
+	return m.deps.Backend.Capabilities().WorldBinding
 }
 
 // ---------------------------------------------------------------- listing ----
@@ -165,7 +186,7 @@ func (m *Manager) info(id, active string, backups []store.BackupRecord) (Info, e
 		DimensionSizes: map[string]int64{},
 		Exists:         map[string]bool{},
 	}
-	for _, dim := range Dimensions {
+	for _, dim := range m.dimensions() {
 		dimPath := filepath.Join(dir, dim)
 		if st, err := os.Stat(dimPath); err == nil && st.IsDir() {
 			info.Exists[dim] = true
@@ -387,6 +408,12 @@ func (m *Manager) Validate(id string) error {
 		if _, oldErr := os.Stat(filepath.Join(overworld, "level.dat_old")); oldErr == nil {
 			return nil
 		}
+		// An empty directory is a world the server has not written yet, not a
+		// broken one. It exists because a backend that binds its world with a link
+		// needs the target to be there before the link can be followed.
+		if entries, readErr := os.ReadDir(overworld); readErr == nil && len(entries) == 0 {
+			return nil
+		}
 		return fmt.Errorf("%w: %s has no level.dat", ErrInvalidWorld, id)
 	}
 	return nil
@@ -405,7 +432,7 @@ func (m *Manager) invalidate(id string) {
 		return
 	}
 	m.deps.Invalidate("world:"+id, dir)
-	for _, dim := range Dimensions {
+	for _, dim := range m.dimensions() {
 		m.deps.Invalidate("world:"+id+":"+dim, filepath.Join(dir, dim))
 	}
 }
@@ -426,10 +453,10 @@ func (m *Manager) ContainerArgs() []string {
 	if err != nil {
 		return nil
 	}
-	if m.deps.ContainerArgs == nil {
+	if m.deps.Backend == nil {
 		return nil
 	}
-	return m.deps.ContainerArgs(dir)
+	return m.deps.Backend.WorldArgs(dir)
 }
 
 // EnsureActive picks a world when none is configured yet, creating a default one
@@ -505,8 +532,66 @@ func (m *Manager) PrepareRuntime() error {
 			return err
 		}
 	}
+	if err := m.bindLevelLink(dir); err != nil {
+		return err
+	}
 	if _, err := m.UpdateMeta(id, func(mt *Meta) { mt.LastPlayedAt = time.Now().UTC() }); err != nil {
 		m.log.Warn("could not update world metadata", "error", err)
+	}
+	return nil
+}
+
+// bindLevelLink points the level directory in the runtime working directory at
+// the active world set.
+//
+// This is for backends that only ever look next to their working directory and
+// have no equivalent of --world-container: BTA, being a Beta 1.7.3 fork, is one.
+// The link is inside /data and is written by the controller only, and the world
+// data itself stays in the worlds directory, so backups, sizes and the trash all
+// keep working on the real path.
+//
+// Anything that is already there and is not a link is left alone and reported:
+// replacing a real directory here would be deleting a world.
+func (m *Manager) bindLevelLink(worldSet string) error {
+	if m.binding() != adapter.BindLevelLink {
+		return nil
+	}
+	level := m.dimensions()[0]
+	linkPath := filepath.Join(m.deps.Paths.Runtime(), level)
+	target := filepath.Join(worldSet, level)
+	if err := os.MkdirAll(target, 0o755); err != nil {
+		return err
+	}
+
+	switch info, err := os.Lstat(linkPath); {
+	case err == nil && info.Mode()&os.ModeSymlink != 0:
+		current, err := os.Readlink(linkPath)
+		if err == nil && current == target {
+			return nil
+		}
+		if err := os.Remove(linkPath); err != nil {
+			return fmt.Errorf("could not replace the level link: %w", err)
+		}
+	case err == nil && info.IsDir():
+		entries, readErr := os.ReadDir(linkPath)
+		if readErr != nil {
+			return readErr
+		}
+		if len(entries) > 0 {
+			return fmt.Errorf("%s already contains a level directory that the add-on did not create; "+
+				"move it out of the way before switching worlds", linkPath)
+		}
+		if err := os.Remove(linkPath); err != nil {
+			return err
+		}
+	case err == nil:
+		return fmt.Errorf("%s exists and is not a directory", linkPath)
+	case !os.IsNotExist(err):
+		return err
+	}
+
+	if err := os.Symlink(target, linkPath); err != nil {
+		return fmt.Errorf("could not point the server at %s: %w", worldSet, err)
 	}
 	return nil
 }

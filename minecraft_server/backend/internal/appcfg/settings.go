@@ -93,6 +93,17 @@ func DefaultGenerationPolicy() GenerationPolicy {
 	}
 }
 
+// FlavourState is the per-flavour half of the settings. It is swapped in and out
+// of the top-level fields when the flavour changes, so the rest of the
+// controller never has to know a flavour is involved.
+type FlavourState struct {
+	ActiveWorld   string `json:"active_world"`
+	ServerVersion string `json:"server_version"`
+	ServerBuild   int    `json:"server_build"`
+	EULAAccepted  bool   `json:"eula_accepted"`
+	ActivePreset  string `json:"active_preset"`
+}
+
 // Settings is the controller state the user edits in the web UI. It is stored in
 // /data/config/settings.json and survives add-on restarts and updates.
 type Settings struct {
@@ -112,15 +123,31 @@ type Settings struct {
 	BackupVerifyAfterWrite bool      `json:"backup_verify_after_write"`
 	BackupBeforeConfigEdit bool      `json:"backup_before_config_edit"`
 
+	// Flavour is the server flavour in use ("paper", "bta"). Each flavour has its
+	// own runtime directory, JAR, worlds and active-world setting, because their
+	// world formats are mutually unreadable.
+	Flavour string `json:"flavour"`
+	// PerFlavour keeps the settings that only make sense for one flavour, so
+	// switching back and forth does not lose the other one's active world or
+	// installed version.
+	PerFlavour map[string]FlavourState `json:"per_flavour"`
+
 	ActiveWorld     string `json:"active_world"`
 	EULAAccepted    bool   `json:"eula_accepted"`
 	EULAAcceptedAt  string `json:"eula_accepted_at"`
 	MaintenanceMode bool   `json:"maintenance_mode"`
 	ActivePreset    string `json:"active_preset"`
 
+	// PaperVersion and PaperBuild are the installed server version of the active
+	// flavour. The names predate multi-flavour support and are kept so an
+	// existing settings.json still loads.
 	PaperVersion    string `json:"paper_version"`
 	PaperBuild      int    `json:"paper_build"`
 	ScheduledUpdate bool   `json:"scheduled_update"`
+	// IncludePreReleases offers release candidates and other pre-release builds
+	// in the version list. Off by default: a home server should not be steered
+	// onto one by accident.
+	IncludePreReleases bool `json:"include_pre_releases"`
 
 	Generation GenerationPolicy `json:"generation"`
 	// GenerationProfile is the profile new generation jobs default to, and what
@@ -146,6 +173,8 @@ func defaultSettings(o Options) Settings {
 		BackupVerifyAfterWrite: true,
 		BackupBeforeConfigEdit: false,
 		ActiveWorld:            "",
+		Flavour:                o.Flavour,
+		PerFlavour:             map[string]FlavourState{},
 		PaperVersion:           o.PaperVersion,
 		Generation:             DefaultGenerationPolicy(),
 		GenerationProfile:      "gentle",
@@ -186,6 +215,12 @@ func LoadSettings(path string, o Options) (*Store, error) {
 }
 
 func (s *Store) normalize() {
+	if s.cur.Flavour == "" {
+		s.cur.Flavour = DefaultFlavour
+	}
+	if s.cur.PerFlavour == nil {
+		s.cur.PerFlavour = map[string]FlavourState{}
+	}
 	if s.cur.StopTimeoutSeconds < 15 {
 		s.cur.StopTimeoutSeconds = 15
 	}
@@ -230,8 +265,50 @@ func (s *Store) persist() error {
 	return atomicfs.WriteFile(s.path, append(raw, '\n'), 0o644)
 }
 
+// SwitchFlavour parks the current flavour's state, restores the target's and
+// makes it active. The caller has already stopped Minecraft and is holding the
+// supervisor lease.
+func (s *Store) SwitchFlavour(target string) (Settings, error) {
+	if target == "" {
+		return s.Get(), fmt.Errorf("a server flavour is required")
+	}
+	return s.Update(func(next *Settings) {
+		if next.PerFlavour == nil {
+			next.PerFlavour = map[string]FlavourState{}
+		}
+		current := next.Flavour
+		if current == "" {
+			current = DefaultFlavour
+		}
+		if current == target {
+			return
+		}
+		next.PerFlavour[current] = FlavourState{
+			ActiveWorld:   next.ActiveWorld,
+			ServerVersion: next.PaperVersion,
+			ServerBuild:   next.PaperBuild,
+			EULAAccepted:  next.EULAAccepted,
+			ActivePreset:  next.ActivePreset,
+		}
+		restored := next.PerFlavour[target]
+		next.Flavour = target
+		next.ActiveWorld = restored.ActiveWorld
+		next.PaperVersion = restored.ServerVersion
+		next.PaperBuild = restored.ServerBuild
+		next.EULAAccepted = restored.EULAAccepted
+		next.ActivePreset = restored.ActivePreset
+		if !restored.EULAAccepted {
+			next.EULAAcceptedAt = ""
+		}
+	})
+}
+
 func (s Settings) clone() Settings {
 	out := s
+	out.PerFlavour = make(map[string]FlavourState, len(s.PerFlavour))
+	for name, state := range s.PerFlavour {
+		out.PerFlavour[name] = state
+	}
 	out.PresetOverrides = make(map[string]map[string]string, len(s.PresetOverrides))
 	for scope, kv := range s.PresetOverrides {
 		m := make(map[string]string, len(kv))

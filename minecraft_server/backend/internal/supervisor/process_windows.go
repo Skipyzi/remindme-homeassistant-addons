@@ -5,13 +5,15 @@ package supervisor
 import (
 	"os"
 	"syscall"
+
+	"github.com/skipyzi/remindme-homeassistant-addons/minecraft_server/backend/internal/privdrop"
 )
 
 // Windows is a development-only target: the add-on itself always runs on Linux.
 // Process groups and POSIX signals do not exist here, so termination falls back
 // to TerminateProcess.
 
-func sysProcAttr() *syscall.SysProcAttr { return &syscall.SysProcAttr{} }
+func sysProcAttr(privdrop.Account) *syscall.SysProcAttr { return &syscall.SysProcAttr{} }
 
 func terminateProcess(pid int) error {
 	proc, err := os.FindProcess(pid)

@@ -1,6 +1,7 @@
 package mcconfig
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -54,32 +55,39 @@ type Manager struct {
 	bus     *events.Bus
 	log     *slog.Logger
 
-	mu      sync.Mutex
-	allowed map[string]adapter.ConfigFile
+	mu sync.Mutex
 }
 
 func NewManager(paths appcfg.Paths, backend adapter.Backend, st *store.Store, bus *events.Bus, log *slog.Logger) *Manager {
 	if log == nil {
 		log = slog.Default()
 	}
-	m := &Manager{
+	return &Manager{
 		paths:   paths,
 		backend: backend,
 		store:   st,
 		bus:     bus,
 		log:     log.With("component", "mcconfig"),
-		allowed: map[string]adapter.ConfigFile{},
 	}
-	for _, f := range backend.ConfigFiles() {
-		m.allowed[f.Name] = f
+}
+
+// allowed is the editable-file table of the active flavour. It is rebuilt on
+// every use rather than cached: the backend can be switched at runtime, and a
+// cached table would let one flavour's file names resolve against the other's
+// runtime directory.
+func (m *Manager) allowed() map[string]adapter.ConfigFile {
+	files := m.backend.ConfigFiles()
+	out := make(map[string]adapter.ConfigFile, len(files))
+	for _, f := range files {
+		out[f.Name] = f
 	}
-	return m
+	return out
 }
 
 // resolve maps an allow-listed name onto an absolute path. Names are looked up in
 // a fixed table, so no user-supplied path ever reaches the filesystem.
 func (m *Manager) resolve(name string) (adapter.ConfigFile, string, error) {
-	spec, ok := m.allowed[name]
+	spec, ok := m.allowed()[name]
 	if !ok {
 		return adapter.ConfigFile{}, "", fmt.Errorf("%w: %s", ErrUnknownFile, name)
 	}
@@ -91,8 +99,9 @@ func (m *Manager) resolve(name string) (adapter.ConfigFile, string, error) {
 }
 
 func (m *Manager) List() []FileInfo {
-	names := make([]string, 0, len(m.allowed))
-	for name := range m.allowed {
+	allowed := m.allowed()
+	names := make([]string, 0, len(allowed))
+	for name := range allowed {
 		names = append(names, name)
 	}
 	sort.Strings(names)
@@ -331,6 +340,14 @@ func Validate(format string, raw []byte) error {
 			return fmt.Errorf("invalid YAML: %w", err)
 		}
 		return nil
+	case "lines":
+		// One entry per line, which is how a Beta-era server keeps its operator
+		// and whitelist files. There is nothing to parse; the only thing worth
+		// refusing is a NUL byte, which means the file is not text at all.
+		if bytes.IndexByte(raw, 0) >= 0 {
+			return errors.New("this file must be plain text, one entry per line")
+		}
+		return nil
 	case "json":
 		if len(strings.TrimSpace(string(raw))) == 0 {
 			return errors.New("JSON file must not be empty (use [] or {})")
@@ -391,7 +408,11 @@ func (m *Manager) SetProperties(changes map[string]string, actor string) (WriteR
 }
 
 // EnsureDefaults writes any missing default property, used on first start.
-func (m *Manager) EnsureDefaults(actor string) error {
+//
+// enforced holds values the controller owns rather than seeds - the listen port
+// for a backend that has no launch argument for it - and is written even when the
+// key already exists.
+func (m *Manager) EnsureDefaults(actor string, enforced map[string]string) error {
 	props, err := m.Properties()
 	if err != nil {
 		return err
@@ -399,6 +420,11 @@ func (m *Manager) EnsureDefaults(actor string) error {
 	changed := map[string]string{}
 	for k, v := range m.backend.DefaultProperties() {
 		if _, ok := props.Get(k); !ok {
+			changed[k] = v
+		}
+	}
+	for k, v := range enforced {
+		if current, ok := props.Get(k); !ok || current != v {
 			changed[k] = v
 		}
 	}

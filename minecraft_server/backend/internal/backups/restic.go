@@ -102,8 +102,20 @@ func (r *Restic) EnsureRepo(ctx context.Context) error {
 	if err := os.MkdirAll(r.CacheDir, 0o700); err != nil {
 		return err
 	}
-	if _, err := r.run(ctx, nil, "cat", "config"); err == nil {
+	// Whether the repository exists is decided by its config file, not by whether
+	// restic could read it. "restic cat config" can fail on a perfectly good
+	// repository - a cancelled context, a busy disk - and initialising on any
+	// error writes a fresh config and key over the existing ones, which makes
+	// every snapshot already in the repository unreadable.
+	if _, err := os.Stat(filepath.Join(r.Repo, "config")); err == nil {
+		if _, err := r.run(ctx, nil, "cat", "config"); err != nil {
+			return fmt.Errorf("the backup repository at %s exists but could not be opened "+
+				"(it is not re-initialised, because that would make the existing snapshots "+
+				"unreadable): %w", r.Repo, err)
+		}
 		return nil
+	} else if !os.IsNotExist(err) {
+		return err
 	}
 	if _, err := r.run(ctx, nil, "init"); err != nil {
 		return fmt.Errorf("initialise backup repository: %w", err)
@@ -211,11 +223,11 @@ func (r *Restic) Restore(ctx context.Context, snapshotID, target string, onProgr
 	args := []string{"restore", snapshotID, "--target", target, "--json"}
 	return r.stream(ctx, args, func(raw []byte) {
 		var msg struct {
-			MessageType  string  `json:"message_type"`
-			PercentDone  float64 `json:"percent_done"`
-			BytesRestored int64  `json:"bytes_restored"`
-			TotalBytes   int64   `json:"total_bytes"`
-			FilesRestored int64  `json:"files_restored"`
+			MessageType   string  `json:"message_type"`
+			PercentDone   float64 `json:"percent_done"`
+			BytesRestored int64   `json:"bytes_restored"`
+			TotalBytes    int64   `json:"total_bytes"`
+			FilesRestored int64   `json:"files_restored"`
 		}
 		if err := json.Unmarshal(raw, &msg); err != nil {
 			return

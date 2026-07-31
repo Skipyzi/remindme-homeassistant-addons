@@ -135,7 +135,7 @@ func (m *Manager) ImportZip(src string, name, actor string) (ImportResult, error
 	}
 
 	normalized := filepath.Join(staging, ".normalized")
-	dims, warnings, err := normalizeLayout(staging, normalized)
+	dims, warnings, err := normalizeLayout(staging, normalized, m.dimensions())
 	if err != nil {
 		_ = m.deps.Store.JournalEnd(journalID, store.JournalFailed, err.Error())
 		return result, err
@@ -243,7 +243,7 @@ func extractFile(entry *zip.File, dst string, remaining int64) (int64, error) {
 // world / world_nether / world_the_end. Archives come in several shapes: a single
 // world folder, a server directory containing all three, or the contents of a
 // world folder at the top level.
-func normalizeLayout(root, target string) ([]string, []string, error) {
+func normalizeLayout(root, target string, dimensions []string) ([]string, []string, error) {
 	if err := os.MkdirAll(target, 0o755); err != nil {
 		return nil, nil, err
 	}
@@ -290,7 +290,7 @@ func normalizeLayout(root, target string) ([]string, []string, error) {
 	}
 
 	dims := make([]string, 0, len(assigned))
-	for _, dim := range Dimensions {
+	for _, dim := range dimensions {
 		src, ok := assigned[dim]
 		if !ok {
 			continue
@@ -300,7 +300,7 @@ func normalizeLayout(root, target string) ([]string, []string, error) {
 		}
 		dims = append(dims, dim)
 	}
-	if len(dims) < len(Dimensions) {
+	if len(dims) < len(dimensions) {
 		warnings = append(warnings,
 			"the archive did not contain every dimension; Minecraft will generate the missing ones")
 	}

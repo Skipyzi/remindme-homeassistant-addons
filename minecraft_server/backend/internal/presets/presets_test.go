@@ -32,14 +32,14 @@ func assetsDir(t *testing.T, presets ...Preset) string {
 	return dir
 }
 
-func intPtr(v int) *int          { return &v }
-func strPtr(v string) *string    { return &v }
+func intPtr(v int) *int       { return &v }
+func strPtr(v string) *string { return &v }
 
 func newFixture(t *testing.T, builtins ...Preset) (*Manager, *mcconfig.Manager, *testsupport.Env) {
 	t.Helper()
 	env := testsupport.NewEnv(t)
 	config := mcconfig.NewManager(env.Paths, paper.New(), env.Store, env.Bus, env.Log)
-	if err := config.EnsureDefaults("test"); err != nil {
+	if err := config.EnsureDefaults("test", nil); err != nil {
 		t.Fatal(err)
 	}
 	manager := NewManager(env.Paths, assetsDir(t, builtins...), config, env.Settings, env.Store, env.Bus, env.Log)

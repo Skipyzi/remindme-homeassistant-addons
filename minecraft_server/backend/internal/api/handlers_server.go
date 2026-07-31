@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/skipyzi/remindme-homeassistant-addons/minecraft_server/backend/internal/adapter"
 	"github.com/skipyzi/remindme-homeassistant-addons/minecraft_server/backend/internal/appcfg"
 	"github.com/skipyzi/remindme-homeassistant-addons/minecraft_server/backend/internal/bridge"
 	"github.com/skipyzi/remindme-homeassistant-addons/minecraft_server/backend/internal/commands"
@@ -20,19 +21,24 @@ import (
 // StatusResponse is the one call the dashboard makes on load; everything after
 // that arrives over the event stream.
 type StatusResponse struct {
-	Version     string              `json:"controller_version"`
-	Server      supervisor.Snapshot `json:"server"`
-	World       string              `json:"active_world"`
-	WorldName   string              `json:"active_world_name"`
-	Settings    appcfg.Settings     `json:"settings"`
-	Jar         updates.Installed   `json:"jar"`
-	Bridge      BridgeStatus        `json:"bridge"`
-	Maintenance bool                `json:"maintenance_mode"`
-	EULA        bool                `json:"eula_accepted"`
-	Generation  any                 `json:"generation"`
-	Backups     BackupSummary       `json:"backups"`
-	Warnings    []string            `json:"warnings,omitempty"`
-	ServerTime  string              `json:"server_time"`
+	Version   string              `json:"controller_version"`
+	Server    supervisor.Snapshot `json:"server"`
+	World     string              `json:"active_world"`
+	WorldName string              `json:"active_world_name"`
+	Settings  appcfg.Settings     `json:"settings"`
+	// Flavour and Capabilities let the UI hide what this server cannot do rather
+	// than offering it and failing.
+	Flavour      string               `json:"flavour"`
+	FlavourName  string               `json:"flavour_name"`
+	Capabilities adapter.Capabilities `json:"capabilities"`
+	Jar          updates.Installed    `json:"jar"`
+	Bridge       BridgeStatus         `json:"bridge"`
+	Maintenance  bool                 `json:"maintenance_mode"`
+	EULA         bool                 `json:"eula_accepted"`
+	Generation   any                  `json:"generation"`
+	Backups      BackupSummary        `json:"backups"`
+	Warnings     []string             `json:"warnings,omitempty"`
+	ServerTime   string               `json:"server_time"`
 }
 
 type BridgeStatus struct {
@@ -56,15 +62,18 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	snapshot := s.deps.Supervisor.Snapshot()
 
 	resp := StatusResponse{
-		Version:     s.deps.Version,
-		Server:      snapshot,
-		World:       settings.ActiveWorld,
-		Settings:    settings,
-		Jar:         s.deps.Updates.Installed(),
-		Maintenance: settings.MaintenanceMode,
-		EULA:        settings.EULAAccepted,
-		Generation:  s.deps.Generation.Status(),
-		ServerTime:  time.Now().Format(time.RFC3339),
+		Version:      s.deps.Version,
+		Flavour:      s.deps.Backend.Name(),
+		FlavourName:  s.deps.Backend.DisplayName(),
+		Capabilities: s.deps.Backend.Capabilities(),
+		Server:       snapshot,
+		World:        settings.ActiveWorld,
+		Settings:     settings,
+		Jar:          s.deps.Updates.Installed(),
+		Maintenance:  settings.MaintenanceMode,
+		EULA:         settings.EULAAccepted,
+		Generation:   s.deps.Generation.Status(),
+		ServerTime:   time.Now().Format(time.RFC3339),
 	}
 	if settings.ActiveWorld != "" {
 		if info, err := s.deps.Worlds.Get(settings.ActiveWorld); err == nil {
@@ -112,11 +121,11 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 // StatsResponse is polled by nothing: it is sent over the event stream every few
 // seconds and is available here for scripts and debugging.
 type StatsResponse struct {
-	System    stats.System                `json:"system"`
-	Telemetry bridge.Telemetry            `json:"telemetry"`
-	Fresh     bool                        `json:"telemetry_fresh"`
-	Sizes     map[string]stats.SizeEntry   `json:"sizes"`
-	Server    supervisor.Snapshot         `json:"server"`
+	System    stats.System               `json:"system"`
+	Telemetry bridge.Telemetry           `json:"telemetry"`
+	Fresh     bool                       `json:"telemetry_fresh"`
+	Sizes     map[string]stats.SizeEntry `json:"sizes"`
+	Server    supervisor.Snapshot        `json:"server"`
 }
 
 func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
@@ -361,6 +370,28 @@ func (s *Server) handleServerInstall(w http.ResponseWriter, r *http.Request) {
 	s.ok(w, result)
 }
 
+func (s *Server) handleFlavours(w http.ResponseWriter, r *http.Request) {
+	s.ok(w, s.deps.Commands.FlavourStatus())
+}
+
+type flavourRequest struct {
+	Flavour string `json:"flavour"`
+	Confirm string `json:"confirm"`
+}
+
+func (s *Server) handleSwitchFlavour(w http.ResponseWriter, r *http.Request) {
+	var req flavourRequest
+	if !s.decode(w, r, &req) {
+		return
+	}
+	status, err := s.deps.Commands.SwitchFlavour(s.actor(r), req.Flavour, req.Confirm)
+	if err != nil {
+		s.fail(w, 0, err)
+		return
+	}
+	s.ok(w, status)
+}
+
 type updateRequest struct {
 	Version string `json:"version"`
 	Build   int    `json:"build"`
@@ -386,9 +417,9 @@ func (s *Server) handleServerUpdate(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleSettingsGet(w http.ResponseWriter, r *http.Request) {
 	s.ok(w, map[string]any{
-		"settings":         s.deps.Settings.Get(),
-		"options":          s.redactedOptions(),
-		"jvm_profiles":     []string{"low_power", "balanced", "performance", "custom"},
+		"settings":            s.deps.Settings.Get(),
+		"options":             s.redactedOptions(),
+		"jvm_profiles":        []string{"low_power", "balanced", "performance", "custom"},
 		"generation_profiles": []string{"gentle", "balanced", "maximum"},
 	})
 }
