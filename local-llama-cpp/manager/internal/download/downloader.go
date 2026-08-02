@@ -242,23 +242,31 @@ func (downloader Downloader) httpClient() *http.Client {
 	clone := *base
 	prior := base.CheckRedirect
 	clone.CheckRedirect = func(request *http.Request, via []*http.Request) error {
-		if !allowedRedirectHost(request.URL.Hostname()) {
+		if request.URL.Scheme != "https" || request.URL.User != nil || !trustedHuggingFaceHost(request.URL.Hostname()) {
 			return &Error{Code: CodeUnsafeRedirect, SafeMessage: "Hugging Face redirected the download to an unapproved host."}
+		}
+		if len(via) >= 10 {
+			return &Error{Code: CodeUnsafeRedirect, SafeMessage: "Hugging Face redirected the download too many times."}
+		}
+		if len(via) > 0 && !strings.EqualFold(via[len(via)-1].URL.Hostname(), request.URL.Hostname()) {
+			request.Header.Del("Authorization")
 		}
 		if prior != nil {
 			return prior(request, via)
-		}
-		if len(via) >= 10 {
-			return errors.New("too many redirects")
 		}
 		return nil
 	}
 	return &clone
 }
 
-func allowedRedirectHost(host string) bool {
-	host = strings.ToLower(host)
-	return host == "huggingface.co" || host == "hf.co" || host == "cdn-lfs.huggingface.co" || strings.HasSuffix(host, ".xethub.hf.co")
+func trustedHuggingFaceHost(host string) bool {
+	host = strings.ToLower(strings.TrimSuffix(host, "."))
+	for _, root := range []string{"huggingface.co", "hf.co", "xethub.hf.co", "xethub-eu.hf.co"} {
+		if host == root || strings.HasSuffix(host, "."+root) {
+			return true
+		}
+	}
+	return false
 }
 
 func copyWithProgress(ctx context.Context, destination io.Writer, source io.Reader, start, total, maxBytes int64, progress func(Progress), now func() time.Time) (int64, error) {

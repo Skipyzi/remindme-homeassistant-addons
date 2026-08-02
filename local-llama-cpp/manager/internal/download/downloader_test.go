@@ -142,6 +142,63 @@ func TestDownloadRejectsRedirectOutsideHuggingFace(t *testing.T) {
 	}
 }
 
+func TestTrustedHuggingFaceHostUsesDomainBoundaries(t *testing.T) {
+	for host, want := range map[string]bool{
+		"huggingface.co":              true,
+		"cdn-lfs.huggingface.co":      true,
+		"hf.co":                       true,
+		"us.aws.cdn.hf.co":            true,
+		"cdn-lfs-us-1.hf.co":          true,
+		"cas-server.xethub.hf.co":     true,
+		"transfer.xethub-eu.hf.co":    true,
+		"hf.co.attacker.example":      false,
+		"not-hf.co":                   false,
+		"xethub.hf.co.attacker.test":  false,
+		"huggingface.co.evil.example": false,
+		"":                            false,
+	} {
+		t.Run(host, func(t *testing.T) {
+			if got := trustedHuggingFaceHost(host); got != want {
+				t.Fatalf("trustedHuggingFaceHost(%q)=%v want %v", host, got, want)
+			}
+		})
+	}
+}
+
+func TestRedirectPolicyRequiresHTTPSAndStripsAuthorizationFromCDN(t *testing.T) {
+	client := (Downloader{}).httpClient()
+	origin, err := http.NewRequest(http.MethodGet, "https://huggingface.co/owner/repo/resolve/main/model.gguf", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	origin.Header.Set("Authorization", "Bearer hf_test_secret")
+
+	cdn, err := http.NewRequest(http.MethodGet, "https://us.aws.cdn.hf.co/model.gguf", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cdn.Header = origin.Header.Clone()
+	if err := client.CheckRedirect(cdn, []*http.Request{origin}); err != nil {
+		t.Fatalf("official CDN redirect rejected: %v", err)
+	}
+	if got := cdn.Header.Get("Authorization"); got != "" {
+		t.Fatalf("authorization forwarded to CDN: %q", got)
+	}
+
+	for _, rawURL := range []string{
+		"http://us.aws.cdn.hf.co/model.gguf",
+		"https://hf.co.attacker.example/model.gguf",
+	} {
+		request, requestErr := http.NewRequest(http.MethodGet, rawURL, nil)
+		if requestErr != nil {
+			t.Fatal(requestErr)
+		}
+		if redirectErr := client.CheckRedirect(request, []*http.Request{origin}); redirectErr == nil {
+			t.Fatalf("unsafe redirect accepted: %s", rawURL)
+		}
+	}
+}
+
 func TestCancelledDownloadRemainsResumable(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		response.WriteHeader(http.StatusOK)
