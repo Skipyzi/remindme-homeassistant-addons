@@ -9,9 +9,15 @@ import {
 import { AppShell } from "../components/layout/AppShell";
 import { ThemeProvider } from "./ThemeProvider";
 import { ComingSoonPage } from "../routes/ComingSoonPage";
+import { GrowDetailPage } from "../routes/GrowDetailPage";
 import { GrowSpaceDetailPage } from "../routes/GrowSpaceDetailPage";
 import { GrowSpacesPage } from "../routes/GrowSpacesPage";
 import { OverviewPage } from "../routes/OverviewPage";
+import { PlantCreatePage } from "../routes/PlantCreatePage";
+import { PlantDetailPage } from "../routes/PlantDetailPage";
+import { PlantsPage } from "../routes/PlantsPage";
+import { ReservoirDetailPage } from "../routes/ReservoirDetailPage";
+import { ReservoirsPage } from "../routes/ReservoirsPage";
 import { SettingsPage } from "../routes/SettingsPage";
 
 const rootRoute = createRootRoute({ component: AppShell });
@@ -35,11 +41,39 @@ const settingsRoute = createRoute({
 	path: "/settings",
 	component: SettingsPage,
 });
+const plantsRoute = createRoute({
+	getParentRoute: () => rootRoute,
+	path: "/plants",
+	component: PlantsPage,
+});
+const growDetailRoute = createRoute({
+	getParentRoute: () => rootRoute,
+	path: "/grows/$growId",
+	component: GrowDetailPage,
+});
+const plantCreateRoute = createRoute({
+	getParentRoute: () => rootRoute,
+	path: "/grows/$growId/plants/new",
+	component: PlantCreatePage,
+});
+const plantDetailRoute = createRoute({
+	getParentRoute: () => rootRoute,
+	path: "/plants/$plantId",
+	component: PlantDetailPage,
+});
+const reservoirsRoute = createRoute({
+	getParentRoute: () => rootRoute,
+	path: "/reservoirs",
+	component: ReservoirsPage,
+});
+const reservoirDetailRoute = createRoute({
+	getParentRoute: () => rootRoute,
+	path: "/reservoirs/$reservoirId",
+	component: ReservoirDetailPage,
+});
 const placeholderPaths = [
-	"/plants",
 	"/timeline",
 	"/environment",
-	"/reservoirs",
 	"/feeding",
 	"/tasks",
 	"/costs",
@@ -58,6 +92,12 @@ const routeTree = rootRoute.addChildren([
 	growSpacesRoute,
 	growSpaceDetailRoute,
 	settingsRoute,
+	plantsRoute,
+	growDetailRoute,
+	plantCreateRoute,
+	plantDetailRoute,
+	reservoirsRoute,
+	reservoirDetailRoute,
 	...placeholderRoutes,
 ]);
 const router = createRouter({ routeTree, history: createHashHistory() });

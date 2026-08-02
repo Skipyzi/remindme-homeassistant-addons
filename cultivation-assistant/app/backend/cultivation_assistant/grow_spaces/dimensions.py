@@ -53,9 +53,5 @@ def derive_measurements(
 ) -> tuple[Decimal, Decimal | None]:
     """Calculate floor area and optional volume from canonical dimensions."""
     area = _quantize(dimensions.length_m * dimensions.width_m)
-    volume = (
-        None
-        if dimensions.height_m is None
-        else _quantize(area * dimensions.height_m)
-    )
+    volume = None if dimensions.height_m is None else _quantize(area * dimensions.height_m)
     return area, volume

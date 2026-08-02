@@ -19,6 +19,7 @@ import (
 	"remindme.local/model-manager/internal/catalog"
 	"remindme.local/model-manager/internal/download"
 	"remindme.local/model-manager/internal/hardware"
+	"remindme.local/model-manager/internal/inventory"
 	"remindme.local/model-manager/internal/optionsyaml"
 	"remindme.local/model-manager/internal/pairing"
 	"remindme.local/model-manager/internal/state"
@@ -57,6 +58,7 @@ type Dependencies struct {
 	Supervisor        ModelSupervisor
 	Verified          VerificationStore
 	ModelDir          string
+	CacheDir          string
 	CredentialPath    string
 	CustomCatalogPath string
 	InferenceURL      string
@@ -88,6 +90,19 @@ type OperationSnapshot struct {
 	Error      *APIError `json:"error,omitempty"`
 }
 
+type inventoryItemResponse struct {
+	ID         string           `json:"id"`
+	Name       string           `json:"name"`
+	Size       int64            `json:"size"`
+	Modified   time.Time        `json:"modified"`
+	Source     inventory.Source `json:"source"`
+	ValidGGUF  bool             `json:"validGguf"`
+	CatalogID  string           `json:"catalogId,omitempty"`
+	Active     bool             `json:"active"`
+	InProgress bool             `json:"inProgress"`
+	Removable  bool             `json:"removable"`
+}
+
 type Server struct {
 	dependencies Dependencies
 	manager      *http.ServeMux
@@ -98,6 +113,7 @@ type Server struct {
 	events       *eventHub
 	catalogMu    sync.RWMutex
 	catalog      catalog.Catalog
+	inventory    inventory.Scanner
 }
 
 type modelSelection struct {
@@ -115,6 +131,7 @@ type pairingRequest struct {
 }
 
 var modelIDPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9.-]{0,127}$`)
+var inventoryIDPattern = regexp.MustCompile(`^[a-f0-9]{32}$`)
 var huggingFaceTokenPattern = regexp.MustCompile(`^hf_[A-Za-z0-9_]{20,}$`)
 var pairingCodePattern = regexp.MustCompile(`^[A-HJ-NP-Z2-9]{6}$`)
 
@@ -131,6 +148,10 @@ func NewServer(dependencies Dependencies) *Server {
 		mutation:     make(chan struct{}, 1),
 		events:       newEventHub(),
 		catalog:      dependencies.Catalog,
+		inventory: inventory.Scanner{Roots: []inventory.Root{
+			{Path: dependencies.ModelDir, Source: inventory.SourceManaged},
+			{Path: dependencies.CacheDir, Source: inventory.SourceLegacyCache},
+		}},
 	}
 	server.proxy = newInferenceProxy(dependencies.InferenceURL)
 	server.registerRoutes()
@@ -158,6 +179,8 @@ func (server *Server) registerRoutes() {
 	server.manager.Handle("POST /manager/v1/install", server.auth(http.HandlerFunc(server.install)))
 	server.manager.Handle("POST /manager/v1/activate", server.auth(http.HandlerFunc(server.activate)))
 	server.manager.Handle("POST /manager/v1/cancel", server.auth(http.HandlerFunc(server.cancelOperation)))
+	server.manager.Handle("GET /manager/v1/models/inventory", server.auth(http.HandlerFunc(server.listInventory)))
+	server.manager.Handle("DELETE /manager/v1/models/inventory/{id}", server.auth(http.HandlerFunc(server.removeInventoryItem)))
 	server.manager.Handle("DELETE /manager/v1/models/{id}", server.auth(http.HandlerFunc(server.removeModel)))
 	server.manager.Handle("GET /manager/v1/models/{id}/options.yaml", server.auth(http.HandlerFunc(server.modelOptionsYAML)))
 	server.manager.Handle("POST /manager/v1/catalog/custom", server.auth(http.HandlerFunc(server.addCustom)))
@@ -430,6 +453,109 @@ func (server *Server) modelOptionsYAML(response http.ResponseWriter, request *ht
 	response.Header().Set("Cache-Control", "no-store")
 	response.WriteHeader(http.StatusOK)
 	_, _ = response.Write([]byte(body))
+}
+
+func (server *Server) listInventory(response http.ResponseWriter, _ *http.Request) {
+	result, err := server.inventory.Scan()
+	if err != nil {
+		writeError(response, http.StatusServiceUnavailable, APIError{Code: "inventory_scan_failed", Message: "Downloaded model storage could not be scanned.", Retryable: true})
+		return
+	}
+	current := server.dependencies.Supervisor.State()
+	items := make([]inventoryItemResponse, 0, len(result.Items))
+	for _, item := range result.Items {
+		catalogID := server.catalogIDForFilename(item.Name)
+		active, inProgress := inventoryProtection(item.Path, catalogID, current)
+		items = append(items, inventoryItemResponse{
+			ID: item.ID, Name: item.Name, Size: item.Size, Modified: item.Modified,
+			Source: item.Source, ValidGGUF: item.ValidGGUF, CatalogID: catalogID,
+			Active: active, InProgress: inProgress, Removable: !active && !inProgress,
+		})
+	}
+	response.Header().Set("Cache-Control", "no-store")
+	writeJSON(response, http.StatusOK, map[string]any{"items": items, "warnings": result.Warnings})
+}
+
+func (server *Server) removeInventoryItem(response http.ResponseWriter, request *http.Request) {
+	id := request.PathValue("id")
+	if !inventoryIDPattern.MatchString(id) {
+		writeError(response, http.StatusBadRequest, APIError{Code: "invalid_inventory_target", Message: "Inventory item is invalid."})
+		return
+	}
+	if !server.beginMutation(response) {
+		return
+	}
+	defer server.endMutation()
+
+	item, err := server.inventory.Resolve(id)
+	if err != nil {
+		if errors.Is(err, inventory.ErrNotFound) {
+			writeError(response, http.StatusNotFound, APIError{Code: "inventory_item_not_found", Message: "Downloaded model file was not found."})
+			return
+		}
+		writeError(response, http.StatusServiceUnavailable, APIError{Code: "inventory_scan_failed", Message: "Downloaded model storage could not be scanned.", Retryable: true})
+		return
+	}
+	catalogID := server.catalogIDForFilename(item.Name)
+	active, inProgress := inventoryProtection(item.Path, catalogID, server.dependencies.Supervisor.State())
+	if active || inProgress {
+		writeError(response, http.StatusConflict, APIError{Code: "model_protected", Message: "Running and in-progress models cannot be removed."})
+		return
+	}
+	if err := os.Remove(item.Path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		writeError(response, http.StatusInternalServerError, APIError{Code: "remove_failed", Message: "The downloaded model file could not be removed."})
+		return
+	}
+	if item.Source == inventory.SourceManaged && catalogID != "" && server.dependencies.Verified != nil {
+		if err := server.dependencies.Verified.Remove(catalogID); err != nil {
+			writeError(response, http.StatusInternalServerError, APIError{Code: "remove_failed", Message: "The model verification record could not be removed."})
+			return
+		}
+	}
+	response.WriteHeader(http.StatusNoContent)
+}
+
+func (server *Server) catalogIDForFilename(name string) string {
+	server.catalogMu.RLock()
+	defer server.catalogMu.RUnlock()
+	match := ""
+	for _, variant := range server.catalog.Variants {
+		if variant.File != name {
+			continue
+		}
+		if match != "" {
+			return ""
+		}
+		match = variant.ID
+	}
+	return match
+}
+
+func inventoryProtection(path, catalogID string, current state.State) (bool, bool) {
+	active := current.Active != nil && (sameModelPath(path, current.Active.Path) || (catalogID != "" && current.Active.ID == catalogID))
+	inProgress := false
+	if current.Operation != nil {
+		operationPath := strings.TrimSuffix(current.Operation.ModelPath, ".partial")
+		inProgress = sameModelPath(path, operationPath) || (catalogID != "" && current.Operation.VariantID == catalogID)
+	}
+	return active, inProgress
+}
+
+func sameModelPath(left, right string) bool {
+	if left == "" || right == "" {
+		return false
+	}
+	leftPath, leftErr := filepath.Abs(left)
+	rightPath, rightErr := filepath.Abs(right)
+	if leftErr != nil || rightErr != nil {
+		return false
+	}
+	leftPath = filepath.Clean(leftPath)
+	rightPath = filepath.Clean(rightPath)
+	if os.PathSeparator == '\\' {
+		return strings.EqualFold(leftPath, rightPath)
+	}
+	return leftPath == rightPath
 }
 
 func (server *Server) removeModel(response http.ResponseWriter, request *http.Request) {

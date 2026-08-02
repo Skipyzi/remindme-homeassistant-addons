@@ -11,6 +11,7 @@ test("model manager routes proxy safely", async (context) => {
 	process.env.MODEL_MANAGER_ENABLED = "true";
 	process.env.MODEL_MANAGER_URL = "http://homeassistant:8080/manager/v1";
 	process.env.MODEL_MANAGER_TOKEN_PATH = join(directory, "manager-token");
+	process.env.LOCAL_LLM_MODEL = "configured-fallback-model";
 
 	const pairedToken = "manager-secret-value-that-is-long-enough-123";
 	let pairingAuthorization = "unset";
@@ -18,7 +19,25 @@ test("model manager routes proxy safely", async (context) => {
 	let managerAuthorization = "";
 	let credentialBody = "";
 	let yamlAuthorization = "";
+	let inventoryAuthorization = "";
+	let deletedInventoryID = "";
+	let inventoryDeleteCalls = 0;
 	let managerActiveModel: Record<string, unknown> | undefined;
+	const managerInventory = {
+		items: [
+			{
+				id: "0123456789abcdef0123456789abcdef",
+				name: "old.gguf",
+				size: 4096,
+				modified: "2026-07-28T10:00:00Z",
+				source: "legacy_cache",
+				validGguf: true,
+				active: false,
+				inProgress: false,
+				removable: true,
+			},
+		],
+	};
 	const managerCatalog = {
 		variants: [
 			{
@@ -50,6 +69,22 @@ test("model manager routes proxy safely", async (context) => {
 		}
 		if (url === "http://homeassistant:8080/manager/v1/status") {
 			return Response.json({ activeModel: managerActiveModel });
+		}
+		if (url === "http://homeassistant:8080/manager/v1/models/inventory") {
+			inventoryAuthorization =
+				new Headers(init?.headers).get("authorization") || "";
+			return Response.json(managerInventory);
+		}
+		if (
+			url.startsWith(
+				"http://homeassistant:8080/manager/v1/models/inventory/",
+			) && init?.method === "DELETE"
+		) {
+			inventoryDeleteCalls++;
+			inventoryAuthorization =
+				new Headers(init?.headers).get("authorization") || "";
+			deletedInventoryID = url.split("/").at(-1) || "";
+			return new Response(null, { status: 204 });
 		}
 		if (
 			url ===
@@ -134,6 +169,34 @@ test("model manager routes proxy safely", async (context) => {
 		},
 	);
 
+	await context.test("physical inventory proxies without exposing its secret", async () => {
+		const listed = await nativeFetch(`${baseUrl}/api/models/inventory`);
+		assert.equal(listed.status, 200);
+		const body = await listed.json();
+		assert.deepEqual(body, managerInventory);
+		assert.equal(inventoryAuthorization, `Bearer ${pairedToken}`);
+		assert.equal(JSON.stringify(body).includes(pairedToken), false);
+
+		const removed = await nativeFetch(
+			`${baseUrl}/api/models/inventory/0123456789abcdef0123456789abcdef`,
+			{ method: "DELETE" },
+		);
+		assert.equal(removed.status, 204);
+		assert.equal(deletedInventoryID, "0123456789abcdef0123456789abcdef");
+		assert.equal(inventoryAuthorization, `Bearer ${pairedToken}`);
+	});
+
+	await context.test("invalid inventory IDs are rejected locally", async () => {
+		const before = inventoryDeleteCalls;
+		const response = await nativeFetch(
+			`${baseUrl}/api/models/inventory/not-an-inventory-id`,
+			{ method: "DELETE" },
+		);
+		assert.equal(response.status, 400);
+		assert.equal((await response.json()).code, "invalid_inventory_target");
+		assert.equal(inventoryDeleteCalls, before);
+	});
+
 	await context.test("YAML proxy preserves exact safe text", async () => {
 		const response = await nativeFetch(
 			`${baseUrl}/api/models/qwen3-4b-q4/options.yaml`,
@@ -178,15 +241,14 @@ test("model manager routes proxy safely", async (context) => {
 	);
 
 	await context.test(
-		"runtime status is the only active model authority",
+		"runtime status prefers the active manager model and otherwise uses configured inference",
 		async () => {
-			process.env.LOCAL_LLM_MODEL = "stale-configured-model";
 			managerActiveModel = undefined;
-			const unavailable = await nativeFetch(`${baseUrl}/api/status`).then(
+			const configured = await nativeFetch(`${baseUrl}/api/status`).then(
 				(response) => response.json(),
 			);
-			assert.equal(unavailable.model, "runtime-unavailable");
-			assert.equal(unavailable.modelName, "Runtime unavailable");
+			assert.equal(configured.model, "configured-fallback-model");
+			assert.equal(configured.modelName, "configured-fallback-model");
 			managerActiveModel = {
 				id: "qwen3-4b-q4",
 				family: "Qwen3 4B",

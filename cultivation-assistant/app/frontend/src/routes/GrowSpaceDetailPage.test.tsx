@@ -93,8 +93,9 @@ describe("GrowSpaceDetailContent", () => {
 
 	it("edits core details and reversible status", async () => {
 		const user = userEvent.setup();
-		const fetcher = vi.fn().mockImplementation(
-			(_input: string, init?: RequestInit) => {
+		const fetcher = vi
+			.fn()
+			.mockImplementation((_input: string, init?: RequestInit) => {
 				const payload =
 					init?.method === "PATCH"
 						? { ...detailFixture, location: "Garage", active: false }
@@ -105,8 +106,7 @@ describe("GrowSpaceDetailContent", () => {
 						headers: { "Content-Type": "application/json" },
 					}),
 				);
-			},
-		);
+			});
 		vi.stubGlobal("fetch", fetcher);
 		renderDetail();
 		await screen.findByRole("heading", { name: "North tent" });
@@ -124,6 +124,8 @@ describe("GrowSpaceDetailContent", () => {
 		expect(JSON.parse(String((patchCall?.[1] as RequestInit).body))).toEqual(
 			expect.objectContaining({ location: "Garage", active: false }),
 		);
-		expect(screen.queryByText(/archive this grow space/i)).not.toBeInTheDocument();
+		expect(
+			screen.queryByText(/archive this grow space/i),
+		).not.toBeInTheDocument();
 	});
 });

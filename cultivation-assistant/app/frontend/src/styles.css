@@ -2580,3 +2580,431 @@ body {
 		animation: none;
 	}
 }
+
+/* Grows, plants, and lifecycle records */
+.record-form {
+	display: grid;
+	gap: 0.85rem;
+}
+.record-form .field,
+.combobox .field {
+	display: grid;
+	gap: 0.3rem;
+}
+.record-form .field > span,
+.combobox .field > span {
+	font-family: var(--font-mono, monospace);
+	font-size: 10px;
+	font-weight: 600;
+	text-transform: uppercase;
+	letter-spacing: 0.06em;
+	color: var(--text-muted);
+}
+.record-form input,
+.record-form select,
+.record-form textarea,
+.combobox input,
+.combobox select,
+.lifecycle-stage-create input,
+.lifecycle-stage-create select {
+	border: 1px solid var(--line);
+	background: var(--surface);
+	color: var(--text);
+	border-radius: 3px;
+	padding: 0.5rem 0.6rem;
+	font: inherit;
+}
+.record-form textarea {
+	min-height: 4.5rem;
+	resize: vertical;
+}
+.form-actions {
+	display: flex;
+	gap: 0.6rem;
+	align-items: center;
+	flex-wrap: wrap;
+}
+.form-error {
+	color: var(--amber-strong, #b45309);
+	font-size: 0.85rem;
+}
+.form-warning {
+	color: var(--amber-strong, #b45309);
+	font-size: 0.85rem;
+}
+.record-form-card {
+	padding: 1.25rem;
+	display: grid;
+	gap: 0.75rem;
+}
+.grow-groups {
+	display: grid;
+	gap: 1.5rem;
+}
+.grow-group > h2 {
+	margin-bottom: 0.6rem;
+}
+.grow-card-list {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+	gap: 0.85rem;
+}
+.grow-card {
+	padding: 1rem;
+	display: grid;
+	gap: 0.4rem;
+}
+.grow-card__head {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 0.5rem;
+}
+.grow-card__meta,
+.grow-card__dates {
+	font-size: 0.85rem;
+	color: var(--text-muted);
+}
+.grow-card__link,
+.plant-row,
+.back-link,
+.add-plant-link {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.35rem;
+	color: var(--routing-violet, #6d28d9);
+	background: none;
+	border: none;
+	cursor: pointer;
+	font: inherit;
+}
+.back-link {
+	margin-bottom: 0.5rem;
+}
+.plant-register__head {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	margin-bottom: 0.75rem;
+}
+.plant-row-list {
+	list-style: none;
+	display: grid;
+	gap: 0.4rem;
+	padding: 0;
+	margin: 0;
+}
+.plant-row {
+	width: 100%;
+	justify-content: space-between;
+	padding: 0.6rem 0.8rem;
+	border: 1px solid var(--line);
+	border-radius: 3px;
+	color: var(--text);
+	text-decoration: none;
+}
+.plant-row__status {
+	font-size: 0.8rem;
+	color: var(--text-muted);
+	text-transform: capitalize;
+}
+.combobox {
+	display: grid;
+	gap: 0.4rem;
+	position: relative;
+}
+.combobox__list {
+	list-style: none;
+	margin: 0;
+	padding: 0.25rem;
+	border: 1px solid var(--line);
+	border-radius: 3px;
+	background: var(--surface);
+	max-height: 12rem;
+	overflow-y: auto;
+	display: grid;
+	gap: 0.15rem;
+}
+.combobox__list button {
+	width: 100%;
+	text-align: left;
+	background: none;
+	border: none;
+	padding: 0.4rem 0.5rem;
+	border-radius: 2px;
+	color: var(--text);
+	cursor: pointer;
+	font: inherit;
+}
+.combobox__list button:hover,
+.combobox__list [aria-selected="true"] button {
+	background: var(--surface-raised);
+}
+.combobox__empty {
+	padding: 0.4rem 0.5rem;
+	color: var(--text-muted);
+	font-size: 0.85rem;
+}
+.combobox__create {
+	display: grid;
+	gap: 0.5rem;
+	border: 1px dashed var(--line);
+	border-radius: 3px;
+	padding: 0.75rem;
+}
+.record-actions {
+	display: flex;
+	gap: 0.6rem;
+	align-items: center;
+	flex-wrap: wrap;
+}
+.record-panel {
+	padding: 1.25rem;
+	display: grid;
+	gap: 0.75rem;
+}
+.record-facts {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+	gap: 0.75rem;
+	margin: 0;
+}
+.record-facts dt {
+	font-size: 10px;
+	font-weight: 600;
+	text-transform: uppercase;
+	letter-spacing: 0.06em;
+	color: var(--text-muted);
+}
+.record-facts dd {
+	margin: 0.15rem 0 0;
+	color: var(--text);
+}
+.transition-history {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+	display: grid;
+	gap: 0.6rem;
+}
+.transition-history li {
+	border-left: 2px solid var(--line);
+	padding-left: 0.75rem;
+	display: grid;
+	gap: 0.15rem;
+}
+.transition-history__stage {
+	font-weight: 600;
+}
+.transition-history__meta,
+.transition-history__notes {
+	font-size: 0.8rem;
+	color: var(--text-muted);
+}
+.dialog {
+	border: 1px solid var(--line);
+	border-radius: 3px;
+	background: var(--surface);
+	box-shadow: var(--shadow-card);
+	padding: 1.25rem;
+	display: grid;
+	gap: 0.75rem;
+	max-width: 32rem;
+}
+.dialog__warning {
+	color: var(--amber-strong, #b45309);
+	font-size: 0.85rem;
+}
+.lifecycle-settings {
+	display: grid;
+	gap: 0.9rem;
+}
+.lifecycle-settings__note {
+	color: var(--text-muted);
+	font-size: 0.85rem;
+}
+.lifecycle-stage-list {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+	display: grid;
+	gap: 0.5rem;
+}
+.lifecycle-stage-row {
+	display: flex;
+	align-items: center;
+	gap: 0.75rem;
+	border: 1px solid var(--line);
+	border-radius: 3px;
+	padding: 0.5rem 0.75rem;
+	flex-wrap: wrap;
+}
+.lifecycle-stage-row__reorder {
+	display: inline-flex;
+	gap: 0.25rem;
+}
+.lifecycle-stage-row__reorder button,
+.lifecycle-stage-row__delete {
+	border: 1px solid var(--line);
+	background: var(--surface);
+	border-radius: 2px;
+	padding: 0.2rem;
+	cursor: pointer;
+	color: var(--text);
+}
+.lifecycle-stage-row__reorder button:disabled {
+	opacity: 0.4;
+	cursor: not-allowed;
+}
+.lifecycle-stage-row__label {
+	flex: 1 1 8rem;
+}
+.lifecycle-stage-row__enabled {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.35rem;
+	font-size: 0.85rem;
+}
+.lifecycle-stage-create {
+	display: flex;
+	gap: 0.75rem;
+	align-items: end;
+	flex-wrap: wrap;
+}
+.record-panel__head {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 0.75rem;
+	flex-wrap: wrap;
+}
+.tab-group {
+	display: flex;
+	gap: 0.4rem;
+}
+.tab {
+	border: 1px solid transparent;
+	border-radius: 3px;
+	background: none;
+	padding: 0.4rem 0.75rem;
+	font-size: 0.85rem;
+	font-weight: 600;
+	color: var(--text-muted);
+	cursor: pointer;
+}
+.tab--active {
+	border-color: var(--line);
+	background: var(--surface-raised);
+	color: var(--text);
+}
+.activity-feed__empty {
+	color: var(--text-muted);
+	font-size: 0.85rem;
+}
+.photo-grid {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+	gap: 0.6rem;
+}
+.photo-grid__thumb {
+	display: block;
+	width: 100%;
+	aspect-ratio: 1 / 1;
+	padding: 0;
+	border: 1px solid var(--line);
+	border-radius: 3px;
+	background: var(--surface-raised);
+	overflow: hidden;
+	cursor: pointer;
+}
+.photo-grid__thumb img {
+	width: 100%;
+	height: 100%;
+	object-fit: cover;
+	display: block;
+}
+.photo-grid__lightbox-image {
+	max-width: 100%;
+	border-radius: 3px;
+}
+
+/* Reservoir calibration tables and geometry editor */
+.calibration-table-wrapper {
+	overflow-x: auto;
+}
+.reservoir-calibration-table {
+	width: 100%;
+	border-collapse: collapse;
+	font-family: var(--font-mono, inherit);
+	font-size: 12px;
+}
+.reservoir-calibration-table th {
+	text-align: left;
+	text-transform: uppercase;
+	letter-spacing: 0.06em;
+	font-size: 9px;
+	color: var(--text-muted);
+	padding: 8px 10px;
+	border-bottom: 1px solid var(--line);
+}
+.reservoir-calibration-table td {
+	padding: 6px 10px;
+	border-bottom: 1px solid var(--line);
+	vertical-align: middle;
+}
+.reservoir-calibration-table input {
+	width: 100%;
+	min-width: 90px;
+	padding: 7px 9px;
+	border: 1px solid var(--line);
+	border-radius: 3px;
+	background: var(--surface);
+	font: inherit;
+}
+.reservoir-calibration-table input:focus-visible {
+	outline: 2px solid var(--routing-violet);
+	outline-offset: 1px;
+}
+.reservoir-calibration-table span {
+	color: var(--text);
+}
+.calibration-editor-actions {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 12px;
+	margin-top: 14px;
+}
+.calibration-point-count {
+	margin-left: auto;
+	color: var(--text-muted);
+	font-size: 10px;
+	font-family: var(--font-mono, inherit);
+	text-transform: uppercase;
+	letter-spacing: 0.06em;
+}
+.calibration-editor-save {
+	display: flex;
+	gap: 8px;
+}
+.reservoir-geometry-edit {
+	margin-top: 18px;
+	border-top: 1px dashed var(--line);
+	padding-top: 18px;
+}
+@media (max-width: 520px) {
+	.calibration-editor-actions {
+		flex-direction: column;
+		align-items: stretch;
+	}
+	.calibration-point-count {
+		margin-left: 0;
+	}
+	.calibration-editor-save {
+		justify-content: flex-end;
+	}
+}
+

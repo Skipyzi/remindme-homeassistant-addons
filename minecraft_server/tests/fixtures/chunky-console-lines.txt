@@ -1,0 +1,16 @@
+# Real Chunky console output shapes the log parser must handle.
+#
+# The parser looks for the individual numbers (percentage, chunk fraction, rate,
+# ETA) rather than matching one exact sentence, because the wording has changed
+# between Chunky releases and will change again.
+#
+# Covered by adapter/paper.TestParseChunkyProgress.
+
+[12:00:00 INFO]: [Chunky] [world] Task started for world
+[12:00:05 INFO]: [Chunky] [world] Task running: 1250/10000 chunks (12.50%), 42.5 cps, ETA: 00:03:45
+[12:00:10 INFO]: [Chunky] world: 55.00% complete, 3000/6000 chunks, 30 cps
+[12:00:15 INFO]: [Chunky] [world] Task running for world at 78.30% (7830/10000 chunks, 38.1 chunks/s, ETA 0:01:02)
+[12:00:20 INFO]: [Chunky] [world_nether] Task finished for world_nether
+[12:00:25 INFO]: [Chunky] Task paused
+[12:00:30 INFO]: [Chunky] Task cancelled
+[12:00:35 INFO]: Unknown command: chunky

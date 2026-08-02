@@ -1,0 +1,177 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 620" width="900" height="620" role="img"
+     aria-label="Mockup of the Minecraft add-on dashboard showing server state, controls and live metrics">
+  <style>
+    .bg { fill: #f4f5f7; }
+    .surface { fill: #ffffff; stroke: #d9dce3; }
+    .text { fill: #1d2129; font-family: system-ui, sans-serif; }
+    .muted { fill: #626b79; font-family: system-ui, sans-serif; font-size: 10px; }
+    .label { fill: #626b79; font-family: system-ui, sans-serif; font-size: 8px; letter-spacing: .06em; }
+    .value { fill: #1d2129; font-family: system-ui, sans-serif; font-size: 17px; font-weight: 600; }
+    .h1 { font-size: 14px; font-weight: 600; }
+    .h2 { font-size: 11px; font-weight: 600; }
+    .tab { fill: #626b79; font-family: system-ui, sans-serif; font-size: 10px; }
+    .tab-active { fill: #1d2129; font-family: system-ui, sans-serif; font-size: 10px; font-weight: 600; }
+    .btn { fill: #f0f1f4; stroke: #d9dce3; }
+    .btn-primary { fill: #2f6f4f; stroke: #2f6f4f; }
+    .btn-danger { fill: #ffffff; stroke: #b3261e; }
+    .btn-text { fill: #1d2129; font-family: system-ui, sans-serif; font-size: 9px; }
+    .btn-text-primary { fill: #ffffff; font-family: system-ui, sans-serif; font-size: 9px; font-weight: 600; }
+    .btn-text-danger { fill: #b3261e; font-family: system-ui, sans-serif; font-size: 9px; font-weight: 600; }
+    .console { fill: #0d1117; }
+    .console-text { fill: #d7dce3; font-family: ui-monospace, monospace; font-size: 8px; }
+    .console-ctrl { fill: #7cb7f0; font-family: ui-monospace, monospace; font-size: 8px; }
+  </style>
+
+  <rect class="bg" width="900" height="620"/>
+
+  <!-- top bar -->
+  <rect class="surface" x="0" y="0" width="900" height="46"/>
+  <rect x="14" y="9" width="28" height="28" rx="7" fill="#2f6f4f"/>
+  <text x="23" y="29" fill="#fff" font-family="system-ui" font-size="14">▣</text>
+  <text class="text h1" x="52" y="21">Minecraft Server</text>
+  <text class="muted" x="52" y="34">world Survival · Minecraft 1.21.4 · Paper 1.21.4-118 · up 142 min</text>
+  <rect x="742" y="14" width="54" height="18" rx="9" fill="#e6f4ec" stroke="#1f7a45"/>
+  <text x="753" y="26" fill="#1f7a45" font-family="system-ui" font-size="9" font-weight="600">running</text>
+  <rect x="802" y="14" width="34" height="18" rx="9" fill="#e6f4ec" stroke="#1f7a45"/>
+  <text x="811" y="26" fill="#1f7a45" font-family="system-ui" font-size="9" font-weight="600">live</text>
+
+  <!-- tabs -->
+  <rect class="surface" x="0" y="46" width="900" height="26"/>
+  <text class="tab-active" x="16" y="63">Dashboard</text>
+  <rect x="14" y="70" width="62" height="2" fill="#2f6f4f"/>
+  <text class="tab" x="90" y="63">Console</text>
+  <text class="tab" x="145" y="63">Configuration</text>
+  <text class="tab" x="228" y="63">Presets</text>
+  <text class="tab" x="280" y="63">Worlds</text>
+  <text class="tab" x="330" y="63">Backups</text>
+  <text class="tab" x="386" y="63">Terrain</text>
+  <text class="tab" x="437" y="63">Settings</text>
+  <text class="tab" x="491" y="63">Activity</text>
+
+  <!-- server control -->
+  <rect class="surface" x="14" y="86" width="872" height="66" rx="9"/>
+  <text class="text h2" x="28" y="104">Server control</text>
+  <rect x="28" y="116" width="54" height="18" rx="9" fill="#e6f4ec" stroke="#1f7a45"/>
+  <text x="39" y="128" fill="#1f7a45" font-family="system-ui" font-size="9" font-weight="600">running</text>
+  <text class="muted" x="92" y="128">pid 214 · uptime 2h 22m · 0 crashes</text>
+
+  <rect class="btn-primary" x="452" y="94" width="46" height="20" rx="6"/>
+  <text class="btn-text-primary" x="466" y="108">Start</text>
+  <rect class="btn" x="504" y="94" width="80" height="20" rx="6"/>
+  <text class="btn-text" x="516" y="108">Graceful stop</text>
+  <rect class="btn" x="590" y="94" width="52" height="20" rx="6"/>
+  <text class="btn-text" x="602" y="108">Restart</text>
+  <rect class="btn-danger" x="648" y="94" width="62" height="20" rx="6"/>
+  <text class="btn-text-danger" x="659" y="108">Force stop</text>
+  <rect class="btn" x="716" y="94" width="92" height="20" rx="6"/>
+  <text class="btn-text" x="726" y="108">Maintenance mode</text>
+  <rect class="btn" x="814" y="94" width="62" height="20" rx="6"/>
+  <text class="btn-text" x="823" y="108">Back up now</text>
+
+  <!-- metric tiles -->
+  <g>
+    <!-- row 1 -->
+    <rect class="surface" x="14" y="162" width="140" height="52" rx="9"/>
+    <text class="label" x="26" y="178">PLAYERS</text>
+    <text class="value" x="26" y="196">3/10</text>
+    <text class="muted" x="26" y="208">from bridge plugin</text>
+
+    <rect class="surface" x="162" y="162" width="140" height="52" rx="9"/>
+    <text class="label" x="174" y="178">TPS</text>
+    <text class="value" x="174" y="196">19.97</text>
+    <text class="muted" x="174" y="208">MSPT 12.4 ms</text>
+
+    <rect class="surface" x="310" y="162" width="140" height="52" rx="9"/>
+    <text class="label" x="322" y="178">JVM HEAP</text>
+    <text class="value" x="322" y="196">1 842 MB</text>
+    <text class="muted" x="322" y="208">of 3072 MB max</text>
+
+    <rect class="surface" x="458" y="162" width="140" height="52" rx="9"/>
+    <text class="label" x="470" y="178">CPU</text>
+    <text class="value" x="470" y="196">38 %</text>
+    <text class="muted" x="470" y="208">load 1.42 · 4 cores</text>
+
+    <rect class="surface" x="606" y="162" width="140" height="52" rx="9" stroke="#8a5a00"/>
+    <text class="label" x="618" y="178">CPU TEMPERATURE</text>
+    <text class="value" x="618" y="196">71.3 °C</text>
+    <text class="muted" x="618" y="208">nominal</text>
+
+    <rect class="surface" x="754" y="162" width="132" height="52" rx="9"/>
+    <text class="label" x="766" y="178">SYSTEM MEMORY</text>
+    <text class="value" x="766" y="196">63 %</text>
+    <text class="muted" x="766" y="208">5.0 of 8.0 GiB</text>
+
+    <!-- row 2 -->
+    <rect class="surface" x="14" y="222" width="140" height="52" rx="9"/>
+    <text class="label" x="26" y="238">SERVER PROCESS</text>
+    <text class="value" x="26" y="256">2.1 GiB</text>
+    <text class="muted" x="26" y="268">31 % CPU · 68 threads</text>
+
+    <rect class="surface" x="162" y="222" width="140" height="52" rx="9"/>
+    <text class="label" x="174" y="238">CONTROLLER</text>
+    <text class="value" x="174" y="256">34 MiB</text>
+    <text class="muted" x="174" y="268">management process</text>
+
+    <rect class="surface" x="310" y="222" width="140" height="52" rx="9"/>
+    <text class="label" x="322" y="238">FREE DISK</text>
+    <text class="value" x="322" y="256">184 GiB</text>
+    <text class="muted" x="322" y="268">of 460 GiB</text>
+
+    <rect class="surface" x="458" y="222" width="140" height="52" rx="9"/>
+    <text class="label" x="470" y="238">WORLD SIZE</text>
+    <text class="value" x="470" y="256">3.4 GiB</text>
+    <text class="muted" x="470" y="268">measured 4 min ago</text>
+
+    <rect class="surface" x="606" y="222" width="140" height="52" rx="9"/>
+    <text class="label" x="618" y="238">BACKUP REPOSITORY</text>
+    <text class="value" x="618" y="256">5.9 GiB</text>
+    <text class="muted" x="618" y="268">last backup 41 min ago</text>
+
+    <rect class="surface" x="754" y="222" width="132" height="52" rx="9"/>
+    <text class="label" x="766" y="238">LOADED CHUNKS</text>
+    <text class="value" x="766" y="256">1 487</text>
+    <text class="muted" x="766" y="268">326 entities</text>
+  </g>
+
+  <!-- players and generation -->
+  <rect class="surface" x="14" y="284" width="430" height="118" rx="9"/>
+  <text class="text h2" x="28" y="302">Players</text>
+  <text class="muted" x="28" y="320" font-size="11">Alex</text>
+  <line x1="28" y1="328" x2="430" y2="328" stroke="#d9dce3"/>
+  <text class="muted" x="28" y="342" font-size="11">Steve</text>
+  <line x1="28" y1="350" x2="430" y2="350" stroke="#d9dce3"/>
+  <text class="muted" x="28" y="364" font-size="11">Sam</text>
+  <text class="label" x="28" y="384">LOADED PER DIMENSION</text>
+  <text class="muted" x="28" y="396">world 824 chunks · nether 216 · the_end 98</text>
+
+  <rect class="surface" x="456" y="284" width="430" height="118" rx="9"/>
+  <text class="text h2" x="470" y="302">Terrain generation</text>
+  <rect x="470" y="312" width="48" height="16" rx="8" fill="#fdf3d7" stroke="#8a5a00"/>
+  <text x="479" y="323" fill="#8a5a00" font-family="system-ui" font-size="8" font-weight="600">paused</text>
+  <text class="muted" x="528" y="323">world · gentle</text>
+  <rect x="470" y="336" width="402" height="8" rx="4" fill="#f0f1f4" stroke="#d9dce3"/>
+  <rect x="471" y="337" width="176" height="6" rx="3" fill="#8a5a00"/>
+  <text class="muted" x="470" y="360">63 720/141 376 chunks · 41.8 chunks/s · about 31 min left</text>
+  <text class="muted" x="470" y="374">paused: players_online</text>
+  <rect class="btn" x="470" y="382" width="52" height="16" rx="6"/>
+  <text class="btn-text" x="482" y="393">Resume</text>
+  <rect class="btn" x="528" y="382" width="48" height="16" rx="6"/>
+  <text class="btn-text" x="540" y="393">Details</text>
+
+  <!-- console -->
+  <rect class="surface" x="14" y="412" width="872" height="192" rx="9"/>
+  <text class="text h2" x="28" y="430">Recent console output</text>
+  <rect class="btn" x="800" y="418" width="72" height="18" rx="6"/>
+  <text class="btn-text" x="812" y="431">Open console</text>
+  <rect class="console" x="28" y="440" width="844" height="150" rx="7"/>
+  <text class="console-text" x="38" y="456">[21:04:11 INFO]: Alex joined the game</text>
+  <text class="console-ctrl" x="38" y="470">terrain generation paused: players_online</text>
+  <text class="console-text" x="38" y="484">[21:04:12 INFO]: [Chunky] [world] Task paused</text>
+  <text class="console-ctrl" x="38" y="498">&gt; save-off</text>
+  <text class="console-text" x="38" y="512">[21:04:20 INFO]: Automatic saving is now disabled</text>
+  <text class="console-ctrl" x="38" y="526">&gt; save-all flush</text>
+  <text class="console-text" x="38" y="540">[21:04:21 INFO]: Saved the game</text>
+  <text class="console-ctrl" x="38" y="554">&gt; save-on</text>
+  <text class="console-text" x="38" y="568">[21:04:21 INFO]: Automatic saving is now enabled</text>
+  <text class="console-ctrl" x="38" y="582">backup complete: 214 MiB new data in 38 s</text>
+</svg>

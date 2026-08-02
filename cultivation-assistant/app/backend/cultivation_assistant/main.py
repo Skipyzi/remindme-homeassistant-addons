@@ -17,14 +17,20 @@ from cultivation_assistant.api.errors import http_exception_handler
 from cultivation_assistant.config import Settings
 from cultivation_assistant.db.engine import Database
 from cultivation_assistant.grow_spaces.router import create_router as create_grow_spaces_router
+from cultivation_assistant.grows.router import create_router as create_grows_router
 from cultivation_assistant.home_assistant.client import (
     HomeAssistantClient,
     HomeAssistantConnectionError,
 )
 from cultivation_assistant.home_assistant.state_cache import EntityStateCache
 from cultivation_assistant.home_assistant.subscription import HomeAssistantEventSubscriber
+from cultivation_assistant.journal.router import create_router as create_journal_router
+from cultivation_assistant.library.router import create_router as create_library_router
+from cultivation_assistant.lifecycle.router import create_router as create_lifecycle_router
 from cultivation_assistant.logging import configure_logging
 from cultivation_assistant.middleware import correlation_id_middleware
+from cultivation_assistant.plants.router import create_router as create_plants_router
+from cultivation_assistant.reservoirs.router import create_router as create_reservoirs_router
 from cultivation_assistant.runtime import RuntimeStatus
 
 
@@ -142,6 +148,16 @@ def create_app(
     app.include_router(
         create_grow_spaces_router(runtime_database, state_cache, status),
         prefix="/api/v1",
+    )
+    app.include_router(create_library_router(runtime_database), prefix="/api/v1")
+    app.include_router(create_lifecycle_router(runtime_database), prefix="/api/v1")
+    app.include_router(create_grows_router(runtime_database), prefix="/api/v1")
+    app.include_router(create_plants_router(runtime_database), prefix="/api/v1")
+    app.include_router(
+        create_journal_router(runtime_database, runtime_settings.data_dir), prefix="/api/v1"
+    )
+    app.include_router(
+        create_reservoirs_router(runtime_database, state_cache, status), prefix="/api/v1"
     )
     if runtime_settings.frontend_dist.is_dir():
         app.mount(

@@ -359,9 +359,7 @@ class GrowSpaceService:
         return CanonicalDimensions(
             length_m=to_metres(request.length, request.unit),
             width_m=to_metres(request.width, request.unit),
-            height_m=(
-                None if request.height is None else to_metres(request.height, request.unit)
-            ),
+            height_m=(None if request.height is None else to_metres(request.height, request.unit)),
         )
 
     @staticmethod
@@ -504,21 +502,13 @@ class GrowSpaceService:
 
     @staticmethod
     def _dimensions_response(record: GrowSpace) -> DimensionsResponse | None:
-        if (
-            record.length_m is None
-            or record.width_m is None
-            or record.dimension_unit is None
-        ):
+        if record.length_m is None or record.width_m is None or record.dimension_unit is None:
             return None
         unit = DimensionUnit(record.dimension_unit)
         return DimensionsResponse(
             length=from_metres(record.length_m, unit),
             width=from_metres(record.width_m, unit),
-            height=(
-                None
-                if record.height_m is None
-                else from_metres(record.height_m, unit)
-            ),
+            height=(None if record.height_m is None else from_metres(record.height_m, unit)),
             unit=unit,
         )
 

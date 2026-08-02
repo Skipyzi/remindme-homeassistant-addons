@@ -520,4 +520,262 @@ func TestPairingErrorsAreIndistinguishableAndRateLimited(t *testing.T) {
 	}
 }
 
+type decodedInventory struct {
+	Items []struct {
+		ID         string `json:"id"`
+		Name       string `json:"name"`
+		Source     string `json:"source"`
+		CatalogID  string `json:"catalogId"`
+		Active     bool   `json:"active"`
+		InProgress bool   `json:"inProgress"`
+		Removable  bool   `json:"removable"`
+	} `json:"items"`
+}
+
+func writeInventoryGGUF(t *testing.T, path string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("GGUFtest"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func inventoryRequest(t *testing.T, server http.Handler) decodedInventory {
+	t.Helper()
+	request := httptest.NewRequest(http.MethodGet, "/manager/v1/models/inventory", nil)
+	request.Header.Set("Authorization", "Bearer manager-secret")
+	response := httptest.NewRecorder()
+	server.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("inventory status=%d body=%s", response.Code, response.Body.String())
+	}
+	var result decodedInventory
+	if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	return result
+}
+
+func inventoryItemID(t *testing.T, server http.Handler, name string) string {
+	t.Helper()
+	for _, item := range inventoryRequest(t, server).Items {
+		if item.Name == name {
+			return item.ID
+		}
+	}
+	t.Fatalf("inventory item %q was not found", name)
+	return ""
+}
+
+func deleteInventoryItem(server http.Handler, id string) *httptest.ResponseRecorder {
+	request := httptest.NewRequest(http.MethodDelete, "/manager/v1/models/inventory/"+id, nil)
+	request.Header.Set("Authorization", "Bearer manager-secret")
+	response := httptest.NewRecorder()
+	server.ServeHTTP(response, request)
+	return response
+}
+
+func TestInventoryListsPhysicalFilesWithoutPaths(t *testing.T) {
+	dependencies := testDependencies(t, "http://127.0.0.1:1")
+	dependencies.CacheDir = t.TempDir()
+	managed := filepath.Join(dependencies.ModelDir, "test.gguf")
+	legacy := filepath.Join(dependencies.CacheDir, "legacy.gguf")
+	writeInventoryGGUF(t, managed)
+	writeInventoryGGUF(t, legacy)
+	server := NewServer(dependencies)
+
+	request := httptest.NewRequest(http.MethodGet, "/manager/v1/models/inventory", nil)
+	request.Header.Set("Authorization", "Bearer manager-secret")
+	response := httptest.NewRecorder()
+	server.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+	if strings.Contains(response.Body.String(), dependencies.ModelDir) || strings.Contains(response.Body.String(), dependencies.CacheDir) {
+		t.Fatalf("inventory leaked a path: %s", response.Body.String())
+	}
+	var result decodedInventory
+	if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Items) != 2 {
+		t.Fatalf("items=%#v", result.Items)
+	}
+	if result.Items[0].Source != "legacy_cache" || result.Items[1].CatalogID != "test-q4" {
+		t.Fatalf("unexpected enriched inventory: %#v", result.Items)
+	}
+}
+
+func TestInventoryMarksActiveAndInProgressFilesProtected(t *testing.T) {
+	for _, current := range []struct {
+		name      string
+		file      string
+		configure func(*fakeSupervisor, string)
+		wantField func(decodedInventory) bool
+	}{
+		{
+			name: "active", file: "test.gguf",
+			configure: func(supervisor *fakeSupervisor, path string) {
+				supervisor.current = state.State{Active: &state.Installed{ID: "test-q4", Path: path}}
+			},
+			wantField: func(result decodedInventory) bool { return result.Items[0].Active },
+		},
+		{
+			name: "in progress", file: "candidate.gguf",
+			configure: func(supervisor *fakeSupervisor, path string) {
+				supervisor.current = state.State{Operation: &state.Operation{ID: "op", ModelPath: path + ".partial"}}
+			},
+			wantField: func(result decodedInventory) bool { return result.Items[0].InProgress },
+		},
+	} {
+		t.Run(current.name, func(t *testing.T) {
+			dependencies := testDependencies(t, "http://127.0.0.1:1")
+			dependencies.CacheDir = t.TempDir()
+			path := filepath.Join(dependencies.ModelDir, current.file)
+			writeInventoryGGUF(t, path)
+			current.configure(dependencies.Supervisor.(*fakeSupervisor), path)
+			server := NewServer(dependencies)
+			result := inventoryRequest(t, server)
+			if len(result.Items) != 1 || !current.wantField(result) || result.Items[0].Removable {
+				t.Fatalf("item was not protected: %#v", result.Items)
+			}
+			response := deleteInventoryItem(server, result.Items[0].ID)
+			if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), "model_protected") {
+				t.Fatalf("delete status=%d body=%s", response.Code, response.Body.String())
+			}
+		})
+	}
+}
+
+func TestInventoryDeleteRemovesManagedAndLegacyFiles(t *testing.T) {
+	for _, current := range []struct {
+		name   string
+		source string
+		path   func(Dependencies) string
+	}{
+		{name: "managed", source: "managed", path: func(dependencies Dependencies) string { return filepath.Join(dependencies.ModelDir, "unknown.gguf") }},
+		{name: "legacy", source: "legacy_cache", path: func(dependencies Dependencies) string {
+			return filepath.Join(dependencies.CacheDir, "llama.cpp", "old.gguf")
+		}},
+	} {
+		t.Run(current.name, func(t *testing.T) {
+			dependencies := testDependencies(t, "http://127.0.0.1:1")
+			dependencies.CacheDir = t.TempDir()
+			path := current.path(dependencies)
+			writeInventoryGGUF(t, path)
+			server := NewServer(dependencies)
+			result := inventoryRequest(t, server)
+			if len(result.Items) != 1 || result.Items[0].Source != current.source {
+				t.Fatalf("items=%#v", result.Items)
+			}
+			response := deleteInventoryItem(server, result.Items[0].ID)
+			if response.Code != http.StatusNoContent {
+				t.Fatalf("delete status=%d body=%s", response.Code, response.Body.String())
+			}
+			if _, err := os.Stat(path); !os.IsNotExist(err) {
+				t.Fatalf("deleted file stat error=%v", err)
+			}
+		})
+	}
+}
+
+func TestInventoryDeleteClearsMatchingVerificationRecord(t *testing.T) {
+	dependencies := testDependencies(t, "http://127.0.0.1:1")
+	dependencies.CacheDir = t.TempDir()
+	path := filepath.Join(dependencies.ModelDir, "test.gguf")
+	writeInventoryGGUF(t, path)
+	store := dependencies.Verified.(*verified.Store)
+	variant := dependencies.Catalog.Variants[0]
+	if err := store.Record(variant, path); err != nil {
+		t.Fatal(err)
+	}
+	server := NewServer(dependencies)
+	response := deleteInventoryItem(server, inventoryItemID(t, server, "test.gguf"))
+	if response.Code != http.StatusNoContent {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+	if store.Has(variant) {
+		t.Fatal("verification record remains after deletion")
+	}
+}
+
+func TestInventoryDeleteLegacyMatchPreservesManagedVerification(t *testing.T) {
+	dependencies := testDependencies(t, "http://127.0.0.1:1")
+	dependencies.CacheDir = t.TempDir()
+	managedPath := filepath.Join(dependencies.ModelDir, "test.gguf")
+	legacyPath := filepath.Join(dependencies.CacheDir, "test.gguf")
+	writeInventoryGGUF(t, managedPath)
+	writeInventoryGGUF(t, legacyPath)
+	store := dependencies.Verified.(*verified.Store)
+	variant := dependencies.Catalog.Variants[0]
+	if err := store.Record(variant, managedPath); err != nil {
+		t.Fatal(err)
+	}
+	server := NewServer(dependencies)
+	result := inventoryRequest(t, server)
+	var legacyID string
+	for _, item := range result.Items {
+		if item.Source == "legacy_cache" {
+			legacyID = item.ID
+		}
+	}
+	if legacyID == "" {
+		t.Fatalf("legacy item missing: %#v", result.Items)
+	}
+	response := deleteInventoryItem(server, legacyID)
+	if response.Code != http.StatusNoContent {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+	if !store.Has(variant) {
+		t.Fatal("deleting a legacy duplicate cleared the managed verification record")
+	}
+}
+
+func TestInventoryDeleteRejectsInvalidUnknownAndConcurrentRequests(t *testing.T) {
+	dependencies := testDependencies(t, "http://127.0.0.1:1")
+	dependencies.CacheDir = t.TempDir()
+	path := filepath.Join(dependencies.ModelDir, "unknown.gguf")
+	writeInventoryGGUF(t, path)
+	server := NewServer(dependencies)
+
+	invalid := deleteInventoryItem(server, "not-hex")
+	if invalid.Code != http.StatusBadRequest || !strings.Contains(invalid.Body.String(), "invalid_inventory_target") {
+		t.Fatalf("invalid status=%d body=%s", invalid.Code, invalid.Body.String())
+	}
+	unknown := deleteInventoryItem(server, strings.Repeat("a", 32))
+	if unknown.Code != http.StatusNotFound || !strings.Contains(unknown.Body.String(), "inventory_item_not_found") {
+		t.Fatalf("unknown status=%d body=%s", unknown.Code, unknown.Body.String())
+	}
+
+	guardResponse := httptest.NewRecorder()
+	if !server.beginMutation(guardResponse) {
+		t.Fatal("could not acquire test mutation guard")
+	}
+	defer server.endMutation()
+	concurrent := deleteInventoryItem(server, inventoryItemID(t, server, "unknown.gguf"))
+	if concurrent.Code != http.StatusConflict || !strings.Contains(concurrent.Body.String(), "operation_in_progress") {
+		t.Fatalf("concurrent status=%d body=%s", concurrent.Code, concurrent.Body.String())
+	}
+}
+
+func TestInventoryRoutesRequireAuthentication(t *testing.T) {
+	server := NewServer(testDependencies(t, "http://127.0.0.1:1"))
+	for _, current := range []struct {
+		method string
+		path   string
+	}{
+		{method: http.MethodGet, path: "/manager/v1/models/inventory"},
+		{method: http.MethodDelete, path: "/manager/v1/models/inventory/" + strings.Repeat("a", 32)},
+	} {
+		request := httptest.NewRequest(current.method, current.path, nil)
+		response := httptest.NewRecorder()
+		server.ServeHTTP(response, request)
+		if response.Code != http.StatusUnauthorized {
+			t.Fatalf("%s %s status=%d", current.method, current.path, response.Code)
+		}
+	}
+}
+
 var _ = url.URL{}

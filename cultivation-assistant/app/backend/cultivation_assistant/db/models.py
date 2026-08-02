@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 from uuid import uuid4
@@ -149,3 +149,419 @@ class EntityMapping(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     calibration: orm.Mapped[dict[str, Any] | None] = orm.mapped_column(sa.JSON)
     stale_after_seconds: orm.Mapped[int] = orm.mapped_column(nullable=False)
     grow_space: orm.Mapped[GrowSpace] = orm.relationship(back_populates="mappings")
+
+
+class Breeder(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Minimal breeder identity referenced by cultivars."""
+
+    __tablename__ = "breeders"
+    __table_args__ = (sa.Index("ix_breeders_lower_name", sa.func.lower("name")),)
+
+    name: orm.Mapped[str] = orm.mapped_column(sa.String(160), nullable=False)
+    active: orm.Mapped[bool] = orm.mapped_column(
+        sa.Boolean, default=True, server_default=sa.true(), nullable=False
+    )
+
+
+class Cultivar(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Minimal structured cultivar identity with an optional breeder."""
+
+    __tablename__ = "cultivars"
+    __table_args__ = (
+        sa.CheckConstraint(
+            "seed_type IN ('regular', 'feminized', 'autoflower', 'unknown')",
+            name="ck_cultivar_seed_type",
+        ),
+        sa.Index("ix_cultivars_lower_name", sa.func.lower("name")),
+    )
+
+    name: orm.Mapped[str] = orm.mapped_column(sa.String(160), nullable=False)
+    breeder_id: orm.Mapped[str | None] = orm.mapped_column(
+        sa.ForeignKey("breeders.id", ondelete="RESTRICT"),
+        nullable=True,
+        index=True,
+    )
+    seed_type: orm.Mapped[str] = orm.mapped_column(
+        sa.String(20), default="unknown", server_default="unknown", nullable=False
+    )
+    active: orm.Mapped[bool] = orm.mapped_column(
+        sa.Boolean, default=True, server_default=sa.true(), nullable=False
+    )
+    breeder: orm.Mapped[Breeder | None] = orm.relationship(lazy="joined")
+
+
+class LifecycleStage(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Installation-wide lifecycle stage definition."""
+
+    __tablename__ = "lifecycle_stages"
+    __table_args__ = (
+        sa.UniqueConstraint("key", name="uq_lifecycle_stage_key"),
+        sa.CheckConstraint("position >= 0", name="ck_lifecycle_stage_position"),
+        sa.Index("ix_lifecycle_stages_position", "position"),
+    )
+
+    key: orm.Mapped[str] = orm.mapped_column(sa.String(60), nullable=False)
+    label: orm.Mapped[str] = orm.mapped_column(sa.String(120), nullable=False)
+    position: orm.Mapped[int] = orm.mapped_column(sa.Integer, nullable=False)
+    enabled: orm.Mapped[bool] = orm.mapped_column(
+        sa.Boolean, default=True, server_default=sa.true(), nullable=False
+    )
+    built_in: orm.Mapped[bool] = orm.mapped_column(
+        sa.Boolean, default=False, server_default=sa.false(), nullable=False
+    )
+
+
+class Grow(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """First-class cultivation cycle within one Grow Space."""
+
+    __tablename__ = "grows"
+    __table_args__ = (
+        sa.CheckConstraint(
+            "status IN ('planned', 'active', 'completed', 'archived')",
+            name="ck_grow_status",
+        ),
+        sa.CheckConstraint(
+            "end_date IS NULL OR start_date IS NULL OR end_date >= start_date",
+            name="ck_grow_dates",
+        ),
+        sa.Index("ix_grows_space_lower_name", "grow_space_id", sa.func.lower("name")),
+        sa.Index("ix_grows_space_status", "grow_space_id", "status"),
+    )
+
+    grow_space_id: orm.Mapped[str] = orm.mapped_column(
+        sa.ForeignKey("grow_spaces.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+    name: orm.Mapped[str] = orm.mapped_column(sa.String(120), nullable=False)
+    status: orm.Mapped[str] = orm.mapped_column(
+        sa.String(20), default="planned", server_default="planned", nullable=False
+    )
+    start_date: orm.Mapped[date | None] = orm.mapped_column(sa.Date)
+    end_date: orm.Mapped[date | None] = orm.mapped_column(sa.Date)
+    notes: orm.Mapped[str | None] = orm.mapped_column(sa.Text)
+
+
+class Plant(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Individually identifiable Plant with a projected current stage."""
+
+    __tablename__ = "plants"
+    __table_args__ = (
+        sa.CheckConstraint(
+            "status IN ('planned', 'active', 'harvested', 'completed', 'lost', 'archived')",
+            name="ck_plant_status",
+        ),
+        sa.CheckConstraint(
+            "propagation_source IN ('seed', 'clone')",
+            name="ck_plant_propagation_source",
+        ),
+        sa.CheckConstraint(
+            "seed_type IS NULL OR seed_type IN "
+            "('regular', 'feminized', 'autoflower', 'unknown')",
+            name="ck_plant_seed_type",
+        ),
+        sa.CheckConstraint(
+            "expected_harvest_end IS NULL OR expected_harvest_start IS NULL "
+            "OR expected_harvest_end >= expected_harvest_start",
+            name="ck_plant_expected_harvest",
+        ),
+        sa.Index("ix_plants_grow_lower_name", "grow_id", sa.func.lower("name")),
+        sa.Index("ix_plants_grow_status", "grow_id", "status"),
+    )
+
+    grow_id: orm.Mapped[str] = orm.mapped_column(
+        sa.ForeignKey("grows.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+    cultivar_id: orm.Mapped[str] = orm.mapped_column(
+        sa.ForeignKey("cultivars.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+    name: orm.Mapped[str] = orm.mapped_column(sa.String(120), nullable=False)
+    propagation_source: orm.Mapped[str] = orm.mapped_column(sa.String(20), nullable=False)
+    seed_type: orm.Mapped[str | None] = orm.mapped_column(sa.String(20))
+    start_date: orm.Mapped[date | None] = orm.mapped_column(sa.Date)
+    current_stage_id: orm.Mapped[str] = orm.mapped_column(
+        sa.ForeignKey("lifecycle_stages.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+    status: orm.Mapped[str] = orm.mapped_column(
+        sa.String(20), default="planned", server_default="planned", nullable=False
+    )
+    container: orm.Mapped[str | None] = orm.mapped_column(sa.String(160))
+    medium: orm.Mapped[str | None] = orm.mapped_column(sa.String(160))
+    location: orm.Mapped[str | None] = orm.mapped_column(sa.String(200))
+    expected_harvest_start: orm.Mapped[date | None] = orm.mapped_column(sa.Date)
+    expected_harvest_end: orm.Mapped[date | None] = orm.mapped_column(sa.Date)
+    actual_harvest_date: orm.Mapped[date | None] = orm.mapped_column(sa.Date)
+    notes: orm.Mapped[str | None] = orm.mapped_column(sa.Text)
+    cultivar: orm.Mapped[Cultivar] = orm.relationship(lazy="joined")
+    grow: orm.Mapped[Grow] = orm.relationship(lazy="joined")
+    current_stage: orm.Mapped[LifecycleStage] = orm.relationship(
+        lazy="joined", foreign_keys=[current_stage_id]
+    )
+    transitions: orm.Mapped[list[PlantStageTransition]] = orm.relationship(
+        back_populates="plant",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        order_by="PlantStageTransition.effective_at",
+    )
+
+
+class PlantStageTransition(UUIDPrimaryKeyMixin, Base):
+    """Append-only record of one Plant stage transition."""
+
+    __tablename__ = "plant_stage_transitions"
+    __table_args__ = (
+        sa.CheckConstraint(
+            "source IN ('user_confirmed', 'user_adjusted', 'imported', "
+            "'application_recalculation')",
+            name="ck_transition_source",
+        ),
+        sa.Index(
+            "ix_plant_transitions_order",
+            "plant_id",
+            "effective_at",
+            "created_at",
+        ),
+    )
+
+    plant_id: orm.Mapped[str] = orm.mapped_column(
+        sa.ForeignKey("plants.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    from_stage_id: orm.Mapped[str | None] = orm.mapped_column(
+        sa.ForeignKey("lifecycle_stages.id", ondelete="RESTRICT")
+    )
+    to_stage_id: orm.Mapped[str] = orm.mapped_column(
+        sa.ForeignKey("lifecycle_stages.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    effective_at: orm.Mapped[datetime] = orm.mapped_column(
+        sa.DateTime(timezone=True), nullable=False
+    )
+    source: orm.Mapped[str] = orm.mapped_column(sa.String(40), nullable=False)
+    notes: orm.Mapped[str | None] = orm.mapped_column(sa.Text)
+    created_at: orm.Mapped[datetime] = orm.mapped_column(
+        sa.DateTime(timezone=True),
+        server_default=sa.func.current_timestamp(),
+        nullable=False,
+    )
+    plant: orm.Mapped[Plant] = orm.relationship(back_populates="transitions")
+    from_stage: orm.Mapped[LifecycleStage | None] = orm.relationship(
+        lazy="joined", foreign_keys=[from_stage_id]
+    )
+    to_stage: orm.Mapped[LifecycleStage] = orm.relationship(
+        lazy="joined", foreign_keys=[to_stage_id]
+    )
+
+
+class JournalEntry(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """A free-form note describing a Plant or a Grow."""
+
+    __tablename__ = "journal_entries"
+    __table_args__ = (
+        sa.CheckConstraint("subject_type IN ('plant', 'grow')", name="ck_journal_subject_type"),
+        sa.CheckConstraint(
+            "entry_type IN ('watered', 'fed', 'transplanted', 'topped', 'trained', "
+            "'defoliated', 'light_schedule_changed', 'flowering_initiated', "
+            "'first_flowers_observed', 'problem_observed', 'treatment_applied', "
+            "'harvested', 'drying_started', 'jarred', 'cure_milestone', 'note')",
+            name="ck_journal_entry_type",
+        ),
+        sa.Index("ix_journal_entries_subject", "subject_type", "subject_id", "occurred_at"),
+    )
+
+    subject_type: orm.Mapped[str] = orm.mapped_column(sa.String(20), nullable=False)
+    subject_id: orm.Mapped[str] = orm.mapped_column(sa.String(36), nullable=False)
+    entry_type: orm.Mapped[str] = orm.mapped_column(sa.String(40), nullable=False)
+    occurred_at: orm.Mapped[datetime] = orm.mapped_column(
+        sa.DateTime(timezone=True), nullable=False
+    )
+    title: orm.Mapped[str | None] = orm.mapped_column(sa.String(200))
+    notes: orm.Mapped[str | None] = orm.mapped_column(sa.Text)
+    tags: orm.Mapped[list[str]] = orm.mapped_column(
+        sa.JSON(), default=list, server_default="[]", nullable=False
+    )
+    related_stage_id: orm.Mapped[str | None] = orm.mapped_column(
+        sa.ForeignKey("lifecycle_stages.id", ondelete="RESTRICT")
+    )
+    related_issue: orm.Mapped[str | None] = orm.mapped_column(sa.Text)
+    related_stage: orm.Mapped[LifecycleStage | None] = orm.relationship(
+        lazy="joined", foreign_keys=[related_stage_id]
+    )
+
+
+class Measurement(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """A quantitative reading recorded against a Plant."""
+
+    __tablename__ = "measurements"
+    __table_args__ = (
+        sa.CheckConstraint(
+            "metric_type IN ('height', 'width', 'canopy_diameter', 'stem_diameter', "
+            "'node_count', 'container_weight', 'plant_weight', 'custom')",
+            name="ck_measurement_metric_type",
+        ),
+        sa.Index("ix_measurements_plant_order", "plant_id", "occurred_at"),
+    )
+
+    plant_id: orm.Mapped[str] = orm.mapped_column(
+        sa.ForeignKey("plants.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    metric_type: orm.Mapped[str] = orm.mapped_column(sa.String(40), nullable=False)
+    custom_metric_name: orm.Mapped[str | None] = orm.mapped_column(sa.String(120))
+    value: orm.Mapped[float] = orm.mapped_column(sa.Float(), nullable=False)
+    unit: orm.Mapped[str] = orm.mapped_column(sa.String(40), nullable=False)
+    occurred_at: orm.Mapped[datetime] = orm.mapped_column(
+        sa.DateTime(timezone=True), nullable=False
+    )
+    notes: orm.Mapped[str | None] = orm.mapped_column(sa.Text)
+
+
+class Photo(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """A Plant photo stored on disk and referenced by relative path."""
+
+    __tablename__ = "photos"
+    __table_args__ = (
+        sa.CheckConstraint(
+            "content_type IN ('image/jpeg', 'image/png', 'image/webp')",
+            name="ck_photo_content_type",
+        ),
+        sa.Index("ix_photos_plant_order", "plant_id", "occurred_at"),
+    )
+
+    plant_id: orm.Mapped[str] = orm.mapped_column(
+        sa.ForeignKey("plants.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    journal_entry_id: orm.Mapped[str | None] = orm.mapped_column(
+        sa.ForeignKey("journal_entries.id", ondelete="SET NULL"), index=True
+    )
+    measurement_id: orm.Mapped[str | None] = orm.mapped_column(
+        sa.ForeignKey("measurements.id", ondelete="SET NULL"), index=True
+    )
+    stage_id: orm.Mapped[str | None] = orm.mapped_column(
+        sa.ForeignKey("lifecycle_stages.id", ondelete="RESTRICT")
+    )
+    caption: orm.Mapped[str | None] = orm.mapped_column(sa.String(200))
+    tags: orm.Mapped[list[str]] = orm.mapped_column(
+        sa.JSON(), default=list, server_default="[]", nullable=False
+    )
+    file_path: orm.Mapped[str] = orm.mapped_column(sa.String(400), nullable=False)
+    content_type: orm.Mapped[str] = orm.mapped_column(sa.String(40), nullable=False)
+    file_size: orm.Mapped[int] = orm.mapped_column(sa.Integer(), nullable=False)
+    occurred_at: orm.Mapped[datetime] = orm.mapped_column(
+        sa.DateTime(timezone=True), nullable=False
+    )
+    stage: orm.Mapped[LifecycleStage | None] = orm.relationship(
+        lazy="joined", foreign_keys=[stage_id]
+    )
+
+
+class Reservoir(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """A physical tank or bucket holding nutrient solution or water."""
+
+    __tablename__ = "reservoirs"
+    __table_args__ = (
+        sa.CheckConstraint(
+            "reservoir_type IN ('autopot_reservoir', 'dwc_bucket', 'rdwc_control_reservoir', "
+            "'irrigation_supply_tank', 'mixing_tank', 'top_off_tank', 'ro_source_water_tank', "
+            "'runoff_waste_tank', 'custom_reservoir')",
+            name="ck_reservoir_type",
+        ),
+        sa.CheckConstraint(
+            "geometry_shape IN ('rectangular', 'vertical_cylinder', 'horizontal_cylinder', "
+            "'custom_calibration_table')",
+            name="ck_reservoir_geometry_shape",
+        ),
+        sa.CheckConstraint("capacity_liters > 0", name="ck_reservoir_capacity"),
+        sa.CheckConstraint(
+            "usable_capacity_liters IS NULL OR usable_capacity_liters <= capacity_liters",
+            name="ck_reservoir_usable_capacity",
+        ),
+        sa.Index("ix_reservoirs_active_name", "active", "name"),
+    )
+
+    name: orm.Mapped[str] = orm.mapped_column(sa.String(160), nullable=False)
+    reservoir_type: orm.Mapped[str] = orm.mapped_column(sa.String(40), nullable=False)
+    primary_grow_space_id: orm.Mapped[str | None] = orm.mapped_column(
+        sa.ForeignKey("grow_spaces.id", ondelete="RESTRICT"), index=True
+    )
+    capacity_liters: orm.Mapped[Decimal] = orm.mapped_column(sa.Numeric(12, 4), nullable=False)
+    usable_capacity_liters: orm.Mapped[Decimal | None] = orm.mapped_column(sa.Numeric(12, 4))
+    minimum_safe_volume_liters: orm.Mapped[Decimal | None] = orm.mapped_column(sa.Numeric(12, 4))
+    refill_threshold_liters: orm.Mapped[Decimal | None] = orm.mapped_column(sa.Numeric(12, 4))
+    overflow_threshold_liters: orm.Mapped[Decimal | None] = orm.mapped_column(sa.Numeric(12, 4))
+    geometry_shape: orm.Mapped[str] = orm.mapped_column(sa.String(40), nullable=False)
+    geometry_unit: orm.Mapped[str | None] = orm.mapped_column(sa.String(8))
+    geometry_length_m: orm.Mapped[Decimal | None] = orm.mapped_column(sa.Numeric(12, 4))
+    geometry_width_m: orm.Mapped[Decimal | None] = orm.mapped_column(sa.Numeric(12, 4))
+    geometry_height_m: orm.Mapped[Decimal | None] = orm.mapped_column(sa.Numeric(12, 4))
+    geometry_diameter_m: orm.Mapped[Decimal | None] = orm.mapped_column(sa.Numeric(12, 4))
+    active: orm.Mapped[bool] = orm.mapped_column(
+        sa.Boolean, default=True, server_default=sa.true(), nullable=False
+    )
+    calibration_points: orm.Mapped[list[ReservoirCalibrationPoint]] = orm.relationship(
+        back_populates="reservoir",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        order_by="ReservoirCalibrationPoint.raw_value",
+    )
+    entity_mappings: orm.Mapped[list[ReservoirEntityMapping]] = orm.relationship(
+        back_populates="reservoir",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+
+
+class ReservoirCalibrationPoint(UUIDPrimaryKeyMixin, Base):
+    """One raw-reading-to-volume point in a reservoir's calibration table."""
+
+    __tablename__ = "reservoir_calibration_points"
+    __table_args__ = (
+        sa.UniqueConstraint(
+            "reservoir_id", "raw_value", name="uq_reservoir_calibration_raw_value"
+        ),
+    )
+
+    reservoir_id: orm.Mapped[str] = orm.mapped_column(
+        sa.ForeignKey("reservoirs.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    raw_value: orm.Mapped[Decimal] = orm.mapped_column(sa.Numeric(12, 4), nullable=False)
+    volume_liters: orm.Mapped[Decimal] = orm.mapped_column(sa.Numeric(12, 4), nullable=False)
+    reservoir: orm.Mapped[Reservoir] = orm.relationship(back_populates="calibration_points")
+
+
+class ReservoirEntityMapping(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Map one Home Assistant entity to one reservoir role."""
+
+    __tablename__ = "reservoir_entity_mappings"
+    __table_args__ = (
+        sa.UniqueConstraint(
+            "reservoir_id", "entity_id", "role", name="uq_reservoir_mapping_role"
+        ),
+        sa.CheckConstraint("priority >= 0", name="ck_reservoir_mapping_priority"),
+        sa.CheckConstraint("stale_after_seconds > 0", name="ck_reservoir_mapping_stale"),
+        sa.Index(
+            "ix_reservoir_mappings_role_priority", "reservoir_id", "role", "priority"
+        ),
+    )
+
+    reservoir_id: orm.Mapped[str] = orm.mapped_column(
+        sa.ForeignKey("reservoirs.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    entity_id: orm.Mapped[str] = orm.mapped_column(sa.String(255), nullable=False)
+    role: orm.Mapped[str] = orm.mapped_column(sa.String(40), nullable=False)
+    display_name: orm.Mapped[str | None] = orm.mapped_column(sa.String(160))
+    priority: orm.Mapped[int] = orm.mapped_column(default=100, nullable=False)
+    source_unit: orm.Mapped[str | None] = orm.mapped_column(sa.String(40))
+    normalized_unit: orm.Mapped[str | None] = orm.mapped_column(sa.String(40))
+    enabled: orm.Mapped[bool] = orm.mapped_column(
+        sa.Boolean, default=True, server_default=sa.true(), nullable=False
+    )
+    calibration: orm.Mapped[dict[str, Any] | None] = orm.mapped_column(sa.JSON)
+    stale_after_seconds: orm.Mapped[int] = orm.mapped_column(default=300, nullable=False)
+    reservoir: orm.Mapped[Reservoir] = orm.relationship(back_populates="entity_mappings")

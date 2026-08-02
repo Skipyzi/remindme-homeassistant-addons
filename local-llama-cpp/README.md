@@ -89,6 +89,12 @@ The token is stored only in `/data/model-manager/credentials.json` with restrict
 
 The legacy `manager_token` option is migration-only. It is imported only when `/data/model-manager/manager-token` does not exist; an existing manager-owned token is never overwritten. Preserve `/data/model-manager` and `/data/models` when upgrading, rolling back, or reinstalling.
 
+## Downloaded model storage
+
+RemindMe's **Models → Downloaded models** section scans the add-on's persistent `/data/models` directory and legacy GGUF files under `/data/.cache`. It lists physical files independently of the curated catalog, so custom and older downloads remain visible.
+
+A non-running file can be removed after confirmation. The manager refuses to remove the active model or a model involved in an operation. The browser receives opaque inventory identifiers rather than filesystem paths.
+
 ## Recovery and safety
 
 The manager persists download progress and leaves interrupted downloads resumable. It records successful verification separately from runtime state, so YAML is unavailable until the exact final file has passed verification. Running and in-progress files cannot be removed.

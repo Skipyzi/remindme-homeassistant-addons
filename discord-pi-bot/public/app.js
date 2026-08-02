@@ -1893,6 +1893,9 @@ function harness() {
 		async removeModel(id) {
 			return window.RemindMeModelCookbook.remove(this, id);
 		},
+		async removeInventoryItem(item) {
+			return window.RemindMeModelCookbook.removeInventoryItem(this, item);
+		},
 		async saveModelToken() {
 			return window.RemindMeModelCookbook.saveToken(this);
 		},

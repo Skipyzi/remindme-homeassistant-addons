@@ -21,6 +21,10 @@ window.RemindMeModelCookbook = {
 			pairingBusy: false,
 			modelCatalog: [],
 			modelHardware: null,
+			modelInventory: [],
+			modelInventoryWarnings: [],
+			modelInventoryLoading: false,
+			modelInventoryError: "",
 			modelStatus: null,
 			modelOperation: null,
 			modelError: "",
@@ -44,7 +48,11 @@ window.RemindMeModelCookbook = {
 			);
 			vm.modelPairingConfigured = pairing.configured === true;
 			if (!vm.modelPairingConfigured) return;
-			await Promise.all([this.loadCatalog(vm), this.loadStatus(vm)]);
+			await Promise.all([
+				this.loadCatalog(vm),
+				this.loadStatus(vm),
+				this.loadInventory(vm),
+			]);
 			this.connect(vm);
 		} catch (error) {
 			vm.modelError = error.message || "Model cookbook is unavailable.";
@@ -88,6 +96,25 @@ window.RemindMeModelCookbook = {
 		vm.modelOperation = status.operation || vm.modelOperation;
 	},
 
+	async loadInventory(vm) {
+		vm.modelInventoryLoading = true;
+		vm.modelInventoryError = "";
+		try {
+			const result = await fetch("./api/models/inventory").then(
+				readModelResponse,
+			);
+			vm.modelInventory = Array.isArray(result.items) ? result.items : [];
+			vm.modelInventoryWarnings = Array.isArray(result.warnings)
+				? result.warnings
+				: [];
+		} catch (error) {
+			vm.modelInventoryError =
+				error.message || "Downloaded models could not be scanned.";
+		} finally {
+			vm.modelInventoryLoading = false;
+		}
+	},
+
 	connect(vm) {
 		if (typeof EventSource === "undefined") return;
 		vm.modelEvents?.close();
@@ -103,6 +130,7 @@ window.RemindMeModelCookbook = {
 			if (["idle", "active", "failed", "degraded"].includes(phase)) {
 				this.loadStatus(vm).catch(() => {});
 				this.loadCatalog(vm).catch(() => {});
+				this.loadInventory(vm).catch(() => {});
 			}
 			// A "download & use" whose download just finished now hot-swaps.
 			if (phase === "idle" && vm.pendingActivateId) {
@@ -227,6 +255,24 @@ window.RemindMeModelCookbook = {
 
 	remove(vm, id) {
 		return this.mutate(vm, `./api/models/${encodeURIComponent(id)}`, "DELETE");
+	},
+
+	async removeInventoryItem(vm, item) {
+		if (!item?.removable) return;
+		const size = this.formatBytes(item.size);
+		if (!window.confirm(`Remove "${item.name}" and reclaim ${size}?`)) return;
+		vm.modelInventoryError = "";
+		try {
+			const response = await fetch(
+				`./api/models/inventory/${encodeURIComponent(item.id)}`,
+				{ method: "DELETE" },
+			);
+			await readModelResponse(response);
+			await Promise.all([this.loadInventory(vm), this.loadCatalog(vm)]);
+		} catch (error) {
+			vm.modelInventoryError =
+				error.message || "Downloaded model could not be removed.";
+		}
 	},
 
 	async saveToken(vm) {
