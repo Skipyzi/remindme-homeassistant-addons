@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.13.1 — 2026-08-02
+
+- Re-inspect persisted custom models whose catalog entry has no resolved byte size instead of sending `ExpectedBytes: 0` into the downloader.
+- Cover both exact-file and `repo:quantization` startup recovery from unresolved custom catalog entries.
+
 ## 1.12.1 — 2026-08-02
 
 - Accept current official Hugging Face CDN and Xet redirects, including `us.aws.cdn.hf.co`, while retaining strict HTTPS and domain-boundary validation.

@@ -49,7 +49,7 @@ func (downloader Downloader) Resolve(ctx context.Context, rawRepo, rawFile, toke
 			return catalog.Variant{}, repositoryError("The configured GGUF is a sidecar, not a primary model.")
 		}
 		for _, variant := range curated.Variants {
-			if variant.Repo == repo && variant.File == rawFile {
+			if variant.Repo == repo && variant.File == rawFile && variant.ExpectedBytes > 0 {
 				return variant, nil
 			}
 		}
@@ -105,7 +105,7 @@ func selectCuratedVariant(modelCatalog catalog.Catalog, repo, quant string) (cat
 	variants := make([]catalog.Variant, 0)
 	files := make([]repositoryFile, 0)
 	for _, variant := range modelCatalog.Variants {
-		if variant.Repo != repo {
+		if variant.Repo != repo || variant.ExpectedBytes <= 0 {
 			continue
 		}
 		variants = append(variants, variant)

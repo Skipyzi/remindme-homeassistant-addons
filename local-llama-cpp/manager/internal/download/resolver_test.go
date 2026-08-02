@@ -87,6 +87,34 @@ func TestResolveInspectsExactCustomFile(t *testing.T) {
 	}
 }
 
+func TestResolveInspectsPersistedCustomVariantWithoutSize(t *testing.T) {
+	unresolved, err := catalog.ValidateCustom(catalog.CustomInput{Repo: "owner/repo", File: "Model-Q4_K_M.gguf"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	modelCatalog := catalog.Catalog{Variants: []catalog.Variant{unresolved}}
+	for name, testCase := range map[string]struct {
+		repo string
+		file string
+	}{
+		"exact":     {repo: "owner/repo", file: "Model-Q4_K_M.gguf"},
+		"shorthand": {repo: "owner/repo:Q4_K_M", file: ""},
+	} {
+		t.Run(name, func(t *testing.T) {
+			server, requests := newResolverServer(t, []resolverFile{{Type: "file", Path: unresolved.File, Size: 321}})
+			defer server.Close()
+			downloader := Downloader{Client: server.Client(), APIBase: server.URL, ResolveBase: server.URL, MaxBytes: 1024}
+			got, resolveErr := downloader.Resolve(context.Background(), testCase.repo, testCase.file, "", modelCatalog)
+			if resolveErr != nil || got.ExpectedBytes != 321 {
+				t.Fatalf("variant=%#v err=%v", got, resolveErr)
+			}
+			if requests.Load() == 0 {
+				t.Fatal("unresolved custom model bypassed Hugging Face inspection")
+			}
+		})
+	}
+}
+
 func TestResolveRejectsExactSplitAndSidecarFiles(t *testing.T) {
 	for name, testCase := range map[string]struct {
 		file string
