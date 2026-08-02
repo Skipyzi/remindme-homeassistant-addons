@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"regexp"
 	"strings"
 )
@@ -157,6 +158,64 @@ func ValidateCustom(input CustomInput) (Variant, error) {
 			ReasoningMode: "off",
 		},
 	}, nil
+}
+
+func LoadCustomFile(path string) (Catalog, error) {
+	file, err := os.Open(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return Catalog{}, nil
+	}
+	if err != nil {
+		return Catalog{}, fmt.Errorf("open custom catalog: %w", err)
+	}
+	defer file.Close()
+
+	decoder := json.NewDecoder(file)
+	decoder.DisallowUnknownFields()
+	var result Catalog
+	if err := decoder.Decode(&result); err != nil {
+		return Catalog{}, fmt.Errorf("decode custom catalog: %w", err)
+	}
+	seen := make(map[string]struct{}, len(result.Variants))
+	for _, variant := range result.Variants {
+		expected, validateErr := ValidateCustom(CustomInput{Repo: variant.Repo, File: variant.File})
+		if validateErr != nil || !variant.Unverified || variant.ID != expected.ID || variant.Family != expected.Family || variant.SHA256 != "" {
+			return Catalog{}, errors.New("custom catalog contains an invalid model identity")
+		}
+		if variant.ExpectedBytes < 0 || (variant.ExpectedBytes == 0 && (variant.Parameters != 0 || variant.MinimumRAM != 0 || variant.RecommendedRAM != 0)) || (variant.ExpectedBytes > 0 && (variant.Parameters <= 0 || variant.MinimumRAM <= 0 || variant.RecommendedRAM < variant.MinimumRAM)) {
+			return Catalog{}, errors.New("custom catalog contains invalid model sizes")
+		}
+		if variant.NativeContext <= 0 || variant.RecommendedContext <= 0 || variant.RecommendedContext > variant.NativeContext || variant.Runtime.Threads <= 0 || variant.Runtime.Batch <= 0 || variant.Runtime.UBatch <= 0 {
+			return Catalog{}, errors.New("custom catalog contains invalid runtime limits")
+		}
+		if _, duplicate := seen[variant.ID]; duplicate {
+			return Catalog{}, fmt.Errorf("duplicate custom model id %q", variant.ID)
+		}
+		seen[variant.ID] = struct{}{}
+	}
+	return result, nil
+}
+
+func Merge(base, additions Catalog) (Catalog, error) {
+	merged := Catalog{Variants: append([]Variant(nil), base.Variants...)}
+	for _, addition := range additions.Variants {
+		identical := false
+		for _, existing := range merged.Variants {
+			sameID := existing.ID == addition.ID
+			sameModel := existing.Repo == addition.Repo && existing.File == addition.File
+			if sameID && sameModel {
+				identical = true
+				break
+			}
+			if sameID || sameModel {
+				return Catalog{}, fmt.Errorf("model catalog conflict for %q", addition.ID)
+			}
+		}
+		if !identical {
+			merged.Variants = append(merged.Variants, addition)
+		}
+	}
+	return merged, nil
 }
 
 func (catalog Catalog) Find(id string) (Variant, bool) {

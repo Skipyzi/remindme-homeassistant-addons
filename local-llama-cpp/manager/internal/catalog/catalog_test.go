@@ -1,7 +1,9 @@
 package catalog
 
 import (
+	"encoding/json"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -54,6 +56,73 @@ func TestPublicVariantDoesNotExposeInternalPath(t *testing.T) {
 	public := variant.Public()
 	if public.ID != "model" || public.Repo != "owner/repo" || public.File != "model.gguf" {
 		t.Fatalf("unexpected public variant: %#v", public)
+	}
+}
+
+func TestLoadCustomFileAllowsValidatedUnverifiedVariant(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "catalog.json")
+	variant, err := ValidateCustom(CustomInput{Repo: "owner/repo", File: "Model-Q4_K_M.gguf"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	variant.ExpectedBytes = 123
+	variant.Parameters = 246
+	variant.MinimumRAM = 1024
+	variant.RecommendedRAM = 2048
+	data, err := json.Marshal(map[string]any{"variants": []Variant{variant}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got, err := LoadCustomFile(path)
+	if err != nil || len(got.Variants) != 1 || got.Variants[0].SHA256 != "" {
+		t.Fatalf("catalog=%#v err=%v", got, err)
+	}
+}
+
+func TestLoadCustomFileAllowsUnresolvedWorkbenchVariant(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "catalog.json")
+	variant, err := ValidateCustom(CustomInput{Repo: "owner/repo", File: "Model-Q4_K_M.gguf"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := json.Marshal(map[string]any{"variants": []Variant{variant}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got, err := LoadCustomFile(path)
+	if err != nil || len(got.Variants) != 1 || got.Variants[0].ExpectedBytes != 0 {
+		t.Fatalf("catalog=%#v err=%v", got, err)
+	}
+}
+
+func TestLoadCustomFileMissingIsEmpty(t *testing.T) {
+	got, err := LoadCustomFile(filepath.Join(t.TempDir(), "missing.json"))
+	if err != nil || len(got.Variants) != 0 {
+		t.Fatalf("catalog=%#v err=%v", got, err)
+	}
+}
+
+func TestMergeCatalogsIsIdempotentAndRejectsConflicts(t *testing.T) {
+	custom, err := ValidateCustom(CustomInput{Repo: "owner/repo", File: "Model-Q4_K_M.gguf"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	custom.ExpectedBytes = 123
+	base := Catalog{Variants: []Variant{custom}}
+	merged, err := Merge(base, Catalog{Variants: []Variant{custom}})
+	if err != nil || len(merged.Variants) != 1 {
+		t.Fatalf("merged=%#v err=%v", merged, err)
+	}
+	conflict := custom
+	conflict.File = "Other-Q4_K_M.gguf"
+	if _, err := Merge(base, Catalog{Variants: []Variant{conflict}}); err == nil {
+		t.Fatal("conflicting custom variant was accepted")
 	}
 }
 
