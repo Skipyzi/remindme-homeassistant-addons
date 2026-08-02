@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.13.2 — 2026-08-02
+
+- Persist startup verification for configured catalog models so a physically stored model remains reusable from chat after restart or after switching away.
+- Revalidate unrecorded existing files, including curated SHA-256 checks, before marking them verified; freshly downloaded startup models reuse the downloader's completed verification.
+
 ## 1.13.1 — 2026-08-02
 
 - Re-inspect persisted custom models whose catalog entry has no resolved byte size instead of sending `ExpectedBytes: 0` into the downloader.

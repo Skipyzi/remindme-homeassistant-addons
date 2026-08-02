@@ -26,13 +26,17 @@ import (
 )
 
 type fakeDownloader struct {
-	mu      sync.Mutex
-	started chan struct{}
-	release chan struct{}
-	path    string
+	mu           sync.Mutex
+	started      chan struct{}
+	release      chan struct{}
+	path         string
+	inspectBytes int64
 }
 
 func (fake *fakeDownloader) Inspect(_ context.Context, variant catalog.Variant, _ string) (download.Metadata, error) {
+	if fake.inspectBytes > 0 {
+		return download.Metadata{Bytes: fake.inspectBytes}, nil
+	}
 	return download.Metadata{Bytes: variant.ExpectedBytes}, nil
 }
 
@@ -276,6 +280,57 @@ func TestInstallDownloadsWithoutChangingRuntime(t *testing.T) {
 	}
 	if fake.current.Phase != state.PhaseIdle || fake.current.Operation != nil {
 		t.Fatalf("download did not complete cleanly: %#v", fake.current)
+	}
+}
+
+func TestInstallReusesAndVerifiesExistingModelFile(t *testing.T) {
+	dependencies := testDependencies(t, "http://127.0.0.1:1")
+	variant := dependencies.Catalog.Variants[0]
+	path := filepath.Join(dependencies.ModelDir, variant.File)
+	if err := os.WriteFile(path, []byte("GGUFtest"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	server := NewServer(dependencies)
+	request := httptest.NewRequest(http.MethodPost, "/manager/v1/install", strings.NewReader(`{"id":"test-q4"}`))
+	request.Header.Set("Authorization", "Bearer manager-secret")
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	server.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+	var body map[string]any
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body["alreadyInstalled"] != true {
+		t.Fatalf("body=%#v", body)
+	}
+	if !dependencies.Verified.Has(variant) {
+		t.Fatal("existing model was not recorded as verified")
+	}
+}
+
+func TestInspectingCustomModelPersistsResolvedMetadata(t *testing.T) {
+	dependencies := testDependencies(t, "http://127.0.0.1:1")
+	variant, err := catalog.ValidateCustom(catalog.CustomInput{Repo: "owner/repo", File: "Custom-Q4_K_M.gguf"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	dependencies.Catalog = catalog.Catalog{Variants: []catalog.Variant{variant}}
+	dependencies.Downloader.(*fakeDownloader).inspectBytes = 8
+	server := NewServer(dependencies)
+	request := httptest.NewRequest(http.MethodPost, "/manager/v1/preflight", strings.NewReader(`{"id":"`+variant.ID+`"}`))
+	request.Header.Set("Authorization", "Bearer manager-secret")
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	server.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+	persisted, err := catalog.LoadCustomFile(dependencies.CustomCatalogPath)
+	if err != nil || len(persisted.Variants) != 1 || persisted.Variants[0].ExpectedBytes != 8 {
+		t.Fatalf("persisted=%#v err=%v", persisted, err)
 	}
 }
 

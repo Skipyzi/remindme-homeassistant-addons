@@ -51,8 +51,8 @@ test("startup delegates JSON parsing to the Go manager", () => {
 });
 
 test("release packages secure direct pairing without sibling privileges", () => {
-	assert.match(remindMeConfig, /version: "2\.59\.0"/);
-	assert.match(config, /version: "1\.13\.1"/);
+	assert.match(remindMeConfig, /version: "2\.59\.1"/);
+	assert.match(config, /version: "1\.13\.2"/);
 	assert.doesNotMatch(remindMeConfig, /hassio_role:\s*(manager|admin)/);
 	assert.doesNotMatch(remindMeServer, /\/addons\/\$\{.*\}\/options/);
 	assert.doesNotMatch(remindMeServer, /\/addons\/self\/options\/validate/);
@@ -132,7 +132,7 @@ test("manual model workflow is documented", () => {
 
 test("custom Hugging Face native configuration is packaged and documented", () => {
 	assert.ok(existsSync(llamaChangelogPath), "llama add-on changelog is missing");
-	assert.match(config, /version:\s*["']1\.13\.1["']/);
+	assert.match(config, /version:\s*["']1\.13\.2["']/);
 	assert.match(llamaReadme, /owner\/repo:Q4_K_M/);
 	assert.match(llamaReadme, /split GGUF/i);
 	assert.match(llamaReadme, /exact GGUF filename/i);

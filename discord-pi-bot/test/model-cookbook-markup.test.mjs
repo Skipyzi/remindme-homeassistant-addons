@@ -13,7 +13,8 @@ test("models support one-click switching with a YAML fallback", () => {
 	assert.match(html, /data-model-catalog/);
 	// The primary action is now "use" — download+verify+activate, or hot-swap.
 	assert.match(html, /@click="useModel\(variant\.model\.id\)"/);
-	assert.match(html, /Download &amp; use/);
+	assert.match(html, /Verify & use/);
+	assert.match(html, /Download & use/);
 	assert.match(html, /Use this model/);
 	assert.match(html, /@click="cancelModelOperation\(\)"/);
 	// Copy YAML stays as the advanced fallback path.
@@ -24,6 +25,7 @@ test("models support one-click switching with a YAML fallback", () => {
 	// The switch client hits the activate endpoint and orchestrates use().
 	assert.match(component, /\.\/api\/models\/activate/);
 	assert.match(component, /use\(vm, id\)/);
+	assert.match(component, /alreadyInstalled/);
 	assert.match(app, /useModel\(id\)/);
 	assert.doesNotMatch(app, /localStorage.*modelYaml/s);
 });

@@ -1527,9 +1527,8 @@
                       x-show="!variant.verified && !variant.active"
                       :disabled="modelOperationBusy || !variant.assessment?.safe"
                       @click="useModel(variant.model.id)"
-                    >
-                      Download &amp; use
-                    </button>
+                      x-text="variant.installed ? 'Verify & use' : 'Download & use'"
+                    ></button>
                     <!-- Downloaded and verified: hot-swap to it, no add-on restart. -->
                     <button
                       class="action"
