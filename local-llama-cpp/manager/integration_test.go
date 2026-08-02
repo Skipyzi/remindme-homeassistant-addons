@@ -20,6 +20,7 @@ import (
 	"remindme.local/model-manager/internal/hardware"
 	managerruntime "remindme.local/model-manager/internal/runtime"
 	"remindme.local/model-manager/internal/state"
+	"remindme.local/model-manager/internal/verified"
 )
 
 type integrationProcess struct{}
@@ -52,6 +53,125 @@ func (launcher *integrationLauncher) activeModel() string {
 	launcher.mu.Lock()
 	defer launcher.mu.Unlock()
 	return launcher.active
+}
+
+func TestCustomShorthandResolveDownloadAndActivate(t *testing.T) {
+	candidateBytes := []byte("GGUFcandidate")
+	huggingFace := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		switch {
+		case request.Method == http.MethodGet && strings.Contains(request.URL.Path, "/api/models/"):
+			response.Header().Set("Content-Type", "application/json")
+			_, _ = response.Write([]byte(`[
+				{"type":"file","path":"Qwen3.5-2B-UD-Q4_K_XL.gguf","size":13},
+				{"type":"file","path":"Qwen3.5-2B-mtp-UD-Q4_K_XL.gguf","size":4}
+			]`))
+		case request.Method == http.MethodHead && strings.HasSuffix(request.URL.Path, "/Qwen3.5-2B-UD-Q4_K_XL.gguf"):
+			response.Header().Set("X-Linked-Size", "13")
+		case request.Method == http.MethodGet && strings.HasSuffix(request.URL.Path, "/Qwen3.5-2B-UD-Q4_K_XL.gguf"):
+			response.Header().Set("Content-Length", "13")
+			_, _ = response.Write(candidateBytes)
+		default:
+			http.NotFound(response, request)
+		}
+	}))
+	defer huggingFace.Close()
+
+	modelDir := t.TempDir()
+	downloader := download.Downloader{
+		Client: huggingFace.Client(), APIBase: huggingFace.URL, ResolveBase: huggingFace.URL,
+		ModelDir: modelDir, MaxBytes: 1024,
+	}
+	variant, err := downloader.Resolve(
+		context.Background(),
+		"unsloth/Qwen3.5-2B-MTP-GGUF:UD-Q4_K_XL",
+		"",
+		"",
+		catalog.Catalog{},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	store := state.Store{Path: filepath.Join(t.TempDir(), "state.json")}
+	launcher := &integrationLauncher{starts: map[string]int{}}
+	supervisor, err := managerruntime.NewSupervisor(
+		managerruntime.Config{
+			Binary: "/app/llama-server.bin", Target: "http://127.0.0.1:8081", ModelDir: modelDir,
+			ReadinessTimeout: 25 * time.Millisecond, ProbeInterval: time.Millisecond,
+		},
+		launcher,
+		store,
+		func(context.Context) error { return nil },
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stablePath := filepath.Join(modelDir, "stable.gguf")
+	if err := os.WriteFile(stablePath, []byte("GGUFstable"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := supervisor.Start(context.Background(), state.Installed{ID: "stable", File: "stable.gguf", Path: stablePath, Healthy: true}, hardware.Runtime{Context: 4096, Batch: 128, UBatch: 64, Threads: 4, ReasoningMode: "off"}); err != nil {
+		t.Fatal(err)
+	}
+	verificationStore := &verified.Store{Path: filepath.Join(t.TempDir(), "verified.json"), ModelDir: modelDir}
+	manager := managerapi.NewServer(managerapi.Dependencies{
+		Catalog: catalog.Catalog{}, Token: func() string { return "integration-secret" },
+		Facts: func() (hardware.Facts, error) {
+			return hardware.Facts{TotalRAM: 8 << 30, FreeRAM: 7 << 30, FreeDisk: 20 << 30, CPUCores: 4, Architecture: "arm64"}, nil
+		},
+		Downloader: downloader, Supervisor: supervisor, Verified: verificationStore,
+		ModelDir: modelDir, CredentialPath: filepath.Join(t.TempDir(), "credentials.json"),
+		CustomCatalogPath: filepath.Join(t.TempDir(), "custom.json"), InferenceURL: "http://127.0.0.1:1",
+	})
+	if err := manager.RegisterCustom(variant); err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(manager)
+	defer server.Close()
+
+	post := func(path, body string) int {
+		t.Helper()
+		request, requestErr := http.NewRequest(http.MethodPost, server.URL+path, bytes.NewBufferString(body))
+		if requestErr != nil {
+			t.Fatal(requestErr)
+		}
+		request.Header.Set("Authorization", "Bearer integration-secret")
+		request.Header.Set("Content-Type", "application/json")
+		response, responseErr := http.DefaultClient.Do(request)
+		if responseErr != nil {
+			t.Fatal(responseErr)
+		}
+		defer response.Body.Close()
+		return response.StatusCode
+	}
+
+	if status := post("/manager/v1/install", `{"id":"`+variant.ID+`"}`); status != http.StatusAccepted {
+		t.Fatalf("install status=%d", status)
+	}
+	waitFor := func(predicate func() bool, message string) {
+		t.Helper()
+		deadline := time.Now().Add(3 * time.Second)
+		for time.Now().Before(deadline) {
+			if predicate() {
+				return
+			}
+			time.Sleep(20 * time.Millisecond)
+		}
+		t.Fatalf("%s: state=%#v launcher=%q", message, supervisor.State(), launcher.activeModel())
+	}
+	waitFor(func() bool {
+		_, statErr := os.Stat(filepath.Join(modelDir, variant.File))
+		return statErr == nil && verificationStore.Has(variant)
+	}, "custom model download did not verify")
+
+	if status := post("/manager/v1/activate", `{"id":"`+variant.ID+`"}`); status != http.StatusAccepted {
+		t.Fatalf("activate status=%d", status)
+	}
+	waitFor(func() bool { return launcher.activeModel() == variant.File }, "custom model did not activate")
+	contents, err := os.ReadFile(filepath.Join(modelDir, variant.File))
+	if err != nil || !bytes.HasPrefix(contents, []byte("GGUF")) {
+		t.Fatalf("contents=%q err=%v", contents, err)
+	}
 }
 
 func TestDownloadLeavesPreviousModelRunning(t *testing.T) {
