@@ -50,7 +50,25 @@ reasoning_mode: auto
 
 The option-level `manager_token` and `hf_token` values are intentionally empty. Pairing and gated-model credentials remain in protected manager-owned files and are never embedded in copied YAML.
 
-For backward compatibility, an existing installation with blank `model_path` still resolves the exact configured `hf_repo` and `hf_file`, downloading and verifying that file when absent. Preserve unknown repository and filename choices unchanged; they produce actionable, credential-free diagnostics instead of being silently replaced.
+### Native custom Hugging Face models
+
+When `model_path` is blank, native Home Assistant configuration accepts either an exact GGUF filename or llama.cpp-style quantization shorthand:
+
+```yaml
+# Exact custom file
+hf_repo: owner/repo
+hf_file: Model-Q5_K_M.gguf
+
+# Select one primary GGUF by quantization
+hf_repo: owner/repo:Q4_K_M
+hf_file: ""
+```
+
+The shorthand match is case-insensitive. With no quantization and no exact file, the manager prefers `Q4_K_M`, then `Q8_0`, then a sole primary GGUF. It excludes projection, imatrix, MTP, Eagle, and draft sidecars. Ambiguous repositories and split GGUF models are rejected with an actionable error; configure an exact supported single-file model instead.
+
+Custom downloads receive the same size limit, resumable partial download, exact byte-count, and GGUF header checks as curated models. Only curated entries carry a trusted catalog SHA-256 checksum. Hugging Face credentials are sent to repository endpoints when required but are removed before requests follow signed CDN/storage redirects.
+
+For backward compatibility, an existing installation with blank `model_path` still resolves the configured `hf_repo` and `hf_file`, downloading and verifying that file when absent. Valid non-curated choices are preserved and resolved instead of being replaced with a catalog default. Invalid, unavailable, ambiguous, or unsupported choices remain unchanged and produce actionable, credential-free diagnostics.
 
 ## Runtime and readiness
 

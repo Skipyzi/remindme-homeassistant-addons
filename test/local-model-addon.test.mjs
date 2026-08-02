@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import test from "node:test";
 
 const dockerfile = readFileSync("local-llama-cpp/Dockerfile", "utf8");
@@ -29,6 +29,10 @@ const pairing = readFileSync(
 );
 const remindMeReadme = readFileSync("discord-pi-bot/README.md", "utf8");
 const llamaReadme = readFileSync("local-llama-cpp/README.md", "utf8");
+const llamaChangelogPath = "local-llama-cpp/CHANGELOG.md";
+const llamaChangelog = existsSync(llamaChangelogPath)
+	? readFileSync(llamaChangelogPath, "utf8")
+	: "";
 
 test("llama add-on launches the model manager and keeps the inference port", () => {
 	assert.match(dockerfile, /go build .*model-manager/s);
@@ -47,8 +51,8 @@ test("startup delegates JSON parsing to the Go manager", () => {
 });
 
 test("release packages secure direct pairing without sibling privileges", () => {
-	assert.match(remindMeConfig, /version: "2\.3\.4"/);
-	assert.match(config, /version: "1\.10\.0"/);
+	assert.match(remindMeConfig, /version: "2\.58\.0"/);
+	assert.match(config, /version: "1\.12\.1"/);
 	assert.doesNotMatch(remindMeConfig, /hassio_role:\s*(manager|admin)/);
 	assert.doesNotMatch(remindMeServer, /\/addons\/\$\{.*\}\/options/);
 	assert.doesNotMatch(remindMeServer, /\/addons\/self\/options\/validate/);
@@ -56,8 +60,8 @@ test("release packages secure direct pairing without sibling privileges", () => 
 		remindMeServer,
 		/\/api\/settings|\/addons\/self\/restart/,
 	);
-	assert.doesNotMatch(managerServer, /POST \/manager\/v1\/activate/);
-	assert.doesNotMatch(modelComponent, /api\/models\/activate/);
+	assert.match(managerServer, /POST \/manager\/v1\/activate/);
+	assert.match(modelComponent, /api\/models\/activate/);
 	assert.match(
 		remindMeRun,
 		/MODEL_MANAGER_TOKEN_PATH=\/data\/model-manager-token/,
@@ -89,7 +93,10 @@ test("legacy manager token is migration-only and pairing is documented", () => {
 	assert.match(remindMeReadme, /loopback|127\.0\.0\.1/i);
 	assert.match(remindMeReadme, /native.*Configuration|Configuration.*native/i);
 	assert.match(llamaReadme, /legacy.*manager_token|manager_token.*legacy/i);
-	assert.match(llamaReadme, /preserv.*unknown|unknown.*preserv/i);
+	assert.match(
+		llamaReadme,
+		/preserv.*non-curated|non-curated.*preserv|remain unchanged/i,
+	);
 });
 
 test("RemindMe documents persistent lifetime presence uptime", () => {
@@ -106,11 +113,12 @@ test("RemindMe documents persistent lifetime presence uptime", () => {
 });
 
 test("manual model workflow is documented", () => {
+	assert.match(
+		remindMeReadme,
+		/download.*does not.*running model|running model.*does not.*download/i,
+	);
+	assert.match(llamaReadme, /Download & use.*switches|downloads, verifies, and switches/i);
 	for (const readme of [remindMeReadme, llamaReadme]) {
-		assert.match(
-			readme,
-			/download.*does not.*running model|running model.*does not.*download/i,
-		);
 		assert.match(readme, /Copy.*YAML|YAML.*copy/i);
 		assert.match(readme, /Configuration/i);
 		assert.match(readme, /restart.*llama\.cpp|llama\.cpp.*restart/i);
@@ -120,6 +128,16 @@ test("manual model workflow is documented", () => {
 		/model_path.*authoritative|authoritative.*model_path/i,
 	);
 	assert.match(remindMeReadme, /runtime.*model|model.*runtime/i);
+});
+
+test("custom Hugging Face native configuration is packaged and documented", () => {
+	assert.ok(existsSync(llamaChangelogPath), "llama add-on changelog is missing");
+	assert.match(config, /version:\s*["']1\.12\.1["']/);
+	assert.match(llamaReadme, /owner\/repo:Q4_K_M/);
+	assert.match(llamaReadme, /split GGUF/i);
+	assert.match(llamaReadme, /exact GGUF filename/i);
+	assert.match(llamaChangelog, /us\.aws\.cdn\.hf\.co/);
+	assert.match(llamaChangelog, /custom/i);
 });
 
 test("llama startup waits for internal server readiness", () => {

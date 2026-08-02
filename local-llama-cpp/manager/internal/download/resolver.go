@@ -42,6 +42,12 @@ func (downloader Downloader) Resolve(ctx context.Context, rawRepo, rawFile, toke
 		if _, err := catalog.ValidateCustom(catalog.CustomInput{Repo: repo, File: rawFile}); err != nil {
 			return catalog.Variant{}, repositoryError("The Hugging Face repository or GGUF filename is invalid.")
 		}
+		if splitGGUFPattern.MatchString(rawFile) {
+			return catalog.Variant{}, &Error{Code: CodeSplitModelUnsupported, SafeMessage: "Split GGUF models are not supported; configure a single-file GGUF."}
+		}
+		if !isPrimaryGGUF(rawFile) {
+			return catalog.Variant{}, repositoryError("The configured GGUF is a sidecar, not a primary model.")
+		}
 		for _, variant := range curated.Variants {
 			if variant.Repo == repo && variant.File == rawFile {
 				return variant, nil

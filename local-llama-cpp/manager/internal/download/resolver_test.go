@@ -87,6 +87,30 @@ func TestResolveInspectsExactCustomFile(t *testing.T) {
 	}
 }
 
+func TestResolveRejectsExactSplitAndSidecarFiles(t *testing.T) {
+	for name, testCase := range map[string]struct {
+		file string
+		code string
+	}{
+		"split":   {file: "Model-Q4_K_M-00001-of-00002.gguf", code: CodeSplitModelUnsupported},
+		"sidecar": {file: "Model-mmproj-Q4_K_M.gguf", code: CodeRepositoryUnavailable},
+	} {
+		t.Run(name, func(t *testing.T) {
+			server, requests := newResolverServer(t, []resolverFile{{Type: "file", Path: testCase.file, Size: 100}})
+			defer server.Close()
+			downloader := Downloader{Client: server.Client(), APIBase: server.URL, ResolveBase: server.URL, MaxBytes: 1024}
+			_, err := downloader.Resolve(context.Background(), "owner/repo", testCase.file, "", catalog.Catalog{})
+			var safeErr *Error
+			if !AsError(err, &safeErr) || safeErr.Code != testCase.code {
+				t.Fatalf("err=%#v want code=%q", err, testCase.code)
+			}
+			if requests.Load() != 0 {
+				t.Fatalf("unsupported exact file made %d HTTP requests", requests.Load())
+			}
+		})
+	}
+}
+
 func TestResolveQuantizedShorthandExcludesMTPFile(t *testing.T) {
 	files := []resolverFile{
 		{Type: "file", Path: "Qwen3.5-2B-Q8_0.gguf", Size: 200},
