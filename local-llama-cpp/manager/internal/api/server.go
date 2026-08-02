@@ -598,25 +598,51 @@ func (server *Server) addCustom(response http.ResponseWriter, request *http.Requ
 		writeError(response, http.StatusBadRequest, APIError{Code: "invalid_custom_model", Message: err.Error()})
 		return
 	}
-	server.catalogMu.Lock()
-	if _, exists := server.catalog.Find(variant.ID); exists {
-		server.catalogMu.Unlock()
+	if _, exists := server.findVariant(variant.ID); exists {
 		writeError(response, http.StatusConflict, APIError{Code: "model_exists", Message: "This custom model already exists."})
 		return
 	}
-	server.catalog.Variants = append(server.catalog.Variants, variant)
-	custom := make([]catalog.Variant, 0)
-	for _, item := range server.catalog.Variants {
-		if item.Unverified {
-			custom = append(custom, item)
-		}
-	}
-	server.catalogMu.Unlock()
-	if err := saveProtectedJSON(server.dependencies.CustomCatalogPath, map[string]any{"variants": custom}); err != nil {
+	if err := server.RegisterCustom(variant); err != nil {
 		writeError(response, http.StatusInternalServerError, APIError{Code: "custom_catalog_write_failed", Message: "Custom model settings could not be saved."})
 		return
 	}
 	writeJSON(response, http.StatusCreated, variant.Public())
+}
+
+func (server *Server) RegisterCustom(variant catalog.Variant) error {
+	if !variant.Unverified {
+		return errors.New("only custom variants can be registered")
+	}
+	server.catalogMu.Lock()
+	defer server.catalogMu.Unlock()
+	merged := catalog.Catalog{Variants: append([]catalog.Variant(nil), server.catalog.Variants...)}
+	updated := false
+	for index, existing := range merged.Variants {
+		sameID := existing.ID == variant.ID
+		sameModel := existing.Repo == variant.Repo && existing.File == variant.File
+		if sameID && sameModel {
+			merged.Variants[index] = variant
+			updated = true
+			break
+		}
+		if sameID || sameModel {
+			return fmt.Errorf("custom model conflicts with %q", existing.ID)
+		}
+	}
+	if !updated {
+		merged.Variants = append(merged.Variants, variant)
+	}
+	custom := make([]catalog.Variant, 0)
+	for _, item := range merged.Variants {
+		if item.Unverified {
+			custom = append(custom, item)
+		}
+	}
+	if err := saveProtectedJSON(server.dependencies.CustomCatalogPath, map[string]any{"variants": custom}); err != nil {
+		return err
+	}
+	server.catalog = merged
+	return nil
 }
 
 func (server *Server) saveCredentials(response http.ResponseWriter, request *http.Request) {

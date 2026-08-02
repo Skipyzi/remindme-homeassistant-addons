@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -161,6 +162,72 @@ func TestCatalogResponseOmitsChecksumsAndPaths(t *testing.T) {
 	body := response.Body.String()
 	if strings.Contains(body, "sha256") || strings.Contains(body, "/data/") || strings.Contains(body, "manager-secret") {
 		t.Fatalf("private data leaked: %s", body)
+	}
+}
+
+func TestRegisterCustomPersistsValidatedVariantIdempotently(t *testing.T) {
+	dependencies := testDependencies(t, "http://127.0.0.1:1")
+	server := NewServer(dependencies)
+	variant, err := catalog.ValidateCustom(catalog.CustomInput{Repo: "owner/repo", File: "Model-Q4_K_M.gguf"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	variant.ExpectedBytes = 123
+	variant.Parameters = 246
+	variant.MinimumRAM = 1024
+	variant.RecommendedRAM = 2048
+	if err := server.RegisterCustom(variant); err != nil {
+		t.Fatal(err)
+	}
+	if err := server.RegisterCustom(variant); err != nil {
+		t.Fatalf("idempotent registration failed: %v", err)
+	}
+	stored, ok := server.findVariant(variant.ID)
+	if !ok || stored.File != variant.File {
+		t.Fatalf("stored=%#v ok=%v", stored, ok)
+	}
+	persisted, err := catalog.LoadCustomFile(dependencies.CustomCatalogPath)
+	if err != nil || len(persisted.Variants) != 1 {
+		t.Fatalf("persisted=%#v err=%v", persisted, err)
+	}
+	info, err := os.Stat(dependencies.CustomCatalogPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if runtime.GOOS != "windows" && info.Mode().Perm() != 0o600 {
+		t.Fatalf("mode=%v", info.Mode().Perm())
+	}
+	conflict := variant
+	conflict.File = "Other-Q4_K_M.gguf"
+	if err := server.RegisterCustom(conflict); err == nil {
+		t.Fatal("conflicting variant was registered")
+	}
+}
+
+func TestRegisterCustomUpgradesResolvedMetadata(t *testing.T) {
+	dependencies := testDependencies(t, "http://127.0.0.1:1")
+	server := NewServer(dependencies)
+	variant, err := catalog.ValidateCustom(catalog.CustomInput{Repo: "owner/repo", File: "Model-Q4_K_M.gguf"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := server.RegisterCustom(variant); err != nil {
+		t.Fatal(err)
+	}
+	variant.ExpectedBytes = 123
+	variant.Parameters = 246
+	variant.MinimumRAM = 1024
+	variant.RecommendedRAM = 2048
+	if err := server.RegisterCustom(variant); err != nil {
+		t.Fatal(err)
+	}
+	stored, ok := server.findVariant(variant.ID)
+	if !ok || stored.ExpectedBytes != 123 {
+		t.Fatalf("stored=%#v ok=%v", stored, ok)
+	}
+	persisted, err := catalog.LoadCustomFile(dependencies.CustomCatalogPath)
+	if err != nil || len(persisted.Variants) != 1 || persisted.Variants[0].ExpectedBytes != 123 {
+		t.Fatalf("persisted=%#v err=%v", persisted, err)
 	}
 }
 

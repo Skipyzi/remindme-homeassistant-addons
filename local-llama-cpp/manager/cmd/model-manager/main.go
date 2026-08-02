@@ -30,6 +30,10 @@ type paths struct {
 	options, state, models, catalog, llama string
 }
 
+type configuredResolver interface {
+	Resolve(context.Context, string, string, string, catalog.Catalog) (catalog.Variant, error)
+}
+
 type addonOptions struct {
 	ManagerToken    string `json:"manager_token"`
 	HFRepo          string `json:"hf_repo"`
@@ -75,6 +79,14 @@ func main() {
 	dataDirectory := filepath.Dir(configured.state)
 	credentialPath := filepath.Join(dataDirectory, "credentials.json")
 	customCatalogPath := filepath.Join(dataDirectory, "catalog.json")
+	customCatalog, err := catalog.LoadCustomFile(customCatalogPath)
+	if err != nil {
+		log.Fatal(err)
+	}
+	modelCatalog, err = catalog.Merge(modelCatalog, customCatalog)
+	if err != nil {
+		log.Fatal(err)
+	}
 	tokenPath := filepath.Join(dataDirectory, "manager-token")
 	pairingStatePath := filepath.Join(dataDirectory, "pairing.json")
 	options, optionsErr := readOptions(configured.options)
@@ -117,7 +129,7 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-	go recoverOrBootstrap(ctx, configured, modelCatalog, downloader, supervisor, facts, credentialPath)
+	go recoverOrBootstrap(ctx, configured, modelCatalog, downloader, supervisor, facts, credentialPath, server.RegisterCustom)
 	httpServer := &http.Server{Addr: ":8080", Handler: server, ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 120 * time.Second}
 	go func() {
 		<-ctx.Done()
@@ -143,7 +155,7 @@ func parseFlags() paths {
 	return result
 }
 
-func recoverOrBootstrap(ctx context.Context, configured paths, modelCatalog catalog.Catalog, downloader download.Downloader, supervisor *managerruntime.Supervisor, facts func() (hardware.Facts, error), credentialPath string) {
+func recoverOrBootstrap(ctx context.Context, configured paths, modelCatalog catalog.Catalog, downloader download.Downloader, supervisor *managerruntime.Supervisor, facts func() (hardware.Facts, error), credentialPath string, registerCustom func(catalog.Variant) error) {
 	options, err := readOptions(configured.options)
 	if err != nil {
 		log.Printf("startup degraded: %v", err)
@@ -152,10 +164,16 @@ func recoverOrBootstrap(ctx context.Context, configured paths, modelCatalog cata
 	if options.HFToken != "" {
 		_ = saveCredentials(credentialPath, options.HFToken)
 	}
-	installed, variant, err := configuredModel(options, configured.models, modelCatalog)
+	installed, variant, err := configuredModel(ctx, options, configured.models, modelCatalog, downloader)
 	if err != nil {
 		log.Printf("startup degraded: %v", err)
 		return
+	}
+	if variant != nil && variant.Unverified {
+		if err := registerCustom(*variant); err != nil {
+			log.Printf("startup degraded: custom model registration failed")
+			return
+		}
 	}
 	if _, err := os.Stat(installed.Path); err == nil {
 		if err := supervisor.Start(ctx, installed, runtimeFromOptions(options)); err != nil {
@@ -198,7 +216,7 @@ func recoverOrBootstrap(ctx context.Context, configured paths, modelCatalog cata
 	}
 }
 
-func configuredModel(options addonOptions, modelDir string, modelCatalog catalog.Catalog) (state.Installed, *catalog.Variant, error) {
+func configuredModel(ctx context.Context, options addonOptions, modelDir string, modelCatalog catalog.Catalog, resolver configuredResolver) (state.Installed, *catalog.Variant, error) {
 	if options.ModelPath != "" {
 		modelRoot, err := filepath.EvalSymlinks(modelDir)
 		if err != nil {
@@ -220,9 +238,9 @@ func configuredModel(options addonOptions, modelDir string, modelCatalog catalog
 		}
 		return state.Installed{ID: "local-model", File: filepath.Base(selected), Path: selected}, nil, nil
 	}
-	variant, ok := findConfiguredVariant(options, modelCatalog)
-	if !ok {
-		return state.Installed{}, nil, errors.New(unknownVariantDiagnostic(options))
+	variant, err := resolver.Resolve(ctx, options.HFRepo, options.HFFile, options.HFToken, modelCatalog)
+	if err != nil {
+		return state.Installed{}, nil, err
 	}
 	return state.Installed{ID: variant.ID, Repo: variant.Repo, File: variant.File, Path: filepath.Join(modelDir, variant.File)}, &variant, nil
 }
@@ -237,26 +255,6 @@ func readOptions(path string) (addonOptions, error) {
 		return addonOptions{}, err
 	}
 	return result, nil
-}
-
-func findConfiguredVariant(options addonOptions, modelCatalog catalog.Catalog) (catalog.Variant, bool) {
-	repo := strings.TrimSuffix(options.HFRepo, ":Q4_K_M")
-	for _, variant := range modelCatalog.Variants {
-		if variant.Repo == repo && (options.HFFile == "" || variant.File == options.HFFile) {
-			return variant, true
-		}
-	}
-	return catalog.Variant{}, false
-}
-
-func unknownVariantDiagnostic(options addonOptions) string {
-	return fmt.Sprintf(
-		"configured Hugging Face model repo=%q file=%q is not in the curated catalog; configuration was preserved. To recover, set repo=%q and file=%q, or pair RemindMe and install a model through Hardware Cookbook",
-		options.HFRepo,
-		options.HFFile,
-		"Qwen/Qwen3-1.7B-GGUF",
-		"Qwen3-1.7B-Q8_0.gguf",
-	)
 }
 
 func runtimeFor(installed state.Installed, modelCatalog catalog.Catalog, facts func() (hardware.Facts, error)) hardware.Runtime {
