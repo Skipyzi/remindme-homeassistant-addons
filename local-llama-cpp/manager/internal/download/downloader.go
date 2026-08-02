@@ -27,6 +27,9 @@ const (
 	CodeInvalidGGUF            = "invalid_gguf"
 	CodeChecksumMismatch       = "checksum_mismatch"
 	CodeUnsafeRedirect         = "unsafe_redirect"
+	CodeQuantizationNotFound   = "quantization_not_found"
+	CodeAmbiguousModel         = "ambiguous_model"
+	CodeSplitModelUnsupported  = "split_model_unsupported"
 )
 
 const defaultMaxBytes = int64(16 * 1024 * 1024 * 1024)
@@ -63,6 +66,7 @@ type Downloader struct {
 	Client      *http.Client
 	ModelDir    string
 	ResolveBase string
+	APIBase     string
 	MaxBytes    int64
 	Now         func() time.Time
 }
