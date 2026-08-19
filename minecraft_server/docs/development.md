@@ -1,5 +1,36 @@
 # Development
 
+## Testing locally instead of on the Pi
+
+The fastest faithful loop is the dev container - the same image the Pi runs,
+built for your machine, with the API open to a plain browser:
+
+```bash
+minecraft_server/scripts/dev-container.sh up      # build + start; UI at http://127.0.0.1:8099
+minecraft_server/scripts/dev-container.sh reload  # push backend+frontend changes in seconds
+minecraft_server/scripts/dev-container.sh logs    # follow the controller
+minecraft_server/scripts/dev-container.sh down    # discard everything
+```
+
+`up` keeps `/data` across `reload`, so an installed server, worlds, mods and
+backups survive code pushes; only `down` clears them. `MC_DEV_FLAVOUR=babric`
+before `up` starts on another flavour. Real servers boot inside it (amd64
+natively; arm64 also works under qemu, slowly), so EULA -> install -> start ->
+mods is walkable end to end. Port 25565 is mapped: a desktop Minecraft client
+can join the local server.
+
+Frontend-only tweaks are even faster with `scripts/dev.sh` (native controller,
+no Docker), but a native run cannot start the actual server without a matching
+local Java, and Linux-only paths (symlinks, statfs, the unprivileged user) are
+skipped - use the container before trusting a result.
+
+The Go suite runs anywhere (`cd backend && go test ./...`); for `-race` and the
+Linux-only code paths run it in a container:
+
+```bash
+docker run --rm -v "$(pwd)/minecraft_server/backend:/src" -w /src   -e GOFLAGS=-buildvcs=false golang:1.25 go test -race ./...
+```
+
 ## Layout
 
 ```text
