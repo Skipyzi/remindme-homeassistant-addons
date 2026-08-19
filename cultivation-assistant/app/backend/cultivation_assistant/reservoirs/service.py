@@ -20,11 +20,15 @@ from cultivation_assistant.reservoirs.schemas import (
     CalibrationPointListResponse,
     CalibrationPointResponse,
     CalibrationPointsReplace,
+    DashboardConsumption,
+    DashboardCurrentVolume,
+    DashboardForecast,
     EntityDiscoveryResponse,
     GeometryInput,
     GeometryResponse,
     LiveReading,
     ReservoirCreate,
+    ReservoirDashboardResponse,
     ReservoirListResponse,
     ReservoirMappingCreate,
     ReservoirMappingResponse,
@@ -38,6 +42,13 @@ from cultivation_assistant.reservoirs.units import (
     binary_state_value,
     is_binary_reservoir_role,
     normalize_reservoir_value,
+)
+from cultivation_assistant.reservoirs.volume import (
+    as_utc,
+    compute_volume,
+    consumption_from_readings,
+    refill_forecast,
+    select_level_source,
 )
 
 
@@ -221,6 +232,91 @@ class ReservoirService:
     async def suggest_entities(self, role: str) -> EntityDiscoveryResponse:
         """Return deterministic compatible Home Assistant suggestions for one role."""
         return EntityDiscoveryResponse(items=self._discovery.suggest(role))
+
+    async def dashboard(self, reservoir_id: str) -> ReservoirDashboardResponse:
+        """Assemble live volume, recorded consumption, and the refill forecast."""
+        now = datetime.now(UTC)
+        async with self._database.transaction() as session:
+            repository = ReservoirRepository(session)
+            record = await self._require_reservoir(repository, reservoir_id)
+            mappings = list(record.entity_mappings)
+            current = compute_volume(
+                record, mappings, list(record.calibration_points), self._state_cache
+            )
+            readings = await repository.list_readings(
+                reservoir_id, since=now - timedelta(days=7), now=now
+            )
+            latest = await repository.latest_reading(reservoir_id)
+
+            current_response: DashboardCurrentVolume | None = None
+            consumption_response: DashboardConsumption | None = None
+            forecast_response: DashboardForecast | None = None
+
+            has_level_source = (
+                select_level_source(mappings) is not None
+                or len(record.calibration_points) >= 2
+            )
+            if current is not None:
+                current_response = DashboardCurrentVolume(
+                    volume_liters=current.volume_liters,
+                    level_percent=current.level_percent,
+                    source_entity_id=current.source_entity_id,
+                    role=current.role,
+                    last_updated=current.last_updated,
+                    stale=current.stale,
+                )
+                consumption = consumption_from_readings(
+                    [(reading.recorded_at, reading.volume_liters) for reading in readings],
+                    now=now,
+                )
+                if consumption is not None:
+                    consumption_response = DashboardConsumption(
+                        daily_liters=consumption.daily_liters,
+                        seven_day_average_liters=consumption.seven_day_average_liters,
+                        reading_count_24h=consumption.reading_count_24h,
+                        history_days=consumption.history_days,
+                    )
+                    # Only project a refill date from at least a full day of
+                    # samples; shorter histories extrapolate noise.
+                    if consumption.history_days >= 1.0:
+                        forecast = refill_forecast(
+                            current.volume_liters,
+                            record.refill_threshold_liters,
+                            consumption.daily_liters,
+                            now=now,
+                        )
+                        if forecast is not None:
+                            forecast_response = DashboardForecast(
+                                remaining_until_refill_liters=forecast.remaining_until_refill_liters,
+                                hours_remaining=forecast.hours_remaining,
+                                estimated_refill_at=forecast.estimated_refill_at,
+                            )
+                data_quality = "good"
+                if latest is None:
+                    data_quality = "no_readings"
+                elif (
+                    consumption_response is not None
+                    and consumption_response.seven_day_average_liters is None
+                ):
+                    data_quality = "insufficient_history"
+            elif has_level_source:
+                data_quality = "sensor_unavailable"
+            else:
+                data_quality = "no_level_source"
+
+            return ReservoirDashboardResponse(
+                reservoir_id=record.id,
+                capacity_liters=record.capacity_liters,
+                usable_capacity_liters=record.usable_capacity_liters,
+                refill_threshold_liters=record.refill_threshold_liters,
+                current=current_response,
+                consumption=consumption_response,
+                forecast=forecast_response,
+                data_quality=data_quality,
+                latest_reading_at=(
+                    as_utc(latest.recorded_at) if latest is not None else None
+                ),
+            )
 
     async def create_mapping(
         self,

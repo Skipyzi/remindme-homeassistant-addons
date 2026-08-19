@@ -222,6 +222,48 @@ class ReservoirListResponse(BaseModel):
     items: list[ReservoirSummary]
 
 
+class DashboardCurrentVolume(BaseModel):
+    """Live volume derived from the newest mapped sensor state."""
+
+    volume_liters: Decimal
+    level_percent: Decimal | None
+    source_entity_id: str
+    role: str
+    last_updated: datetime
+    stale: bool
+
+
+class DashboardConsumption(BaseModel):
+    """Decrease-only consumption over the recorded reading history."""
+
+    daily_liters: Decimal | None
+    seven_day_average_liters: Decimal | None
+    reading_count_24h: int
+    history_days: float
+
+
+class DashboardForecast(BaseModel):
+    """Projected time until the refill threshold is reached."""
+
+    remaining_until_refill_liters: Decimal | None
+    hours_remaining: Decimal | None
+    estimated_refill_at: datetime | None
+
+
+class ReservoirDashboardResponse(BaseModel):
+    """Live volume, recorded consumption, and refill projection."""
+
+    reservoir_id: str
+    capacity_liters: Decimal
+    usable_capacity_liters: Decimal | None
+    refill_threshold_liters: Decimal | None
+    current: DashboardCurrentVolume | None = None
+    consumption: DashboardConsumption | None = None
+    forecast: DashboardForecast | None = None
+    data_quality: str
+    latest_reading_at: datetime | None = None
+
+
 class EntityCandidate(BaseModel):
     """One role-compatible Home Assistant entity suggestion."""
 

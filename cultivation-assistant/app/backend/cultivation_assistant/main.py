@@ -30,6 +30,7 @@ from cultivation_assistant.lifecycle.router import create_router as create_lifec
 from cultivation_assistant.logging import configure_logging
 from cultivation_assistant.middleware import correlation_id_middleware
 from cultivation_assistant.plants.router import create_router as create_plants_router
+from cultivation_assistant.reservoirs.readings import ReservoirReadingRecorder
 from cultivation_assistant.reservoirs.router import create_router as create_reservoirs_router
 from cultivation_assistant.runtime import RuntimeStatus
 
@@ -47,8 +48,14 @@ async def application_lifespan(application: FastAPI) -> AsyncGenerator[None]:
         HomeAssistantEventSubscriber | None,
         application.state.home_assistant_subscriber,
     )
+    recorder = cast(
+        ReservoirReadingRecorder,
+        application.state.reservoir_reading_recorder,
+    )
     stop_subscription = asyncio.Event()
+    stop_recording = asyncio.Event()
     subscription_task: asyncio.Task[None] | None = None
+    recording_task: asyncio.Task[None] | None = None
     await database.initialize()
     status.database_ready = True
     status.schema_version = await database.schema_version()
@@ -61,6 +68,10 @@ async def application_lifespan(application: FastAPI) -> AsyncGenerator[None]:
                     subscriber.run_forever(stop_subscription),
                     name="home-assistant-state-subscription",
                 )
+            recording_task = asyncio.create_task(
+                recorder.run_forever(stop_recording),
+                name="reservoir-level-recorder",
+            )
         except HomeAssistantConnectionError as exc:
             structlog.get_logger(__name__).warning(
                 "home_assistant_startup_unavailable",
@@ -71,10 +82,15 @@ async def application_lifespan(application: FastAPI) -> AsyncGenerator[None]:
     finally:
         status.database_ready = False
         stop_subscription.set()
+        stop_recording.set()
         if subscription_task is not None:
             subscription_task.cancel()
             with suppress(asyncio.CancelledError):
                 await subscription_task
+        if recording_task is not None:
+            recording_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await recording_task
         if home_assistant is not None:
             await home_assistant.close()
         await database.close()
@@ -107,6 +123,11 @@ def create_app(
             runtime_status=status,
         )
     configure_logging(runtime_settings.log_level)
+    reservoir_recorder = ReservoirReadingRecorder(
+        runtime_database,
+        state_cache,
+        interval_seconds=runtime_settings.reservoir_sample_interval_seconds,
+    )
 
     app = FastAPI(
         title="Cultivation Assistant",
@@ -119,6 +140,7 @@ def create_app(
     app.state.entity_state_cache = state_cache
     app.state.home_assistant_client = runtime_home_assistant
     app.state.home_assistant_subscriber = runtime_subscriber
+    app.state.reservoir_reading_recorder = reservoir_recorder
     app.middleware("http")(correlation_id_middleware)
     app.add_exception_handler(HTTPException, cast(ExceptionHandler, http_exception_handler))
 

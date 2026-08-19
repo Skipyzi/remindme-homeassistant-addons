@@ -7,7 +7,6 @@ import {
 	Pencil,
 	Power,
 	Ruler,
-	Target,
 } from "lucide-react";
 import {
 	useArchiveReservoir,
@@ -17,6 +16,7 @@ import {
 	type ReservoirUpdateInput,
 } from "../api/reservoirs";
 import { CalibrationTableEditor } from "../features/reservoirs/CalibrationTableEditor";
+import { ReservoirDashboard } from "../features/reservoirs/ReservoirDashboard";
 import { ReservoirMappingFields } from "../features/reservoirs/ReservoirMappingFields";
 import {
 	calculateGeometryPreview,
@@ -170,15 +170,6 @@ function PlannedReservoirCapabilities() {
 				<Gauge size={20} />
 			</div>
 			<div className="planned-capability-grid">
-				<Card>
-					<Target size={20} />
-					<Badge tone="neutral">Planned</Badge>
-					<h3>Consumption &amp; forecast</h3>
-					<p>
-						Daily consumption, seven-day average, and refill forecasts will derive
-						from mapped level sensors.
-					</p>
-				</Card>
 				<Card>
 					<Power size={20} />
 					<Badge tone="neutral">Planned</Badge>
@@ -417,6 +408,7 @@ export function ReservoirDetailContent({
 			)}
 
 			<ReservoirMappingFields reservoirId={record.id} reservoir={record} />
+			<ReservoirDashboard reservoirId={record.id} />
 			<CalibrationTableEditor reservoirId={record.id} reservoirName={record.name} />
 			<PlannedReservoirCapabilities />
 			<section className="inactive-policy-note">

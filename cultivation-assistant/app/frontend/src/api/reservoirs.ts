@@ -129,6 +129,48 @@ const calibrationListSchema = z.object({
 	items: z.array(calibrationPointSchema),
 });
 
+export const dashboardCurrentSchema = z.object({
+	volume_liters: decimalish,
+	level_percent: decimalish.nullable(),
+	source_entity_id: z.string(),
+	role: z.string(),
+	last_updated: z.string(),
+	stale: z.boolean(),
+});
+
+export const dashboardConsumptionSchema = z.object({
+	daily_liters: decimalish.nullable(),
+	seven_day_average_liters: decimalish.nullable(),
+	reading_count_24h: z.number().int(),
+	history_days: z.number(),
+});
+
+export const dashboardForecastSchema = z.object({
+	remaining_until_refill_liters: decimalish.nullable(),
+	hours_remaining: decimalish.nullable(),
+	estimated_refill_at: z.string().nullable(),
+});
+
+export const dataQualitySchema = z.enum([
+	"good",
+	"no_level_source",
+	"sensor_unavailable",
+	"no_readings",
+	"insufficient_history",
+]);
+
+export const reservoirDashboardSchema = z.object({
+	reservoir_id: z.string(),
+	capacity_liters: decimalish,
+	usable_capacity_liters: decimalish.nullable(),
+	refill_threshold_liters: decimalish.nullable(),
+	current: dashboardCurrentSchema.nullable(),
+	consumption: dashboardConsumptionSchema.nullable(),
+	forecast: dashboardForecastSchema.nullable(),
+	data_quality: dataQualitySchema,
+	latest_reading_at: z.string().nullable(),
+});
+
 export type ReservoirType = z.infer<typeof reservoirTypeSchema>;
 export type GeometryShape = z.infer<typeof geometryShapeSchema>;
 export type GeometryResponse = z.infer<typeof geometryResponseSchema>;
@@ -138,6 +180,8 @@ export type CalibrationPoint = z.infer<typeof calibrationPointSchema>;
 export type ReservoirMapping = z.infer<typeof reservoirMappingSchema>;
 export type ReservoirLiveReading = z.infer<typeof liveReadingSchema>;
 export type ReservoirEntityCandidate = z.infer<typeof entityCandidateSchema>;
+export type ReservoirDashboard = z.infer<typeof reservoirDashboardSchema>;
+export type DataQuality = z.infer<typeof dataQualitySchema>;
 export type Compatibility = z.infer<typeof compatibilitySchema>;
 
 export interface ReservoirMappingInput {
@@ -296,6 +340,20 @@ export async function replaceCalibrationPoints(
 	return result.items;
 }
 
+export async function getReservoirDashboard(
+	reservoirId: string,
+	fetcher: typeof fetch = fetch,
+): Promise<ReservoirDashboard> {
+	const response = await fetcher(`api/v1/reservoirs/${reservoirId}/dashboard`, {
+		headers: acceptJson,
+	});
+	return parseResponse(
+		response,
+		reservoirDashboardSchema,
+		"Invalid reservoir dashboard response",
+	);
+}
+
 export async function discoverReservoirEntities(
 	role: string,
 	fetcher: typeof fetch = fetch,
@@ -363,6 +421,7 @@ export const reservoirKeys = {
 		["reservoirs", { includeArchived }] as const,
 	detail: (id: string) => ["reservoirs", id] as const,
 	calibration: (id: string) => ["reservoirs", id, "calibration"] as const,
+	dashboard: (id: string) => ["reservoirs", id, "dashboard"] as const,
 	candidates: (role: string) => ["home-assistant", "reservoir-entities", role] as const,
 };
 
@@ -384,6 +443,13 @@ export function useCalibrationPoints(reservoirId: string) {
 	return useQuery({
 		queryKey: reservoirKeys.calibration(reservoirId),
 		queryFn: () => listCalibrationPoints(reservoirId),
+	});
+}
+
+export function useReservoirDashboard(reservoirId: string) {
+	return useQuery({
+		queryKey: reservoirKeys.dashboard(reservoirId),
+		queryFn: () => getReservoirDashboard(reservoirId),
 	});
 }
 

@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
 	archiveReservoir,
 	createReservoir,
+	getReservoirDashboard,
 	listCalibrationPoints,
 	listReservoirs,
 	replaceCalibrationPoints,
@@ -193,5 +194,41 @@ describe("reservoirs API", () => {
 		await expect(listReservoirs(false, fetcher)).rejects.toThrow(
 			"Invalid reservoir response",
 		);
+	});
+
+	it("fetches the dashboard through an Ingress-relative URL", async () => {
+		const dashboardFixture = {
+			reservoir_id: "res-1",
+			capacity_liters: "100.0000",
+			usable_capacity_liters: null,
+			refill_threshold_liters: "20.0000",
+			current: {
+				volume_liters: "60.0000",
+				level_percent: "60.0000",
+				source_entity_id: "sensor.tank_level",
+				role: "level_percentage",
+				last_updated: "2026-07-25T12:00:00Z",
+				stale: false,
+			},
+			consumption: null,
+			forecast: null,
+			data_quality: "no_readings",
+			latest_reading_at: null,
+		};
+		const fetcher = vi.fn().mockResolvedValue(
+			new Response(JSON.stringify(dashboardFixture), {
+				status: 200,
+				headers: { "Content-Type": "application/json" },
+			}),
+		);
+
+		const dashboard = await getReservoirDashboard("res-1", fetcher);
+
+		expect(fetcher).toHaveBeenCalledWith(
+			"api/v1/reservoirs/res-1/dashboard",
+			expect.any(Object),
+		);
+		expect(dashboard.data_quality).toBe("no_readings");
+		expect(dashboard.current?.volume_liters).toBe("60.0000");
 	});
 });

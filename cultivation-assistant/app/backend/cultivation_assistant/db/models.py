@@ -565,3 +565,29 @@ class ReservoirEntityMapping(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     calibration: orm.Mapped[dict[str, Any] | None] = orm.mapped_column(sa.JSON)
     stale_after_seconds: orm.Mapped[int] = orm.mapped_column(default=300, nullable=False)
     reservoir: orm.Mapped[Reservoir] = orm.relationship(back_populates="entity_mappings")
+
+
+class ReservoirReading(UUIDPrimaryKeyMixin, Base):
+    """One persisted level sample of a reservoir's computed volume."""
+
+    __tablename__ = "reservoir_readings"
+    __table_args__ = (
+        sa.CheckConstraint("volume_liters >= 0", name="ck_reservoir_reading_volume"),
+        sa.Index(
+            "ix_reservoir_readings_reservoir_recorded",
+            "reservoir_id",
+            "recorded_at",
+        ),
+    )
+
+    reservoir_id: orm.Mapped[str] = orm.mapped_column(
+        sa.ForeignKey("reservoirs.id", ondelete="CASCADE"), nullable=False
+    )
+    recorded_at: orm.Mapped[datetime] = orm.mapped_column(
+        sa.DateTime(timezone=True), nullable=False
+    )
+    source_entity_id: orm.Mapped[str] = orm.mapped_column(sa.String(255), nullable=False)
+    role: orm.Mapped[str] = orm.mapped_column(sa.String(40), nullable=False)
+    volume_liters: orm.Mapped[Decimal] = orm.mapped_column(sa.Numeric(12, 4), nullable=False)
+    level_percent: orm.Mapped[Decimal | None] = orm.mapped_column(sa.Numeric(7, 4))
+    reservoir: orm.Mapped[Reservoir] = orm.relationship()
