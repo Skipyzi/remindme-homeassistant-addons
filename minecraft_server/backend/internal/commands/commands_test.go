@@ -11,6 +11,7 @@ import (
 	"github.com/skipyzi/remindme-homeassistant-addons/minecraft_server/backend/internal/backups"
 	"github.com/skipyzi/remindme-homeassistant-addons/minecraft_server/backend/internal/supervisor"
 	"github.com/skipyzi/remindme-homeassistant-addons/minecraft_server/backend/internal/testsupport"
+	"github.com/skipyzi/remindme-homeassistant-addons/minecraft_server/backend/internal/updates"
 )
 
 func newService(t *testing.T) (*Service, *testsupport.Env) {
@@ -20,8 +21,13 @@ func newService(t *testing.T) (*Service, *testsupport.Env) {
 		Paths: env.Paths, Settings: env.Settings, Store: env.Store, Bus: env.Bus,
 		Backend: paper.New(), Log: env.Log, Flags: paper.FlagProfile,
 	})
+	upd := updates.NewManager(updates.Deps{
+		Paths: env.Paths, Settings: env.Settings, Store: env.Store, Bus: env.Bus,
+		Supervisor: sup, Log: env.Log,
+	})
 	return New(Deps{
 		Settings: env.Settings, Store: env.Store, Supervisor: sup, Log: env.Log,
+		Updates: upd,
 	}), env
 }
 
@@ -84,7 +90,7 @@ func TestForceStopRequiresConfirmation(t *testing.T) {
 }
 
 func TestDestructiveWorldAndBackupActionsRequireTheirPhrases(t *testing.T) {
-	service, _ := newService(t)
+	service, env := newService(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -110,8 +116,18 @@ func TestDestructiveWorldAndBackupActionsRequireTheirPhrases(t *testing.T) {
 	if err := service.CancelGeneration(ctx, "tester", ""); !errors.As(err, &confirmErr) {
 		t.Fatalf("expected a confirmation error, got %v", err)
 	}
+	// A first install replaces nothing, so it needs no phrase - the error it does
+	// return (no install source in this fixture) must not be a confirmation demand.
+	if _, err := service.InstallServerUpdate(ctx, "tester", "1.21.4", 0, ""); errors.As(err, &confirmErr) {
+		t.Fatalf("a fresh install must not demand a confirmation phrase, got %v", err)
+	}
+	// Once a server is installed, replacing it is confirmed.
+	env.WriteFakeJar()
 	if _, err := service.InstallServerUpdate(ctx, "tester", "1.21.4", 0, ""); !errors.As(err, &confirmErr) {
 		t.Fatalf("expected a confirmation error, got %v", err)
+	}
+	if confirmErr.Expected != "UPDATE" {
+		t.Fatalf("unexpected phrase %q", confirmErr.Expected)
 	}
 }
 

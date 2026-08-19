@@ -78,8 +78,10 @@ function renderStatus(host, status, reload, ctx) {
         onclick: async (ev) => {
           const answer = await confirmAction({
             title: 'Cancel terrain generation?',
-            body: 'Chunky stops where it is. Chunks already generated stay on disk, so a later run continues from a smaller remaining area.',
-            phrase: 'CANCEL',
+            body: 'Chunky stops where it is.',
+            consequences: ['chunks already generated stay on disk', 'a later run continues from the smaller remaining area'],
+            recoverable: 'Recoverable: start a new run any time.',
+            wirePhrase: 'CANCEL',
             confirmLabel: 'Cancel job',
           });
           if (!answer.confirmed) return;

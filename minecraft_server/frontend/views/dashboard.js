@@ -9,17 +9,14 @@ export async function render(ctx) {
   const stats = ctx.state.stats || await api('api/stats');
 
   const metricsHost = h('div', { class: 'grid metrics' });
+  const headerHost = h('div', {});
   const playersHost = h('div', {});
   const generationHost = h('div', {});
   const consoleHost = h('div', { class: 'console', style: 'height:180px' });
   const controlsHost = h('div', { class: 'card-actions' });
 
   const element = h('div', { class: 'stack' },
-    card('Server control', controlsHost,
-      h('div', { class: 'row' },
-        statePill(status.server.state),
-        h('span', { class: 'muted' }, controlSummary(status))),
-    ),
+    card('Server control', controlsHost, headerHost),
     h('div', {}, metricsHost),
     h('div', { class: 'grid cols-2' },
       card('Players', null, playersHost),
@@ -30,6 +27,7 @@ export async function render(ctx) {
   );
 
   const paint = () => {
+    renderHeader(headerHost, ctx.state.status);
     renderControls(controlsHost, ctx);
     renderMetrics(metricsHost, ctx.state.status, ctx.state.stats);
     renderPlayers(playersHost, ctx.state.status, ctx.state.stats);
@@ -54,10 +52,65 @@ export async function render(ctx) {
     }
     if (event.type === 'server_log') {
       appendConsoleLine(consoleHost, event.data);
+      if (event.data && event.data.source === 'controller' && ctx.state.status) {
+        ctx.state.status.server.last_note = event.data.text;
+        ctx.state.status.server.last_note_at = new Date().toISOString();
+        renderHeader(headerHost, ctx.state.status);
+      }
     }
   });
 
-  return { element, cleanup: unsubscribe };
+  const ticker = setInterval(() => {
+    const state = ctx.state.status && ctx.state.status.server.state;
+    if (['starting', 'stopping', 'backing_up', 'restoring', 'switching_world', 'updating', 'generating'].includes(state)) {
+      renderHeader(headerHost, ctx.state.status);
+    }
+  }, 1000);
+
+  return { element, cleanup: () => { clearInterval(ticker); unsubscribe(); } };
+}
+
+// renderHeader paints the state pill, the one-line summary and - while anything
+// is in flight - what the controller is doing right now and for how long, so a
+// long start or backup explains itself instead of looking hung.
+function renderHeader(host, status) {
+  if (!status) return;
+  clear(host);
+  const server = status.server;
+  host.append(h('div', { class: 'row' },
+    statePill(server.state),
+    h('span', { class: 'muted' }, controlSummary(status))));
+
+  const transitional = ['starting', 'stopping', 'backing_up', 'restoring', 'switching_world', 'updating', 'generating']
+    .includes(server.state);
+  if (transitional) {
+    let elapsed = '';
+    if (server.started_at && server.state === 'starting') {
+      const secs = Math.max(0, Math.floor((Date.now() - Date.parse(server.started_at)) / 1000));
+      elapsed = ` · ${duration(secs)} elapsed`;
+    } else if (server.last_note_at) {
+      const secs = Math.max(0, Math.floor((Date.now() - Date.parse(server.last_note_at)) / 1000));
+      if (secs > 2) elapsed = ` · ${duration(secs)} ago`;
+    }
+    host.append(h('p', { class: 'muted activity-line' },
+      h('span', { class: 'spin' }), ' ',
+      server.last_note || describeState(server.state), elapsed));
+  } else if (server.state === 'crashed') {
+    host.append(h('p', { class: 'banner error activity-line' },
+      `The server exited unexpectedly (code ${server.last_exit_code}). The console has the last lines before the crash.`));
+  }
+}
+
+function describeState(state) {
+  return {
+    starting: 'starting - waiting for the server to report ready',
+    stopping: 'stopping - asking the server to save and exit',
+    backing_up: 'backing up',
+    restoring: 'restoring a backup',
+    switching_world: 'switching worlds',
+    updating: 'updating the server',
+    generating: 'generating terrain',
+  }[state] || state;
 }
 
 function controlSummary(status) {
@@ -72,51 +125,26 @@ function controlSummary(status) {
 
 function renderControls(host, ctx) {
   const status = ctx.state.status;
+
+  // First run: everything needed to get from nothing to a running server lives
+  // in one guided card - flavour, version, the EULA and the install - instead of
+  // being scattered between the dashboard and two Settings sections.
+  if (!status.jar.present || !status.eula_accepted) {
+    // Stats events repaint the dashboard every few seconds; rebuilding the card
+    // then would wipe the user's checkbox and selection mid-interaction. Only
+    // rebuild when the facts the card depends on actually change.
+    const key = `${status.flavour}|${status.jar.present}|${status.eula_accepted}|${status.server.state}`;
+    if (host.dataset.setupKey !== key) {
+      host.dataset.setupKey = key;
+      clear(host);
+      renderSetup(host, ctx, status);
+    }
+    return;
+  }
+  delete host.dataset.setupKey;
   clear(host);
   const running = ['running', 'starting', 'stopping', 'backing_up', 'restoring', 'generating', 'maintenance']
     .includes(status.server.state);
-
-  if (!status.eula_accepted) {
-    host.append(h('button', {
-      class: 'btn btn-primary',
-      onclick: async (ev) => {
-        const answer = await confirmAction({
-          title: 'Accept the Minecraft EULA',
-          body: h('div', {},
-            h('p', {}, 'Running a Minecraft server requires accepting Mojang’s End User Licence Agreement.'),
-            h('p', {}, h('a', { href: 'https://aka.ms/MinecraftEULA', target: '_blank', rel: 'noreferrer' },
-              'Read the EULA')),
-            h('p', { class: 'muted' }, 'The add-on will never accept this for you.')),
-          phrase: 'I-ACCEPT',
-          confirmLabel: 'I accept',
-          danger: false,
-        });
-        if (!answer.confirmed) return;
-        await run(ev.target, () => api('api/server/eula', {
-          method: 'POST', body: { accepted: true, confirm: answer.phrase },
-        }), 'EULA accepted');
-        await ctx.refreshStatus();
-      },
-    }, 'Accept EULA'));
-    return;
-  }
-
-  if (!status.jar.present) {
-    const name = status.flavour_name || 'the server';
-    host.append(h('div', { class: 'stack' },
-      h('button', {
-        class: 'btn btn-primary',
-        onclick: (ev) => run(ev.target, async () => {
-          await api('api/server/install', { method: 'POST' });
-          await ctx.refreshStatus();
-        }, `${name} installed`),
-      }, `Install the newest ${name}`),
-      // The button installs the newest stable build. Choosing a version is a
-      // deliberate act and lives with the rest of the version handling.
-      h('p', { class: 'muted' },
-        'This installs the newest stable build. To pick a specific version, or another server flavour, go to ',
-        h('a', { href: '#settings' }, 'Settings'), '.')));
-  }
 
   host.append(
     h('button', {
@@ -144,9 +172,14 @@ function renderControls(host, ctx) {
       class: 'btn btn-danger', disabled: !running,
       onclick: async (ev) => {
         const answer = await confirmAction({
-          title: 'Force stop the server',
-          body: 'The JVM is killed immediately. Anything not yet saved to disk is lost, which can mean up to one autosave interval of progress.',
-          phrase: 'FORCE-STOP',
+          title: 'Force stop the server?',
+          body: 'The JVM is killed immediately, skipping the save-and-exit sequence.',
+          consequences: [
+            'anything not yet saved to disk is lost - up to one autosave interval of progress',
+            'players are disconnected without warning',
+          ],
+          recoverable: 'Use this only when a graceful stop hangs.',
+          wirePhrase: 'FORCE-STOP',
           confirmLabel: 'Force stop',
         });
         if (!answer.confirmed) return;
@@ -281,4 +314,129 @@ export function appendConsoleLine(host, line, bulk = false) {
   host.append(h('div', { class: `l-${line.stream || 'stdout'}` }, line.text));
   while (host.childElementCount > 200) host.removeChild(host.firstChild);
   if (!bulk) host.scrollTop = host.scrollHeight;
+}
+
+
+// ------------------------------------------------------------- first-run setup
+
+function renderSetup(host, ctx, status) {
+  const stepsHost = h('div', { class: 'stack setup' });
+  host.append(h('div', { class: 'stack' },
+    h('p', {}, h('strong', {}, 'Set up your server'),
+      h('span', { class: 'muted' }, ' — pick what to run, accept the EULA, install and start. One place, four steps.')),
+    stepsHost));
+
+  const state = {
+    flavours: null,
+    versions: null,
+    version: '',
+    eulaChecked: Boolean(status.eula_accepted),
+    busy: false,
+  };
+
+  const paint = () => renderSetupSteps(stepsHost, ctx, status, state, paint);
+  paint();
+
+  Promise.all([
+    api('api/server/flavours'),
+    api('api/server/versions'),
+  ]).then(([flavours, versions]) => {
+    state.flavours = flavours;
+    state.versions = versions;
+    state.version = versions.target_version || (versions.versions || [])[0] || '';
+    paint();
+  }).catch((err) => {
+    stepsHost.append(h('p', { class: 'banner error' }, err.message));
+  });
+}
+
+function renderSetupSteps(host, ctx, status, state, paint) {
+  clear(host);
+  const step = (n, title, body, done) => h('div', { class: `setup-step${done ? ' done' : ''}` },
+    h('div', { class: 'setup-step-title' },
+      h('span', { class: 'setup-step-number' }, done ? '✓' : String(n)), ' ', title),
+    body);
+
+  // 1. Flavour. Only offered while nothing is installed: afterwards switching
+  // is a deliberate act in Settings.
+  if (!state.flavours) {
+    host.append(step(1, 'Server flavour', h('p', { class: 'muted' }, h('span', { class: 'spin' }), ' loading…'), false));
+    return;
+  }
+  const active = state.flavours.active;
+  host.append(step(1, 'Server flavour',
+    h('div', { class: 'row' },
+      (state.flavours.available || []).map((flavour) => h('button', {
+        class: `btn btn-small${flavour.name === active ? ' btn-primary' : ''}`,
+        disabled: state.busy || flavour.name === active,
+        title: flavour.summary,
+        onclick: async () => {
+          state.busy = true; paint();
+          try {
+            // Nothing is installed yet, so the switch moves nothing; the typed
+            // ceremony would protect nothing here.
+            state.flavours = await api('api/server/flavour', {
+              method: 'POST', body: { flavour: flavour.name, confirm: flavour.name },
+            });
+            state.versions = await api('api/server/versions');
+            state.version = state.versions.target_version || (state.versions.versions || [])[0] || '';
+            await ctx.refreshStatus();
+          } catch (err) {
+            toast(err.message, 'error', 8000);
+          } finally {
+            state.busy = false; paint();
+          }
+        },
+      }, flavour.display_name)),
+    ), Boolean(status.jar.present)));
+
+  // 2. Version.
+  const versionSelect = h('select', { disabled: state.busy },
+    ((state.versions && state.versions.versions) || []).slice(0, 30).map((v) => h('option', {
+      value: v, selected: v === state.version,
+    }, v)));
+  versionSelect.addEventListener('change', () => { state.version = versionSelect.value; });
+  host.append(step(2, 'Version',
+    h('div', {},
+      versionSelect,
+      h('p', { class: 'muted' }, 'Newest stable is preselected. Pre-releases can be enabled in Settings.')),
+    Boolean(status.jar.present)));
+
+  // 3. EULA. A checkbox, not a typed phrase: the ceremony is reading it.
+  const eulaBox = h('input', { type: 'checkbox', disabled: state.busy || status.eula_accepted });
+  eulaBox.checked = state.eulaChecked;
+  eulaBox.addEventListener('change', () => { state.eulaChecked = eulaBox.checked; paint(); });
+  host.append(step(3, 'Minecraft EULA',
+    h('label', { class: 'inline' }, eulaBox,
+      h('span', {}, 'I have read and accept the ',
+        h('a', { href: 'https://aka.ms/MinecraftEULA', target: '_blank', rel: 'noreferrer' }, 'Minecraft EULA'),
+        '. The add-on never accepts this for you.')),
+    Boolean(status.eula_accepted)));
+
+  // 4. Install and start.
+  const ready = state.eulaChecked && (state.version || status.jar.present) && !state.busy;
+  host.append(step(4, 'Install and start',
+    h('div', {},
+      h('button', {
+        class: 'btn btn-primary', disabled: !ready,
+        onclick: async (ev) => {
+          state.busy = true; paint();
+          await run(ev.target, async () => {
+            if (!status.eula_accepted) {
+              await api('api/server/eula', { method: 'POST', body: { accepted: true, confirm: 'I-ACCEPT' } });
+            }
+            if (!status.jar.present) {
+              await api('api/server/update', {
+                method: 'POST', body: { version: state.version, build: 0 },
+              });
+            }
+            await api('api/server/start', { method: 'POST' });
+            await ctx.refreshStatus();
+          }, 'Server installed and starting');
+          state.busy = false;
+        },
+      }, status.jar.present ? 'Start the server' : `Install ${state.version || '…'} and start`),
+      h('p', { class: 'muted' },
+        'The download is checksum-verified before anything is written. Progress appears above.')),
+    false));
 }

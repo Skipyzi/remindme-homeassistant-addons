@@ -158,10 +158,26 @@ export async function run(button, action, successMessage) {
 // ---------------------------------------------------------------- dialogs ----
 
 /**
- * confirmAction shows a modal that requires the exact confirmation phrase for
- * destructive operations, mirroring what the API demands.
+ * confirmAction shows a confirmation modal. Two tiers, used consistently:
+ *
+ * - Recoverable actions (an update with rollback, a restore that takes a safety
+ *   backup first) show what will happen and how it can be undone, and need one
+ *   click. `wirePhrase` is whatever token the API expects; the user never types
+ *   it - the ceremony the API encodes is the dialog itself.
+ * - Irreversible actions (permanent deletion) additionally require typing the
+ *   name of the thing being destroyed (`typeName`), so the reader has to look
+ *   at what they are about to lose.
  */
-export function confirmAction({ title, body, phrase, confirmLabel = 'Confirm', danger = true }) {
+export function confirmAction({
+  title,
+  body,
+  consequences = [],
+  recoverable = '',
+  typeName = '',
+  wirePhrase = '',
+  confirmLabel = 'Confirm',
+  danger = true,
+}) {
   return new Promise((resolve) => {
     const dialog = document.getElementById('dialog');
     const form = document.getElementById('dialog-form');
@@ -171,20 +187,30 @@ export function confirmAction({ title, body, phrase, confirmLabel = 'Confirm', d
 
     titleEl.textContent = title;
     clear(bodyEl);
-    if (typeof body === 'string') bodyEl.append(h('p', {}, body));
+    if (typeof body === 'string' && body) bodyEl.append(h('p', {}, body));
     else if (body) bodyEl.append(body);
+    if (consequences.length) {
+      bodyEl.append(h('ul', { class: 'consequences' },
+        consequences.map((c) => h('li', {}, c))));
+    }
+    if (typeName) {
+      bodyEl.append(h('p', { class: 'banner error' },
+        'This cannot be undone.'));
+    } else if (recoverable) {
+      bodyEl.append(h('p', { class: 'muted' }, recoverable));
+    }
 
     let input = null;
-    if (phrase) {
-      input = h('input', { type: 'text', autocomplete: 'off', placeholder: phrase });
+    if (typeName) {
+      input = h('input', { type: 'text', autocomplete: 'off', placeholder: typeName });
       bodyEl.append(
         h('label', {},
-          h('span', { class: 'label-text' }, `Type ${phrase} to continue`),
+          h('span', { class: 'label-text' }, `Type ${typeName} to continue`),
           input),
       );
       confirmBtn.disabled = true;
       input.addEventListener('input', () => {
-        confirmBtn.disabled = input.value.trim() !== phrase;
+        confirmBtn.disabled = input.value.trim() !== typeName;
       });
     } else {
       confirmBtn.disabled = false;
@@ -196,7 +222,9 @@ export function confirmAction({ title, body, phrase, confirmLabel = 'Confirm', d
       form.removeEventListener('close', onClose);
       dialog.removeEventListener('close', onClose);
       const confirmed = dialog.returnValue === 'confirm';
-      resolve(confirmed ? { confirmed: true, phrase: phrase || '' } : { confirmed: false });
+      resolve(confirmed
+        ? { confirmed: true, phrase: wirePhrase || typeName || '' }
+        : { confirmed: false });
     };
     dialog.addEventListener('close', onClose, { once: true });
     dialog.showModal();

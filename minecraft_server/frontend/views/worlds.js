@@ -69,9 +69,13 @@ function worldTable(worlds, active, reload, ctx) {
             const answer = await confirmAction({
               title: `Switch to ${world.name || world.id}?`,
               body: h('div', {},
-                h('p', {}, 'Minecraft will be stopped, the active world changed and the server started again. If it fails to start, the previous world is restored automatically.'),
                 h('label', { class: 'inline' }, backupBox, h('span', {}, 'Back up the current world first'))),
-              phrase: null,
+              consequences: [
+                'Minecraft is stopped',
+                'the active world is switched - no data moves',
+                'the server is started again and switched back automatically if it fails',
+              ],
+              recoverable: 'Recoverable: switching back is the same operation.',
               confirmLabel: 'Switch world',
               danger: false,
             });
@@ -129,8 +133,9 @@ function worldTable(worlds, active, reload, ctx) {
           onclick: async (ev) => {
             const answer = await confirmAction({
               title: `Move ${world.id} to the trash?`,
-              body: 'The world is moved to /data/trash and can be restored. Nothing is erased in this step.',
-              phrase: world.id,
+              body: 'The world is moved to /data/trash. Nothing is erased in this step.',
+              recoverable: 'Recoverable: restore it from the Trash section on this page.',
+              typeName: world.id,
               confirmLabel: 'Move to trash',
             });
             if (!answer.confirmed) return;
@@ -249,9 +254,10 @@ function trashTable(entries, reload) {
         class: 'btn btn-small btn-danger',
         onclick: async (ev) => {
           const answer = await confirmAction({
-            title: 'Permanently delete this world?',
+            title: `Permanently delete ${entry.name}?`,
             body: 'This erases the world data from disk. Existing backups are not affected, but if there are none, the world is gone for good.',
-            phrase: 'DELETE-PERMANENTLY',
+            typeName: entry.name,
+            wirePhrase: 'DELETE-PERMANENTLY',
             confirmLabel: 'Delete permanently',
           });
           if (!answer.confirmed) return;

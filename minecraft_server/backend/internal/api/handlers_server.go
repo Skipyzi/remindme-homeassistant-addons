@@ -106,12 +106,10 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		resp.Backups.RunningKind = kind
 	}
 
-	if !settings.EULAAccepted {
-		resp.Warnings = append(resp.Warnings, "The Minecraft EULA has not been accepted yet, so the server cannot start.")
-	}
-	if !resp.Jar.Present {
-		resp.Warnings = append(resp.Warnings, "No server JAR is installed. Install PaperMC from the Server tab.")
-	}
+	// The first-run facts (no EULA, no server installed) are not warnings while
+	// the dashboard's setup flow is guiding the user through exactly those steps;
+	// a banner shouting the same thing above it is noise. They stay out of the
+	// warning list entirely - the setup card is the single voice for first run.
 	if snapshot.SaveDisabled {
 		resp.Warnings = append(resp.Warnings, "World saving is currently disabled. If no backup is running, re-enable it from the console.")
 	}

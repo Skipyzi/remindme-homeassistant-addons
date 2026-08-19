@@ -139,6 +139,8 @@ type Supervisor struct {
 	startedAt time.Time
 	readyAt   time.Time
 
+	lastNote        string
+	lastNoteAt      time.Time
 	intentionalStop bool
 	stopRequested   bool
 	exitCode        int
@@ -219,7 +221,13 @@ type Snapshot struct {
 	MaintenanceMode bool      `json:"maintenance_mode"`
 	ConsoleSeq      uint64    `json:"console_seq"`
 	Backend         string    `json:"backend"`
-	lastCrash       time.Time `json:"-"`
+	// LastNote is the controller's most recent plain-language line about what it
+	// is doing ("downloading 1.21.4 build 232", "backing up survival before the
+	// update"). The dashboard shows it next to the state so a long-running step
+	// explains itself instead of looking hung.
+	LastNote   string    `json:"last_note,omitempty"`
+	LastNoteAt string    `json:"last_note_at,omitempty"`
+	lastCrash  time.Time `json:"-"`
 }
 
 func (s *Supervisor) Snapshot() Snapshot {
@@ -242,7 +250,11 @@ func (s *Supervisor) Snapshot() Snapshot {
 		SaveDisabled: s.saveDisabled,
 		ConsoleSeq:   s.ring.lastSeq(),
 		Backend:      s.deps.Backend.Name(),
+		LastNote:     s.lastNote,
 		lastCrash:    s.lastCrashAt,
+	}
+	if !s.lastNoteAt.IsZero() {
+		snap.LastNoteAt = s.lastNoteAt.UTC().Format(time.RFC3339)
 	}
 	if !s.startedAt.IsZero() {
 		snap.StartedAt = s.startedAt.UTC().Format(time.RFC3339)
@@ -302,7 +314,12 @@ func (s *Supervisor) Console(afterSeq uint64, limit int) []ConsoleLine {
 // Note appends a controller message to the console history so the operator sees
 // controller actions and Minecraft output in one place.
 func (s *Supervisor) Note(format string, args ...any) {
-	line := s.ring.append("controller", fmt.Sprintf(format, args...))
+	text := fmt.Sprintf(format, args...)
+	line := s.ring.append("controller", text)
+	s.mu.Lock()
+	s.lastNote = text
+	s.lastNoteAt = time.Now()
+	s.mu.Unlock()
 	s.deps.Bus.Publish(events.TypeServerLog, line)
 }
 

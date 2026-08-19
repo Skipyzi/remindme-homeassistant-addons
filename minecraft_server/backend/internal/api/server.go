@@ -375,11 +375,12 @@ func (s *Server) handleStatic(w http.ResponseWriter, r *http.Request) {
 		// Single-page fallback: unknown paths render the app shell.
 		full = filepath.Join(s.deps.FrontendDir, "index.html")
 	}
-	if strings.HasSuffix(full, ".html") {
-		w.Header().Set("Cache-Control", "no-cache")
-	} else {
-		w.Header().Set("Cache-Control", "max-age=300")
-	}
+	// no-cache (revalidate, not "don't store") on everything: the JS is ES
+	// modules, and a cached module surviving an add-on update leaves the browser
+	// running half old and half new UI. ServeContent's Last-Modified makes the
+	// revalidation a 304 in the common case, so this costs a conditional request,
+	// not a re-download.
+	w.Header().Set("Cache-Control", "no-cache")
 	// ServeContent rather than ServeFile: ServeFile redirects requests for
 	// index.html to "./", which is noise behind an Ingress proxy.
 	file, err := os.Open(full)

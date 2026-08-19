@@ -3,6 +3,34 @@
 All notable changes to this add-on are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are semantic.
 
+## 1.4.0 - 2026-08-19
+
+### Changed
+
+- **First run is one guided flow.** The dashboard walks through flavour, version,
+  the EULA and install-and-start in a single card, instead of scattering those
+  steps between the dashboard and two Settings sections. A first install no
+  longer demands a typed confirmation phrase - it replaces nothing.
+- **The server explains what it is doing.** The dashboard shows the controller's
+  current step ("downloading 26.2 build 112", "backing up survival before the
+  update") with a ticking elapsed time while anything is in flight, and a plain
+  crash banner when the server exits unexpectedly.
+- **Confirmations follow one rule.** Recoverable actions (update, restore, world
+  switch, flavour switch) state their consequences and how they can be undone,
+  and take one click. Only irreversible deletions (purging a world, deleting a
+  backup) require typing the name of the thing being destroyed.
+
+### Fixed
+
+- The setup card no longer loses the EULA checkbox and version selection when a
+  live stats update repaints the dashboard.
+- The web UI is served with `Cache-Control: no-cache`, so browsers revalidate
+  the ES modules after an add-on update instead of running half the old UI and
+  half the new one.
+- The "no server installed" and "EULA not accepted" warning banners are gone;
+  the setup flow is the single voice for first run (one of them pointed at a
+  "Server tab" that never existed).
+
 ## 1.3.0 - 2026-07-31
 
 The PaperMC v3 API fix and the dual-JRE change below were released as 1.1.0 and 1.2.0
