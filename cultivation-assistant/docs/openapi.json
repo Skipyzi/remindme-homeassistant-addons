@@ -1,0 +1,7489 @@
+{
+  "components": {
+    "schemas": {
+      "Body_create_photo_api_v1_plants__plant_id__photos_post": {
+        "properties": {
+          "caption": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Caption"
+          },
+          "file": {
+            "contentMediaType": "application/octet-stream",
+            "title": "File",
+            "type": "string"
+          },
+          "journal_entry_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Journal Entry Id"
+          },
+          "measurement_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Measurement Id"
+          },
+          "occurred_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Occurred At"
+          },
+          "stage_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stage Id"
+          },
+          "tags": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tags"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "title": "Body_create_photo_api_v1_plants__plant_id__photos_post",
+        "type": "object"
+      },
+      "BreederCreate": {
+        "description": "Create one minimal breeder identity.",
+        "properties": {
+          "name": {
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "BreederCreate",
+        "type": "object"
+      },
+      "BreederListResponse": {
+        "description": "Stable list envelope for breeders.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/BreederResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "BreederListResponse",
+        "type": "object"
+      },
+      "BreederResponse": {
+        "description": "Persisted breeder representation.",
+        "properties": {
+          "active": {
+            "title": "Active",
+            "type": "boolean"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "active",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "BreederResponse",
+        "type": "object"
+      },
+      "BreederUpdate": {
+        "description": "Patch mutable breeder fields.",
+        "properties": {
+          "active": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 160,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          }
+        },
+        "title": "BreederUpdate",
+        "type": "object"
+      },
+      "CalibrationPointInput": {
+        "description": "One raw-reading-to-volume calibration point.",
+        "properties": {
+          "raw_value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,8}|(?=[\\d.]{1,13}0*$)\\d{0,8}\\.\\d{0,4}0*$)",
+                "type": "string"
+              }
+            ],
+            "title": "Raw Value"
+          },
+          "volume_liters": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,8}|(?=[\\d.]{1,13}0*$)\\d{0,8}\\.\\d{0,4}0*$)",
+                "type": "string"
+              }
+            ],
+            "title": "Volume Liters"
+          }
+        },
+        "required": [
+          "raw_value",
+          "volume_liters"
+        ],
+        "title": "CalibrationPointInput",
+        "type": "object"
+      },
+      "CalibrationPointListResponse": {
+        "description": "Stable list envelope for calibration points, ordered by raw value.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CalibrationPointResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "CalibrationPointListResponse",
+        "type": "object"
+      },
+      "CalibrationPointResponse": {
+        "description": "Persisted calibration point representation.",
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "raw_value": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Raw Value",
+            "type": "string"
+          },
+          "reservoir_id": {
+            "title": "Reservoir Id",
+            "type": "string"
+          },
+          "volume_liters": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Volume Liters",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "reservoir_id",
+          "raw_value",
+          "volume_liters"
+        ],
+        "title": "CalibrationPointResponse",
+        "type": "object"
+      },
+      "CalibrationPointsReplace": {
+        "description": "Replace a reservoir's entire calibration table.",
+        "properties": {
+          "points": {
+            "items": {
+              "$ref": "#/components/schemas/CalibrationPointInput"
+            },
+            "title": "Points",
+            "type": "array"
+          }
+        },
+        "required": [
+          "points"
+        ],
+        "title": "CalibrationPointsReplace",
+        "type": "object"
+      },
+      "CompactBreeder": {
+        "description": "Compact nested breeder identity inside cultivar responses.",
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "CompactBreeder",
+        "type": "object"
+      },
+      "CompactCultivar": {
+        "description": "Compact cultivar identity with optional breeder name.",
+        "properties": {
+          "breeder_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Breeder Name"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "breeder_name"
+        ],
+        "title": "CompactCultivar",
+        "type": "object"
+      },
+      "CompactPlant": {
+        "description": "Compact plant row inside a Grow detail.",
+        "properties": {
+          "current_stage": {
+            "$ref": "#/components/schemas/cultivation_assistant__grows__schemas__CompactStage"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "start_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Date"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "status",
+          "current_stage",
+          "start_date"
+        ],
+        "title": "CompactPlant",
+        "type": "object"
+      },
+      "CompactRef": {
+        "description": "Compact identity reference for nested Grow, Grow Space, and cultivar.",
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "CompactRef",
+        "type": "object"
+      },
+      "CompactStageRef": {
+        "description": "Compact lifecycle stage identity, reused from the lifecycle slice shape.",
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "key",
+          "label"
+        ],
+        "title": "CompactStageRef",
+        "type": "object"
+      },
+      "CultivarCreate": {
+        "description": "Create one minimal cultivar identity with an optional breeder.",
+        "properties": {
+          "breeder_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Breeder Id"
+          },
+          "name": {
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "seed_type": {
+            "$ref": "#/components/schemas/SeedType",
+            "default": "unknown"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "CultivarCreate",
+        "type": "object"
+      },
+      "CultivarListResponse": {
+        "description": "Stable list envelope for cultivars.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CultivarResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "CultivarListResponse",
+        "type": "object"
+      },
+      "CultivarResponse": {
+        "description": "Persisted cultivar representation with compact breeder identity.",
+        "properties": {
+          "active": {
+            "title": "Active",
+            "type": "boolean"
+          },
+          "breeder": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CompactBreeder"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "seed_type": {
+            "$ref": "#/components/schemas/SeedType"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "breeder",
+          "seed_type",
+          "active",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "CultivarResponse",
+        "type": "object"
+      },
+      "CultivarUpdate": {
+        "description": "Patch mutable cultivar fields.",
+        "properties": {
+          "active": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active"
+          },
+          "breeder_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Breeder Id"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 160,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "seed_type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SeedType"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "title": "CultivarUpdate",
+        "type": "object"
+      },
+      "DimensionUnit": {
+        "description": "Units accepted for user-entered linear dimensions.",
+        "enum": [
+          "cm",
+          "in"
+        ],
+        "title": "DimensionUnit",
+        "type": "string"
+      },
+      "DimensionsInput": {
+        "description": "Positive linear dimensions in one shared display unit.",
+        "properties": {
+          "height": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,8}|(?=[\\d.]{1,13}0*$)\\d{0,8}\\.\\d{0,4}0*$)",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Height"
+          },
+          "length": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,8}|(?=[\\d.]{1,13}0*$)\\d{0,8}\\.\\d{0,4}0*$)",
+                "type": "string"
+              }
+            ],
+            "title": "Length"
+          },
+          "unit": {
+            "$ref": "#/components/schemas/DimensionUnit"
+          },
+          "width": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,8}|(?=[\\d.]{1,13}0*$)\\d{0,8}\\.\\d{0,4}0*$)",
+                "type": "string"
+              }
+            ],
+            "title": "Width"
+          }
+        },
+        "required": [
+          "length",
+          "width",
+          "unit"
+        ],
+        "title": "DimensionsInput",
+        "type": "object"
+      },
+      "DimensionsResponse": {
+        "description": "Editable dimensions reconstructed in their preferred unit.",
+        "properties": {
+          "height": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Height"
+          },
+          "length": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Length",
+            "type": "string"
+          },
+          "unit": {
+            "$ref": "#/components/schemas/DimensionUnit"
+          },
+          "width": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Width",
+            "type": "string"
+          }
+        },
+        "required": [
+          "length",
+          "width",
+          "height",
+          "unit"
+        ],
+        "title": "DimensionsResponse",
+        "type": "object"
+      },
+      "EntityMappingCreate": {
+        "description": "Create one semantic mapping for an existing or manual HA entity ID.",
+        "properties": {
+          "calibration": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Calibration"
+          },
+          "display_name": {
+            "anyOf": [
+              {
+                "maxLength": 160,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          },
+          "enabled": {
+            "default": true,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "entity_id": {
+            "maxLength": 255,
+            "minLength": 3,
+            "pattern": "^[a-z0-9_]+\\.[a-z0-9_]+$",
+            "title": "Entity Id",
+            "type": "string"
+          },
+          "priority": {
+            "default": 100,
+            "maximum": 10000.0,
+            "minimum": 0.0,
+            "title": "Priority",
+            "type": "integer"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          },
+          "stale_after_seconds": {
+            "anyOf": [
+              {
+                "maximum": 86400.0,
+                "minimum": 30.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stale After Seconds"
+          }
+        },
+        "required": [
+          "entity_id",
+          "role"
+        ],
+        "title": "EntityMappingCreate",
+        "type": "object"
+      },
+      "EntityMappingResponse": {
+        "description": "Persisted semantic mapping metadata.",
+        "properties": {
+          "calibration": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Calibration"
+          },
+          "compatibility": {
+            "$ref": "#/components/schemas/cultivation_assistant__grow_spaces__units__Compatibility",
+            "default": "unknown"
+          },
+          "compatibility_explanation": {
+            "default": "Entity is not currently present in the state cache.",
+            "title": "Compatibility Explanation",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "display_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "entity_id": {
+            "title": "Entity Id",
+            "type": "string"
+          },
+          "grow_space_id": {
+            "title": "Grow Space Id",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "normalized_unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Normalized Unit"
+          },
+          "priority": {
+            "title": "Priority",
+            "type": "integer"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          },
+          "source_unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Unit"
+          },
+          "stale_after_seconds": {
+            "title": "Stale After Seconds",
+            "type": "integer"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "grow_space_id",
+          "entity_id",
+          "role",
+          "display_name",
+          "priority",
+          "source_unit",
+          "normalized_unit",
+          "enabled",
+          "calibration",
+          "stale_after_seconds",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "EntityMappingResponse",
+        "type": "object"
+      },
+      "EntityMappingUpdate": {
+        "description": "Mutable mapping fields; entity and role identity remain stable.",
+        "properties": {
+          "calibration": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Calibration"
+          },
+          "display_name": {
+            "anyOf": [
+              {
+                "maxLength": 160,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          },
+          "enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enabled"
+          },
+          "priority": {
+            "anyOf": [
+              {
+                "maximum": 10000.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Priority"
+          },
+          "stale_after_seconds": {
+            "anyOf": [
+              {
+                "maximum": 86400.0,
+                "minimum": 30.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stale After Seconds"
+          }
+        },
+        "title": "EntityMappingUpdate",
+        "type": "object"
+      },
+      "GeometryInput": {
+        "description": "Tank geometry for one of the supported shapes.",
+        "properties": {
+          "diameter": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,8}|(?=[\\d.]{1,13}0*$)\\d{0,8}\\.\\d{0,4}0*$)",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Diameter"
+          },
+          "height": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,8}|(?=[\\d.]{1,13}0*$)\\d{0,8}\\.\\d{0,4}0*$)",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Height"
+          },
+          "length": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,8}|(?=[\\d.]{1,13}0*$)\\d{0,8}\\.\\d{0,4}0*$)",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Length"
+          },
+          "shape": {
+            "$ref": "#/components/schemas/GeometryShape"
+          },
+          "unit": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DimensionUnit"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "width": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,8}|(?=[\\d.]{1,13}0*$)\\d{0,8}\\.\\d{0,4}0*$)",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Width"
+          }
+        },
+        "required": [
+          "shape"
+        ],
+        "title": "GeometryInput",
+        "type": "object"
+      },
+      "GeometryResponse": {
+        "description": "Editable geometry reconstructed in its stored display unit.",
+        "properties": {
+          "diameter": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Diameter"
+          },
+          "height": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Height"
+          },
+          "length": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Length"
+          },
+          "shape": {
+            "$ref": "#/components/schemas/GeometryShape"
+          },
+          "unit": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DimensionUnit"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "width": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Width"
+          }
+        },
+        "required": [
+          "shape",
+          "unit",
+          "length",
+          "width",
+          "height",
+          "diameter"
+        ],
+        "title": "GeometryResponse",
+        "type": "object"
+      },
+      "GeometryShape": {
+        "description": "Supported tank geometry shapes for this slice.",
+        "enum": [
+          "rectangular",
+          "vertical_cylinder",
+          "horizontal_cylinder",
+          "custom_calibration_table"
+        ],
+        "title": "GeometryShape",
+        "type": "string"
+      },
+      "GrowCreate": {
+        "description": "Create one Grow within a Grow Space.",
+        "properties": {
+          "end_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Date"
+          },
+          "grow_space_id": {
+            "title": "Grow Space Id",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "start_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Date"
+          },
+          "status": {
+            "$ref": "#/components/schemas/GrowStatus",
+            "default": "planned"
+          }
+        },
+        "required": [
+          "grow_space_id",
+          "name"
+        ],
+        "title": "GrowCreate",
+        "type": "object"
+      },
+      "GrowListResponse": {
+        "description": "Stable list envelope for Grows.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/GrowSummary"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "GrowListResponse",
+        "type": "object"
+      },
+      "GrowResponse": {
+        "description": "Detailed Grow representation with compact plants.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "end_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Date"
+          },
+          "grow_space_active": {
+            "title": "Grow Space Active",
+            "type": "boolean"
+          },
+          "grow_space_id": {
+            "title": "Grow Space Id",
+            "type": "string"
+          },
+          "grow_space_name": {
+            "title": "Grow Space Name",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "plant_count": {
+            "title": "Plant Count",
+            "type": "integer"
+          },
+          "plant_status_counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Plant Status Counts",
+            "type": "object"
+          },
+          "plants": {
+            "items": {
+              "$ref": "#/components/schemas/CompactPlant"
+            },
+            "title": "Plants",
+            "type": "array"
+          },
+          "start_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Date"
+          },
+          "status": {
+            "$ref": "#/components/schemas/GrowStatus"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "grow_space_id",
+          "grow_space_name",
+          "grow_space_active",
+          "name",
+          "status",
+          "start_date",
+          "end_date",
+          "notes",
+          "plant_count",
+          "plant_status_counts",
+          "created_at",
+          "updated_at",
+          "plants"
+        ],
+        "title": "GrowResponse",
+        "type": "object"
+      },
+      "GrowSpaceCreate": {
+        "description": "Create a universal grow space and optional initial mappings.",
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "dimensions": {
+            "$ref": "#/components/schemas/DimensionsInput"
+          },
+          "location": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location"
+          },
+          "mappings": {
+            "items": {
+              "$ref": "#/components/schemas/EntityMappingCreate"
+            },
+            "title": "Mappings",
+            "type": "array"
+          },
+          "name": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "space_type": {
+            "$ref": "#/components/schemas/GrowSpaceType"
+          }
+        },
+        "required": [
+          "name",
+          "space_type",
+          "dimensions"
+        ],
+        "title": "GrowSpaceCreate",
+        "type": "object"
+      },
+      "GrowSpaceListResponse": {
+        "description": "Stable list envelope for grow spaces.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/GrowSpaceSummary"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "GrowSpaceListResponse",
+        "type": "object"
+      },
+      "GrowSpaceResponse": {
+        "description": "Detailed grow-space representation with all mappings.",
+        "properties": {
+          "active": {
+            "title": "Active",
+            "type": "boolean"
+          },
+          "area_m2": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Area M2"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "dimensions": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DimensionsResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "live_readings": {
+            "items": {
+              "$ref": "#/components/schemas/LiveReading"
+            },
+            "title": "Live Readings",
+            "type": "array"
+          },
+          "location": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location"
+          },
+          "mapping_count": {
+            "title": "Mapping Count",
+            "type": "integer"
+          },
+          "mappings": {
+            "items": {
+              "$ref": "#/components/schemas/EntityMappingResponse"
+            },
+            "title": "Mappings",
+            "type": "array"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "space_type": {
+            "title": "Space Type",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "volume_m3": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Volume M3"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "description",
+          "location",
+          "space_type",
+          "active",
+          "dimensions",
+          "area_m2",
+          "volume_m3",
+          "mapping_count",
+          "created_at",
+          "updated_at",
+          "mappings"
+        ],
+        "title": "GrowSpaceResponse",
+        "type": "object"
+      },
+      "GrowSpaceSummary": {
+        "description": "Compact grow-space list representation.",
+        "properties": {
+          "active": {
+            "title": "Active",
+            "type": "boolean"
+          },
+          "area_m2": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Area M2"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "dimensions": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DimensionsResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "live_readings": {
+            "items": {
+              "$ref": "#/components/schemas/LiveReading"
+            },
+            "title": "Live Readings",
+            "type": "array"
+          },
+          "location": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location"
+          },
+          "mapping_count": {
+            "title": "Mapping Count",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "space_type": {
+            "title": "Space Type",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "volume_m3": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Volume M3"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "description",
+          "location",
+          "space_type",
+          "active",
+          "dimensions",
+          "area_m2",
+          "volume_m3",
+          "mapping_count",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "GrowSpaceSummary",
+        "type": "object"
+      },
+      "GrowSpaceType": {
+        "description": "Supported physical grow-space categories.",
+        "enum": [
+          "tent",
+          "greenhouse",
+          "outdoor",
+          "room"
+        ],
+        "title": "GrowSpaceType",
+        "type": "string"
+      },
+      "GrowSpaceUpdate": {
+        "description": "Patch mutable core grow-space fields.",
+        "properties": {
+          "active": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "dimensions": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DimensionsInput"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "location": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 120,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "space_type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GrowSpaceType"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "title": "GrowSpaceUpdate",
+        "type": "object"
+      },
+      "GrowStatus": {
+        "description": "Lifecycle status of a Grow.",
+        "enum": [
+          "planned",
+          "active",
+          "completed",
+          "archived"
+        ],
+        "title": "GrowStatus",
+        "type": "string"
+      },
+      "GrowSummary": {
+        "description": "Compact Grow list representation with plant counts.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "end_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Date"
+          },
+          "grow_space_active": {
+            "title": "Grow Space Active",
+            "type": "boolean"
+          },
+          "grow_space_id": {
+            "title": "Grow Space Id",
+            "type": "string"
+          },
+          "grow_space_name": {
+            "title": "Grow Space Name",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "plant_count": {
+            "title": "Plant Count",
+            "type": "integer"
+          },
+          "plant_status_counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Plant Status Counts",
+            "type": "object"
+          },
+          "start_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Date"
+          },
+          "status": {
+            "$ref": "#/components/schemas/GrowStatus"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "grow_space_id",
+          "grow_space_name",
+          "grow_space_active",
+          "name",
+          "status",
+          "start_date",
+          "end_date",
+          "notes",
+          "plant_count",
+          "plant_status_counts",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "GrowSummary",
+        "type": "object"
+      },
+      "GrowUpdate": {
+        "description": "Patch mutable Grow fields; date and status rules apply in the service.",
+        "properties": {
+          "end_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Date"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 120,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "start_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Date"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GrowStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "title": "GrowUpdate",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "JournalEntryCreate": {
+        "description": "Create one journal entry for a Plant or a Grow.",
+        "properties": {
+          "entry_type": {
+            "$ref": "#/components/schemas/JournalEntryType",
+            "default": "note"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "occurred_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Occurred At"
+          },
+          "related_issue": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Related Issue"
+          },
+          "related_stage_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Related Stage Id"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Tags",
+            "type": "array"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "title": "JournalEntryCreate",
+        "type": "object"
+      },
+      "JournalEntryListResponse": {
+        "description": "Stable list envelope for journal entries.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/JournalEntryResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "JournalEntryListResponse",
+        "type": "object"
+      },
+      "JournalEntryResponse": {
+        "description": "Persisted journal entry representation.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "entry_type": {
+            "$ref": "#/components/schemas/JournalEntryType"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "occurred_at": {
+            "format": "date-time",
+            "title": "Occurred At",
+            "type": "string"
+          },
+          "related_issue": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Related Issue"
+          },
+          "related_stage": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CompactStageRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "subject_id": {
+            "title": "Subject Id",
+            "type": "string"
+          },
+          "subject_type": {
+            "$ref": "#/components/schemas/JournalSubjectType"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Tags",
+            "type": "array"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "subject_type",
+          "subject_id",
+          "entry_type",
+          "occurred_at",
+          "title",
+          "notes",
+          "tags",
+          "related_stage",
+          "related_issue",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "JournalEntryResponse",
+        "type": "object"
+      },
+      "JournalEntryType": {
+        "description": "Manual journal-entry categories a person chooses when writing one.\n\nExcludes the spec 8.4 timeline events that other domains emit\nautomatically (reservoir refills, irrigation, photo capture,\nmeasurement recording).",
+        "enum": [
+          "watered",
+          "fed",
+          "transplanted",
+          "topped",
+          "trained",
+          "defoliated",
+          "light_schedule_changed",
+          "flowering_initiated",
+          "first_flowers_observed",
+          "problem_observed",
+          "treatment_applied",
+          "harvested",
+          "drying_started",
+          "jarred",
+          "cure_milestone",
+          "note"
+        ],
+        "title": "JournalEntryType",
+        "type": "string"
+      },
+      "JournalEntryUpdate": {
+        "description": "Patch mutable journal entry fields.",
+        "properties": {
+          "entry_type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JournalEntryType"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "occurred_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Occurred At"
+          },
+          "related_issue": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Related Issue"
+          },
+          "related_stage_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Related Stage Id"
+          },
+          "tags": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tags"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "title": "JournalEntryUpdate",
+        "type": "object"
+      },
+      "JournalSubjectType": {
+        "description": "What a journal entry describes.",
+        "enum": [
+          "plant",
+          "grow"
+        ],
+        "title": "JournalSubjectType",
+        "type": "string"
+      },
+      "LifecycleStageCreate": {
+        "description": "Create one custom lifecycle stage appended to the end of the order.",
+        "properties": {
+          "enabled": {
+            "default": true,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "key": {
+            "maxLength": 60,
+            "minLength": 1,
+            "pattern": "^[a-z0-9_]+$",
+            "title": "Key",
+            "type": "string"
+          },
+          "label": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "label"
+        ],
+        "title": "LifecycleStageCreate",
+        "type": "object"
+      },
+      "LifecycleStageListResponse": {
+        "description": "Stable list envelope for lifecycle stages.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/LifecycleStageResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "LifecycleStageListResponse",
+        "type": "object"
+      },
+      "LifecycleStageOrderUpdate": {
+        "description": "Complete ordered lifecycle stage identity list.",
+        "properties": {
+          "stage_ids": {
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Stage Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "stage_ids"
+        ],
+        "title": "LifecycleStageOrderUpdate",
+        "type": "object"
+      },
+      "LifecycleStageResponse": {
+        "description": "Persisted lifecycle stage representation.",
+        "properties": {
+          "built_in": {
+            "title": "Built In",
+            "type": "boolean"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "position": {
+            "title": "Position",
+            "type": "integer"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "key",
+          "label",
+          "position",
+          "enabled",
+          "built_in",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "LifecycleStageResponse",
+        "type": "object"
+      },
+      "LifecycleStageUpdate": {
+        "description": "Patch mutable lifecycle stage fields; the stable key never changes.",
+        "properties": {
+          "enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enabled"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "maxLength": 120,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          }
+        },
+        "title": "LifecycleStageUpdate",
+        "type": "object"
+      },
+      "LiveReading": {
+        "description": "Ephemeral normalized value derived from the Home Assistant cache.",
+        "properties": {
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          },
+          "entity_id": {
+            "title": "Entity Id",
+            "type": "string"
+          },
+          "last_updated": {
+            "format": "date-time",
+            "title": "Last Updated",
+            "type": "string"
+          },
+          "normalized_unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Normalized Unit"
+          },
+          "normalized_value": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Normalized Value"
+          },
+          "raw_value": {
+            "title": "Raw Value",
+            "type": "string"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          },
+          "stale": {
+            "title": "Stale",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "entity_id",
+          "role",
+          "raw_value",
+          "normalized_value",
+          "normalized_unit",
+          "last_updated",
+          "stale",
+          "available"
+        ],
+        "title": "LiveReading",
+        "type": "object"
+      },
+      "MeasurementCreate": {
+        "description": "Create one quantitative reading against a Plant.",
+        "properties": {
+          "custom_metric_name": {
+            "anyOf": [
+              {
+                "maxLength": 120,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Custom Metric Name"
+          },
+          "metric_type": {
+            "$ref": "#/components/schemas/MeasurementMetric"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "occurred_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Occurred At"
+          },
+          "unit": {
+            "maxLength": 40,
+            "minLength": 1,
+            "title": "Unit",
+            "type": "string"
+          },
+          "value": {
+            "title": "Value",
+            "type": "number"
+          }
+        },
+        "required": [
+          "metric_type",
+          "value",
+          "unit"
+        ],
+        "title": "MeasurementCreate",
+        "type": "object"
+      },
+      "MeasurementListResponse": {
+        "description": "Stable list envelope for measurements.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/MeasurementResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "MeasurementListResponse",
+        "type": "object"
+      },
+      "MeasurementMetric": {
+        "description": "Supported Plant measurement metrics.",
+        "enum": [
+          "height",
+          "width",
+          "canopy_diameter",
+          "stem_diameter",
+          "node_count",
+          "container_weight",
+          "plant_weight",
+          "custom"
+        ],
+        "title": "MeasurementMetric",
+        "type": "string"
+      },
+      "MeasurementResponse": {
+        "description": "Persisted measurement representation.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "custom_metric_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Custom Metric Name"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "metric_type": {
+            "$ref": "#/components/schemas/MeasurementMetric"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "occurred_at": {
+            "format": "date-time",
+            "title": "Occurred At",
+            "type": "string"
+          },
+          "plant_id": {
+            "title": "Plant Id",
+            "type": "string"
+          },
+          "unit": {
+            "title": "Unit",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "value": {
+            "title": "Value",
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "plant_id",
+          "metric_type",
+          "custom_metric_name",
+          "value",
+          "unit",
+          "occurred_at",
+          "notes",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "MeasurementResponse",
+        "type": "object"
+      },
+      "MeasurementUpdate": {
+        "description": "Patch mutable measurement fields.",
+        "properties": {
+          "custom_metric_name": {
+            "anyOf": [
+              {
+                "maxLength": 120,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Custom Metric Name"
+          },
+          "metric_type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MeasurementMetric"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "occurred_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Occurred At"
+          },
+          "unit": {
+            "anyOf": [
+              {
+                "maxLength": 40,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "title": "MeasurementUpdate",
+        "type": "object"
+      },
+      "PhotoListResponse": {
+        "description": "Stable list envelope for photos.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PhotoResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "PhotoListResponse",
+        "type": "object"
+      },
+      "PhotoResponse": {
+        "description": "Persisted photo representation, without the internal storage path.",
+        "properties": {
+          "caption": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Caption"
+          },
+          "content_type": {
+            "title": "Content Type",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "file_size": {
+            "title": "File Size",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "journal_entry_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Journal Entry Id"
+          },
+          "measurement_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Measurement Id"
+          },
+          "occurred_at": {
+            "format": "date-time",
+            "title": "Occurred At",
+            "type": "string"
+          },
+          "plant_id": {
+            "title": "Plant Id",
+            "type": "string"
+          },
+          "stage": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CompactStageRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Tags",
+            "type": "array"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "plant_id",
+          "journal_entry_id",
+          "measurement_id",
+          "stage",
+          "caption",
+          "tags",
+          "content_type",
+          "file_size",
+          "occurred_at",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "PhotoResponse",
+        "type": "object"
+      },
+      "PhotoUpdate": {
+        "description": "Patch mutable photo fields: caption, tags, and optional links.",
+        "properties": {
+          "caption": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Caption"
+          },
+          "journal_entry_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Journal Entry Id"
+          },
+          "measurement_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Measurement Id"
+          },
+          "tags": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tags"
+          }
+        },
+        "title": "PhotoUpdate",
+        "type": "object"
+      },
+      "PlantCreate": {
+        "description": "Create one individually identifiable Plant with an initial stage.",
+        "properties": {
+          "actual_harvest_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actual Harvest Date"
+          },
+          "container": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Container"
+          },
+          "cultivar_id": {
+            "title": "Cultivar Id",
+            "type": "string"
+          },
+          "current_stage_id": {
+            "title": "Current Stage Id",
+            "type": "string"
+          },
+          "expected_harvest_end": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Harvest End"
+          },
+          "expected_harvest_start": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Harvest Start"
+          },
+          "grow_id": {
+            "title": "Grow Id",
+            "type": "string"
+          },
+          "location": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location"
+          },
+          "medium": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Medium"
+          },
+          "name": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "propagation_source": {
+            "$ref": "#/components/schemas/PropagationSource"
+          },
+          "seed_type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SeedType"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "start_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Date"
+          },
+          "status": {
+            "$ref": "#/components/schemas/PlantStatus",
+            "default": "planned"
+          }
+        },
+        "required": [
+          "grow_id",
+          "cultivar_id",
+          "name",
+          "propagation_source",
+          "current_stage_id"
+        ],
+        "title": "PlantCreate",
+        "type": "object"
+      },
+      "PlantListResponse": {
+        "description": "Stable list envelope for Plants.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PlantSummary"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "PlantListResponse",
+        "type": "object"
+      },
+      "PlantResponse": {
+        "description": "Detailed Plant representation with ordered transition history.",
+        "properties": {
+          "actual_harvest_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actual Harvest Date"
+          },
+          "container": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Container"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "cultivar": {
+            "$ref": "#/components/schemas/CompactCultivar"
+          },
+          "current_stage": {
+            "$ref": "#/components/schemas/cultivation_assistant__plants__schemas__CompactStage"
+          },
+          "expected_harvest_end": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Harvest End"
+          },
+          "expected_harvest_start": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Harvest Start"
+          },
+          "grow": {
+            "$ref": "#/components/schemas/CompactRef"
+          },
+          "grow_space": {
+            "$ref": "#/components/schemas/CompactRef"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "location": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location"
+          },
+          "medium": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Medium"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "propagation_source": {
+            "$ref": "#/components/schemas/PropagationSource"
+          },
+          "seed_type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SeedType"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "stage_transitions": {
+            "items": {
+              "$ref": "#/components/schemas/TransitionResponse"
+            },
+            "title": "Stage Transitions",
+            "type": "array"
+          },
+          "start_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Date"
+          },
+          "status": {
+            "$ref": "#/components/schemas/PlantStatus"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "grow",
+          "grow_space",
+          "cultivar",
+          "name",
+          "propagation_source",
+          "seed_type",
+          "start_date",
+          "current_stage",
+          "status",
+          "container",
+          "medium",
+          "location",
+          "expected_harvest_start",
+          "expected_harvest_end",
+          "actual_harvest_date",
+          "notes",
+          "stage_transitions",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "PlantResponse",
+        "type": "object"
+      },
+      "PlantStageTransitionCreate": {
+        "description": "Record one append-only stage transition.",
+        "properties": {
+          "confirmed": {
+            "default": false,
+            "title": "Confirmed",
+            "type": "boolean"
+          },
+          "effective_at": {
+            "format": "date-time",
+            "title": "Effective At",
+            "type": "string"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TransitionSource"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "to_stage_id": {
+            "title": "To Stage Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "to_stage_id",
+          "effective_at"
+        ],
+        "title": "PlantStageTransitionCreate",
+        "type": "object"
+      },
+      "PlantStageTransitionResult": {
+        "description": "The created transition and the refreshed Plant projection.",
+        "properties": {
+          "plant": {
+            "$ref": "#/components/schemas/PlantResponse"
+          },
+          "transition": {
+            "$ref": "#/components/schemas/TransitionResponse"
+          }
+        },
+        "required": [
+          "transition",
+          "plant"
+        ],
+        "title": "PlantStageTransitionResult",
+        "type": "object"
+      },
+      "PlantStatus": {
+        "description": "Lifecycle status of an individual Plant.",
+        "enum": [
+          "planned",
+          "active",
+          "harvested",
+          "completed",
+          "lost",
+          "archived"
+        ],
+        "title": "PlantStatus",
+        "type": "string"
+      },
+      "PlantSummary": {
+        "description": "Compact Plant list representation.",
+        "properties": {
+          "cultivar": {
+            "$ref": "#/components/schemas/CompactCultivar"
+          },
+          "current_stage": {
+            "$ref": "#/components/schemas/cultivation_assistant__plants__schemas__CompactStage"
+          },
+          "grow_id": {
+            "title": "Grow Id",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "start_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Date"
+          },
+          "status": {
+            "$ref": "#/components/schemas/PlantStatus"
+          }
+        },
+        "required": [
+          "id",
+          "grow_id",
+          "name",
+          "status",
+          "current_stage",
+          "cultivar",
+          "start_date"
+        ],
+        "title": "PlantSummary",
+        "type": "object"
+      },
+      "PlantUpdate": {
+        "description": "Patch mutable Plant fields; stage changes use transitions.",
+        "properties": {
+          "actual_harvest_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actual Harvest Date"
+          },
+          "container": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Container"
+          },
+          "expected_harvest_end": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Harvest End"
+          },
+          "expected_harvest_start": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Harvest Start"
+          },
+          "location": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location"
+          },
+          "medium": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Medium"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 120,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "seed_type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SeedType"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "start_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Date"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PlantStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "title": "PlantUpdate",
+        "type": "object"
+      },
+      "PropagationSource": {
+        "description": "Origin of a Plant.",
+        "enum": [
+          "seed",
+          "clone"
+        ],
+        "title": "PropagationSource",
+        "type": "string"
+      },
+      "ReservoirCreate": {
+        "description": "Create one reservoir with its geometry.",
+        "properties": {
+          "capacity_liters": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,8}|(?=[\\d.]{1,13}0*$)\\d{0,8}\\.\\d{0,4}0*$)",
+                "type": "string"
+              }
+            ],
+            "title": "Capacity Liters"
+          },
+          "geometry": {
+            "$ref": "#/components/schemas/GeometryInput"
+          },
+          "minimum_safe_volume_liters": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,8}|(?=[\\d.]{1,13}0*$)\\d{0,8}\\.\\d{0,4}0*$)",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Minimum Safe Volume Liters"
+          },
+          "name": {
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "overflow_threshold_liters": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,8}|(?=[\\d.]{1,13}0*$)\\d{0,8}\\.\\d{0,4}0*$)",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Overflow Threshold Liters"
+          },
+          "primary_grow_space_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Primary Grow Space Id"
+          },
+          "refill_threshold_liters": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,8}|(?=[\\d.]{1,13}0*$)\\d{0,8}\\.\\d{0,4}0*$)",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Refill Threshold Liters"
+          },
+          "reservoir_type": {
+            "$ref": "#/components/schemas/ReservoirType"
+          },
+          "usable_capacity_liters": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,8}|(?=[\\d.]{1,13}0*$)\\d{0,8}\\.\\d{0,4}0*$)",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Usable Capacity Liters"
+          }
+        },
+        "required": [
+          "name",
+          "reservoir_type",
+          "capacity_liters",
+          "geometry"
+        ],
+        "title": "ReservoirCreate",
+        "type": "object"
+      },
+      "ReservoirListResponse": {
+        "description": "Stable list envelope for reservoirs.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ReservoirSummary"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "ReservoirListResponse",
+        "type": "object"
+      },
+      "ReservoirMappingCreate": {
+        "description": "Create one semantic mapping for a reservoir HA entity.",
+        "properties": {
+          "calibration": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Calibration"
+          },
+          "display_name": {
+            "anyOf": [
+              {
+                "maxLength": 160,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          },
+          "enabled": {
+            "default": true,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "entity_id": {
+            "maxLength": 255,
+            "minLength": 3,
+            "pattern": "^[a-z0-9_]+\\.[a-z0-9_]+$",
+            "title": "Entity Id",
+            "type": "string"
+          },
+          "priority": {
+            "default": 100,
+            "maximum": 10000.0,
+            "minimum": 0.0,
+            "title": "Priority",
+            "type": "integer"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          },
+          "stale_after_seconds": {
+            "anyOf": [
+              {
+                "maximum": 86400.0,
+                "minimum": 30.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stale After Seconds"
+          }
+        },
+        "required": [
+          "entity_id",
+          "role"
+        ],
+        "title": "ReservoirMappingCreate",
+        "type": "object"
+      },
+      "ReservoirMappingResponse": {
+        "description": "Persisted reservoir mapping metadata with live-cache compatibility overlay.",
+        "properties": {
+          "calibration": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Calibration"
+          },
+          "compatibility": {
+            "$ref": "#/components/schemas/cultivation_assistant__reservoirs__units__Compatibility",
+            "default": "unknown"
+          },
+          "compatibility_explanation": {
+            "default": "Entity is not currently present in the state cache.",
+            "title": "Compatibility Explanation",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "display_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "entity_id": {
+            "title": "Entity Id",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "normalized_unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Normalized Unit"
+          },
+          "priority": {
+            "title": "Priority",
+            "type": "integer"
+          },
+          "reservoir_id": {
+            "title": "Reservoir Id",
+            "type": "string"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          },
+          "source_unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Unit"
+          },
+          "stale_after_seconds": {
+            "title": "Stale After Seconds",
+            "type": "integer"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "reservoir_id",
+          "entity_id",
+          "role",
+          "display_name",
+          "priority",
+          "source_unit",
+          "normalized_unit",
+          "enabled",
+          "calibration",
+          "stale_after_seconds",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "ReservoirMappingResponse",
+        "type": "object"
+      },
+      "ReservoirMappingUpdate": {
+        "description": "Mutable reservoir mapping fields; entity and role identity remain stable.",
+        "properties": {
+          "calibration": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Calibration"
+          },
+          "display_name": {
+            "anyOf": [
+              {
+                "maxLength": 160,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          },
+          "enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enabled"
+          },
+          "priority": {
+            "anyOf": [
+              {
+                "maximum": 10000.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Priority"
+          },
+          "stale_after_seconds": {
+            "anyOf": [
+              {
+                "maximum": 86400.0,
+                "minimum": 30.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stale After Seconds"
+          }
+        },
+        "title": "ReservoirMappingUpdate",
+        "type": "object"
+      },
+      "ReservoirResponse": {
+        "description": "Detailed reservoir representation.",
+        "properties": {
+          "active": {
+            "title": "Active",
+            "type": "boolean"
+          },
+          "capacity_liters": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Capacity Liters",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "geometry": {
+            "$ref": "#/components/schemas/GeometryResponse"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "live_readings": {
+            "items": {
+              "$ref": "#/components/schemas/LiveReading"
+            },
+            "title": "Live Readings",
+            "type": "array"
+          },
+          "mapping_count": {
+            "default": 0,
+            "title": "Mapping Count",
+            "type": "integer"
+          },
+          "mappings": {
+            "items": {
+              "$ref": "#/components/schemas/ReservoirMappingResponse"
+            },
+            "title": "Mappings",
+            "type": "array"
+          },
+          "minimum_safe_volume_liters": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Minimum Safe Volume Liters"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "overflow_threshold_liters": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Overflow Threshold Liters"
+          },
+          "primary_grow_space_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Primary Grow Space Id"
+          },
+          "refill_threshold_liters": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Refill Threshold Liters"
+          },
+          "reservoir_type": {
+            "$ref": "#/components/schemas/ReservoirType"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "usable_capacity_liters": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Usable Capacity Liters"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "reservoir_type",
+          "primary_grow_space_id",
+          "capacity_liters",
+          "usable_capacity_liters",
+          "active",
+          "geometry",
+          "created_at",
+          "updated_at",
+          "minimum_safe_volume_liters",
+          "refill_threshold_liters",
+          "overflow_threshold_liters"
+        ],
+        "title": "ReservoirResponse",
+        "type": "object"
+      },
+      "ReservoirSummary": {
+        "description": "Compact reservoir list representation.",
+        "properties": {
+          "active": {
+            "title": "Active",
+            "type": "boolean"
+          },
+          "capacity_liters": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Capacity Liters",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "geometry": {
+            "$ref": "#/components/schemas/GeometryResponse"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "live_readings": {
+            "items": {
+              "$ref": "#/components/schemas/LiveReading"
+            },
+            "title": "Live Readings",
+            "type": "array"
+          },
+          "mapping_count": {
+            "default": 0,
+            "title": "Mapping Count",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "primary_grow_space_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Primary Grow Space Id"
+          },
+          "reservoir_type": {
+            "$ref": "#/components/schemas/ReservoirType"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "usable_capacity_liters": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Usable Capacity Liters"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "reservoir_type",
+          "primary_grow_space_id",
+          "capacity_liters",
+          "usable_capacity_liters",
+          "active",
+          "geometry",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "ReservoirSummary",
+        "type": "object"
+      },
+      "ReservoirType": {
+        "description": "Supported physical reservoir categories.",
+        "enum": [
+          "autopot_reservoir",
+          "dwc_bucket",
+          "rdwc_control_reservoir",
+          "irrigation_supply_tank",
+          "mixing_tank",
+          "top_off_tank",
+          "ro_source_water_tank",
+          "runoff_waste_tank",
+          "custom_reservoir"
+        ],
+        "title": "ReservoirType",
+        "type": "string"
+      },
+      "ReservoirUpdate": {
+        "description": "Patch mutable reservoir fields.",
+        "properties": {
+          "active": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active"
+          },
+          "capacity_liters": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,8}|(?=[\\d.]{1,13}0*$)\\d{0,8}\\.\\d{0,4}0*$)",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Capacity Liters"
+          },
+          "geometry": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GeometryInput"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "minimum_safe_volume_liters": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,8}|(?=[\\d.]{1,13}0*$)\\d{0,8}\\.\\d{0,4}0*$)",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Minimum Safe Volume Liters"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 160,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "overflow_threshold_liters": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,8}|(?=[\\d.]{1,13}0*$)\\d{0,8}\\.\\d{0,4}0*$)",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Overflow Threshold Liters"
+          },
+          "primary_grow_space_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Primary Grow Space Id"
+          },
+          "refill_threshold_liters": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,8}|(?=[\\d.]{1,13}0*$)\\d{0,8}\\.\\d{0,4}0*$)",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Refill Threshold Liters"
+          },
+          "reservoir_type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReservoirType"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "usable_capacity_liters": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,8}|(?=[\\d.]{1,13}0*$)\\d{0,8}\\.\\d{0,4}0*$)",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Usable Capacity Liters"
+          }
+        },
+        "title": "ReservoirUpdate",
+        "type": "object"
+      },
+      "SeedType": {
+        "description": "Genetic seed classification.",
+        "enum": [
+          "regular",
+          "feminized",
+          "autoflower",
+          "unknown"
+        ],
+        "title": "SeedType",
+        "type": "string"
+      },
+      "TimelineEntryResponse": {
+        "description": "One merged activity-timeline entry; exactly one detail field is set.",
+        "properties": {
+          "event_type": {
+            "title": "Event Type",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "journal_entry": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JournalEntryResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "measurement": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MeasurementResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "occurred_at": {
+            "format": "date-time",
+            "title": "Occurred At",
+            "type": "string"
+          },
+          "photo": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PhotoResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "stage_transition": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TimelineStageTransition"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "summary": {
+            "title": "Summary",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "event_type",
+          "occurred_at",
+          "summary"
+        ],
+        "title": "TimelineEntryResponse",
+        "type": "object"
+      },
+      "TimelineListResponse": {
+        "description": "Paginated envelope for a Plant's merged activity timeline.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/TimelineEntryResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "TimelineListResponse",
+        "type": "object"
+      },
+      "TimelineStageTransition": {
+        "description": "Compact stage-transition representation for the activity timeline.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "effective_at": {
+            "format": "date-time",
+            "title": "Effective At",
+            "type": "string"
+          },
+          "from_stage": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CompactStageRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "to_stage": {
+            "$ref": "#/components/schemas/CompactStageRef"
+          }
+        },
+        "required": [
+          "id",
+          "from_stage",
+          "to_stage",
+          "effective_at",
+          "source",
+          "notes",
+          "created_at"
+        ],
+        "title": "TimelineStageTransition",
+        "type": "object"
+      },
+      "TransitionResponse": {
+        "description": "Persisted stage transition representation.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "effective_at": {
+            "format": "date-time",
+            "title": "Effective At",
+            "type": "string"
+          },
+          "from_stage_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "From Stage Id"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "source": {
+            "$ref": "#/components/schemas/TransitionSource"
+          },
+          "to_stage_id": {
+            "title": "To Stage Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "from_stage_id",
+          "to_stage_id",
+          "effective_at",
+          "source",
+          "notes",
+          "created_at"
+        ],
+        "title": "TransitionResponse",
+        "type": "object"
+      },
+      "TransitionSource": {
+        "description": "Provenance of a recorded stage transition.",
+        "enum": [
+          "user_confirmed",
+          "user_adjusted",
+          "imported",
+          "application_recalculation"
+        ],
+        "title": "TransitionSource",
+        "type": "string"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      },
+      "cultivation_assistant__grow_spaces__schemas__EntityCandidate": {
+        "description": "One role-compatible Home Assistant entity suggestion.",
+        "properties": {
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          },
+          "compatibility": {
+            "$ref": "#/components/schemas/cultivation_assistant__grow_spaces__units__Compatibility"
+          },
+          "current_state": {
+            "title": "Current State",
+            "type": "string"
+          },
+          "device_class": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Device Class"
+          },
+          "domain": {
+            "title": "Domain",
+            "type": "string"
+          },
+          "entity_id": {
+            "title": "Entity Id",
+            "type": "string"
+          },
+          "explanation": {
+            "title": "Explanation",
+            "type": "string"
+          },
+          "friendly_name": {
+            "title": "Friendly Name",
+            "type": "string"
+          },
+          "last_updated": {
+            "format": "date-time",
+            "title": "Last Updated",
+            "type": "string"
+          },
+          "source_unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Unit"
+          }
+        },
+        "required": [
+          "entity_id",
+          "friendly_name",
+          "domain",
+          "device_class",
+          "source_unit",
+          "current_state",
+          "last_updated",
+          "available",
+          "compatibility",
+          "explanation"
+        ],
+        "title": "EntityCandidate",
+        "type": "object"
+      },
+      "cultivation_assistant__grow_spaces__schemas__EntityDiscoveryResponse": {
+        "description": "Stable envelope for role-filtered entity suggestions.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/cultivation_assistant__grow_spaces__schemas__EntityCandidate"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "title": "EntityDiscoveryResponse",
+        "type": "object"
+      },
+      "cultivation_assistant__grow_spaces__units__Compatibility": {
+        "description": "How safely an entity unit can satisfy a semantic role.",
+        "enum": [
+          "compatible",
+          "convertible",
+          "unknown",
+          "incompatible"
+        ],
+        "title": "Compatibility",
+        "type": "string"
+      },
+      "cultivation_assistant__grows__schemas__CompactStage": {
+        "description": "Compact lifecycle stage identity inside compact plant rows.",
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "key",
+          "label"
+        ],
+        "title": "CompactStage",
+        "type": "object"
+      },
+      "cultivation_assistant__plants__schemas__CompactStage": {
+        "description": "Compact lifecycle stage identity.",
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "key",
+          "label"
+        ],
+        "title": "CompactStage",
+        "type": "object"
+      },
+      "cultivation_assistant__reservoirs__schemas__EntityCandidate": {
+        "description": "One role-compatible Home Assistant entity suggestion.",
+        "properties": {
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          },
+          "compatibility": {
+            "$ref": "#/components/schemas/cultivation_assistant__reservoirs__units__Compatibility"
+          },
+          "current_state": {
+            "title": "Current State",
+            "type": "string"
+          },
+          "device_class": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Device Class"
+          },
+          "domain": {
+            "title": "Domain",
+            "type": "string"
+          },
+          "entity_id": {
+            "title": "Entity Id",
+            "type": "string"
+          },
+          "explanation": {
+            "title": "Explanation",
+            "type": "string"
+          },
+          "friendly_name": {
+            "title": "Friendly Name",
+            "type": "string"
+          },
+          "last_updated": {
+            "format": "date-time",
+            "title": "Last Updated",
+            "type": "string"
+          },
+          "source_unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Unit"
+          }
+        },
+        "required": [
+          "entity_id",
+          "friendly_name",
+          "domain",
+          "device_class",
+          "source_unit",
+          "current_state",
+          "last_updated",
+          "available",
+          "compatibility",
+          "explanation"
+        ],
+        "title": "EntityCandidate",
+        "type": "object"
+      },
+      "cultivation_assistant__reservoirs__schemas__EntityDiscoveryResponse": {
+        "description": "Stable envelope for role-filtered reservoir entity suggestions.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/cultivation_assistant__reservoirs__schemas__EntityCandidate"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "title": "EntityDiscoveryResponse",
+        "type": "object"
+      },
+      "cultivation_assistant__reservoirs__units__Compatibility": {
+        "description": "How safely an entity unit can satisfy a reservoir role.",
+        "enum": [
+          "compatible",
+          "convertible",
+          "unknown",
+          "incompatible"
+        ],
+        "title": "Compatibility",
+        "type": "string"
+      }
+    }
+  },
+  "info": {
+    "title": "Cultivation Assistant",
+    "version": "0.6.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/v1/breeders": {
+      "get": {
+        "operationId": "list_breeders_api_v1_breeders_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "include_inactive",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Include Inactive",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BreederListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Breeders",
+        "tags": [
+          "library"
+        ]
+      },
+      "post": {
+        "operationId": "create_breeder_api_v1_breeders_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BreederCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BreederResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Breeder",
+        "tags": [
+          "library"
+        ]
+      }
+    },
+    "/api/v1/breeders/{breeder_id}": {
+      "patch": {
+        "operationId": "update_breeder_api_v1_breeders__breeder_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "breeder_id",
+            "required": true,
+            "schema": {
+              "title": "Breeder Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BreederUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BreederResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Breeder",
+        "tags": [
+          "library"
+        ]
+      }
+    },
+    "/api/v1/cultivars": {
+      "get": {
+        "operationId": "list_cultivars_api_v1_cultivars_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "include_inactive",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Include Inactive",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "breeder_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Breeder Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Query"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CultivarListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Cultivars",
+        "tags": [
+          "library"
+        ]
+      },
+      "post": {
+        "operationId": "create_cultivar_api_v1_cultivars_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CultivarCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CultivarResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Cultivar",
+        "tags": [
+          "library"
+        ]
+      }
+    },
+    "/api/v1/cultivars/{cultivar_id}": {
+      "patch": {
+        "operationId": "update_cultivar_api_v1_cultivars__cultivar_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "cultivar_id",
+            "required": true,
+            "schema": {
+              "title": "Cultivar Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CultivarUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CultivarResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Cultivar",
+        "tags": [
+          "library"
+        ]
+      }
+    },
+    "/api/v1/diagnostics": {
+      "get": {
+        "operationId": "diagnostics_endpoint_api_v1_diagnostics_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Diagnostics Endpoint Api V1 Diagnostics Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Diagnostics Endpoint",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/api/v1/grow-spaces": {
+      "get": {
+        "operationId": "list_grow_spaces_api_v1_grow_spaces_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "include_archived",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Include Archived",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GrowSpaceListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Grow Spaces",
+        "tags": [
+          "grow spaces"
+        ]
+      },
+      "post": {
+        "operationId": "create_grow_space_api_v1_grow_spaces_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GrowSpaceCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GrowSpaceResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Grow Space",
+        "tags": [
+          "grow spaces"
+        ]
+      }
+    },
+    "/api/v1/grow-spaces/{grow_space_id}": {
+      "delete": {
+        "operationId": "archive_grow_space_api_v1_grow_spaces__grow_space_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "grow_space_id",
+            "required": true,
+            "schema": {
+              "title": "Grow Space Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Archive Grow Space",
+        "tags": [
+          "grow spaces"
+        ]
+      },
+      "get": {
+        "operationId": "get_grow_space_api_v1_grow_spaces__grow_space_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "grow_space_id",
+            "required": true,
+            "schema": {
+              "title": "Grow Space Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GrowSpaceResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Grow Space",
+        "tags": [
+          "grow spaces"
+        ]
+      },
+      "patch": {
+        "operationId": "update_grow_space_api_v1_grow_spaces__grow_space_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "grow_space_id",
+            "required": true,
+            "schema": {
+              "title": "Grow Space Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GrowSpaceUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GrowSpaceResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Grow Space",
+        "tags": [
+          "grow spaces"
+        ]
+      }
+    },
+    "/api/v1/grow-spaces/{grow_space_id}/entity-mappings": {
+      "post": {
+        "operationId": "create_entity_mapping_api_v1_grow_spaces__grow_space_id__entity_mappings_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "grow_space_id",
+            "required": true,
+            "schema": {
+              "title": "Grow Space Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EntityMappingCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EntityMappingResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Entity Mapping",
+        "tags": [
+          "grow spaces"
+        ]
+      }
+    },
+    "/api/v1/grow-spaces/{grow_space_id}/entity-mappings/{mapping_id}": {
+      "delete": {
+        "operationId": "delete_entity_mapping_api_v1_grow_spaces__grow_space_id__entity_mappings__mapping_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "grow_space_id",
+            "required": true,
+            "schema": {
+              "title": "Grow Space Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "mapping_id",
+            "required": true,
+            "schema": {
+              "title": "Mapping Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Entity Mapping",
+        "tags": [
+          "grow spaces"
+        ]
+      },
+      "patch": {
+        "operationId": "update_entity_mapping_api_v1_grow_spaces__grow_space_id__entity_mappings__mapping_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "grow_space_id",
+            "required": true,
+            "schema": {
+              "title": "Grow Space Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "mapping_id",
+            "required": true,
+            "schema": {
+              "title": "Mapping Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EntityMappingUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EntityMappingResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Entity Mapping",
+        "tags": [
+          "grow spaces"
+        ]
+      }
+    },
+    "/api/v1/grows": {
+      "get": {
+        "operationId": "list_grows_api_v1_grows_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "grow_space_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Grow Space Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "include_archived",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Include Archived",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GrowListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Grows",
+        "tags": [
+          "grows"
+        ]
+      },
+      "post": {
+        "operationId": "create_grow_api_v1_grows_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GrowCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GrowResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Grow",
+        "tags": [
+          "grows"
+        ]
+      }
+    },
+    "/api/v1/grows/{grow_id}": {
+      "delete": {
+        "operationId": "archive_grow_api_v1_grows__grow_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "grow_id",
+            "required": true,
+            "schema": {
+              "title": "Grow Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Archive Grow",
+        "tags": [
+          "grows"
+        ]
+      },
+      "get": {
+        "operationId": "get_grow_api_v1_grows__grow_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "grow_id",
+            "required": true,
+            "schema": {
+              "title": "Grow Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GrowResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Grow",
+        "tags": [
+          "grows"
+        ]
+      },
+      "patch": {
+        "operationId": "update_grow_api_v1_grows__grow_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "grow_id",
+            "required": true,
+            "schema": {
+              "title": "Grow Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GrowUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GrowResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Grow",
+        "tags": [
+          "grows"
+        ]
+      }
+    },
+    "/api/v1/grows/{grow_id}/journal-entries": {
+      "get": {
+        "operationId": "list_grow_journal_entries_api_v1_grows__grow_id__journal_entries_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "grow_id",
+            "required": true,
+            "schema": {
+              "title": "Grow Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JournalEntryListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Grow Journal Entries",
+        "tags": [
+          "journal"
+        ]
+      },
+      "post": {
+        "operationId": "create_grow_journal_entry_api_v1_grows__grow_id__journal_entries_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "grow_id",
+            "required": true,
+            "schema": {
+              "title": "Grow Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JournalEntryCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JournalEntryResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Grow Journal Entry",
+        "tags": [
+          "journal"
+        ]
+      }
+    },
+    "/api/v1/health": {
+      "get": {
+        "operationId": "health_endpoint_api_v1_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Health Endpoint Api V1 Health Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Health Endpoint",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/api/v1/home-assistant/entities": {
+      "get": {
+        "operationId": "discover_home_assistant_entities_api_v1_home_assistant_entities_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "role",
+            "required": true,
+            "schema": {
+              "title": "Role",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/cultivation_assistant__grow_spaces__schemas__EntityDiscoveryResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Discover Home Assistant Entities",
+        "tags": [
+          "grow spaces",
+          "home assistant"
+        ]
+      }
+    },
+    "/api/v1/home-assistant/reservoir-entities": {
+      "get": {
+        "operationId": "discover_reservoir_entities_api_v1_home_assistant_reservoir_entities_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "role",
+            "required": true,
+            "schema": {
+              "title": "Role",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/cultivation_assistant__reservoirs__schemas__EntityDiscoveryResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Discover Reservoir Entities",
+        "tags": [
+          "reservoirs",
+          "home assistant"
+        ]
+      }
+    },
+    "/api/v1/journal-entries/{entry_id}": {
+      "delete": {
+        "operationId": "delete_journal_entry_api_v1_journal_entries__entry_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "entry_id",
+            "required": true,
+            "schema": {
+              "title": "Entry Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Journal Entry",
+        "tags": [
+          "journal"
+        ]
+      },
+      "patch": {
+        "operationId": "update_journal_entry_api_v1_journal_entries__entry_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "entry_id",
+            "required": true,
+            "schema": {
+              "title": "Entry Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JournalEntryUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JournalEntryResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Journal Entry",
+        "tags": [
+          "journal"
+        ]
+      }
+    },
+    "/api/v1/lifecycle-stages": {
+      "get": {
+        "operationId": "list_stages_api_v1_lifecycle_stages_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "include_disabled",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Include Disabled",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LifecycleStageListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Stages",
+        "tags": [
+          "lifecycle"
+        ]
+      },
+      "post": {
+        "operationId": "create_stage_api_v1_lifecycle_stages_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LifecycleStageCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LifecycleStageResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Stage",
+        "tags": [
+          "lifecycle"
+        ]
+      }
+    },
+    "/api/v1/lifecycle-stages/order": {
+      "put": {
+        "operationId": "reorder_stages_api_v1_lifecycle_stages_order_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LifecycleStageOrderUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LifecycleStageListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reorder Stages",
+        "tags": [
+          "lifecycle"
+        ]
+      }
+    },
+    "/api/v1/lifecycle-stages/{stage_id}": {
+      "delete": {
+        "operationId": "delete_stage_api_v1_lifecycle_stages__stage_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stage_id",
+            "required": true,
+            "schema": {
+              "title": "Stage Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Stage",
+        "tags": [
+          "lifecycle"
+        ]
+      },
+      "patch": {
+        "operationId": "update_stage_api_v1_lifecycle_stages__stage_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stage_id",
+            "required": true,
+            "schema": {
+              "title": "Stage Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LifecycleStageUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LifecycleStageResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Stage",
+        "tags": [
+          "lifecycle"
+        ]
+      }
+    },
+    "/api/v1/measurements/{measurement_id}": {
+      "delete": {
+        "operationId": "delete_measurement_api_v1_measurements__measurement_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "measurement_id",
+            "required": true,
+            "schema": {
+              "title": "Measurement Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Measurement",
+        "tags": [
+          "journal"
+        ]
+      },
+      "patch": {
+        "operationId": "update_measurement_api_v1_measurements__measurement_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "measurement_id",
+            "required": true,
+            "schema": {
+              "title": "Measurement Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MeasurementUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeasurementResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Measurement",
+        "tags": [
+          "journal"
+        ]
+      }
+    },
+    "/api/v1/photos/{photo_id}": {
+      "delete": {
+        "operationId": "delete_photo_api_v1_photos__photo_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "photo_id",
+            "required": true,
+            "schema": {
+              "title": "Photo Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Photo",
+        "tags": [
+          "journal"
+        ]
+      },
+      "patch": {
+        "operationId": "update_photo_api_v1_photos__photo_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "photo_id",
+            "required": true,
+            "schema": {
+              "title": "Photo Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PhotoUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhotoResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Photo",
+        "tags": [
+          "journal"
+        ]
+      }
+    },
+    "/api/v1/photos/{photo_id}/file": {
+      "get": {
+        "operationId": "get_photo_file_api_v1_photos__photo_id__file_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "photo_id",
+            "required": true,
+            "schema": {
+              "title": "Photo Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Photo File",
+        "tags": [
+          "journal"
+        ]
+      }
+    },
+    "/api/v1/plants": {
+      "get": {
+        "operationId": "list_plants_api_v1_plants_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "grow_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Grow Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "grow_space_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Grow Space Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "stage_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Stage Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Query"
+            }
+          },
+          {
+            "in": "query",
+            "name": "include_archived",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Include Archived",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlantListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Plants",
+        "tags": [
+          "plants"
+        ]
+      },
+      "post": {
+        "operationId": "create_plant_api_v1_plants_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlantCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlantResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Plant",
+        "tags": [
+          "plants"
+        ]
+      }
+    },
+    "/api/v1/plants/{plant_id}": {
+      "delete": {
+        "operationId": "archive_plant_api_v1_plants__plant_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "plant_id",
+            "required": true,
+            "schema": {
+              "title": "Plant Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Archive Plant",
+        "tags": [
+          "plants"
+        ]
+      },
+      "get": {
+        "operationId": "get_plant_api_v1_plants__plant_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "plant_id",
+            "required": true,
+            "schema": {
+              "title": "Plant Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlantResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Plant",
+        "tags": [
+          "plants"
+        ]
+      },
+      "patch": {
+        "operationId": "update_plant_api_v1_plants__plant_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "plant_id",
+            "required": true,
+            "schema": {
+              "title": "Plant Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlantUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlantResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Plant",
+        "tags": [
+          "plants"
+        ]
+      }
+    },
+    "/api/v1/plants/{plant_id}/journal-entries": {
+      "get": {
+        "operationId": "list_plant_journal_entries_api_v1_plants__plant_id__journal_entries_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "plant_id",
+            "required": true,
+            "schema": {
+              "title": "Plant Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JournalEntryListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Plant Journal Entries",
+        "tags": [
+          "journal"
+        ]
+      },
+      "post": {
+        "operationId": "create_plant_journal_entry_api_v1_plants__plant_id__journal_entries_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "plant_id",
+            "required": true,
+            "schema": {
+              "title": "Plant Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JournalEntryCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JournalEntryResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Plant Journal Entry",
+        "tags": [
+          "journal"
+        ]
+      }
+    },
+    "/api/v1/plants/{plant_id}/measurements": {
+      "get": {
+        "operationId": "list_measurements_api_v1_plants__plant_id__measurements_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "plant_id",
+            "required": true,
+            "schema": {
+              "title": "Plant Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeasurementListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Measurements",
+        "tags": [
+          "journal"
+        ]
+      },
+      "post": {
+        "operationId": "create_measurement_api_v1_plants__plant_id__measurements_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "plant_id",
+            "required": true,
+            "schema": {
+              "title": "Plant Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MeasurementCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeasurementResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Measurement",
+        "tags": [
+          "journal"
+        ]
+      }
+    },
+    "/api/v1/plants/{plant_id}/photos": {
+      "get": {
+        "operationId": "list_photos_api_v1_plants__plant_id__photos_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "plant_id",
+            "required": true,
+            "schema": {
+              "title": "Plant Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhotoListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Photos",
+        "tags": [
+          "journal"
+        ]
+      },
+      "post": {
+        "operationId": "create_photo_api_v1_plants__plant_id__photos_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "plant_id",
+            "required": true,
+            "schema": {
+              "title": "Plant Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_create_photo_api_v1_plants__plant_id__photos_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhotoResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Photo",
+        "tags": [
+          "journal"
+        ]
+      }
+    },
+    "/api/v1/plants/{plant_id}/stage-transitions": {
+      "post": {
+        "operationId": "create_transition_api_v1_plants__plant_id__stage_transitions_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "plant_id",
+            "required": true,
+            "schema": {
+              "title": "Plant Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlantStageTransitionCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlantStageTransitionResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Transition",
+        "tags": [
+          "plants"
+        ]
+      }
+    },
+    "/api/v1/plants/{plant_id}/timeline": {
+      "get": {
+        "operationId": "get_plant_timeline_api_v1_plants__plant_id__timeline_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "plant_id",
+            "required": true,
+            "schema": {
+              "title": "Plant Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TimelineListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Plant Timeline",
+        "tags": [
+          "journal"
+        ]
+      }
+    },
+    "/api/v1/readiness": {
+      "get": {
+        "operationId": "readiness_endpoint_api_v1_readiness_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Readiness Endpoint Api V1 Readiness Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Readiness Endpoint",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/api/v1/reservoirs": {
+      "get": {
+        "operationId": "list_reservoirs_api_v1_reservoirs_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "include_archived",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Include Archived",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReservoirListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Reservoirs",
+        "tags": [
+          "reservoirs"
+        ]
+      },
+      "post": {
+        "operationId": "create_reservoir_api_v1_reservoirs_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReservoirCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReservoirResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Reservoir",
+        "tags": [
+          "reservoirs"
+        ]
+      }
+    },
+    "/api/v1/reservoirs/{reservoir_id}": {
+      "delete": {
+        "operationId": "archive_reservoir_api_v1_reservoirs__reservoir_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "reservoir_id",
+            "required": true,
+            "schema": {
+              "title": "Reservoir Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Archive Reservoir",
+        "tags": [
+          "reservoirs"
+        ]
+      },
+      "get": {
+        "operationId": "get_reservoir_api_v1_reservoirs__reservoir_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "reservoir_id",
+            "required": true,
+            "schema": {
+              "title": "Reservoir Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReservoirResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Reservoir",
+        "tags": [
+          "reservoirs"
+        ]
+      },
+      "patch": {
+        "operationId": "update_reservoir_api_v1_reservoirs__reservoir_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "reservoir_id",
+            "required": true,
+            "schema": {
+              "title": "Reservoir Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReservoirUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReservoirResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Reservoir",
+        "tags": [
+          "reservoirs"
+        ]
+      }
+    },
+    "/api/v1/reservoirs/{reservoir_id}/calibration-points": {
+      "get": {
+        "operationId": "list_calibration_points_api_v1_reservoirs__reservoir_id__calibration_points_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "reservoir_id",
+            "required": true,
+            "schema": {
+              "title": "Reservoir Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CalibrationPointListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Calibration Points",
+        "tags": [
+          "reservoirs"
+        ]
+      },
+      "put": {
+        "operationId": "replace_calibration_points_api_v1_reservoirs__reservoir_id__calibration_points_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "reservoir_id",
+            "required": true,
+            "schema": {
+              "title": "Reservoir Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CalibrationPointsReplace"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CalibrationPointListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Replace Calibration Points",
+        "tags": [
+          "reservoirs"
+        ]
+      }
+    },
+    "/api/v1/reservoirs/{reservoir_id}/entity-mappings": {
+      "post": {
+        "operationId": "create_entity_mapping_api_v1_reservoirs__reservoir_id__entity_mappings_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "reservoir_id",
+            "required": true,
+            "schema": {
+              "title": "Reservoir Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReservoirMappingCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReservoirMappingResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Entity Mapping",
+        "tags": [
+          "reservoirs"
+        ]
+      }
+    },
+    "/api/v1/reservoirs/{reservoir_id}/entity-mappings/{mapping_id}": {
+      "delete": {
+        "operationId": "delete_entity_mapping_api_v1_reservoirs__reservoir_id__entity_mappings__mapping_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "reservoir_id",
+            "required": true,
+            "schema": {
+              "title": "Reservoir Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "mapping_id",
+            "required": true,
+            "schema": {
+              "title": "Mapping Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Entity Mapping",
+        "tags": [
+          "reservoirs"
+        ]
+      },
+      "patch": {
+        "operationId": "update_entity_mapping_api_v1_reservoirs__reservoir_id__entity_mappings__mapping_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "reservoir_id",
+            "required": true,
+            "schema": {
+              "title": "Reservoir Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "mapping_id",
+            "required": true,
+            "schema": {
+              "title": "Mapping Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReservoirMappingUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReservoirMappingResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Entity Mapping",
+        "tags": [
+          "reservoirs"
+        ]
+      }
+    }
+  }
+}

@@ -61,6 +61,34 @@ const reservoirFixture = {
 
 const calibrationFixture = { items: [] };
 
+const dashboardFixture = {
+	reservoir_id: "res-1",
+	capacity_liters: "100.0000",
+	usable_capacity_liters: "95.0000",
+	refill_threshold_liters: "20.0000",
+	current: {
+		volume_liters: "60.0000",
+		level_percent: "60.0000",
+		source_entity_id: "sensor.tank_level",
+		role: "level_percentage",
+		last_updated: "2026-07-25T12:00:00Z",
+		stale: false,
+	},
+	consumption: {
+		daily_liters: "40.0000",
+		seven_day_average_liters: "32.0000",
+		reading_count_24h: 4,
+		history_days: 1.25,
+	},
+	forecast: {
+		remaining_until_refill_liters: "40.0000",
+		hours_remaining: "24.00",
+		estimated_refill_at: "2026-07-26T12:00:00Z",
+	},
+	data_quality: "good",
+	latest_reading_at: "2026-07-25T12:00:00Z",
+};
+
 function jsonResponse(body: unknown, status = 200): Response {
 	return new Response(JSON.stringify(body), {
 		status,
@@ -68,7 +96,7 @@ function jsonResponse(body: unknown, status = 200): Response {
 	});
 }
 
-function routedFetch(reservoir: unknown = reservoirFixture) {
+function routedFetch(reservoir: unknown = reservoirFixture, dashboard: unknown = dashboardFixture) {
 	return vi.fn((input: RequestInfo | URL) => {
 		const url = String(input);
 		if (url.includes("calibration-points")) {
@@ -76,6 +104,9 @@ function routedFetch(reservoir: unknown = reservoirFixture) {
 		}
 		if (url.includes("reservoir-entities")) {
 			return Promise.resolve(jsonResponse({ items: [] }));
+		}
+		if (url.includes("dashboard")) {
+			return Promise.resolve(jsonResponse(dashboard));
 		}
 		return Promise.resolve(jsonResponse(reservoir));
 	});
@@ -121,6 +152,41 @@ describe("ReservoirDetailContent", () => {
 		expect(screen.getByText(/68 %/)).toBeVisible();
 	});
 
+	it("renders the reservoir dashboard with volume and refill forecast", async () => {
+		vi.stubGlobal("fetch", routedFetch());
+
+		renderDetail();
+		await screen.findByRole("heading", { name: "Mixing tank" });
+
+		expect(await screen.findByText(/60% of usable volume/i)).toBeVisible();
+		expect(screen.getByText(/40\.0 L/)).toBeVisible();
+		expect(screen.getByText("~24 h")).toBeVisible();
+		expect(
+			screen.getByRole("img", { name: /reservoir 60 percent full/i }),
+		).toBeVisible();
+	});
+
+	it("shows the dashboard empty state without a level source", async () => {
+		vi.stubGlobal(
+			"fetch",
+			routedFetch(reservoirFixture, {
+				...dashboardFixture,
+				current: null,
+				consumption: null,
+				forecast: null,
+				data_quality: "no_level_source",
+				latest_reading_at: null,
+			}),
+		);
+
+		renderDetail();
+		await screen.findByRole("heading", { name: "Mixing tank" });
+
+		expect(
+			await screen.findByText(/map a level percentage, depth, or distance sensor/i),
+		).toBeVisible();
+	});
+
 	it("shows the calibration table empty state", async () => {
 		vi.stubGlobal("fetch", routedFetch());
 
@@ -156,6 +222,9 @@ describe("ReservoirDetailContent", () => {
 			}
 			if (url.includes("reservoir-entities")) {
 				return Promise.resolve(jsonResponse({ items: [] }));
+			}
+			if (url.includes("dashboard")) {
+				return Promise.resolve(jsonResponse(dashboardFixture));
 			}
 			if (method === "DELETE") {
 				archived = true;

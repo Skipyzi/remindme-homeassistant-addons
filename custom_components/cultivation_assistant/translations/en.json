@@ -1,0 +1,26 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect Cultivation Assistant",
+        "description": "Enter the local URL of the Cultivation Assistant Home Assistant app.",
+        "data": {
+          "url": "App URL"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Could not reach a compatible Cultivation Assistant app."
+    },
+    "abort": {
+      "already_configured": "This app URL is already configured."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "app_availability": {
+        "name": "App availability"
+      }
+    }
+  }
+}

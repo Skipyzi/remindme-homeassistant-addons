@@ -13,6 +13,7 @@ from cultivation_assistant.reservoirs.schemas import (
     CalibrationPointsReplace,
     EntityDiscoveryResponse,
     ReservoirCreate,
+    ReservoirDashboardResponse,
     ReservoirListResponse,
     ReservoirMappingCreate,
     ReservoirMappingResponse,
@@ -109,6 +110,13 @@ def create_router(
                 reservoir_id, request, correlation_id.get()
             )
         )
+
+    @router.get(
+        "/reservoirs/{reservoir_id}/dashboard",
+        response_model=ReservoirDashboardResponse,
+    )
+    async def get_reservoir_dashboard(reservoir_id: str) -> ReservoirDashboardResponse:
+        return await _map_domain_errors(lambda: service.dashboard(reservoir_id))
 
     @router.get(
         "/home-assistant/reservoir-entities",

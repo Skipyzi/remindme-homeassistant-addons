@@ -1,6 +1,7 @@
 # pyright: reportMissingImports=false
 """SQLAlchemy persistence queries for reservoirs."""
 
+from datetime import datetime
 from decimal import Decimal
 
 import sqlalchemy as sa
@@ -12,6 +13,7 @@ from cultivation_assistant.db.models import (
     Reservoir,
     ReservoirCalibrationPoint,
     ReservoirEntityMapping,
+    ReservoirReading,
 )
 from cultivation_assistant.reservoirs.schemas import ReservoirMappingCreate
 
@@ -25,7 +27,10 @@ class ReservoirRepository:
     async def list_reservoirs(self, *, include_archived: bool = False) -> list[Reservoir]:
         statement = (
             sa.select(Reservoir)
-            .options(orm.selectinload(Reservoir.entity_mappings))
+            .options(
+                orm.selectinload(Reservoir.entity_mappings),
+                orm.selectinload(Reservoir.calibration_points),
+            )
             .order_by(Reservoir.active.desc(), sa.func.lower(Reservoir.name))
         )
         if not include_archived:
@@ -37,7 +42,10 @@ class ReservoirRepository:
         statement = (
             sa.select(Reservoir)
             .where(Reservoir.id == reservoir_id)
-            .options(orm.selectinload(Reservoir.entity_mappings))
+            .options(
+                orm.selectinload(Reservoir.entity_mappings),
+                orm.selectinload(Reservoir.calibration_points),
+            )
         )
         reservoir: Reservoir | None = await self._session.scalar(statement)
         return reservoir
@@ -147,3 +155,41 @@ class ReservoirRepository:
         self._session.add_all(records)
         await self._session.flush()
         return sorted(records, key=lambda record: record.raw_value)
+
+    async def list_readings(
+        self,
+        reservoir_id: str,
+        *,
+        since: datetime,
+        now: datetime,
+    ) -> list[ReservoirReading]:
+        """Read one reservoir's readings inside a time window, oldest first."""
+        statement = (
+            sa.select(ReservoirReading)
+            .where(
+                ReservoirReading.reservoir_id == reservoir_id,
+                ReservoirReading.recorded_at >= since,
+                ReservoirReading.recorded_at <= now,
+            )
+            .order_by(ReservoirReading.recorded_at)
+        )
+        result = await self._session.scalars(statement)
+        return list(result.all())
+
+    async def latest_reading(self, reservoir_id: str) -> ReservoirReading | None:
+        """Read the newest recorded reading for one reservoir."""
+        statement = (
+            sa.select(ReservoirReading)
+            .where(ReservoirReading.reservoir_id == reservoir_id)
+            .order_by(ReservoirReading.recorded_at.desc())
+            .limit(1)
+        )
+        reading: ReservoirReading | None = await self._session.scalar(statement)
+        return reading
+
+    async def prune_readings(self, before: datetime) -> int:
+        """Delete readings older than the retention window."""
+        result = await self._session.execute(
+            sa.delete(ReservoirReading).where(ReservoirReading.recorded_at < before)
+        )
+        return int(getattr(result, "rowcount", 0) or 0)

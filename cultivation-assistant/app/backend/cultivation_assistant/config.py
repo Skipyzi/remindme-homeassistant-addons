@@ -3,7 +3,7 @@
 from pathlib import Path
 from typing import Self
 
-from pydantic import SecretStr, field_validator, model_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     supervisor_token: SecretStr | None = None
     log_level: str = "INFO"
     frontend_dist: Path = Path("/app/frontend")
+    reservoir_sample_interval_seconds: int = Field(default=60, ge=10, le=3600)
 
     @field_validator("log_level", mode="before")
     @classmethod
