@@ -30,6 +30,7 @@ add-on.
 | `jvm_flags_profile` | `balanced` | `low_power`, `balanced`, `performance` or `custom`. |
 | `jvm_flags_custom` | empty | Used only with `custom`. Heap flags are rejected; they are managed above. |
 | `paper_version` | empty | Minecraft version to install. Empty means the newest stable release. |
+| `pin_server_cpus` | `true` | Keep core 0 free for Home Assistant and the controller; the server gets the rest. Off means every core is shared. |
 | `run_server_as_root` | `false` | Keep the Minecraft process running as root. Off means the server runs as an unprivileged user, which is why the "running as root" warning is gone. |
 | `auto_restart_on_crash` | `false` | Restart after an unexpected exit. Gives up after three consecutive crashes. |
 | `stop_timeout_seconds` | `120` | Grace period before SIGTERM, then SIGKILL. |
@@ -310,6 +311,29 @@ entities: they require a typed confirmation.
 An installation created before flavours existed keeps its worlds directly under
 `/data/worlds/`. They are moved into `/data/worlds/paper/` once, on the first start after
 the update, before anything else reads them.
+
+## Running smoothly on a Raspberry Pi
+
+The Pi shares four cores, one memory bus and one disk with Home Assistant, and
+that sharing is what makes a server feel rough. What the add-on does about it:
+
+- **Core 0 is reserved.** The server is pinned to the remaining cores, so
+  neither side's load shows up as the other's lag. `pin_server_cpus` turns it off.
+- **The heap has a measured ceiling.** Settings names the largest heap this
+  machine should hand the JVM. The memory it protects is not idle: the page
+  cache is what keeps region-file reads off the disk queue, and a maxed heap
+  turns invisible cache into visible autosave stutter.
+- **Storage is named.** The dashboard says whether `/data` is an SD card, an
+  NVMe drive or an SSD. On a Pi that difference outweighs every JVM flag.
+- **Backups verify by sampling** (structure fully, 5% of the data) so the check
+  after each backup is not an IO storm while players are online.
+
+What is worth doing outside the add-on, in order: pre-generate the world inside
+a matching border (the Terrain tab) so live chunk generation never happens with
+players online; keep view and simulation distance low - 7 and 5 are the shipped
+defaults and dominate everything else; run from NVMe rather than SD; and cool
+the Pi actively, so the thermal guard that pauses generation at 78 °C never has
+to fire.
 
 ## Reliability
 

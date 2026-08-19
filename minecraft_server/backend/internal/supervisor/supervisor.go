@@ -107,6 +107,11 @@ type Deps struct {
 	// Account is the identity Minecraft runs as. The zero value keeps the
 	// controller's own identity, which inside an add-on container is root.
 	Account privdrop.Account
+	// CPUs, when non-empty, pins the server to these cores. Core 0 is left to
+	// Home Assistant and this controller, which breaks the lag coupling in both
+	// directions on a shared box: a busy server no longer delays automations,
+	// and a busy Home Assistant no longer costs ticks.
+	CPUs []int
 	// ConsoleHistory is the number of console lines kept in memory.
 	ConsoleHistory int
 	// ReadyTimeout bounds how long a start may take before it counts as failed.
@@ -205,22 +210,22 @@ func (s *Supervisor) restoreRuntimeState() {
 // --------------------------------------------------------------- accessors --
 
 type Snapshot struct {
-	State           State     `json:"state"`
-	ProcessState    State     `json:"process_state"`
-	Activity        Activity  `json:"activity"`
-	PID             int       `json:"pid"`
-	StartedAt       string    `json:"started_at"`
-	ReadyAt         string    `json:"ready_at"`
-	UptimeSeconds   int64     `json:"uptime_seconds"`
-	Players         []string  `json:"players"`
-	Version         string    `json:"version"`
-	Build           string    `json:"build"`
-	LastExitCode    int       `json:"last_exit_code"`
-	CrashCount      int       `json:"crash_count"`
-	SaveDisabled    bool      `json:"save_disabled"`
-	MaintenanceMode bool      `json:"maintenance_mode"`
-	ConsoleSeq      uint64    `json:"console_seq"`
-	Backend         string    `json:"backend"`
+	State           State    `json:"state"`
+	ProcessState    State    `json:"process_state"`
+	Activity        Activity `json:"activity"`
+	PID             int      `json:"pid"`
+	StartedAt       string   `json:"started_at"`
+	ReadyAt         string   `json:"ready_at"`
+	UptimeSeconds   int64    `json:"uptime_seconds"`
+	Players         []string `json:"players"`
+	Version         string   `json:"version"`
+	Build           string   `json:"build"`
+	LastExitCode    int      `json:"last_exit_code"`
+	CrashCount      int      `json:"crash_count"`
+	SaveDisabled    bool     `json:"save_disabled"`
+	MaintenanceMode bool     `json:"maintenance_mode"`
+	ConsoleSeq      uint64   `json:"console_seq"`
+	Backend         string   `json:"backend"`
 	// LastNote is the controller's most recent plain-language line about what it
 	// is doing ("downloading 1.21.4 build 232", "backing up survival before the
 	// update"). The dashboard shows it next to the state so a long-running step
@@ -456,7 +461,6 @@ func (s *Supervisor) Start() error {
 	if s.deps.ExtraArgs != nil {
 		argv = append(argv, s.deps.ExtraArgs()...)
 	}
-
 	cmd := exec.Command(argv[0], argv[1:]...) // #nosec G204 - argv is built from validated values, never a shell string
 	cmd.Dir = s.deps.Paths.Runtime()
 	cmd.Env = s.childEnv()
@@ -492,7 +496,7 @@ func (s *Supervisor) Start() error {
 	s.Note("starting %s: heap %d-%d MB, flags profile %s",
 		s.deps.Backend.DisplayName(), settings.MemoryMinMB, settings.MemoryMaxMB, settings.JVMFlagsProfile)
 
-	if err := cmd.Start(); err != nil {
+	if err := startPinned(cmd, s.deps.CPUs); err != nil {
 		s.mu.Lock()
 		s.state = StateStopped
 		s.cmd = nil
@@ -507,6 +511,10 @@ func (s *Supervisor) Start() error {
 	s.pid = cmd.Process.Pid
 	pid := s.pid
 	s.mu.Unlock()
+
+	if len(s.deps.CPUs) > 0 && pinningSupported() {
+		s.log.Info("server pinned to its own cores", "cpus", s.deps.CPUs)
+	}
 
 	_ = os.WriteFile(s.deps.Paths.PidFile(), []byte(strconv.Itoa(pid)), 0o600)
 	_ = s.deps.Store.SetKV(kvDesiredRunning, "true")

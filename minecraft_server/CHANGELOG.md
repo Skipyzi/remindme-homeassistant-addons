@@ -3,6 +3,37 @@
 All notable changes to this add-on are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are semantic.
 
+## 1.7.0 - 2026-08-19
+
+Three changes aimed at the thing a Raspberry Pi actually struggles with: sharing
+four cores, one memory bus and one disk with Home Assistant.
+
+### Added
+
+- **The server is pinned away from core 0**, which stays with Home Assistant and
+  this controller, so a busy server no longer delays automations and a busy Home
+  Assistant no longer costs ticks. The mask is set on the launching thread and
+  inherited across fork, which needs no extra container privilege: setting it on
+  the running child would need CAP_SYS_NICE (dropped by container runtimes) and
+  wrapping the launch in taskset would need util-linux (not in the base image).
+  Turn it off with the new `pin_server_cpus` option.
+- **A memory ceiling measured on your machine.** The Settings hint and a
+  dashboard warning now name the largest heap this machine should give the JVM,
+  reserving room for Home Assistant, the OS and - the part that is easy to
+  forget - the page cache that keeps world file IO fast. Maxing the heap trades
+  invisible cache for visible autosave stutter.
+- **The dashboard says what /data sits on.** An SD card is the most common cause
+  of a stuttering Pi server; it is now named next to the free space, with a
+  warning banner, instead of leaving the operator to guess.
+
+### Changed
+
+- **Backup verification samples instead of re-reading everything.** A full
+  `restic check --read-data` after every backup is an IO storm at exactly the
+  moment players are online; the after-write check now verifies the structure
+  fully and re-reads 5% of the data, which still covers the repository over
+  twenty backups. A full check remains available on the Backups page.
+
 ## 1.6.0 - 2026-08-19
 
 ### Added
