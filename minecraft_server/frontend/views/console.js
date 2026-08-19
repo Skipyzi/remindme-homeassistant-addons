@@ -1,6 +1,8 @@
 // Live console with a command input.
 
-import { api, h, card, run, toast, clear } from '../lib.js';
+import {
+  api, h, card, run, toast, clear, append,
+} from '../lib.js';
 
 export async function render(ctx) {
   const output = h('div', { class: 'console' });
@@ -73,7 +75,7 @@ export async function render(ctx) {
   const initial = await api('api/console?limit=500');
   let lastSeq = 0;
   for (const line of initial.lines || []) {
-    append(output, line);
+    appendLine(output, line);
     lastSeq = line.seq;
   }
   output.scrollTop = output.scrollHeight;
@@ -84,14 +86,14 @@ export async function render(ctx) {
     if (!line || line.seq <= lastSeq) return;
     lastSeq = line.seq;
     const pinned = output.scrollHeight - output.scrollTop - output.clientHeight < 40;
-    append(output, line);
+    appendLine(output, line);
     if (pinned) output.scrollTop = output.scrollHeight;
   });
 
   return { element, cleanup: unsubscribe };
 }
 
-function append(host, line) {
-  host.append(h('div', { class: `l-${line.stream || 'stdout'}` }, line.text));
+function appendLine(host, line) {
+  append(host, h('div', { class: `l-${line.stream || 'stdout'}` }, line.text));
   while (host.childElementCount > 2000) host.removeChild(host.firstChild);
 }

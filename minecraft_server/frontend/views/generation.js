@@ -2,7 +2,7 @@
 // guards paused it.
 
 import {
-  api, h, card, bar, table, bytes, num, duration, run, toast, confirmAction, clear, titleCase, statePill,
+  api, h, card, bar, table, bytes, num, duration, run, toast, confirmAction, clear, titleCase, statePill, append,
 } from '../lib.js';
 
 export async function render(ctx) {
@@ -16,13 +16,13 @@ export async function render(ctx) {
     ]);
     clear(host);
     if (status.supported === false) {
-      host.append(card('Terrain generation', null,
+      append(host, card('Terrain generation', null,
         h('p', { class: 'banner info' },
           'Terrain pre-generation needs a server plugin, and there is none for this server flavour. '
           + 'The world is generated as players explore it instead.')));
       return;
     }
-    host.append(
+    append(host, 
       statusHost,
       pluginCard(status.plugin, reload),
       planHost,
@@ -48,7 +48,7 @@ export async function render(ctx) {
 function renderStatus(host, status, reload, ctx) {
   clear(host);
   if (!status.active || !status.job) {
-    host.append(card('No job running', null,
+    append(host, card('No job running', null,
       h('p', { class: 'muted' },
         'Pre-generating terrain means players never wait for the Raspberry Pi to build the world while they walk. Plan a run below.')));
     return;
@@ -56,7 +56,7 @@ function renderStatus(host, status, reload, ctx) {
   const job = status.job;
   const params = status.params || {};
 
-  host.append(card('Current job',
+  append(host, card('Current job',
     h('div', { class: 'card-actions' },
       job.status === 'paused'
         ? h('button', {
@@ -192,13 +192,13 @@ function renderPlanner(host, worlds, status, reload) {
 
   const estimate = async () => {
     clear(estimateHost);
-    estimateHost.append(h('p', { class: 'muted' }, h('span', { class: 'spin' }), ' estimating…'));
+    append(estimateHost, h('p', { class: 'muted' }, h('span', { class: 'spin' }), ' estimating…'));
     try {
       const data = await api('api/generation/estimate', { method: 'POST', body: params() });
       clear(estimateHost);
       // Wrapped in h() rather than appended directly: Element.append turns a
       // conditional null into the literal text "null".
-      estimateHost.append(h('div', { class: 'stack' },
+      append(estimateHost, h('div', { class: 'stack' },
         h('div', { class: 'grid metrics' },
           metricBox('Chunks', data.chunks.toLocaleString(),
             `${data.chunks_per_dimension.toLocaleString()} per dimension × ${data.dimensions}`),
@@ -216,7 +216,7 @@ function renderPlanner(host, worlds, status, reload) {
           'Generation will not start: there is not enough free space for the estimated area.')));
     } catch (err) {
       clear(estimateHost);
-      estimateHost.append(h('p', { class: 'banner error' }, err.message));
+      append(estimateHost, h('p', { class: 'banner error' }, err.message));
     }
   };
 
@@ -226,7 +226,7 @@ function renderPlanner(host, worlds, status, reload) {
   atSpawn.addEventListener('change', estimate);
   for (const d of dims) d.box.addEventListener('change', estimate);
 
-  host.append(card('Plan a run',
+  append(host, card('Plan a run',
     h('div', { class: 'card-actions' },
       h('button', { class: 'btn btn-small', onclick: () => estimate() }, 'Re-estimate'),
       h('button', {

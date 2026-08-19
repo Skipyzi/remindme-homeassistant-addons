@@ -113,6 +113,15 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	if snapshot.SaveDisabled {
 		resp.Warnings = append(resp.Warnings, "World saving is currently disabled. If no backup is running, re-enable it from the console.")
 	}
+	system := s.deps.Stats.System()
+	if advice := stats.AdviseMemory(system.MemTotalBytes, settings.MemoryMaxMB); advice.Exceeded {
+		resp.Warnings = append(resp.Warnings, fmt.Sprintf(
+			"The maximum heap (%d MB) squeezes the page cache that keeps world file IO fast. Recommended ceiling on this machine: %d MB (Settings → Server runtime).",
+			advice.ConfiguredMaxHeapMB, advice.RecommendedMaxHeapMB))
+	}
+	if system.StorageKind == "sd-card" {
+		resp.Warnings = append(resp.Warnings, "/data sits on an SD card. Autosaves, backups and Home Assistant's database share it; an NVMe or USB SSD removes the most common cause of stutter.")
+	}
 	s.ok(w, resp)
 }
 
@@ -414,8 +423,10 @@ func (s *Server) handleServerUpdate(w http.ResponseWriter, r *http.Request) {
 // --------------------------------------------------------------- settings ----
 
 func (s *Server) handleSettingsGet(w http.ResponseWriter, r *http.Request) {
+	current := s.deps.Settings.Get()
 	s.ok(w, map[string]any{
-		"settings":            s.deps.Settings.Get(),
+		"memory_advice":       stats.AdviseMemory(s.deps.Stats.System().MemTotalBytes, current.MemoryMaxMB),
+		"settings":            current,
 		"options":             s.redactedOptions(),
 		"jvm_profiles":        []string{"low_power", "balanced", "performance", "custom"},
 		"generation_profiles": []string{"gentle", "balanced", "maximum"},

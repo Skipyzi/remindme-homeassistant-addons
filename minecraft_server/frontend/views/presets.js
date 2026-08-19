@@ -1,6 +1,8 @@
 // Presets: overlays with a mandatory diff before anything is written.
 
-import { api, h, card, table, run, toast, confirmAction, clear } from '../lib.js';
+import {
+  api, h, card, table, run, toast, confirmAction, clear, append,
+} from '../lib.js';
 
 export async function render(ctx) {
   const data = await api('api/presets');
@@ -10,7 +12,7 @@ export async function render(ctx) {
   const paint = (presets, active) => {
     clear(host);
     for (const preset of presets) {
-      host.append(card(preset.name,
+      append(host, card(preset.name,
         h('div', { class: 'card-actions' },
           preset.id === active ? h('span', { class: 'pill pill-running' }, 'active') : null,
           preset.built_in ? h('span', { class: 'tag' }, 'built in') : h('span', { class: 'tag' }, 'custom')),
@@ -57,7 +59,7 @@ async function showDiff(preset, host, ctx) {
   clear(host);
 
   if (!diff.changes || !diff.changes.length) {
-    host.append(card(`${preset.name}: nothing to change`, null,
+    append(host, card(`${preset.name}: nothing to change`, null,
       h('p', { class: 'muted' }, `Every value in this preset already matches the live configuration (${diff.unchanged} checked).`)));
     return;
   }
@@ -73,7 +75,7 @@ async function showDiff(preset, host, ctx) {
   ]);
 
   const overrideBox = h('input', { type: 'checkbox' });
-  host.append(card(`Apply ${preset.name}?`,
+  append(host, card(`Apply ${preset.name}?`,
     h('div', { class: 'card-actions' },
       h('button', {
         class: 'btn btn-primary',

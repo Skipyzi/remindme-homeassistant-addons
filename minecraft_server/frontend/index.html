@@ -22,14 +22,21 @@
     </div>
   </header>
 
+  <div id="state-seam" class="state-seam seam-unknown" aria-hidden="true"></div>
+
   <nav class="tabs" id="tabs" role="tablist">
+    <span class="tab-group" aria-hidden="true">run</span>
     <button role="tab" data-view="dashboard" class="active">Dashboard</button>
     <button role="tab" data-view="console">Console</button>
+    <span class="tab-group" aria-hidden="true">world</span>
+    <button role="tab" data-view="worlds">Worlds</button>
+    <button role="tab" data-view="generation">Terrain</button>
+    <button role="tab" data-view="backups">Backups</button>
+    <span class="tab-group" aria-hidden="true">tune</span>
     <button role="tab" data-view="config">Configuration</button>
     <button role="tab" data-view="presets">Presets</button>
-    <button role="tab" data-view="worlds">Worlds</button>
-    <button role="tab" data-view="backups">Backups</button>
-    <button role="tab" data-view="generation">Terrain</button>
+    <button role="tab" data-view="mods">Mods</button>
+    <span class="tab-group" aria-hidden="true">system</span>
     <button role="tab" data-view="settings">Settings</button>
     <button role="tab" data-view="log">Activity</button>
   </nav>

@@ -1,7 +1,7 @@
 // Backups: create, inspect, verify, restore and prune.
 
 import {
-  api, h, card, table, bar, bytes, datetime, ago, duration, run, toast, confirmAction, clear, titleCase,
+  api, h, card, table, bar, bytes, datetime, ago, duration, run, toast, confirmAction, clear, titleCase, append,
 } from '../lib.js';
 
 export async function render(ctx) {
@@ -11,7 +11,7 @@ export async function render(ctx) {
   const reload = async () => {
     const [list, health] = await Promise.all([api('api/backups'), api('api/backups/health')]);
     clear(host);
-    host.append(
+    append(host, 
       healthCard(health, reload),
       progressHost,
       card('Create a backup', null, createForm(reload)),
@@ -40,7 +40,7 @@ export async function render(ctx) {
     if (event.type === 'backup_progress' || event.type === 'restore_progress') {
       clear(progressHost);
       const data = event.data || {};
-      progressHost.append(card(event.type === 'backup_progress' ? 'Backup in progress' : 'Restore in progress', null,
+      append(progressHost, card(event.type === 'backup_progress' ? 'Backup in progress' : 'Restore in progress', null,
         bar(data.percent),
         h('p', { class: 'muted' }, `${Math.round(data.percent || 0)}% — ${data.message || ''}`)));
       if ((data.percent || 0) >= 100) setTimeout(() => { clear(progressHost); reload(); }, 1500);

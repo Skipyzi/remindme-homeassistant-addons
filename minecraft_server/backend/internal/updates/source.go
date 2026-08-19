@@ -40,6 +40,14 @@ type Source interface {
 	DownloadHosts() []string
 	// StagedName is the file name a downloaded build is staged under.
 	StagedName(version string, build int) string
+	// AllowsUnverified is true only for a source that publishes no checksums at
+	// all (BTA's own CDN). The installer then computes and records the SHA-256
+	// of what it downloaded instead of refusing; every source that does publish
+	// one is still verified against it and refused on mismatch.
+	AllowsUnverified() bool
+	// Bundle is true when the source ships a zip bundle (launcher, libraries,
+	// mods) instead of a single server JAR.
+	Bundle() bool
 }
 
 const (

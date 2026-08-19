@@ -1,7 +1,9 @@
 // Controller settings: memory, JVM flags, schedules, retention, the generation
 // safety policy and server updates.
 
-import { api, h, card, field, run, toast, clear, titleCase, bytes, datetime } from '../lib.js';
+import {
+  api, h, card, field, run, toast, clear, titleCase, bytes, datetime, append,
+} from '../lib.js';
 
 export async function render(ctx) {
   const data = await api('api/settings');
@@ -46,7 +48,7 @@ export async function render(ctx) {
         'JVM -Xms. Equal to the maximum avoids heap resizing pauses.'),
       field('Maximum heap (MB)',
         bind('memory_max_mb', h('input', { type: 'number', value: settings.memory_max_mb, min: 768 }), Number),
-        'On an 8 GB Pi 5 keep this at or below 3584 MB so Home Assistant keeps enough memory.'),
+        heapHint(data.memory_advice)),
       field('JVM flag profile',
         bind('jvm_flags_profile', h('select', {}, data.jvm_profiles.map((option) => h('option', {
           value: option, selected: option === settings.jvm_flags_profile,
@@ -144,7 +146,7 @@ export async function render(ctx) {
   const flavourCard = card('Server flavour', null, flavourHost);
   loadFlavours(flavourHost, ctx).catch((err) => {
     clear(flavourHost);
-    flavourHost.append(h('p', { class: 'banner error' }, err.message));
+    append(flavourHost, h('p', { class: 'banner error' }, err.message));
   });
 
   const updateHost = h('div', {});
@@ -170,6 +172,18 @@ export async function render(ctx) {
 
   loadVersions(updateHost, ctx).catch(() => {});
   return { element };
+}
+
+// heapHint states the ceiling measured on THIS machine rather than a number
+// from the documentation, and says what the memory it protects is actually for.
+function heapHint(advice) {
+  if (!advice || !advice.recommended_max_heap_mb) {
+    return 'JVM -Xmx. Leave room for Home Assistant and for the page cache that keeps world file IO fast.';
+  }
+  const base = `Recommended ceiling on this machine: ${advice.recommended_max_heap_mb} MB of ${advice.total_mb} MB — ${advice.reason}.`;
+  return advice.exceeded
+    ? `${base} The current value is above it; the memory comes out of the page cache, which shows up as autosave stutter.`
+    : base;
 }
 
 function checkbox(value) {
@@ -232,7 +246,7 @@ async function loadFlavours(host, ctx) {
       }, `Switch to ${flavour.display_name}`));
   });
 
-  host.append(
+  append(host, 
     h('div', { class: 'stack' }, cards),
     data.running
       ? h('p', { class: 'banner info' }, 'Stop Minecraft to switch flavours.')
@@ -241,13 +255,13 @@ async function loadFlavours(host, ctx) {
 
 async function loadVersions(host, ctx) {
   clear(host);
-  host.append(h('p', { class: 'muted' }, h('span', { class: 'spin' }), ' asking the PaperMC API…'));
+  append(host, h('p', { class: 'muted' }, h('span', { class: 'spin' }), ' asking the PaperMC API…'));
   let data;
   try {
     data = await api('api/server/versions');
   } catch (err) {
     clear(host);
-    host.append(h('p', { class: 'banner error' }, err.message));
+    append(host, h('p', { class: 'banner error' }, err.message));
     return;
   }
   clear(host);
@@ -271,7 +285,7 @@ async function loadVersions(host, ctx) {
       value: version, selected: version === data.target_version,
     }, version)));
 
-  host.append(
+  append(host, 
     h('p', { class: 'muted' },
       installed.present
         ? `Installed: ${installed.version || 'unknown'} build ${installed.build || '?'} · ${bytes(installed.size_bytes)} · ${datetime(installed.modified_at)}`

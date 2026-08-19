@@ -1,6 +1,8 @@
 // Application shell: shared state, the event stream and view routing.
 
-import { api, url, h, clear, toast, statePill } from './lib.js';
+import {
+  api, url, h, clear, toast, statePill, append,
+} from './lib.js';
 import * as dashboard from './views/dashboard.js';
 import * as consoleView from './views/console.js';
 import * as config from './views/config.js';
@@ -8,11 +10,12 @@ import * as presets from './views/presets.js';
 import * as worlds from './views/worlds.js';
 import * as backups from './views/backups.js';
 import * as generation from './views/generation.js';
+import * as mods from './views/mods.js';
 import * as settings from './views/settings.js';
 import * as activity from './views/activity.js';
 
 const views = {
-  dashboard, console: consoleView, config, presets, worlds, backups, generation, settings, log: activity,
+  dashboard, console: consoleView, config, presets, worlds, backups, generation, mods, settings, log: activity,
 };
 
 /** state is the shared snapshot every view reads from. */
@@ -59,16 +62,16 @@ async function show(name) {
     tab.classList.toggle('active', tab.dataset.view === name);
   }
   clear(viewEl);
-  viewEl.append(h('p', { class: 'empty' }, h('span', { class: 'spin' }), ' loading…'));
+  append(viewEl, h('p', { class: 'empty' }, h('span', { class: 'spin' }), ' loading…'));
   try {
     const rendered = await view.render({ state, subscribe, refreshStatus });
     clear(viewEl);
-    viewEl.append(rendered.element ?? rendered);
+    append(viewEl, rendered.element ?? rendered);
     activeCleanup = rendered.cleanup ?? null;
     if (location.hash.slice(1) !== name) history.replaceState(null, '', `#${name}`);
   } catch (err) {
     clear(viewEl);
-    viewEl.append(h('div', { class: 'banner error' }, `Could not load this page: ${err.message}`));
+    append(viewEl, h('div', { class: 'banner error' }, `Could not load this page: ${err.message}`));
   }
 }
 
@@ -101,12 +104,26 @@ function renderHeader() {
   subtitle.textContent = parts.join(' · ') || 'ready';
 }
 
+// The seam is the coloured strip under the header: its colour is the server
+// state, and it marches while anything is in flight - state at a glance from
+// any tab, without reading a word.
+const SEAM_STATES = ['running', 'starting', 'stopping', 'stopped', 'crashed',
+  'backing_up', 'restoring', 'switching_world', 'updating', 'generating', 'maintenance'];
+
+function renderSeam() {
+  const seam = document.getElementById('state-seam');
+  if (!seam || !state.status) return;
+  const current = state.status.server.state;
+  const cls = SEAM_STATES.includes(current) ? current : 'unknown';
+  seam.className = `state-seam seam-${cls}`;
+}
+
 function renderBanners() {
   const host = document.getElementById('banner-area');
   clear(host);
   const warnings = (state.status && state.status.warnings) || [];
   for (const warning of warnings) {
-    host.append(h('div', { class: 'banner warn' }, h('span', {}, warning)));
+    append(host, h('div', { class: 'banner warn' }, h('span', {}, warning)));
   }
 }
 
@@ -114,6 +131,7 @@ export async function refreshStatus() {
   state.status = await api('api/status');
   state.generation = state.status.generation;
   renderHeader();
+  renderSeam();
   renderBanners();
   emit({ type: 'status', data: state.status });
   return state.status;
@@ -171,6 +189,7 @@ function handleEvent(type, data) {
         if (data.server && state.status) {
           state.status.server = data.server;
           renderHeader();
+          renderSeam();
         }
       }
       break;

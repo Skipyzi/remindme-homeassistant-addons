@@ -255,7 +255,7 @@ func (m *Manager) Install(ctx context.Context, version string, build int, actor 
 	}
 	result.Build = target.Build
 	result.SHA256 = target.SHA256
-	if target.SHA256 == "" {
+	if target.SHA256 == "" && !src.AllowsUnverified() {
 		return result, fmt.Errorf("%s did not publish a checksum for this build; refusing to install it", src.ProjectName())
 	}
 
@@ -287,8 +287,18 @@ func (m *Manager) Install(ctx context.Context, version string, build int, actor 
 	}
 	sum := sha256.Sum256(data)
 	actual := hex.EncodeToString(sum[:])
-	if actual != target.SHA256 {
-		return failed(fmt.Errorf("checksum mismatch: expected %s, got %s", target.SHA256, actual))
+	switch {
+	case target.SHA256 != "":
+		if actual != target.SHA256 {
+			return failed(fmt.Errorf("checksum mismatch: expected %s, got %s", target.SHA256, actual))
+		}
+	default:
+		// The source publishes no checksum (BTA's own CDN). The download came over
+		// HTTPS from the project's first-party host on the allow-list; the SHA-256
+		// of what arrived is computed here and recorded in the audit log so any
+		// later dispute about what was installed has a fact to check against.
+		result.SHA256 = actual
+		m.deps.Supervisor.Note("%s publishes no checksum; recorded sha256 %s of the download", src.ProjectName(), actual[:16])
 	}
 	staged := filepath.Join(m.deps.Paths.Jars(), src.StagedName(version, target.Build))
 	if err := atomicfs.WriteFile(staged, data, 0o644); err != nil {
@@ -325,18 +335,42 @@ func (m *Manager) Install(ctx context.Context, version string, build int, actor 
 		}
 	}
 
-	// 4. Swap the JAR, keeping the old one.
-	_ = m.deps.Store.JournalPhase(journalID, "swap", map[string]any{"staged": staged})
+	// 4. Swap the server, keeping what was there for the rollback. A plain
+	// source swaps one JAR; a bundle source unpacks the launcher, its libraries
+	// and its base mods into the runtime directory, replacing only the trees the
+	// bundle owns - the world, its link, server.properties and any extra mods the
+	// user added are never touched. The previous artifact (JAR or bundle zip) is
+	// kept under the same name either way, so the rollback below does not care
+	// which kind it restores.
+	_ = m.deps.Store.JournalPhase(journalID, "swap", map[string]any{"staged": staged, "bundle": src.Bundle()})
 	previous := filepath.Join(m.deps.Paths.Jars(), previousName(flavour))
-	if current, err := os.ReadFile(m.deps.Paths.ServerJar()); err == nil {
-		if err := atomicfs.WriteFile(previous, current, 0o644); err != nil {
-			m.log.Warn("could not keep the previous JAR", "error", err)
-		} else {
-			result.Previous = previous
+	if src.Bundle() {
+		// The zip of the CURRENT installation was kept by the previous install;
+		// it becomes the rollback artifact for this one.
+		installedZip := filepath.Join(m.deps.Paths.Jars(), flavour+".installed.zip")
+		if prior, err := os.ReadFile(installedZip); err == nil {
+			if err := atomicfs.WriteFile(previous, prior, 0o644); err == nil {
+				result.Previous = previous
+			}
 		}
-	}
-	if err := atomicfs.WriteFile(m.deps.Paths.ServerJar(), data, 0o644); err != nil {
-		return failed(err)
+		if err := installBundle(data, m.deps.Paths.Runtime(), filepath.Base(m.deps.Paths.ServerJar())); err != nil {
+			return failed(err)
+		}
+		if err := atomicfs.WriteFile(installedZip, data, 0o644); err != nil {
+			m.log.Warn("could not keep the installed bundle for the next rollback", "error", err)
+		}
+		m.log.Info("installed server bundle", "flavour", flavour, "contents", bundleSummary(data))
+	} else {
+		if current, err := os.ReadFile(m.deps.Paths.ServerJar()); err == nil {
+			if err := atomicfs.WriteFile(previous, current, 0o644); err != nil {
+				m.log.Warn("could not keep the previous JAR", "error", err)
+			} else {
+				result.Previous = previous
+			}
+		}
+		if err := atomicfs.WriteFile(m.deps.Paths.ServerJar(), data, 0o644); err != nil {
+			return failed(err)
+		}
 	}
 	prevSettings := m.deps.Settings.Get()
 	if _, err := m.deps.Settings.Update(func(s *appcfg.Settings) {
@@ -357,7 +391,7 @@ func (m *Manager) Install(ctx context.Context, version string, build int, actor 
 		}
 		if startErr != nil {
 			m.deps.Bus.Fail("updates", "the new build did not start; rolling back")
-			m.rollback(ctx, prevSettings, previous, wasRunning)
+			m.rollback(ctx, prevSettings, previous, wasRunning, src.Bundle())
 			result.RolledBack = true
 			return failed(fmt.Errorf("the new build failed to start (%w); the previous JAR was restored", startErr))
 		}
@@ -373,14 +407,22 @@ func (m *Manager) Install(ctx context.Context, version string, build int, actor 
 	return result, nil
 }
 
-func (m *Manager) rollback(ctx context.Context, prev appcfg.Settings, previousJar string, wasRunning bool) {
+func (m *Manager) rollback(ctx context.Context, prev appcfg.Settings, previousJar string, wasRunning, bundle bool) {
 	if m.deps.Supervisor.IsRunning() || m.deps.Supervisor.State() == supervisor.StateStarting {
 		_ = m.deps.Supervisor.Stop(ctx, supervisor.StopOptions{Reason: "update rollback"})
 	}
 	if previousJar != "" {
 		if raw, err := os.ReadFile(previousJar); err == nil {
-			if err := atomicfs.WriteFile(m.deps.Paths.ServerJar(), raw, 0o644); err != nil {
-				m.deps.Bus.Fail("updates", "could not restore the previous JAR: "+err.Error())
+			var restoreErr error
+			if bundle {
+				// The kept artifact is the previous bundle zip; restoring means
+				// unpacking it the same way it was installed.
+				restoreErr = installBundle(raw, m.deps.Paths.Runtime(), filepath.Base(m.deps.Paths.ServerJar()))
+			} else {
+				restoreErr = atomicfs.WriteFile(m.deps.Paths.ServerJar(), raw, 0o644)
+			}
+			if restoreErr != nil {
+				m.deps.Bus.Fail("updates", "could not restore the previous server: "+restoreErr.Error())
 			}
 		}
 	}

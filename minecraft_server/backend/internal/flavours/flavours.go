@@ -10,6 +10,7 @@ import (
 	"sort"
 
 	"github.com/skipyzi/remindme-homeassistant-addons/minecraft_server/backend/internal/adapter"
+	"github.com/skipyzi/remindme-homeassistant-addons/minecraft_server/backend/internal/adapter/babric"
 	"github.com/skipyzi/remindme-homeassistant-addons/minecraft_server/backend/internal/adapter/bta"
 	"github.com/skipyzi/remindme-homeassistant-addons/minecraft_server/backend/internal/adapter/paper"
 )
@@ -34,8 +35,12 @@ var registry = map[string]entry{
 		build:   func() adapter.Backend { return paper.New() },
 	},
 	"bta": {
-		summary: "Better than Adventure!, a continuation of Minecraft Beta 1.7.3. No plugins and no pre-generation, and its worlds are not interchangeable with a modern server's.",
+		summary: "Better than Adventure!, a continuation of Minecraft Beta 1.7.3. No mods, no plugins, no pre-generation; worlds are not interchangeable with a modern server's.",
 		build:   func() adapter.Backend { return bta.New() },
+	},
+	"babric": {
+		summary: "Better than Adventure! with the Babric/Fabric mod loader. Same game and worlds as plain BTA, plus a mods directory.",
+		build:   func() adapter.Backend { return babric.New() },
 	},
 }
 

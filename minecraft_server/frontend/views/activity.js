@@ -1,6 +1,8 @@
 // Activity: the audit log and the recovery journal.
 
-import { api, h, card, table, datetime, ago, titleCase, statePill, clear, run } from '../lib.js';
+import {
+  api, h, card, table, datetime, ago, titleCase, statePill, clear, run, append,
+} from '../lib.js';
 
 export async function render() {
   const host = h('div', { class: 'stack' });
@@ -10,7 +12,7 @@ export async function render() {
       api('api/audit?limit=200'), api('api/journal?limit=50'),
     ]);
     clear(host);
-    host.append(
+    append(host, 
       card('Recovery journal',
         h('button', { class: 'btn btn-small', onclick: () => reload() }, 'Refresh'),
         h('p', { class: 'muted' },

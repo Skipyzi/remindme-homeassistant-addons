@@ -76,6 +76,12 @@ Errors are `{"error": "...", "status": 409}`. Secrets are redacted from messages
 | `POST` | `/api/server/install` | Installs the newest stable build when none is present |
 | `POST` | `/api/server/update` | `{"version": "1.21.4", "build": 0, "confirm": "UPDATE"}` (`build: 0` means newest stable) |
 | `GET` | `/api/server/flavours` | Available server flavours, their capabilities, which are installed and whether a switch is currently possible |
+| `GET` | `/api/mods` | Installed mods/plugins, packs, loader info |
+| `GET` | `/api/mods/search?q=` | Modrinth search for the active flavour |
+| `GET` | `/api/mods/updates` | Update check for managed entries |
+| `POST` | `/api/mods/install` | `{"project": "luckperms"}`, SHA-512 verified |
+| `POST` | `/api/mods/packs/{id}` | Install a curated pack |
+| `DELETE` | `/api/mods/{file}` | Remove one jar |
 | `POST` | `/api/server/flavour` | `{"flavour": "bta", "confirm": "bta"}` - the confirmation is the flavour name. Minecraft must be stopped |
 
 Version data comes from PaperMC's v3 API. A build is refused with `409` when it declares a

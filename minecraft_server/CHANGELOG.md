@@ -3,6 +3,89 @@
 All notable changes to this add-on are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are semantic.
 
+## 1.7.0 - 2026-08-19
+
+Three changes aimed at the thing a Raspberry Pi actually struggles with: sharing
+four cores, one memory bus and one disk with Home Assistant.
+
+### Added
+
+- **The server is pinned away from core 0**, which stays with Home Assistant and
+  this controller, so a busy server no longer delays automations and a busy Home
+  Assistant no longer costs ticks. The mask is set on the launching thread and
+  inherited across fork, which needs no extra container privilege: setting it on
+  the running child would need CAP_SYS_NICE (dropped by container runtimes) and
+  wrapping the launch in taskset would need util-linux (not in the base image).
+  Turn it off with the new `pin_server_cpus` option.
+- **A memory ceiling measured on your machine.** The Settings hint and a
+  dashboard warning now name the largest heap this machine should give the JVM,
+  reserving room for Home Assistant, the OS and - the part that is easy to
+  forget - the page cache that keeps world file IO fast. Maxing the heap trades
+  invisible cache for visible autosave stutter.
+- **The dashboard says what /data sits on.** An SD card is the most common cause
+  of a stuttering Pi server; it is now named next to the free space, with a
+  warning banner, instead of leaving the operator to guess.
+
+### Changed
+
+- **Backup verification samples instead of re-reading everything.** A full
+  `restic check --read-data` after every backup is an IO storm at exactly the
+  moment players are online; the after-write check now verifies the structure
+  fully and re-reads 5% of the data, which still covers the repository over
+  twenty backups. A full check remains available on the Backups page.
+
+## 1.6.0 - 2026-08-19
+
+### Added
+
+- **Mods and plugins from Modrinth.** A new Mods tab searches Modrinth for content that
+  fits the running server - Paper plugins (including everything published for Bukkit and
+  Spigot), Fabric mods for the Babric flavour - filtered to server-side content and, for
+  Paper, to the installed Minecraft version. Every file is verified against the SHA-512
+  Modrinth publishes, comes only from Modrinth's own CDN, and lands with an audit entry
+  and a restart-required flag; nothing restarts by itself. Jars added by hand are listed
+  and removable too. One click checks every managed entry for updates.
+- **Curated packs**: small vetted sets per flavour - an admin toolkit for Paper
+  (LuckPerms, CoreProtect, EssentialsX, BlueMap) and a mod foundation plus content picks
+  for Babric (HalpLibe, Catalyst, and the most-downloaded server-side BTA mods). Per this
+  add-on's standing rule, no "performance cleaner" plugins in any of them.
+- Plain BTA explains that mods need the Babric flavour instead of showing an empty page.
+
+### Changed
+
+- **The interface got its own voice.** Everything the machine says - states, labels,
+  numbers, file names - is set in the system's monospace face (terminal heritage, no font
+  download), and the status palette is drawn from the game's ores: emerald runs, gold
+  warns, redstone fails, lapis informs, amethyst works.
+- **The state seam**: a strip of pixel blocks under the header whose colour is the server
+  state, visible from every tab. It marches while anything is in flight and holds still
+  at rest; reduced-motion preferences stop the animation.
+- The ten tabs are grouped by what they touch: run / world / tune / system.
+
+## 1.5.0 - 2026-08-19
+
+### Added
+
+- **Better than Adventure! 8.x.** BTA installs now come from the project's official CDN
+  (`downloads.betterthanadventure.net`), whose manifest carries the whole history from
+  1.7.4 to 8.0.1. The GitHub repository the add-on previously installed from stopped
+  publishing at 7.3_04 while the project moved on. The CDN publishes no checksums, so the
+  installer computes the SHA-256 of the download from the first-party host and records it
+  in the audit log; every source that does publish a checksum is still verified against it
+  and refused on mismatch.
+- **A third flavour: BTA with Babric**, the Fabric-loader build of Better than Adventure
+  that supports mods. It installs the official server bundle (launcher, libraries, base
+  mods) from Turnip Labs' releases, digest-verified, with every redirect hop checked.
+  Bundle updates replace only the files the bundle owns - `libraries/` and the launcher -
+  and never touch `server.properties`, the world, or mods you added yourself; `mods/` is
+  merged, not replaced. Rollback keeps the previous bundle zip and re-extracts it.
+
+### Fixed
+
+- Literal "null" text no longer appears in the Settings flavour and version cards (and a
+  null-safe `append` helper now guards every conditional element in the UI, so the class
+  of bug is gone rather than the instance).
+
 ## 1.4.0 - 2026-08-19
 
 ### Changed

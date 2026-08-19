@@ -30,6 +30,7 @@ add-on.
 | `jvm_flags_profile` | `balanced` | `low_power`, `balanced`, `performance` or `custom`. |
 | `jvm_flags_custom` | empty | Used only with `custom`. Heap flags are rejected; they are managed above. |
 | `paper_version` | empty | Minecraft version to install. Empty means the newest stable release. |
+| `pin_server_cpus` | `true` | Keep core 0 free for Home Assistant and the controller; the server gets the rest. Off means every core is shared. |
 | `run_server_as_root` | `false` | Keep the Minecraft process running as root. Off means the server runs as an unprivileged user, which is why the "running as root" warning is gone. |
 | `auto_restart_on_crash` | `false` | Restart after an unexpected exit. Gives up after three consecutive crashes. |
 | `stop_timeout_seconds` | `120` | Grace period before SIGTERM, then SIGKILL. |
@@ -47,16 +48,16 @@ The add-on can run more than one kind of server. The flavour is chosen in **Sett
 Server flavour**; switching needs Minecraft stopped and the flavour name typed as
 confirmation.
 
-| | PaperMC | Better than Adventure! |
+| | PaperMC | Better than Adventure! | BTA with Babric |
 | --- | --- | --- |
-| Minecraft | current releases | a fork of Beta 1.7.3 |
-| Source | `fill.papermc.io`, checksum from the build metadata | GitHub releases, checksum from the asset digest |
-| Plugins | Bukkit/Spigot | none |
-| Terrain pre-generation | Chunky | not available |
-| TPS and heap telemetry | from the bridge plugin | from the process only |
-| World format | Anvil, three directories per world set | McRegion, one directory with the other dimensions nested inside it |
-| Listen port | launch argument | written into `server.properties` |
-| Configuration | `server.properties`, `bukkit.yml`, `spigot.yml`, the two Paper files, JSON lists | `server.properties` and text lists (`ops.txt`, `white-list.txt`) |
+| Minecraft | current releases | a fork of Beta 1.7.3 | the same fork, with the Fabric loader |
+| Source | `fill.papermc.io`, checksum from the build metadata | the project's own CDN; no published checksum, so the download's SHA-256 is computed and recorded | Turnip Labs' releases, digest-verified server bundle |
+| Mods / plugins | Bukkit/Spigot plugins | none | Fabric mods in `mods/` |
+| Terrain pre-generation | Chunky | not available | not available |
+| TPS and heap telemetry | from the bridge plugin | from the process only | from the process only |
+| World format | Anvil, three directories per world set | McRegion, one directory | same as BTA, same version only |
+| Listen port | launch argument | written into `server.properties` | written into `server.properties` |
+| Configuration | `server.properties`, Bukkit/Spigot/Paper files, JSON lists | `server.properties` and text lists | `server.properties` and text lists |
 
 Each flavour keeps its own runtime directory, its own worlds, its own installed server
 and its own active world, so **switching moves no data and is reversible**: switching back
@@ -198,6 +199,19 @@ minimum dwell time, so a job cannot flap. Low disk space cancels rather than pau
 full disk corrupts region files. A job survives an add-on restart and is adopted as
 *paused* so you can review the numbers before resuming.
 
+### Mods
+
+Searches Modrinth for content that fits the running server: plugins for PaperMC
+(everything published for Paper, Bukkit or Spigot, filtered to the installed Minecraft
+version), Fabric mods for the Babric flavour. Client-only content is filtered out. Every
+file is verified against the SHA-512 Modrinth publishes and comes only from Modrinth's
+CDN; installs and removals are audited and take effect on the next server start.
+
+Curated packs are small vetted sets per flavour - an admin toolkit for Paper, a mod
+foundation and content picks for Babric. Jars you drop into the directory by hand are
+listed as "added by hand" and can be removed here too. Plain BTA has no mod loader; the
+tab explains that Babric is the same game with mods.
+
 ### Settings
 
 Heap, JVM profile, stop timeout, crash restart, start-on-boot, daily restart (with in-game
@@ -297,6 +311,29 @@ entities: they require a typed confirmation.
 An installation created before flavours existed keeps its worlds directly under
 `/data/worlds/`. They are moved into `/data/worlds/paper/` once, on the first start after
 the update, before anything else reads them.
+
+## Running smoothly on a Raspberry Pi
+
+The Pi shares four cores, one memory bus and one disk with Home Assistant, and
+that sharing is what makes a server feel rough. What the add-on does about it:
+
+- **Core 0 is reserved.** The server is pinned to the remaining cores, so
+  neither side's load shows up as the other's lag. `pin_server_cpus` turns it off.
+- **The heap has a measured ceiling.** Settings names the largest heap this
+  machine should hand the JVM. The memory it protects is not idle: the page
+  cache is what keeps region-file reads off the disk queue, and a maxed heap
+  turns invisible cache into visible autosave stutter.
+- **Storage is named.** The dashboard says whether `/data` is an SD card, an
+  NVMe drive or an SSD. On a Pi that difference outweighs every JVM flag.
+- **Backups verify by sampling** (structure fully, 5% of the data) so the check
+  after each backup is not an IO storm while players are online.
+
+What is worth doing outside the add-on, in order: pre-generate the world inside
+a matching border (the Terrain tab) so live chunk generation never happens with
+players online; keep view and simulation distance low - 7 and 5 are the shipped
+defaults and dominate everything else; run from NVMe rather than SD; and cool
+the Pi actively, so the thermal guard that pauses generation at 78 °C never has
+to fire.
 
 ## Reliability
 

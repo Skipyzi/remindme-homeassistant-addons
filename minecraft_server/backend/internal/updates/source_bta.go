@@ -7,45 +7,38 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"time"
 )
 
-// Better than Adventure! publishes its server JAR as a GitHub release asset.
-// There is no build API: one release is one installable version.
-const btaReleasesAPI = "https://api.github.com/repos/Better-than-Adventure/bta-download-repo/releases?per_page=50"
+// Better than Adventure! moved its distribution to its own CDN; the GitHub
+// releases the add-on originally installed from stopped at 7.3_04 while the
+// project itself went on to 8.x. The CDN publishes a versions.json per channel
+// and a stable server.jar name inside every version directory.
+//
+// The CDN publishes no checksums. It is the project's first-party host over
+// HTTPS, so the source declares AllowsUnverified and the installer computes and
+// records the SHA-256 of what it downloaded instead of verifying against a
+// published value - see Install.
+const btaCDN = "https://downloads.betterthanadventure.net/bta-server"
 
-// btaAssetPattern matches the server JAR in a release. The naming has changed
-// several times (bta-7.2-server.jar, bta.v7.3_04.server.jar,
-// better-than-adventure-7.1.Prerelease.2-server.jar), so the match is on the
-// project prefix and the "server.jar" ending rather than on an exact name.
-var btaAssetPattern = regexp.MustCompile(`(?i)^(bta|better[-_.]than[-_.]adventure)[._-].*server\.jar$`)
-
-// btaVersionPattern extracts the version out of a release tag: "v7.3", "v7.3_04"
-// and the pre-release form "v7.2-prerelease-2".
+// btaVersionPattern accepts a version such as 7.3, 7.3_04, 1.7.6.2 or the
+// pre-release form 8.0-pre3, with or without the CDN's leading "v".
 var btaVersionPattern = regexp.MustCompile(`^v?([0-9]+(?:\.[0-9]+)*(?:_[0-9]+)?(?:-[A-Za-z0-9.-]+)?)$`)
 
-// BTASource installs Better than Adventure! releases.
+// BTASource installs Better than Adventure! releases from the official CDN.
 type BTASource struct {
-	// api is overridable in tests.
-	api string
-	// token, when set, is sent as a GitHub bearer token. It is only used to lift
-	// the anonymous rate limit and is never required.
-	token string
+	// cdn is overridable in tests.
+	cdn string
 }
 
-func NewBTASource() *BTASource { return &BTASource{api: btaReleasesAPI} }
+func NewBTASource() *BTASource { return &BTASource{cdn: btaCDN} }
 
-func (s *BTASource) Flavour() string     { return "bta" }
-func (s *BTASource) ProjectName() string { return "Better than Adventure!" }
+func (s *BTASource) Flavour() string        { return "bta" }
+func (s *BTASource) ProjectName() string    { return "Better than Adventure!" }
+func (s *BTASource) AllowsUnverified() bool { return true }
+func (s *BTASource) Bundle() bool           { return false }
 
-// DownloadHosts covers the release URL and the storage host GitHub redirects to.
 func (s *BTASource) DownloadHosts() []string {
-	return []string{
-		"github.com",
-		"objects.githubusercontent.com",
-		"release-assets.githubusercontent.com",
-		"api.github.com",
-	}
+	return []string{"downloads.betterthanadventure.net"}
 }
 
 func (s *BTASource) StagedName(version string, _ int) string {
@@ -53,66 +46,88 @@ func (s *BTASource) StagedName(version string, _ int) string {
 }
 
 func (s *BTASource) endpoint() string {
-	if s.api == "" {
-		return btaReleasesAPI
+	if s.cdn == "" {
+		return btaCDN
 	}
-	return s.api
+	return s.cdn
 }
 
-func (s *BTASource) headers() map[string]string {
-	h := map[string]string{"Accept": "application/vnd.github+json"}
-	if s.token != "" {
-		h["Authorization"] = "Bearer " + s.token
-	}
-	return h
+type btaManifest struct {
+	Versions []string `json:"versions"`
+	Default  string   `json:"default"`
 }
 
-type githubRelease struct {
-	TagName    string    `json:"tag_name"`
-	Draft      bool      `json:"draft"`
-	Prerelease bool      `json:"prerelease"`
-	CreatedAt  time.Time `json:"published_at"`
-	Assets     []struct {
-		Name               string `json:"name"`
-		Size               int64  `json:"size"`
-		Digest             string `json:"digest"`
-		BrowserDownloadURL string `json:"browser_download_url"`
-	} `json:"assets"`
+func (s *BTASource) channel(ctx context.Context, name string) ([]string, error) {
+	var manifest btaManifest
+	if err := httpGetJSON(ctx, s.endpoint()+"/"+name+"/versions.json", nil, &manifest); err != nil {
+		return nil, err
+	}
+	out := make([]string, 0, len(manifest.Versions))
+	for _, tag := range manifest.Versions {
+		if version, ok := btaVersion(tag); ok {
+			out = append(out, version)
+		}
+	}
+	return out, nil
 }
 
-// build turns a release into an installable build, or reports that it has no
-// server JAR (the client-only and instance-only releases do not).
-func (r githubRelease) build() (Build, string, bool) {
-	version, ok := btaVersion(r.TagName)
-	if !ok || r.Draft {
-		return Build{}, "", false
+// Versions lists the CDN's release channel, newest first; pre-releases come
+// from their own channel and are only offered when asked for. The nightly
+// channel is deliberately ignored - hundreds of entries nobody should run a
+// home server on.
+func (s *BTASource) Versions(ctx context.Context, includePreReleases bool) ([]string, error) {
+	out, err := s.channel(ctx, "release")
+	if err != nil {
+		return nil, err
 	}
-	for _, asset := range r.Assets {
-		if !btaAssetPattern.MatchString(asset.Name) {
-			continue
+	if includePreReleases {
+		pre, err := s.channel(ctx, "prerelease")
+		if err != nil {
+			return nil, err
 		}
-		channel := "stable"
-		if r.Prerelease {
-			channel = "prerelease"
-		}
-		// GitHub publishes the asset digest as "sha256:<hex>". A release without
-		// one leaves SHA256 empty, and the installer refuses it.
-		sha := strings.TrimPrefix(asset.Digest, "sha256:")
-		if !strings.HasPrefix(asset.Digest, "sha256:") {
-			sha = ""
-		}
-		return Build{
-			// A BTA release has exactly one build, so the number carries no
-			// information; 1 keeps "newest build" comparisons meaningful.
-			Build:    1,
-			Channel:  channel,
-			Time:     r.CreatedAt,
-			FileName: asset.Name,
-			SHA256:   sha,
-			URL:      asset.BrowserDownloadURL,
-		}, version, true
+		out = append(out, pre...)
 	}
-	return Build{}, "", false
+	sort.Slice(out, func(i, j int) bool { return compareBTAVersions(out[i], out[j]) > 0 })
+	return out, nil
+}
+
+// Builds returns the single build of one version. The download URL uses the
+// stable server.jar name, which every version directory provides regardless of
+// how the versioned file inside is spelled.
+func (s *BTASource) Builds(ctx context.Context, version string) ([]Build, error) {
+	if err := s.ValidVersion(version); err != nil {
+		return nil, err
+	}
+	channel := "release"
+	channelName := "stable"
+	if strings.Contains(version, "-") {
+		channel = "prerelease"
+		channelName = "prerelease"
+	}
+	// The manifest is the authority on what exists; a constructed URL for a
+	// version the CDN never published would otherwise 404 halfway through an
+	// install.
+	known, err := s.channel(ctx, channel)
+	if err != nil {
+		return nil, err
+	}
+	found := false
+	for _, v := range known {
+		if v == version {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return nil, fmt.Errorf("Better than Adventure! has not published %s on the %s channel", version, channel)
+	}
+	return []Build{{
+		Build:    1,
+		Channel:  channelName,
+		FileName: fmt.Sprintf("bta.v%s.server.jar", version),
+		SHA256:   "", // the CDN publishes none; the installer computes and records one
+		URL:      fmt.Sprintf("%s/%s/v%s/server.jar", s.endpoint(), channel, version),
+	}}, nil
 }
 
 func btaVersion(tag string) (string, bool) {
@@ -121,55 +136,6 @@ func btaVersion(tag string) (string, bool) {
 		return "", false
 	}
 	return m[1], true
-}
-
-func (s *BTASource) releases(ctx context.Context) ([]githubRelease, error) {
-	var payload []githubRelease
-	if err := httpGetJSON(ctx, s.endpoint(), s.headers(), &payload); err != nil {
-		return nil, err
-	}
-	return payload, nil
-}
-
-// Versions lists the BTA releases that ship a server JAR, newest first.
-func (s *BTASource) Versions(ctx context.Context, includePreReleases bool) ([]string, error) {
-	releases, err := s.releases(ctx)
-	if err != nil {
-		return nil, err
-	}
-	seen := map[string]bool{}
-	out := make([]string, 0, len(releases))
-	for _, release := range releases {
-		build, version, ok := release.build()
-		if !ok || seen[version] {
-			continue
-		}
-		if build.Channel == "prerelease" && !includePreReleases {
-			continue
-		}
-		seen[version] = true
-		out = append(out, version)
-	}
-	sort.Slice(out, func(i, j int) bool { return compareBTAVersions(out[i], out[j]) > 0 })
-	return out, nil
-}
-
-// Builds returns the single build of one BTA version.
-func (s *BTASource) Builds(ctx context.Context, version string) ([]Build, error) {
-	if err := s.ValidVersion(version); err != nil {
-		return nil, err
-	}
-	releases, err := s.releases(ctx)
-	if err != nil {
-		return nil, err
-	}
-	for _, release := range releases {
-		build, released, ok := release.build()
-		if ok && released == version {
-			return []Build{build}, nil
-		}
-	}
-	return nil, fmt.Errorf("Better than Adventure! %s has no server JAR in its release", version)
 }
 
 // compareBTAVersions orders 7.3_04 above 7.3 and 7.10 above 7.9, and puts a
@@ -217,7 +183,7 @@ func compareBTAVersions(a, b string) int {
 	}
 }
 
-// ValidVersion accepts a BTA version such as 7.3 or 7.3_04.
+// ValidVersion accepts a BTA version such as 7.3, 7.3_04 or 8.0-pre3.
 func (s *BTASource) ValidVersion(v string) error {
 	if v == "" {
 		return fmt.Errorf("a Better than Adventure! version is required")
@@ -225,7 +191,7 @@ func (s *BTASource) ValidVersion(v string) error {
 	if len(v) > 24 {
 		return fmt.Errorf("version string is too long")
 	}
-	if !btaVersionPattern.MatchString(v) {
+	if strings.HasPrefix(v, "v") || !btaVersionPattern.MatchString(v) {
 		return fmt.Errorf("%q is not a Better than Adventure! version", v)
 	}
 	return nil

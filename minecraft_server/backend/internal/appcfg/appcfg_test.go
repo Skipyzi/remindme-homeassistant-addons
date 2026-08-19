@@ -13,9 +13,9 @@ func TestConfineRejectsEscapes(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "runtime")
 
 	valid := map[string]string{
-		"server.properties":        "server.properties",
-		"config/paper-global.yml":  filepath.Join("config", "paper-global.yml"),
-		"plugins/Chunky.jar":       filepath.Join("plugins", "Chunky.jar"),
+		"server.properties":       "server.properties",
+		"config/paper-global.yml": filepath.Join("config", "paper-global.yml"),
+		"plugins/Chunky.jar":      filepath.Join("plugins", "Chunky.jar"),
 	}
 	for input, expected := range valid {
 		got, err := Confine(root, input)
@@ -46,17 +46,17 @@ func TestSettingsValidation(t *testing.T) {
 	}
 
 	cases := map[string]func(*Settings){
-		"tiny heap":                  func(s *Settings) { s.MemoryMinMB = 128 },
-		"inverted heap":              func(s *Settings) { s.MemoryMaxMB = s.MemoryMinMB - 1 },
-		"short stop timeout":         func(s *Settings) { s.StopTimeoutSeconds = 5 },
-		"negative idle":              func(s *Settings) { s.IdleShutdownMinutes = -1 },
-		"bad restart schedule":       func(s *Settings) { s.RestartSchedule = "4:30 pm" },
-		"bad backup schedule":        func(s *Settings) { s.BackupSchedule = "99:99" },
-		"bad allowed hours":          func(s *Settings) { s.Generation.AllowedHours.Start = "midnight" },
-		"resume below pause TPS":     func(s *Settings) { s.Generation.ResumeWhen.TPSAbove = 10 },
-		"resume above pause temp":    func(s *Settings) { s.Generation.ResumeWhen.CPUTemperatureBelowC = 95 },
-		"negative safety margin":     func(s *Settings) { s.Generation.SafetyMarginBlocks = -1 },
-		"invalid custom java flags":  func(s *Settings) { s.JVMFlagsProfile = "custom"; s.JVMFlagsCustom = "-Xmx8G" },
+		"tiny heap":                 func(s *Settings) { s.MemoryMinMB = 128 },
+		"inverted heap":             func(s *Settings) { s.MemoryMaxMB = s.MemoryMinMB - 1 },
+		"short stop timeout":        func(s *Settings) { s.StopTimeoutSeconds = 5 },
+		"negative idle":             func(s *Settings) { s.IdleShutdownMinutes = -1 },
+		"bad restart schedule":      func(s *Settings) { s.RestartSchedule = "4:30 pm" },
+		"bad backup schedule":       func(s *Settings) { s.BackupSchedule = "99:99" },
+		"bad allowed hours":         func(s *Settings) { s.Generation.AllowedHours.Start = "midnight" },
+		"resume below pause TPS":    func(s *Settings) { s.Generation.ResumeWhen.TPSAbove = 10 },
+		"resume above pause temp":   func(s *Settings) { s.Generation.ResumeWhen.CPUTemperatureBelowC = 95 },
+		"negative safety margin":    func(s *Settings) { s.Generation.SafetyMarginBlocks = -1 },
+		"invalid custom java flags": func(s *Settings) { s.JVMFlagsProfile = "custom"; s.JVMFlagsCustom = "-Xmx8G" },
 	}
 	for name, mutate := range cases {
 		settings := base

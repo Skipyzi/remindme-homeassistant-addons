@@ -266,7 +266,12 @@ func (m *Manager) Create(ctx context.Context, req CreateRequest, actor string, p
 	}
 	if verify {
 		m.publishProgress("backup", recordID, 92, "verifying repository")
-		if _, err := m.deps.Restic.Check(opCtx, ""); err != nil {
+		// A sampled check: structure fully, 5% of the data re-read. The full
+		// read-everything check re-reads the whole repository after every backup,
+		// which on a Pi is an IO storm at exactly the moment players are online;
+		// over twenty backups the sample still covers the repository, and the
+		// Backups page offers a full check on demand.
+		if _, err := m.deps.Restic.Check(opCtx, "5%"); err != nil {
 			m.deps.Bus.Warn("backups", "repository verification reported a problem: "+err.Error())
 			record.Notes = strings.TrimSpace(record.Notes + "\nverification warning: " + err.Error())
 		} else {

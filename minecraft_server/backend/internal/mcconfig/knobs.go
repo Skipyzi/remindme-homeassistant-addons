@@ -170,7 +170,7 @@ func btaKnobCatalog() []Knob {
 
 // catalog is the knob set of the active flavour.
 func (m *Manager) catalog() []Knob {
-	if m.backend != nil && m.backend.Name() == "bta" {
+	if m.backend != nil && (m.backend.Name() == "bta" || m.backend.Name() == "babric") {
 		return btaKnobCatalog()
 	}
 	return KnobCatalog()
@@ -178,7 +178,7 @@ func (m *Manager) catalog() []Knob {
 
 // CatalogFor returns the knob set of a backend, for the API and the presets.
 func CatalogFor(name string) []Knob {
-	if name == "bta" {
+	if name == "bta" || name == "babric" {
 		return btaKnobCatalog()
 	}
 	return KnobCatalog()

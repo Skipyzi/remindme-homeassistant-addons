@@ -1,7 +1,9 @@
 // Configuration: a structured form for the managed settings and a guarded text
 // editor for the raw files.
 
-import { api, h, card, field, run, toast, titleCase, clear, datetime } from '../lib.js';
+import {
+  api, h, card, field, run, toast, titleCase, clear, datetime, append,
+} from '../lib.js';
 
 export async function render(ctx) {
   const data = await api('api/config');
@@ -105,7 +107,7 @@ function knobField(knob, overrides, onChange) {
 
 async function loadFile(name, host) {
   clear(host);
-  host.append(h('p', { class: 'empty' }, h('span', { class: 'spin' }), ' loading…'));
+  append(host, h('p', { class: 'empty' }, h('span', { class: 'spin' }), ' loading…'));
   const data = await api(`api/config/files/${encodeURIComponent(name)}`);
   clear(host);
 
@@ -154,6 +156,6 @@ async function loadFile(name, host) {
     }, 'Restore snapshot')
     : null;
 
-  host.append(info, textarea,
+  append(host, info, textarea,
     h('div', { class: 'card-actions', style: 'margin-top:.5rem' }, save, snapshotSelect, restore));
 }

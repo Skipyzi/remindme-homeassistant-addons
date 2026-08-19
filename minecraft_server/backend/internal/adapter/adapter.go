@@ -105,6 +105,12 @@ type Capabilities struct {
 	ServerPortArg bool `json:"server_port_arg"`
 	// WorldBinding is how the active world set is selected.
 	WorldBinding WorldBinding `json:"world_binding"`
+	// ModLoader is the Modrinth loader identifier content for this flavour is
+	// published under ("paper", "bta-babric"), and ModDir the directory it is
+	// installed into. Empty means the flavour cannot load third-party content at
+	// all and the UI hides the whole feature.
+	ModLoader string `json:"mod_loader,omitempty"`
+	ModDir    string `json:"mod_dir,omitempty"`
 	// Dimensions are the sub-directories of a world set, in backup and size
 	// reporting order. The first entry is the one that must exist for a world to
 	// be usable.

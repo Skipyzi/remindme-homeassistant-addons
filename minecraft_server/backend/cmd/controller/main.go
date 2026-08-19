@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"syscall"
 	"time"
@@ -30,6 +31,7 @@ import (
 	"github.com/skipyzi/remindme-homeassistant-addons/minecraft_server/backend/internal/hass"
 	"github.com/skipyzi/remindme-homeassistant-addons/minecraft_server/backend/internal/javaruntime"
 	"github.com/skipyzi/remindme-homeassistant-addons/minecraft_server/backend/internal/mcconfig"
+	"github.com/skipyzi/remindme-homeassistant-addons/minecraft_server/backend/internal/mods"
 	"github.com/skipyzi/remindme-homeassistant-addons/minecraft_server/backend/internal/presets"
 	"github.com/skipyzi/remindme-homeassistant-addons/minecraft_server/backend/internal/privdrop"
 	"github.com/skipyzi/remindme-homeassistant-addons/minecraft_server/backend/internal/scheduler"
@@ -138,6 +140,18 @@ func run() error {
 		return runtime.Path, nil
 	}
 
+	// Core 0 stays with Home Assistant and this controller; the server gets the
+	// rest. Below two cores there is nothing to divide.
+	var serverCPUs []int
+	if options.PinServerCPUs {
+		if n := runtime.NumCPU(); n >= 2 {
+			for cpu := 1; cpu < n; cpu++ {
+				serverCPUs = append(serverCPUs, cpu)
+			}
+			log.Info("reserving core 0 for Home Assistant", "server_cpus", serverCPUs)
+		}
+	}
+
 	sup := supervisor.New(supervisor.Deps{
 		Paths:       env.Paths,
 		Settings:    settings,
@@ -148,6 +162,7 @@ func run() error {
 		ServerPort:  options.ServerPort,
 		Flags:       backend.FlagProfile,
 		Account:     account,
+		CPUs:        serverCPUs,
 		ResolveJava: resolveJava,
 		ExtraArgs: func() []string {
 			if worldManager == nil {
@@ -270,8 +285,9 @@ func run() error {
 
 	updateManager := updates.NewManager(updates.Deps{
 		Sources: map[string]updates.Source{
-			"paper": updates.NewPaperSource(),
-			"bta":   updates.NewBTASource(),
+			"paper":  updates.NewPaperSource(),
+			"bta":    updates.NewBTASource(),
+			"babric": updates.NewBabricSource(),
 		},
 		Paths:       env.Paths,
 		Settings:    settings,
@@ -285,6 +301,11 @@ func run() error {
 			_, err := resolveJava(jarPath)
 			return err
 		},
+	})
+
+	modManager := mods.New(mods.Deps{
+		Paths: env.Paths, Backend: backend, Settings: settings,
+		Store: st, Bus: bus, Log: log,
 	})
 
 	commandService := commands.New(commands.Deps{
@@ -334,6 +355,7 @@ func run() error {
 	apiServer := api.New(api.Deps{
 		Version:     buildVersion,
 		Backend:     backend,
+		Mods:        modManager,
 		Paths:       env.Paths,
 		Options:     options,
 		Settings:    settings,
