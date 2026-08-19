@@ -21,6 +21,10 @@ type Options struct {
 	// it, because switching is a stateful operation and not a restart-time one.
 	Flavour      string `json:"server_flavour"`
 	PaperVersion string `json:"paper_version"`
+	// PinServerCPUs pins the Minecraft process to every core except core 0, so
+	// Home Assistant and the controller keep a core of their own and neither
+	// side's load shows up as the other's lag.
+	PinServerCPUs bool `json:"pin_server_cpus"`
 	// RunServerAsRoot keeps the Minecraft process running as root. Add-on
 	// containers are root, and Minecraft warns about it on every start; the
 	// controller drops the server to an unprivileged user unless this is set.
@@ -74,6 +78,7 @@ func DefaultOptions() Options {
 		MQTTPort:            1883,
 		MQTTDiscoveryPrefix: "homeassistant",
 		ChunkySource:        "modrinth",
+		PinServerCPUs:       true,
 		Flavour:             DefaultFlavour,
 		LogLevel:            "info",
 	}

@@ -113,6 +113,21 @@ function describeState(state) {
   }[state] || state;
 }
 
+// diskCaption names the medium: on a Pi the difference between an SD card and
+// an NVMe drive is the difference between stutter and none.
+const STORAGE_LABELS = {
+  'sd-card': 'SD card',
+  nvme: 'NVMe',
+  ssd: 'SSD',
+  hdd: 'hard disk',
+};
+
+function diskCaption(system) {
+  if (!system.disk_total_bytes) return 'unknown';
+  const medium = STORAGE_LABELS[system.storage_kind];
+  return medium ? `of ${bytes(system.disk_total_bytes)} on ${medium}` : `of ${bytes(system.disk_total_bytes)}`;
+}
+
 function controlSummary(status) {
   const parts = [];
   if (status.server.pid) parts.push(`pid ${status.server.pid}`);
@@ -240,7 +255,7 @@ function renderMetrics(host, status, stats) {
       system.server_cpu_percent ? `${num(system.server_cpu_percent, 0)} % CPU · ${system.server_threads} threads` : 'stopped'),
     metric('Controller', system.controller_rss ? bytes(system.controller_rss) : '—', 'management process'),
     metric('Free disk', system.disk_total_bytes ? bytes(system.disk_free_bytes) : '—',
-      system.disk_total_bytes ? `of ${bytes(system.disk_total_bytes)}` : 'unknown', diskTone),
+      diskCaption(system), system.storage_kind === 'sd-card' ? 'warn' : diskTone),
     metric('World size', worldKey && sizes[worldKey] ? bytes(sizes[worldKey].bytes) : '—',
       worldKey && sizes[worldKey] ? `measured ${ago(sizes[worldKey].updated_at)}` : ''),
     metric('Backup repository', sizes.backups ? bytes(sizes.backups.bytes) : '—',

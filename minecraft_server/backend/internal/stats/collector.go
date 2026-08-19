@@ -27,11 +27,15 @@ type System struct {
 	FreqRatio        float64    `json:"frequency_ratio"`
 	DiskTotalBytes   int64      `json:"disk_total_bytes"`
 	DiskFreeBytes    int64      `json:"disk_free_bytes"`
-	ControllerRSS    int64      `json:"controller_rss_bytes"`
-	ServerRSS        int64      `json:"server_rss_bytes"`
-	ServerCPUPercent float64    `json:"server_cpu_percent"`
-	ServerThreads    int        `json:"server_threads"`
-	SampledAt        string     `json:"sampled_at"`
+	// StorageKind says what /data physically sits on ("sd-card", "nvme", "ssd",
+	// "hdd", or empty when it cannot be told). An SD card is the single most
+	// common reason a Pi server stutters, and the dashboard says so.
+	StorageKind      string  `json:"storage_kind,omitempty"`
+	ControllerRSS    int64   `json:"controller_rss_bytes"`
+	ServerRSS        int64   `json:"server_rss_bytes"`
+	ServerCPUPercent float64 `json:"server_cpu_percent"`
+	ServerThreads    int     `json:"server_threads"`
+	SampledAt        string  `json:"sampled_at"`
 }
 
 // SizeEntry is a cached directory size with its age, so the UI can show
@@ -70,6 +74,9 @@ type Collector struct {
 	prevBusy, prevTotal float64
 	prevProcJiffies     float64
 	prevProcAt          time.Time
+
+	storageOnce sync.Once
+	storage     string
 }
 
 func New(d Deps) *Collector {
@@ -137,6 +144,7 @@ func (c *Collector) sample() {
 	temp := cpuTemperature()
 	throttled, ratio := thermalThrottled()
 	diskTotal, diskFree := diskUsage(c.deps.DiskPath)
+	c.storageOnce.Do(func() { c.storage = storageKind(c.deps.DiskPath) })
 
 	var mem runtime.MemStats
 	runtime.ReadMemStats(&mem)
@@ -151,6 +159,7 @@ func (c *Collector) sample() {
 		FreqRatio:        ratio,
 		DiskTotalBytes:   diskTotal,
 		DiskFreeBytes:    diskFree,
+		StorageKind:      c.storage,
 		ControllerRSS:    int64(mem.Sys),
 		SampledAt:        time.Now().UTC().Format(time.RFC3339),
 	}

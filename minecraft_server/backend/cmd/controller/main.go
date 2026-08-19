@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"syscall"
 	"time"
@@ -139,6 +140,18 @@ func run() error {
 		return runtime.Path, nil
 	}
 
+	// Core 0 stays with Home Assistant and this controller; the server gets the
+	// rest. Below two cores there is nothing to divide.
+	var serverCPUs []int
+	if options.PinServerCPUs {
+		if n := runtime.NumCPU(); n >= 2 {
+			for cpu := 1; cpu < n; cpu++ {
+				serverCPUs = append(serverCPUs, cpu)
+			}
+			log.Info("reserving core 0 for Home Assistant", "server_cpus", serverCPUs)
+		}
+	}
+
 	sup := supervisor.New(supervisor.Deps{
 		Paths:       env.Paths,
 		Settings:    settings,
@@ -149,6 +162,7 @@ func run() error {
 		ServerPort:  options.ServerPort,
 		Flags:       backend.FlagProfile,
 		Account:     account,
+		CPUs:        serverCPUs,
 		ResolveJava: resolveJava,
 		ExtraArgs: func() []string {
 			if worldManager == nil {

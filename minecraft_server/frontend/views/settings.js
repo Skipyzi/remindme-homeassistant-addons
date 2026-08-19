@@ -48,7 +48,7 @@ export async function render(ctx) {
         'JVM -Xms. Equal to the maximum avoids heap resizing pauses.'),
       field('Maximum heap (MB)',
         bind('memory_max_mb', h('input', { type: 'number', value: settings.memory_max_mb, min: 768 }), Number),
-        'On an 8 GB Pi 5 keep this at or below 3584 MB so Home Assistant keeps enough memory.'),
+        heapHint(data.memory_advice)),
       field('JVM flag profile',
         bind('jvm_flags_profile', h('select', {}, data.jvm_profiles.map((option) => h('option', {
           value: option, selected: option === settings.jvm_flags_profile,
@@ -172,6 +172,18 @@ export async function render(ctx) {
 
   loadVersions(updateHost, ctx).catch(() => {});
   return { element };
+}
+
+// heapHint states the ceiling measured on THIS machine rather than a number
+// from the documentation, and says what the memory it protects is actually for.
+function heapHint(advice) {
+  if (!advice || !advice.recommended_max_heap_mb) {
+    return 'JVM -Xmx. Leave room for Home Assistant and for the page cache that keeps world file IO fast.';
+  }
+  const base = `Recommended ceiling on this machine: ${advice.recommended_max_heap_mb} MB of ${advice.total_mb} MB — ${advice.reason}.`;
+  return advice.exceeded
+    ? `${base} The current value is above it; the memory comes out of the page cache, which shows up as autosave stutter.`
+    : base;
 }
 
 function checkbox(value) {
