@@ -30,6 +30,7 @@ import (
 	"github.com/skipyzi/remindme-homeassistant-addons/minecraft_server/backend/internal/hass"
 	"github.com/skipyzi/remindme-homeassistant-addons/minecraft_server/backend/internal/javaruntime"
 	"github.com/skipyzi/remindme-homeassistant-addons/minecraft_server/backend/internal/mcconfig"
+	"github.com/skipyzi/remindme-homeassistant-addons/minecraft_server/backend/internal/mods"
 	"github.com/skipyzi/remindme-homeassistant-addons/minecraft_server/backend/internal/presets"
 	"github.com/skipyzi/remindme-homeassistant-addons/minecraft_server/backend/internal/privdrop"
 	"github.com/skipyzi/remindme-homeassistant-addons/minecraft_server/backend/internal/scheduler"
@@ -288,6 +289,11 @@ func run() error {
 		},
 	})
 
+	modManager := mods.New(mods.Deps{
+		Paths: env.Paths, Backend: backend, Settings: settings,
+		Store: st, Bus: bus, Log: log,
+	})
+
 	commandService := commands.New(commands.Deps{
 		Paths:      env.Paths,
 		Backend:    backend,
@@ -335,6 +341,7 @@ func run() error {
 	apiServer := api.New(api.Deps{
 		Version:     buildVersion,
 		Backend:     backend,
+		Mods:        modManager,
 		Paths:       env.Paths,
 		Options:     options,
 		Settings:    settings,

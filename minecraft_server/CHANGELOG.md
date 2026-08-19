@@ -3,6 +3,34 @@
 All notable changes to this add-on are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are semantic.
 
+## 1.6.0 - 2026-08-19
+
+### Added
+
+- **Mods and plugins from Modrinth.** A new Mods tab searches Modrinth for content that
+  fits the running server - Paper plugins (including everything published for Bukkit and
+  Spigot), Fabric mods for the Babric flavour - filtered to server-side content and, for
+  Paper, to the installed Minecraft version. Every file is verified against the SHA-512
+  Modrinth publishes, comes only from Modrinth's own CDN, and lands with an audit entry
+  and a restart-required flag; nothing restarts by itself. Jars added by hand are listed
+  and removable too. One click checks every managed entry for updates.
+- **Curated packs**: small vetted sets per flavour - an admin toolkit for Paper
+  (LuckPerms, CoreProtect, EssentialsX, BlueMap) and a mod foundation plus content picks
+  for Babric (HalpLibe, Catalyst, and the most-downloaded server-side BTA mods). Per this
+  add-on's standing rule, no "performance cleaner" plugins in any of them.
+- Plain BTA explains that mods need the Babric flavour instead of showing an empty page.
+
+### Changed
+
+- **The interface got its own voice.** Everything the machine says - states, labels,
+  numbers, file names - is set in the system's monospace face (terminal heritage, no font
+  download), and the status palette is drawn from the game's ores: emerald runs, gold
+  warns, redstone fails, lapis informs, amethyst works.
+- **The state seam**: a strip of pixel blocks under the header whose colour is the server
+  state, visible from every tab. It marches while anything is in flight and holds still
+  at rest; reduced-motion preferences stop the animation.
+- The ten tabs are grouped by what they touch: run / world / tune / system.
+
 ## 1.5.0 - 2026-08-19
 
 ### Added

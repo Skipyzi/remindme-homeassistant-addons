@@ -26,6 +26,8 @@ func (b *Backend) JarName() string     { return "fabric-server-launch.jar" }
 // Capabilities: everything BTA reports, plus mods.
 func (b *Backend) Capabilities() adapter.Capabilities {
 	caps := b.Backend.Capabilities()
+	caps.ModLoader = "bta-babric"
+	caps.ModDir = "mods"
 	caps.Notes = []string{
 		"Better than Adventure! with the Babric/Fabric loader. Worlds are interchangeable with the plain BTA flavour of the same version, and with nothing newer.",
 		"Mods go into the mods/ directory of the server folder. The bundle ships halplibe, which most BTA mods need; updates replace the bundle's own files and never touch mods you added.",

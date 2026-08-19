@@ -1,41 +1,79 @@
 /* Minecraft add-on management UI.
    Plain CSS, no build step, no external fonts: the container ships no Node and
-   Ingress must work offline. Colours follow the viewer's light/dark preference. */
+   Ingress must work offline.
+
+   The design language is the server room, not the game screen. Two materials
+   carry the identity: a monospaced voice for everything the machine says
+   (states, labels, numbers, file names - terminal heritage, and it costs no
+   font download), and a status palette drawn from the game's ores, because the
+   states ARE this panel's content: emerald runs, gold warns, redstone fails,
+   lapis informs, amethyst works. Colours follow the viewer's light/dark
+   preference. */
 
 :root {
-  --bg: #f4f5f7;
-  --surface: #ffffff;
-  --surface-2: #f0f1f4;
-  --border: #d9dce3;
-  --text: #1d2129;
-  --muted: #626b79;
-  --accent: #2f6f4f;
+  --bg: #eef0ec;
+  --surface: #fbfbf9;
+  --surface-2: #f1f2ee;
+  --border: #d7dbd2;
+  --text: #1b1f1c;
+  --muted: #5e675f;
+  --accent: #1f7a4a;          /* emerald */
   --accent-text: #ffffff;
-  --danger: #b3261e;
-  --warn: #8a5a00;
-  --ok: #1f7a45;
-  --info: #1e5b96;
+  --danger: #b13327;          /* redstone */
+  --warn: #96700f;            /* gold */
+  --ok: #1f7a4a;              /* emerald */
+  --info: #2b5fb8;            /* lapis */
+  --activity: #7a4fc0;        /* amethyst: long operations */
   --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
-  --radius: 10px;
-  --shadow: 0 1px 2px rgba(15, 23, 42, .08), 0 4px 12px rgba(15, 23, 42, .06);
+  --radius: 8px;
+  --shadow: 0 1px 2px rgba(20, 28, 22, .07), 0 4px 12px rgba(20, 28, 22, .05);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #14161a;
-    --surface: #1c1f25;
-    --surface-2: #23272f;
-    --border: #333944;
-    --text: #e8eaee;
-    --muted: #9aa4b2;
-    --accent: #4c9c72;
-    --accent-text: #06130c;
-    --danger: #f2837c;
-    --warn: #e3b341;
-    --ok: #6fcf97;
-    --info: #7cb7f0;
+    --bg: #121512;
+    --surface: #1a1e1a;
+    --surface-2: #212621;
+    --border: #2d342d;
+    --text: #e6eae5;
+    --muted: #93a094;
+    --accent: #3fae72;
+    --accent-text: #07130b;
+    --danger: #ef6a5a;
+    --warn: #e0b34a;
+    --ok: #4ecf8d;
+    --info: #6fa8f5;
+    --activity: #b58af0;
     --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 6px 18px rgba(0, 0, 0, .3);
   }
+}
+
+/* --------------------------------------------------------------- the seam --
+   A strip of discrete blocks under the header whose colour is the server
+   state, visible from every tab. It marches while anything is in flight and
+   holds still at rest; the block size is the identity - pixels, not a bar. */
+.state-seam {
+  height: 4px;
+  background-image: repeating-linear-gradient(90deg,
+    var(--seam, var(--border)) 0 8px,
+    transparent 8px 12px);
+  background-color: color-mix(in srgb, var(--seam, var(--border)) 18%, transparent);
+}
+.seam-running        { --seam: var(--ok); }
+.seam-stopped        { --seam: var(--muted); }
+.seam-unknown        { --seam: var(--border); }
+.seam-crashed        { --seam: var(--danger); background-color: color-mix(in srgb, var(--danger) 30%, transparent); }
+.seam-starting, .seam-stopping { --seam: var(--warn); }
+.seam-backing_up, .seam-restoring, .seam-switching_world,
+.seam-updating, .seam-generating, .seam-maintenance { --seam: var(--activity); }
+
+.seam-starting, .seam-stopping, .seam-backing_up, .seam-restoring,
+.seam-switching_world, .seam-updating, .seam-generating {
+  animation: seam-march 1.2s linear infinite;
+}
+@keyframes seam-march { to { background-position-x: 12px; } }
+@media (prefers-reduced-motion: reduce) {
+  .state-seam { animation: none !important; }
 }
 
 * { box-sizing: border-box; }
@@ -51,7 +89,7 @@ body {
 h1, h2, h3 { margin: 0 0 .2em; line-height: 1.25; }
 h1 { font-size: 1.15rem; }
 h2 { font-size: 1.02rem; }
-h3 { font-size: .92rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+h3 { font-size: .78rem; font-family: var(--mono); text-transform: uppercase; letter-spacing: .09em; color: var(--muted); }
 p { margin: 0 0 .6em; }
 a { color: var(--info); }
 
@@ -84,6 +122,15 @@ a { color: var(--info); }
   padding: .5rem .75rem; border-radius: 8px 8px 0 0; cursor: pointer; white-space: nowrap;
   border-bottom: 2px solid transparent;
 }
+/* Group eyebrows encode what the tabs to their right have in common: running
+   the server, the world's data, tuning behaviour, the add-on itself. */
+.tab-group {
+  align-self: center; font-family: var(--mono); font-size: .62rem;
+  text-transform: uppercase; letter-spacing: .12em; color: var(--muted);
+  opacity: .75; padding: 0 .35rem 0 .8rem; user-select: none; white-space: nowrap;
+  border-left: 1px solid var(--border);
+}
+.tab-group:first-child { border-left: 0; padding-left: 0; }
 .tabs button:hover { color: var(--text); background: var(--surface-2); }
 .tabs button.active { color: var(--text); border-bottom-color: var(--accent); font-weight: 600; }
 
@@ -114,6 +161,7 @@ a { color: var(--info); }
 /* ----------------------------------------------------------------- pills -- */
 
 .pill {
+  font-family: var(--mono); text-transform: uppercase; letter-spacing: .07em;
   display: inline-flex; align-items: center; gap: .35rem; padding: .18rem .55rem;
   border-radius: 999px; font-size: .76rem; font-weight: 600; letter-spacing: .02em;
   border: 1px solid transparent; text-transform: lowercase;
@@ -248,4 +296,13 @@ tbody tr:hover { background: var(--surface-2); }
 .setup-step.done .setup-step-number { border-color: var(--ok); color: var(--ok); }
 .activity-line { margin-top: .4rem; }
 ul.consequences { margin: .4rem 0 .4rem 1.2rem; padding: 0; }
+.mod-row { border-top: 1px solid var(--border); padding-top: .55rem; align-items: baseline; }
+.mod-row:first-child { border-top: 0; padding-top: 0; }
+.mod-name { min-width: 12rem; }
+.grow { flex: 1; min-width: 8rem; overflow: hidden; text-overflow: ellipsis; }
 ul.consequences li { margin: .15rem 0; }
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}

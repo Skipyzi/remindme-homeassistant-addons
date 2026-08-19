@@ -198,6 +198,19 @@ minimum dwell time, so a job cannot flap. Low disk space cancels rather than pau
 full disk corrupts region files. A job survives an add-on restart and is adopted as
 *paused* so you can review the numbers before resuming.
 
+### Mods
+
+Searches Modrinth for content that fits the running server: plugins for PaperMC
+(everything published for Paper, Bukkit or Spigot, filtered to the installed Minecraft
+version), Fabric mods for the Babric flavour. Client-only content is filtered out. Every
+file is verified against the SHA-512 Modrinth publishes and comes only from Modrinth's
+CDN; installs and removals are audited and take effect on the next server start.
+
+Curated packs are small vetted sets per flavour - an admin toolkit for Paper, a mod
+foundation and content picks for Babric. Jars you drop into the directory by hand are
+listed as "added by hand" and can be removed here too. Plain BTA has no mod loader; the
+tab explains that Babric is the same game with mods.
+
 ### Settings
 
 Heap, JVM profile, stop timeout, crash restart, start-on-boot, daily restart (with in-game

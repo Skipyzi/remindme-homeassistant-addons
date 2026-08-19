@@ -25,6 +25,7 @@ import (
 	"github.com/skipyzi/remindme-homeassistant-addons/minecraft_server/backend/internal/events"
 	"github.com/skipyzi/remindme-homeassistant-addons/minecraft_server/backend/internal/generation"
 	"github.com/skipyzi/remindme-homeassistant-addons/minecraft_server/backend/internal/mcconfig"
+	"github.com/skipyzi/remindme-homeassistant-addons/minecraft_server/backend/internal/mods"
 	"github.com/skipyzi/remindme-homeassistant-addons/minecraft_server/backend/internal/presets"
 	"github.com/skipyzi/remindme-homeassistant-addons/minecraft_server/backend/internal/stats"
 	"github.com/skipyzi/remindme-homeassistant-addons/minecraft_server/backend/internal/store"
@@ -42,6 +43,7 @@ const requestHeaderValue = "1"
 type Deps struct {
 	// Backend is the active server flavour, so the UI can adapt to what it can do.
 	Backend     adapter.Backend
+	Mods        *mods.Manager
 	Version     string
 	Paths       appcfg.Paths
 	Options     appcfg.Options
@@ -105,6 +107,12 @@ func (s *Server) routes() {
 	m.HandleFunc("POST /api/server/install", s.handleServerInstall)
 	m.HandleFunc("POST /api/server/update", s.handleServerUpdate)
 	m.HandleFunc("GET /api/server/flavours", s.handleFlavours)
+	m.HandleFunc("GET /api/mods", s.handleModsStatus)
+	m.HandleFunc("GET /api/mods/search", s.handleModsSearch)
+	m.HandleFunc("GET /api/mods/updates", s.handleModUpdates)
+	m.HandleFunc("POST /api/mods/install", s.handleModInstall)
+	m.HandleFunc("POST /api/mods/packs/{id}", s.handlePackInstall)
+	m.HandleFunc("DELETE /api/mods/{file}", s.handleModRemove)
 	m.HandleFunc("POST /api/server/flavour", s.handleSwitchFlavour)
 
 	// Configuration.

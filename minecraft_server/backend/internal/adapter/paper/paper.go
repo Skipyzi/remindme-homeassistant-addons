@@ -38,6 +38,8 @@ func (b *Backend) Capabilities() adapter.Capabilities {
 		EULAFile:          true,
 		ServerPortArg:     true,
 		WorldBinding:      adapter.BindContainerArg,
+		ModLoader:         "paper",
+		ModDir:            "plugins",
 		Dimensions:        []string{"world", "world_nether", "world_the_end"},
 	}
 }

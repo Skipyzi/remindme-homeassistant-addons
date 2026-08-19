@@ -10,11 +10,12 @@ import * as presets from './views/presets.js';
 import * as worlds from './views/worlds.js';
 import * as backups from './views/backups.js';
 import * as generation from './views/generation.js';
+import * as mods from './views/mods.js';
 import * as settings from './views/settings.js';
 import * as activity from './views/activity.js';
 
 const views = {
-  dashboard, console: consoleView, config, presets, worlds, backups, generation, settings, log: activity,
+  dashboard, console: consoleView, config, presets, worlds, backups, generation, mods, settings, log: activity,
 };
 
 /** state is the shared snapshot every view reads from. */
@@ -103,6 +104,20 @@ function renderHeader() {
   subtitle.textContent = parts.join(' · ') || 'ready';
 }
 
+// The seam is the coloured strip under the header: its colour is the server
+// state, and it marches while anything is in flight - state at a glance from
+// any tab, without reading a word.
+const SEAM_STATES = ['running', 'starting', 'stopping', 'stopped', 'crashed',
+  'backing_up', 'restoring', 'switching_world', 'updating', 'generating', 'maintenance'];
+
+function renderSeam() {
+  const seam = document.getElementById('state-seam');
+  if (!seam || !state.status) return;
+  const current = state.status.server.state;
+  const cls = SEAM_STATES.includes(current) ? current : 'unknown';
+  seam.className = `state-seam seam-${cls}`;
+}
+
 function renderBanners() {
   const host = document.getElementById('banner-area');
   clear(host);
@@ -116,6 +131,7 @@ export async function refreshStatus() {
   state.status = await api('api/status');
   state.generation = state.status.generation;
   renderHeader();
+  renderSeam();
   renderBanners();
   emit({ type: 'status', data: state.status });
   return state.status;
@@ -173,6 +189,7 @@ function handleEvent(type, data) {
         if (data.server && state.status) {
           state.status.server = data.server;
           renderHeader();
+          renderSeam();
         }
       }
       break;
