@@ -91,6 +91,22 @@ func TestServerIgnoringRangeRestartsDownload(t *testing.T) {
 	}
 }
 
+func TestValidateVariantFileChecksHeaderSizeAndCuratedChecksum(t *testing.T) {
+	body := []byte("GGUFvalidated")
+	path := filepath.Join(t.TempDir(), "model.gguf")
+	if err := os.WriteFile(path, body, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	variant := catalog.Variant{File: "model.gguf", ExpectedBytes: int64(len(body)), SHA256: checksum(body)}
+	if err := ValidateVariantFile(path, variant); err != nil {
+		t.Fatalf("valid model rejected: %v", err)
+	}
+	variant.SHA256 = strings.Repeat("a", 64)
+	if err := ValidateVariantFile(path, variant); err == nil {
+		t.Fatal("checksum mismatch was accepted")
+	}
+}
+
 func TestDownloadRejectsInvalidGGUFAndChecksum(t *testing.T) {
 	for name, testCase := range map[string]struct {
 		body []byte

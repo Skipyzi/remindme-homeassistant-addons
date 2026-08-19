@@ -280,6 +280,25 @@ func (server *Server) install(response http.ResponseWriter, request *http.Reques
 	if !ok {
 		return
 	}
+	if server.isInstalled(variant) {
+		if !server.isVerified(variant) {
+			path := filepath.Join(server.dependencies.ModelDir, variant.File)
+			if err := download.ValidateVariantFile(path, variant); err != nil {
+				writeError(response, http.StatusUnprocessableEntity, APIError{Code: "installed_model_invalid", Message: "The stored model failed verification; remove it before downloading again."})
+				return
+			}
+			if server.dependencies.Verified == nil || server.dependencies.Verified.Record(variant, path) != nil {
+				writeError(response, http.StatusInternalServerError, APIError{Code: "verification_state_write_failed", Message: "Model verification state could not be saved."})
+				return
+			}
+		}
+		snapshot := OperationSnapshot{
+			ID: fmt.Sprintf("verify-%d", server.dependencies.Now().UnixNano()), VariantID: variant.ID,
+			Phase: state.PhaseIdle, BytesDone: variant.ExpectedBytes, BytesTotal: variant.ExpectedBytes,
+		}
+		writeJSON(response, http.StatusOK, map[string]any{"operation": snapshot, "alreadyInstalled": true})
+		return
+	}
 	// Cap accumulated downloads: a new model past the limit is refused until one
 	// is removed. Re-downloading an already-installed model is always allowed.
 	if !server.isInstalled(variant) &&
@@ -716,7 +735,10 @@ func (server *Server) selection(response http.ResponseWriter, request *http.Requ
 		variant.Parameters = max(metadata.Bytes*2, 1)
 		variant.MinimumRAM = metadata.Bytes + 2*1024*1024*1024
 		variant.RecommendedRAM = variant.MinimumRAM + 1024*1024*1024
-		server.updateVariant(variant)
+		if err := server.RegisterCustom(variant); err != nil {
+			writeError(response, http.StatusInternalServerError, APIError{Code: "custom_catalog_write_failed", Message: "Resolved custom model metadata could not be saved."})
+			return modelSelection{}, catalog.Variant{}, hardware.Facts{}, hardware.Assessment{}, false
+		}
 	}
 	facts, err := server.dependencies.Facts()
 	if err != nil {
@@ -740,17 +762,6 @@ func (server *Server) findVariant(id string) (catalog.Variant, bool) {
 	server.catalogMu.RLock()
 	defer server.catalogMu.RUnlock()
 	return server.catalog.Find(id)
-}
-
-func (server *Server) updateVariant(updated catalog.Variant) {
-	server.catalogMu.Lock()
-	defer server.catalogMu.Unlock()
-	for index := range server.catalog.Variants {
-		if server.catalog.Variants[index].ID == updated.ID {
-			server.catalog.Variants[index] = updated
-			return
-		}
-	}
 }
 
 func (server *Server) writeOperationError(response http.ResponseWriter, err error) {

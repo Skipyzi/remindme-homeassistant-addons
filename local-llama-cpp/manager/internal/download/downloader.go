@@ -205,15 +205,9 @@ func (downloader Downloader) Download(ctx context.Context, variant catalog.Varia
 	if written != variant.ExpectedBytes {
 		return Result{}, &Error{Code: CodeSizeMismatch, SafeMessage: "Downloaded model size did not match its catalog metadata.", Retryable: true}
 	}
-	if err := ValidateGGUF(partial, variant.ExpectedBytes); err != nil {
+	if err := ValidateVariantFile(partial, variant); err != nil {
 		_ = os.Remove(partial)
 		return Result{}, err
-	}
-	if variant.SHA256 != "" {
-		if err := verifySHA256(partial, variant.SHA256); err != nil {
-			_ = os.Remove(partial)
-			return Result{}, err
-		}
 	}
 	if err := os.Chmod(partial, 0o600); err != nil {
 		return Result{}, fmt.Errorf("protect model file: %w", err)
@@ -303,6 +297,16 @@ func copyWithProgress(ctx context.Context, destination io.Writer, source io.Read
 			return written, readErr
 		}
 	}
+}
+
+func ValidateVariantFile(path string, variant catalog.Variant) error {
+	if err := ValidateGGUF(path, variant.ExpectedBytes); err != nil {
+		return err
+	}
+	if variant.SHA256 != "" {
+		return verifySHA256(path, variant.SHA256)
+	}
+	return nil
 }
 
 func ValidateGGUF(path string, expectedBytes int64) error {

@@ -2,12 +2,34 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"remindme.local/model-manager/internal/catalog"
+	"remindme.local/model-manager/internal/download"
+	"remindme.local/model-manager/internal/hardware"
+	managerruntime "remindme.local/model-manager/internal/runtime"
+	"remindme.local/model-manager/internal/state"
+	"remindme.local/model-manager/internal/verified"
 )
+
+type bootstrapProcess struct{}
+
+func (*bootstrapProcess) Stop(time.Duration) error { return nil }
+func (*bootstrapProcess) Wait() error              { return nil }
+
+type bootstrapLauncher struct{}
+
+func (*bootstrapLauncher) Start(context.Context, string, []string) (managerruntime.Process, error) {
+	return &bootstrapProcess{}, nil
+}
 
 type fakeConfiguredResolver struct {
 	variant catalog.Variant
@@ -85,6 +107,101 @@ func TestConfiguredModelResolvesCustomExactAndShorthandSelections(t *testing.T) 
 				t.Fatalf("resolver input repo=%q file=%q token=%q", resolver.repo, resolver.file, resolver.token)
 			}
 		})
+	}
+}
+
+func TestRecoverExistingConfiguredModelPersistsVerification(t *testing.T) {
+	modelDir := t.TempDir()
+	body := []byte("GGUFbootstrap")
+	modelPath := filepath.Join(modelDir, "Model-Q4_K_M.gguf")
+	if err := os.WriteFile(modelPath, body, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256(body)
+	variant := catalog.Variant{
+		ID: "bootstrap", Family: "Bootstrap", Repo: "owner/repo", File: filepath.Base(modelPath),
+		Parameters: 1, Quantization: "Q4_K_M", ExpectedBytes: int64(len(body)), SHA256: hex.EncodeToString(sum[:]),
+		MinimumRAM: 1, RecommendedRAM: 1, NativeContext: 4096, RecommendedContext: 4096,
+		Capabilities: []catalog.Capability{catalog.CapabilityChat}, Tier: catalog.TierCompatible, Source: "official",
+		Runtime: catalog.RuntimeProfile{Batch: 128, UBatch: 64, Threads: 1, ReasoningMode: "off"},
+	}
+	optionsPath := filepath.Join(t.TempDir(), "options.json")
+	options, err := json.Marshal(addonOptions{HFRepo: variant.Repo, HFFile: variant.File, ContextSize: 4096, Threads: 1, BatchSize: 128, UBatchSize: 64})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(optionsPath, options, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	stateStore := state.Store{Path: filepath.Join(t.TempDir(), "state.json")}
+	supervisor, err := managerruntime.NewSupervisor(
+		managerruntime.Config{Binary: "/app/llama-server.bin", Target: "http://127.0.0.1:8081", ModelDir: modelDir, ReadinessTimeout: 25 * time.Millisecond, ProbeInterval: time.Millisecond},
+		&bootstrapLauncher{}, stateStore, func(context.Context) error { return nil },
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	verificationStore := &verified.Store{Path: filepath.Join(t.TempDir(), "verified.json"), ModelDir: modelDir}
+	recoverOrBootstrap(
+		context.Background(),
+		paths{options: optionsPath, models: modelDir},
+		catalog.Catalog{Variants: []catalog.Variant{variant}},
+		download.Downloader{ModelDir: modelDir},
+		supervisor,
+		func() (hardware.Facts, error) {
+			return hardware.Facts{TotalRAM: 8 << 30, FreeRAM: 7 << 30, FreeDisk: 20 << 30, CPUCores: 4, Architecture: "arm64"}, nil
+		},
+		filepath.Join(t.TempDir(), "credentials.json"),
+		func(catalog.Variant) error { return nil },
+		verificationStore,
+	)
+	if !verificationStore.Has(variant) {
+		t.Fatal("startup model was not persisted as verified")
+	}
+}
+
+func TestRecoverDownloadedConfiguredModelPersistsVerification(t *testing.T) {
+	body := []byte("GGUFdownloaded")
+	sum := sha256.Sum256(body)
+	variant := catalog.Variant{
+		ID: "downloaded", Family: "Downloaded", Repo: "owner/repo", File: "Model-Q4_K_M.gguf",
+		Parameters: 1, Quantization: "Q4_K_M", ExpectedBytes: int64(len(body)), SHA256: hex.EncodeToString(sum[:]),
+		MinimumRAM: 1, RecommendedRAM: 1, NativeContext: 4096, RecommendedContext: 4096,
+		Capabilities: []catalog.Capability{catalog.CapabilityChat}, Tier: catalog.TierCompatible, Source: "official",
+		Runtime: catalog.RuntimeProfile{Batch: 128, UBatch: 64, Threads: 1, ReasoningMode: "off"},
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, _ *http.Request) {
+		response.Header().Set("Content-Length", "14")
+		_, _ = response.Write(body)
+	}))
+	defer server.Close()
+	modelDir := t.TempDir()
+	optionsPath := filepath.Join(t.TempDir(), "options.json")
+	options, err := json.Marshal(addonOptions{HFRepo: variant.Repo, HFFile: variant.File, ContextSize: 4096, Threads: 1, BatchSize: 128, UBatchSize: 64})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(optionsPath, options, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	supervisor, err := managerruntime.NewSupervisor(
+		managerruntime.Config{Binary: "/app/llama-server.bin", Target: "http://127.0.0.1:8081", ModelDir: modelDir, ReadinessTimeout: 25 * time.Millisecond, ProbeInterval: time.Millisecond},
+		&bootstrapLauncher{}, state.Store{Path: filepath.Join(t.TempDir(), "state.json")}, func(context.Context) error { return nil },
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	verificationStore := &verified.Store{Path: filepath.Join(t.TempDir(), "verified.json"), ModelDir: modelDir}
+	recoverOrBootstrap(
+		context.Background(), paths{options: optionsPath, models: modelDir}, catalog.Catalog{Variants: []catalog.Variant{variant}},
+		download.Downloader{Client: server.Client(), ResolveBase: server.URL, ModelDir: modelDir, MaxBytes: 1024}, supervisor,
+		func() (hardware.Facts, error) {
+			return hardware.Facts{TotalRAM: 8 << 30, FreeRAM: 7 << 30, FreeDisk: 20 << 30, CPUCores: 4, Architecture: "arm64"}, nil
+		},
+		filepath.Join(t.TempDir(), "credentials.json"), func(catalog.Variant) error { return nil }, verificationStore,
+	)
+	if !verificationStore.Has(variant) {
+		t.Fatal("downloaded startup model was not persisted as verified")
 	}
 }
 

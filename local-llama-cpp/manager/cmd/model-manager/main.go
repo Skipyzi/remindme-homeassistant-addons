@@ -34,6 +34,11 @@ type configuredResolver interface {
 	Resolve(context.Context, string, string, string, catalog.Catalog) (catalog.Variant, error)
 }
 
+type bootstrapVerifier interface {
+	Record(catalog.Variant, string) error
+	Has(catalog.Variant) bool
+}
+
 type addonOptions struct {
 	ManagerToken    string `json:"manager_token"`
 	HFRepo          string `json:"hf_repo"`
@@ -129,7 +134,7 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-	go recoverOrBootstrap(ctx, configured, modelCatalog, downloader, supervisor, facts, credentialPath, server.RegisterCustom)
+	go recoverOrBootstrap(ctx, configured, modelCatalog, downloader, supervisor, facts, credentialPath, server.RegisterCustom, verificationStore)
 	httpServer := &http.Server{Addr: ":8080", Handler: server, ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 120 * time.Second}
 	go func() {
 		<-ctx.Done()
@@ -155,7 +160,7 @@ func parseFlags() paths {
 	return result
 }
 
-func recoverOrBootstrap(ctx context.Context, configured paths, modelCatalog catalog.Catalog, downloader download.Downloader, supervisor *managerruntime.Supervisor, facts func() (hardware.Facts, error), credentialPath string, registerCustom func(catalog.Variant) error) {
+func recoverOrBootstrap(ctx context.Context, configured paths, modelCatalog catalog.Catalog, downloader download.Downloader, supervisor *managerruntime.Supervisor, facts func() (hardware.Facts, error), credentialPath string, registerCustom func(catalog.Variant) error, verifier bootstrapVerifier) {
 	options, err := readOptions(configured.options)
 	if err != nil {
 		log.Printf("startup degraded: %v", err)
@@ -176,6 +181,16 @@ func recoverOrBootstrap(ctx context.Context, configured paths, modelCatalog cata
 		}
 	}
 	if _, err := os.Stat(installed.Path); err == nil {
+		if variant != nil && !verifier.Has(*variant) {
+			if err := download.ValidateVariantFile(installed.Path, *variant); err != nil {
+				log.Printf("startup degraded: configured model verification failed: %v", err)
+				return
+			}
+			if err := verifier.Record(*variant, installed.Path); err != nil {
+				log.Printf("startup degraded: verification state write failed")
+				return
+			}
+		}
 		if err := supervisor.Start(ctx, installed, runtimeFromOptions(options)); err != nil {
 			log.Printf("configured model failed: %v", err)
 		}
@@ -211,6 +226,10 @@ func recoverOrBootstrap(ctx context.Context, configured paths, modelCatalog cata
 		return
 	}
 	installed.Path = result.Path
+	if err := verifier.Record(*variant, result.Path); err != nil {
+		log.Printf("startup degraded: verification state write failed")
+		return
+	}
 	if err := supervisor.Start(ctx, installed, runtimeFromOptions(options)); err != nil {
 		log.Printf("startup degraded: %v", err)
 	}
