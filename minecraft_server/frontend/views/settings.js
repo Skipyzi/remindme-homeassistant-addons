@@ -208,11 +208,15 @@ async function loadFlavours(host, ctx) {
           const { confirmAction } = await import('../lib.js');
           const answer = await confirmAction({
             title: `Switch to ${flavour.display_name}?`,
-            body: 'Each flavour keeps its own worlds, configuration and installed server, so nothing is '
-              + 'deleted and switching back restores exactly what is there now. Their world formats are '
-              + 'not interchangeable, so backups stay tied to the flavour they were taken from.',
-            phrase: flavour.name,
+            consequences: [
+              'each flavour keeps its own worlds, configuration and installed server',
+              'nothing is deleted; switching back restores exactly what is there now',
+              'backups stay tied to the flavour they were taken from',
+            ],
+            recoverable: 'Recoverable: switching back is the same operation.',
+            wirePhrase: flavour.name,
             confirmLabel: 'Switch',
+            danger: false,
           });
           if (!answer.confirmed) return;
           await run(ev.target, async () => {
@@ -294,8 +298,13 @@ async function loadVersions(host, ctx) {
           const { confirmAction } = await import('../lib.js');
           const answer = await confirmAction({
             title: `Install ${project} ${versionSelect.value}?`,
-            body: 'The world and configuration are backed up, the server is stopped, the JAR is replaced atomically and the server is started again. If it fails to start, the previous JAR is restored.',
-            phrase: 'UPDATE',
+            consequences: [
+              'the world and configuration are backed up',
+              'the server is stopped and the JAR replaced atomically',
+              'the server is started again and rolled back if it fails',
+            ],
+            recoverable: 'Recoverable: the previous JAR is kept and restored on a failed start.',
+            wirePhrase: 'UPDATE',
             confirmLabel: 'Install',
           });
           if (!answer.confirmed) return;

@@ -283,8 +283,13 @@ func (s *Service) InstallGenerationPlugin(ctx context.Context, actor string) (ge
 // ------------------------------------------------------------------ updates ---
 
 func (s *Service) InstallServerUpdate(ctx context.Context, actor, version string, build int, confirmation string) (updates.Result, error) {
-	if err := confirm("UPDATE", confirmation, "updating the server JAR"); err != nil {
-		return updates.Result{}, err
+	// Replacing an installed server changes what a world runs on, so it is
+	// confirmed. A first install replaces nothing - demanding a ceremony there
+	// only makes the setup flow longer for no protection.
+	if s.deps.Updates.Installed().Present {
+		if err := confirm("UPDATE", confirmation, "updating the server JAR"); err != nil {
+			return updates.Result{}, err
+		}
 	}
 	return s.deps.Updates.Install(ctx, version, build, actor)
 }

@@ -1,5 +1,5 @@
 name: Minecraft Server
-version: "1.3.1"
+version: "1.4.0"
 slug: minecraft_server
 description: Managed Minecraft server (PaperMC or Better than Adventure!) with world, backup and terrain-generation management
 url: https://github.com/skipyzi/remindme-homeassistant-addons/tree/main/minecraft_server

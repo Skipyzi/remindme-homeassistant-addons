@@ -76,13 +76,20 @@ stats API when you set a `stats-token`, which the add-on leaves empty.
 
 ### Dashboard
 
+On a fresh installation the dashboard is a guided setup: pick the server flavour and
+version, accept the EULA and press one button to install and start. While anything is in
+flight the dashboard shows the controller's current step with an elapsed timer, so a long
+download or world generation explains itself.
+
 Live server state, players, TPS and MSPT, JVM heap, system CPU and memory, Raspberry Pi
 temperature and throttling, free disk, world and backup-repository sizes, the current
 terrain-generation job and the last console lines. Values arrive over a Server-Sent Events
 stream; nothing polls.
 
 Controls: start, graceful stop, restart, force stop (confirmed), maintenance mode, and
-"back up now".
+"back up now". Confirmations follow one rule everywhere: recoverable actions state their
+consequences and take one click; only irreversible deletions require typing the name of
+the thing being destroyed.
 
 TPS, MSPT, heap and per-dimension chunk and entity counts come from the bundled `McBridge`
 plugin. Without it, everything else still works and those fields read `—`.

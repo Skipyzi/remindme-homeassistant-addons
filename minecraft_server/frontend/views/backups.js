@@ -169,7 +169,7 @@ function backupTable(records, reload, ctx) {
               h('p', { class: 'muted' }, `${preview.entries.length} entries${preview.truncated ? ' (truncated)' : ''}, ${bytes(preview.total_bytes)} total`),
               h('div', { class: 'console', style: 'height:220px' },
                 preview.entries.map((entry) => h('div', {}, `${entry.type === 'dir' ? 'd' : '-'} ${entry.path}`)))),
-            phrase: null, confirmLabel: 'Close', danger: false,
+            confirmLabel: 'Close', danger: false,
           });
         }),
       }, 'Preview'),
@@ -184,7 +184,13 @@ function backupTable(records, reload, ctx) {
               h('p', {}, `The server is stopped, the current world is backed up, and this snapshot of ${record.world_id} is restored. If the restored world fails to start, the previous world is put back automatically.`),
               h('label', { class: 'inline' }, skipBox,
                 h('span', {}, 'Skip the safety backup (not recommended)'))),
-            phrase: 'RESTORE',
+            consequences: [
+              'Minecraft is stopped',
+              `the current world is backed up, then replaced by this snapshot of ${record.world_id}`,
+              'the server is started again and rolled back automatically if it fails',
+            ],
+            recoverable: 'Recoverable: the pre-restore backup can be restored the same way.',
+            wirePhrase: 'RESTORE',
             confirmLabel: 'Restore',
           });
           if (!answer.confirmed) return;
@@ -218,9 +224,10 @@ function backupTable(records, reload, ctx) {
         class: 'btn btn-small btn-danger',
         onclick: async (ev) => {
           const answer = await confirmAction({
-            title: 'Delete this backup?',
-            body: 'The snapshot is forgotten and unreferenced data is pruned from the repository.',
-            phrase: 'DELETE',
+            title: `Delete backup ${(record.snapshot_id || record.id).slice(0, 8)}?`,
+            body: 'The snapshot is forgotten and its unreferenced data is pruned from the repository.',
+            typeName: (record.snapshot_id || record.id).slice(0, 8),
+            wirePhrase: 'DELETE',
             confirmLabel: 'Delete backup',
           });
           if (!answer.confirmed) return;
