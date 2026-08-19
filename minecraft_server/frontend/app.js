@@ -1,6 +1,8 @@
 // Application shell: shared state, the event stream and view routing.
 
-import { api, url, h, clear, toast, statePill } from './lib.js';
+import {
+  api, url, h, clear, toast, statePill, append,
+} from './lib.js';
 import * as dashboard from './views/dashboard.js';
 import * as consoleView from './views/console.js';
 import * as config from './views/config.js';
@@ -59,16 +61,16 @@ async function show(name) {
     tab.classList.toggle('active', tab.dataset.view === name);
   }
   clear(viewEl);
-  viewEl.append(h('p', { class: 'empty' }, h('span', { class: 'spin' }), ' loading…'));
+  append(viewEl, h('p', { class: 'empty' }, h('span', { class: 'spin' }), ' loading…'));
   try {
     const rendered = await view.render({ state, subscribe, refreshStatus });
     clear(viewEl);
-    viewEl.append(rendered.element ?? rendered);
+    append(viewEl, rendered.element ?? rendered);
     activeCleanup = rendered.cleanup ?? null;
     if (location.hash.slice(1) !== name) history.replaceState(null, '', `#${name}`);
   } catch (err) {
     clear(viewEl);
-    viewEl.append(h('div', { class: 'banner error' }, `Could not load this page: ${err.message}`));
+    append(viewEl, h('div', { class: 'banner error' }, `Could not load this page: ${err.message}`));
   }
 }
 
@@ -106,7 +108,7 @@ function renderBanners() {
   clear(host);
   const warnings = (state.status && state.status.warnings) || [];
   for (const warning of warnings) {
-    host.append(h('div', { class: 'banner warn' }, h('span', {}, warning)));
+    append(host, h('div', { class: 'banner warn' }, h('span', {}, warning)));
   }
 }
 

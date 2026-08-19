@@ -109,7 +109,7 @@ func (o Options) Validate() error {
 		}
 	}
 	switch o.Flavour {
-	case "", DefaultFlavour, "bta":
+	case "", DefaultFlavour, "bta", "babric":
 	default:
 		return fmt.Errorf("unknown server_flavour %q", o.Flavour)
 	}

@@ -47,16 +47,16 @@ The add-on can run more than one kind of server. The flavour is chosen in **Sett
 Server flavour**; switching needs Minecraft stopped and the flavour name typed as
 confirmation.
 
-| | PaperMC | Better than Adventure! |
+| | PaperMC | Better than Adventure! | BTA with Babric |
 | --- | --- | --- |
-| Minecraft | current releases | a fork of Beta 1.7.3 |
-| Source | `fill.papermc.io`, checksum from the build metadata | GitHub releases, checksum from the asset digest |
-| Plugins | Bukkit/Spigot | none |
-| Terrain pre-generation | Chunky | not available |
-| TPS and heap telemetry | from the bridge plugin | from the process only |
-| World format | Anvil, three directories per world set | McRegion, one directory with the other dimensions nested inside it |
-| Listen port | launch argument | written into `server.properties` |
-| Configuration | `server.properties`, `bukkit.yml`, `spigot.yml`, the two Paper files, JSON lists | `server.properties` and text lists (`ops.txt`, `white-list.txt`) |
+| Minecraft | current releases | a fork of Beta 1.7.3 | the same fork, with the Fabric loader |
+| Source | `fill.papermc.io`, checksum from the build metadata | the project's own CDN; no published checksum, so the download's SHA-256 is computed and recorded | Turnip Labs' releases, digest-verified server bundle |
+| Mods / plugins | Bukkit/Spigot plugins | none | Fabric mods in `mods/` |
+| Terrain pre-generation | Chunky | not available | not available |
+| TPS and heap telemetry | from the bridge plugin | from the process only | from the process only |
+| World format | Anvil, three directories per world set | McRegion, one directory | same as BTA, same version only |
+| Listen port | launch argument | written into `server.properties` | written into `server.properties` |
+| Configuration | `server.properties`, Bukkit/Spigot/Paper files, JSON lists | `server.properties` and text lists | `server.properties` and text lists |
 
 Each flavour keeps its own runtime directory, its own worlds, its own installed server
 and its own active world, so **switching moves no data and is reversible**: switching back

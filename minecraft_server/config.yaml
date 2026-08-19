@@ -1,5 +1,5 @@
 name: Minecraft Server
-version: "1.4.0"
+version: "1.5.0"
 slug: minecraft_server
 description: Managed Minecraft server (PaperMC or Better than Adventure!) with world, backup and terrain-generation management
 url: https://github.com/skipyzi/remindme-homeassistant-addons/tree/main/minecraft_server
@@ -48,7 +48,7 @@ options:
   allow_direct_access: false
   log_level: info
 schema:
-  server_flavour: list(paper|bta)
+  server_flavour: list(paper|bta|babric)
   server_port: port
   memory_min_mb: int(512,12288)
   memory_max_mb: int(768,14336)

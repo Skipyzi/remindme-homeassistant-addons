@@ -3,6 +3,30 @@
 All notable changes to this add-on are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are semantic.
 
+## 1.5.0 - 2026-08-19
+
+### Added
+
+- **Better than Adventure! 8.x.** BTA installs now come from the project's official CDN
+  (`downloads.betterthanadventure.net`), whose manifest carries the whole history from
+  1.7.4 to 8.0.1. The GitHub repository the add-on previously installed from stopped
+  publishing at 7.3_04 while the project moved on. The CDN publishes no checksums, so the
+  installer computes the SHA-256 of the download from the first-party host and records it
+  in the audit log; every source that does publish a checksum is still verified against it
+  and refused on mismatch.
+- **A third flavour: BTA with Babric**, the Fabric-loader build of Better than Adventure
+  that supports mods. It installs the official server bundle (launcher, libraries, base
+  mods) from Turnip Labs' releases, digest-verified, with every redirect hop checked.
+  Bundle updates replace only the files the bundle owns - `libraries/` and the launcher -
+  and never touch `server.properties`, the world, or mods you added yourself; `mods/` is
+  merged, not replaced. Rollback keeps the previous bundle zip and re-extracts it.
+
+### Fixed
+
+- Literal "null" text no longer appears in the Settings flavour and version cards (and a
+  null-safe `append` helper now guards every conditional element in the UI, so the class
+  of bug is gone rather than the instance).
+
 ## 1.4.0 - 2026-08-19
 
 ### Changed

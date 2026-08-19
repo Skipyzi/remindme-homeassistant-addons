@@ -270,8 +270,9 @@ func run() error {
 
 	updateManager := updates.NewManager(updates.Deps{
 		Sources: map[string]updates.Source{
-			"paper": updates.NewPaperSource(),
-			"bta":   updates.NewBTASource(),
+			"paper":  updates.NewPaperSource(),
+			"bta":    updates.NewBTASource(),
+			"babric": updates.NewBabricSource(),
 		},
 		Paths:       env.Paths,
 		Settings:    settings,

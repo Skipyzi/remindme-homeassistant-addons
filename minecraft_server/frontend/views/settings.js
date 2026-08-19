@@ -1,7 +1,9 @@
 // Controller settings: memory, JVM flags, schedules, retention, the generation
 // safety policy and server updates.
 
-import { api, h, card, field, run, toast, clear, titleCase, bytes, datetime } from '../lib.js';
+import {
+  api, h, card, field, run, toast, clear, titleCase, bytes, datetime, append,
+} from '../lib.js';
 
 export async function render(ctx) {
   const data = await api('api/settings');
@@ -144,7 +146,7 @@ export async function render(ctx) {
   const flavourCard = card('Server flavour', null, flavourHost);
   loadFlavours(flavourHost, ctx).catch((err) => {
     clear(flavourHost);
-    flavourHost.append(h('p', { class: 'banner error' }, err.message));
+    append(flavourHost, h('p', { class: 'banner error' }, err.message));
   });
 
   const updateHost = h('div', {});
@@ -232,7 +234,7 @@ async function loadFlavours(host, ctx) {
       }, `Switch to ${flavour.display_name}`));
   });
 
-  host.append(
+  append(host, 
     h('div', { class: 'stack' }, cards),
     data.running
       ? h('p', { class: 'banner info' }, 'Stop Minecraft to switch flavours.')
@@ -241,13 +243,13 @@ async function loadFlavours(host, ctx) {
 
 async function loadVersions(host, ctx) {
   clear(host);
-  host.append(h('p', { class: 'muted' }, h('span', { class: 'spin' }), ' asking the PaperMC API…'));
+  append(host, h('p', { class: 'muted' }, h('span', { class: 'spin' }), ' asking the PaperMC API…'));
   let data;
   try {
     data = await api('api/server/versions');
   } catch (err) {
     clear(host);
-    host.append(h('p', { class: 'banner error' }, err.message));
+    append(host, h('p', { class: 'banner error' }, err.message));
     return;
   }
   clear(host);
@@ -271,7 +273,7 @@ async function loadVersions(host, ctx) {
       value: version, selected: version === data.target_version,
     }, version)));
 
-  host.append(
+  append(host, 
     h('p', { class: 'muted' },
       installed.present
         ? `Installed: ${installed.version || 'unknown'} build ${installed.build || '?'} · ${bytes(installed.size_bytes)} · ${datetime(installed.modified_at)}`

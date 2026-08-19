@@ -1,6 +1,8 @@
 // Live console with a command input.
 
-import { api, h, card, run, toast, clear } from '../lib.js';
+import {
+  api, h, card, run, toast, clear, append,
+} from '../lib.js';
 
 export async function render(ctx) {
   const output = h('div', { class: 'console' });
@@ -92,6 +94,6 @@ export async function render(ctx) {
 }
 
 function append(host, line) {
-  host.append(h('div', { class: `l-${line.stream || 'stdout'}` }, line.text));
+  append(host, h('div', { class: `l-${line.stream || 'stdout'}` }, line.text));
   while (host.childElementCount > 2000) host.removeChild(host.firstChild);
 }

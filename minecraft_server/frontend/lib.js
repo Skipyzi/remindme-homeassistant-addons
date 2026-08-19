@@ -60,6 +60,20 @@ export function h(tag, attrs = {}, ...children) {
   return el;
 }
 
+/**
+ * append with h()'s child semantics: null / undefined / false vanish instead of
+ * becoming the literal text "null" (which is what the DOM's own append does).
+ * Every view should use this instead of Element.append when any child is
+ * conditional.
+ */
+export function append(host, ...children) {
+  for (const child of children.flat(4)) {
+    if (child === undefined || child === null || child === false) continue;
+    host.append(child instanceof Node ? child : document.createTextNode(String(child)));
+  }
+  return host;
+}
+
 export function clear(el) {
   while (el.firstChild) el.removeChild(el.firstChild);
   return el;

@@ -1,7 +1,7 @@
 // Worlds: create, switch, clone, import, export, archive, trash and restore.
 
 import {
-  api, url, h, card, table, bytes, datetime, ago, run, toast, confirmAction, clear, titleCase,
+  api, url, h, card, table, bytes, datetime, ago, run, toast, confirmAction, clear, titleCase, append,
 } from '../lib.js';
 
 export async function render(ctx) {
@@ -10,7 +10,7 @@ export async function render(ctx) {
   const reload = async () => {
     const [data, trash] = await Promise.all([api('api/worlds'), api('api/worlds/trash')]);
     clear(host);
-    host.append(
+    append(host, 
       card('Worlds', h('div', { class: 'card-actions' },
         h('button', { class: 'btn btn-small', onclick: () => reload() }, 'Refresh')),
         h('p', { class: 'muted' },
@@ -208,8 +208,8 @@ function importForm(reload) {
           return;
         }
         const form = new FormData();
-        form.append('file', file.files[0]);
-        if (name.value.trim()) form.append('name', name.value.trim());
+        append(form, 'file', file.files[0]);
+        if (name.value.trim()) append(form, 'name', name.value.trim());
         progress.textContent = 'uploading…';
         const button = ev.target;
         button.disabled = true;

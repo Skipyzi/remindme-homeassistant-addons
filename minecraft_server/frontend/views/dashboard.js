@@ -1,7 +1,7 @@
 // Dashboard: live server and system state, plus the primary controls.
 
 import {
-  api, h, card, metric, bar, bytes, duration, ago, num, run, confirmAction, toast, statePill, clear,
+  api, h, card, metric, bar, bytes, duration, ago, num, run, confirmAction, toast, statePill, clear, append,
 } from '../lib.js';
 
 export async function render(ctx) {
@@ -77,7 +77,7 @@ function renderHeader(host, status) {
   if (!status) return;
   clear(host);
   const server = status.server;
-  host.append(h('div', { class: 'row' },
+  append(host, h('div', { class: 'row' },
     statePill(server.state),
     h('span', { class: 'muted' }, controlSummary(status))));
 
@@ -92,11 +92,11 @@ function renderHeader(host, status) {
       const secs = Math.max(0, Math.floor((Date.now() - Date.parse(server.last_note_at)) / 1000));
       if (secs > 2) elapsed = ` · ${duration(secs)} ago`;
     }
-    host.append(h('p', { class: 'muted activity-line' },
+    append(host, h('p', { class: 'muted activity-line' },
       h('span', { class: 'spin' }), ' ',
       server.last_note || describeState(server.state), elapsed));
   } else if (server.state === 'crashed') {
-    host.append(h('p', { class: 'banner error activity-line' },
+    append(host, h('p', { class: 'banner error activity-line' },
       `The server exited unexpectedly (code ${server.last_exit_code}). The console has the last lines before the crash.`));
   }
 }
@@ -146,7 +146,7 @@ function renderControls(host, ctx) {
   const running = ['running', 'starting', 'stopping', 'backing_up', 'restoring', 'generating', 'maintenance']
     .includes(status.server.state);
 
-  host.append(
+  append(host, 
     h('button', {
       class: 'btn btn-primary', disabled: running,
       onclick: (ev) => run(ev.target, async () => {
@@ -221,7 +221,7 @@ function renderMetrics(host, status, stats) {
   const diskFreeGB = (system.disk_free_bytes || 0) / (1024 ** 3);
   const diskTone = diskFreeGB && diskFreeGB < 15 ? 'bad' : diskFreeGB && diskFreeGB < 30 ? 'warn' : '';
 
-  host.append(
+  append(host, 
     metric('Players', fresh ? `${telemetry.online_players}/${telemetry.max_players || '?'}`
       : String((status.server.players || []).length), fresh ? 'from bridge plugin' : 'from console'),
     metric('TPS', fresh ? num(telemetry.tps ? telemetry.tps[0] : 0, 2) : '—',
@@ -256,17 +256,17 @@ function renderPlayers(host, status, stats) {
   const fresh = stats && stats.telemetry_fresh;
   const players = fresh ? (telemetry.players || []) : (status.server.players || []);
   if (!players.length) {
-    host.append(h('p', { class: 'empty' }, 'No players online.'));
+    append(host, h('p', { class: 'empty' }, 'No players online.'));
   } else {
-    host.append(h('ul', { class: 'list-plain' }, players.map((name) => h('li', {}, name))));
+    append(host, h('ul', { class: 'list-plain' }, players.map((name) => h('li', {}, name))));
   }
   if (fresh && telemetry.worlds) {
     const rows = Object.entries(telemetry.worlds).map(([world, data]) => h('li', {},
       h('span', { class: 'tag' }, world), ` ${data.loaded_chunks} chunks · ${data.entities} entities`));
-    if (rows.length) host.append(h('h3', { style: 'margin-top:.6rem' }, 'Loaded per dimension'), h('ul', { class: 'list-plain' }, rows));
+    if (rows.length) append(host, h('h3', { style: 'margin-top:.6rem' }, 'Loaded per dimension'), h('ul', { class: 'list-plain' }, rows));
   }
   if (!fresh) {
-    host.append(h('p', { class: 'muted' },
+    append(host, h('p', { class: 'muted' },
       'Install the management bridge plugin for TPS, MSPT, heap and per-dimension numbers.'));
   }
 }
@@ -275,12 +275,12 @@ function renderGeneration(host, status) {
   clear(host);
   const gen = status.generation || {};
   if (!gen.active || !gen.job) {
-    host.append(h('p', { class: 'empty' }, 'No terrain generation job is running.'),
+    append(host, h('p', { class: 'empty' }, 'No terrain generation job is running.'),
       h('button', { class: 'btn btn-small', onclick: () => location.hash = '#generation' }, 'Plan a run'));
     return;
   }
   const job = gen.job;
-  host.append(
+  append(host, 
     h('div', { class: 'row' },
       statePill(job.status),
       h('span', { class: 'muted' }, `${gen.dimension || job.world_id} · ${job.profile}`)),
@@ -311,7 +311,7 @@ function renderConsole(host, lines) {
 
 export function appendConsoleLine(host, line, bulk = false) {
   if (!line || !line.text) return;
-  host.append(h('div', { class: `l-${line.stream || 'stdout'}` }, line.text));
+  append(host, h('div', { class: `l-${line.stream || 'stdout'}` }, line.text));
   while (host.childElementCount > 200) host.removeChild(host.firstChild);
   if (!bulk) host.scrollTop = host.scrollHeight;
 }
@@ -321,7 +321,7 @@ export function appendConsoleLine(host, line, bulk = false) {
 
 function renderSetup(host, ctx, status) {
   const stepsHost = h('div', { class: 'stack setup' });
-  host.append(h('div', { class: 'stack' },
+  append(host, h('div', { class: 'stack' },
     h('p', {}, h('strong', {}, 'Set up your server'),
       h('span', { class: 'muted' }, ' — pick what to run, accept the EULA, install and start. One place, four steps.')),
     stepsHost));
@@ -346,7 +346,7 @@ function renderSetup(host, ctx, status) {
     state.version = versions.target_version || (versions.versions || [])[0] || '';
     paint();
   }).catch((err) => {
-    stepsHost.append(h('p', { class: 'banner error' }, err.message));
+    append(stepsHost, h('p', { class: 'banner error' }, err.message));
   });
 }
 
@@ -360,11 +360,11 @@ function renderSetupSteps(host, ctx, status, state, paint) {
   // 1. Flavour. Only offered while nothing is installed: afterwards switching
   // is a deliberate act in Settings.
   if (!state.flavours) {
-    host.append(step(1, 'Server flavour', h('p', { class: 'muted' }, h('span', { class: 'spin' }), ' loading…'), false));
+    append(host, step(1, 'Server flavour', h('p', { class: 'muted' }, h('span', { class: 'spin' }), ' loading…'), false));
     return;
   }
   const active = state.flavours.active;
-  host.append(step(1, 'Server flavour',
+  append(host, step(1, 'Server flavour',
     h('div', { class: 'row' },
       (state.flavours.available || []).map((flavour) => h('button', {
         class: `btn btn-small${flavour.name === active ? ' btn-primary' : ''}`,
@@ -396,7 +396,7 @@ function renderSetupSteps(host, ctx, status, state, paint) {
       value: v, selected: v === state.version,
     }, v)));
   versionSelect.addEventListener('change', () => { state.version = versionSelect.value; });
-  host.append(step(2, 'Version',
+  append(host, step(2, 'Version',
     h('div', {},
       versionSelect,
       h('p', { class: 'muted' }, 'Newest stable is preselected. Pre-releases can be enabled in Settings.')),
@@ -406,7 +406,7 @@ function renderSetupSteps(host, ctx, status, state, paint) {
   const eulaBox = h('input', { type: 'checkbox', disabled: state.busy || status.eula_accepted });
   eulaBox.checked = state.eulaChecked;
   eulaBox.addEventListener('change', () => { state.eulaChecked = eulaBox.checked; paint(); });
-  host.append(step(3, 'Minecraft EULA',
+  append(host, step(3, 'Minecraft EULA',
     h('label', { class: 'inline' }, eulaBox,
       h('span', {}, 'I have read and accept the ',
         h('a', { href: 'https://aka.ms/MinecraftEULA', target: '_blank', rel: 'noreferrer' }, 'Minecraft EULA'),
@@ -415,7 +415,7 @@ function renderSetupSteps(host, ctx, status, state, paint) {
 
   // 4. Install and start.
   const ready = state.eulaChecked && (state.version || status.jar.present) && !state.busy;
-  host.append(step(4, 'Install and start',
+  append(host, step(4, 'Install and start',
     h('div', {},
       h('button', {
         class: 'btn btn-primary', disabled: !ready,

@@ -23,8 +23,10 @@ type PaperSource struct {
 
 func NewPaperSource() *PaperSource { return &PaperSource{api: fillAPI} }
 
-func (s *PaperSource) Flavour() string     { return "paper" }
-func (s *PaperSource) ProjectName() string { return "PaperMC" }
+func (s *PaperSource) Flavour() string        { return "paper" }
+func (s *PaperSource) ProjectName() string    { return "PaperMC" }
+func (s *PaperSource) AllowsUnverified() bool { return false }
+func (s *PaperSource) Bundle() bool           { return false }
 
 func (s *PaperSource) DownloadHosts() []string {
 	return []string{"fill-data.papermc.io", "fill.papermc.io"}
