@@ -136,7 +136,26 @@ func TestBundledCatalogIsValid(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(catalog.Variants) != 8 {
-		t.Fatalf("expected 8 curated variants, got %d", len(catalog.Variants))
+	if len(catalog.Variants) != 11 {
+		t.Fatalf("expected 11 curated variants, got %d", len(catalog.Variants))
+	}
+	// Every curated entry must be installable unattended: a pinned repository
+	// file with the checksum the downloader verifies against, and a context the
+	// hardware check can reason about.
+	for _, variant := range catalog.Variants {
+		if len(variant.SHA256) != 64 {
+			t.Errorf("%s has no usable sha256", variant.ID)
+		}
+		if variant.ExpectedBytes <= 0 || variant.Parameters <= 0 {
+			t.Errorf("%s is missing size or parameter count", variant.ID)
+		}
+		if variant.RecommendedContext > variant.NativeContext {
+			t.Errorf("%s recommends more context than the model has", variant.ID)
+		}
+		switch variant.Source {
+		case "official", "reviewed-community":
+		default:
+			t.Errorf("%s has an unknown source %q", variant.ID, variant.Source)
+		}
 	}
 }
