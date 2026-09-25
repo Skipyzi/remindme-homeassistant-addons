@@ -22,6 +22,7 @@ import {
 import { ConversationStore } from "./harness/conversations";
 import { SkillStore, skillPrompt } from "./harness/skills";
 import { DEFAULT_PERSONA, PersonaStore } from "./harness/persona";
+import { ChatModelStore } from "./harness/chatModel";
 import { VaultStore, type VaultNote } from "./harness/vault";
 import {
 	TaskStore,
@@ -127,6 +128,8 @@ void tasks.load();
 /* The editable base system prompt. Persisted so an edit survives restarts; the
  * capability instructions are always appended on top of it. */
 const persona = new PersonaStore();
+const chatModel = new ChatModelStore();
+void chatModel.load();
 void persona.load();
 /*
  * Tracked parcels. TrackingMore registers each number once and polls the carrier
@@ -190,7 +193,9 @@ function summariseNote(note: VaultNote) {
 function resolveEndpoint() {
 	return endpoints.resolve({
 		url: process.env.LOCAL_LLM_URL || "http://homeassistant:8080/v1/chat/completions",
-		model: config.localLlmModel,
+		// The chosen chat model, by name; the add-on routes unnamed or unknown
+		// names to its default, so an empty choice still works.
+		model: chatModel.get() || config.localLlmModel,
 	});
 }
 
@@ -820,7 +825,38 @@ app.get("/api/models", async (_request, response) => {
 	await proxyModelManager(response, "/catalog");
 });
 app.get("/api/models/status", async (_request, response) => {
-	await proxyModelManager(response, "/status");
+	try {
+		const status = await (await getModelManagerClient()).request<ManagerStatus>("/status");
+		const chosen = chatModel.get();
+		response.json({
+			...status,
+			/* What the console chats with, and whether that was a choice. */
+			chatModel: chosen && status.models?.includes(chosen) ? chosen : status.defaultModel || "",
+			chatModelChosen: Boolean(chosen && status.models?.includes(chosen)),
+		});
+	} catch (error) {
+		await forgetRejectedPairing(error);
+		sendModelManagerError(response, error);
+	}
+});
+/*
+ * Choose the console's chat model. This never touches the add-on's default,
+ * so other apps using the add-on keep the model they expect.
+ */
+app.put("/api/models/chat", async (request, response) => {
+	const id = typeof request.body?.id === "string" ? request.body.id.trim() : "";
+	if (id && !/^[a-z0-9._-]{1,120}$/i.test(id))
+		return response.status(400).json(safeModelError("invalid_model", "Model selection is invalid."));
+	if (id) {
+		const status = await managerStatus(true);
+		if (status?.models && !status.models.includes(id))
+			return response
+				.status(409)
+				.json(safeModelError("model_not_served", "That model is not downloaded in the llama.cpp add-on yet."));
+	}
+	await chatModel.set(id);
+	managerStatusCache = undefined;
+	response.json({ chatModel: id });
 });
 app.get("/api/models/inventory", async (_request, response) => {
 	await proxyModelManager(response, "/models/inventory");
@@ -1154,7 +1190,7 @@ app.get("/api/status", async (_request, response) => {
 	 * instead. The manager is only consulted when inference is local.
 	 */
 	const activeEndpoint = endpoints.active();
-	const managed = activeEndpoint ? undefined : await managedActiveModel();
+	const managed = activeEndpoint ? undefined : await managedActiveModel(true);
 	const contextSize =
 		managed?.recommendedContext ||
 		Number(process.env.LOCAL_LLM_CONTEXT_SIZE || 8192);
@@ -1531,28 +1567,77 @@ type ManagedActiveModel = {
 	capabilities: string[];
 };
 
-async function managedActiveModel(): Promise<ManagedActiveModel | undefined> {
+type ManagerStatus = {
+	activeModel?: ManagedActiveModel;
+	/* Every model the add-on's router serves, and the one unnamed requests get. */
+	models?: string[];
+	defaultModel?: string;
+};
+
+let managerStatusCache: { at: number; value?: ManagerStatus } | undefined;
+async function managerStatus(fresh = false): Promise<ManagerStatus | undefined> {
 	if (process.env.MODEL_MANAGER_ENABLED !== "true") return undefined;
+	// A chat turn may reuse a status a few seconds old; the status route and a
+	// model choice always ask fresh.
+	if (!fresh && managerStatusCache && Date.now() - managerStatusCache.at < 3_000)
+		return managerStatusCache.value;
+	let value: ManagerStatus | undefined;
 	try {
-		const status = await (await getModelManagerClient()).request<{
-			activeModel?: ManagedActiveModel;
-		}>("/status", {
+		value = await (await getModelManagerClient()).request<ManagerStatus>("/status", {
 			signal: AbortSignal.timeout(2_000),
 		});
-		return status.activeModel;
 	} catch {
-		return undefined;
+		value = undefined;
 	}
+	managerStatusCache = { at: Date.now(), value };
+	return value;
+}
+
+let catalogCache: { at: number; variants: Array<{ model: ManagedActiveModel }> } | undefined;
+async function catalogModels(): Promise<Array<{ model: ManagedActiveModel }>> {
+	if (catalogCache && Date.now() - catalogCache.at < 60_000) return catalogCache.variants;
+	try {
+		const catalog = await (await getModelManagerClient()).request<{
+			variants?: Array<{ model: ManagedActiveModel }>;
+		}>("/catalog", { signal: AbortSignal.timeout(4_000) });
+		catalogCache = { at: Date.now(), variants: catalog.variants || [] };
+	} catch {
+		catalogCache = { at: Date.now(), variants: catalogCache?.variants || [] };
+	}
+	return catalogCache.variants;
 }
 
 /**
- * Identify the model actually serving requests.
+ * The model the console actually chats with: the chosen chat model when the
+ * add-on serves it, otherwise the add-on's default (which is what an unnamed
+ * or unknown name is routed to).
+ */
+async function managedActiveModel(fresh = false): Promise<ManagedActiveModel | undefined> {
+	const status = await managerStatus(fresh);
+	if (!status) return undefined;
+	const chosen = chatModel.get();
+	const serving = chosen && status.models?.includes(chosen) ? chosen : status.defaultModel;
+	// The default's metadata is what the manager reports as active.
+	if (!serving || serving === status.defaultModel) return status.activeModel;
+	const variant = (await catalogModels()).find((entry) => entry.model.id === serving);
+	return (
+		variant?.model || {
+			id: serving,
+			family: serving,
+			file: "",
+			quantization: "",
+			recommendedContext: Number(process.env.LOCAL_LLM_CONTEXT_SIZE || 8192),
+			capabilities: [],
+		}
+	);
+}
+
+/**
+ * Identify the model actually serving the console's requests.
  *
- * The model manager is optional — when it is disabled, or reachable but not
- * managing this endpoint, inference still runs against LOCAL_LLM_URL with
- * LOCAL_LLM_MODEL. Reporting "runtime unavailable" in that case was wrong:
- * it described the manager, not the runtime. Fall back to the configured
- * model, which is what the requests are actually sent with.
+ * The model manager is optional — when it is disabled, inference still runs
+ * against LOCAL_LLM_URL with LOCAL_LLM_MODEL, so fall back to the configured
+ * model, which is what the requests are sent with.
  */
 async function activeModelMetadata(): Promise<ActiveModelMetadata> {
 	const active = await managedActiveModel();

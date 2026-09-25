@@ -34,9 +34,9 @@ window.RemindMeModelCookbook = {
 			hfToken: "",
 			customModel: { repo: "", file: "" },
 			modelEvents: null,
-			/* Set while a "download & use" is waiting for the download to finish
-			 * before it hot-swaps to the model. */
-			pendingActivateId: "",
+			/* Set while a "download & use" waits for its download to finish
+			 * before the console starts chatting with it. */
+			pendingChatId: "",
 		};
 	},
 
@@ -132,14 +132,14 @@ window.RemindMeModelCookbook = {
 				this.loadCatalog(vm).catch(() => {});
 				this.loadInventory(vm).catch(() => {});
 			}
-			// A "download & use" whose download just finished now hot-swaps.
-			if (phase === "idle" && vm.pendingActivateId) {
-				const target = vm.pendingActivateId;
-				vm.pendingActivateId = "";
-				void this.activate(vm, target);
+			// A "download & use" whose download just finished becomes the chat model.
+			if (phase === "idle" && vm.pendingChatId) {
+				const target = vm.pendingChatId;
+				vm.pendingChatId = "";
+				void this.setChat(vm, target);
 			}
-			// A failed or rolled-back download must not then try to activate.
-			if (["failed", "degraded"].includes(phase)) vm.pendingActivateId = "";
+			// A failed download must not then be chosen.
+			if (["failed", "degraded"].includes(phase)) vm.pendingChatId = "";
 			// A completed switch: refresh the header badge to the new model.
 			if (phase === "active") vm.refreshStatus?.();
 		});
@@ -175,25 +175,59 @@ window.RemindMeModelCookbook = {
 		return this.mutate(vm, "./api/models/install", "POST", { id });
 	},
 
-	/* Hot-swap the running model to an already-downloaded, verified one. */
+	/*
+	 * Make a model the add-on's default: what every request that names no
+	 * model gets, including other apps. The add-on serves all downloaded
+	 * models at once, so this is a switch of pointer, not a restart.
+	 */
 	activate(vm, id) {
 		return this.mutate(vm, "./api/models/activate", "POST", { id });
 	},
 
 	/*
-	 * One click to "use" a model: switch to it if it's verified, otherwise
-	 * download and verify first, then activate when the download completes
-	 * (see the pendingActivateId handling in connect()).
+	 * Chat with a model. Only the console's own requests change; the add-on's
+	 * default, and so every other app, is untouched. Right after a download the
+	 * add-on takes a moment to start serving the new file, so a "not served"
+	 * answer is retried briefly.
+	 */
+	async setChat(vm, id) {
+		vm.modelError = "";
+		for (let attempt = 0; attempt < 10; attempt += 1) {
+			const response = await fetch("./api/models/chat", {
+				method: "PUT",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ id }),
+			});
+			if (response.status !== 409 || attempt === 9) {
+				try {
+					await readModelResponse(response);
+				} catch (error) {
+					vm.modelError = error.message || "Choosing the chat model failed.";
+					return null;
+				}
+				break;
+			}
+			await new Promise((resolve) => setTimeout(resolve, 2000));
+		}
+		await this.loadStatus(vm);
+		vm.refreshStatus?.();
+		return { chatModel: id };
+	},
+
+	/*
+	 * One click to "use" a model: chat with it if it is downloaded, otherwise
+	 * download and verify first, then choose it when the download completes
+	 * (see the pendingChatId handling in connect()).
 	 */
 	async use(vm, id) {
 		const variant = vm.modelCatalog.find((item) => item.model.id === id);
-		if (variant?.active) return null;
-		if (variant?.verified) return this.activate(vm, id);
-		vm.pendingActivateId = id;
+		if (vm.modelStatus?.chatModel === id) return null;
+		if (variant?.verified) return this.setChat(vm, id);
+		vm.pendingChatId = id;
 		const result = await this.download(vm, id);
 		if (result?.alreadyInstalled) {
-			vm.pendingActivateId = "";
-			return this.activate(vm, id);
+			vm.pendingChatId = "";
+			return this.setChat(vm, id);
 		}
 		return result;
 	},

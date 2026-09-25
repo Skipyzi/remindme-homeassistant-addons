@@ -1938,9 +1938,16 @@ function harness() {
 		async downloadModel(id) {
 			return window.RemindMeModelCookbook.download(this, id);
 		},
-		/** One click: switch to a model, downloading and verifying first if needed. */
+		/** One click: chat with a model, downloading and verifying first if needed. */
 		async useModel(id) {
 			return window.RemindMeModelCookbook.use(this, id);
+		},
+		/** Make a model the add-on's default — what other apps get. */
+		async makeDefaultModel(id) {
+			return window.RemindMeModelCookbook.activate(this, id);
+		},
+		isChatModel(variant) {
+			return this.modelStatus?.chatModel === variant?.model?.id;
 		},
 		async copyModelYaml(id) {
 			return window.RemindMeModelCookbook.copyYaml(this, id);

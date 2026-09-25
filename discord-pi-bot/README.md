@@ -33,7 +33,7 @@ Results at release (same prompts; decision latency measured on a desktop CPU, so
 | Qwen3 1.7B Q8 | 91% | 98% | — |
 | Qwen3 4B Q4 | 96% | 100% | — |
 
-SpeakoFlow-Mini is a dictation-cleanup model: it routes well under the grammar, but it rewrites your message instead of answering it. If the llama.cpp add-on is serving a cleanup model for a dictation app, leave it there and give chat its own model: add an endpoint under **Models → Inference endpoint** that points at a chat model (a Qwen3 build on another machine, for example). Routing decisions and answers both go to the active endpoint.
+SpeakoFlow-Mini is a dictation-cleanup model: it routes well under the grammar, but it rewrites your message instead of answering it. If the llama.cpp add-on is also serving a cleanup model to a dictation app, keep it as the add-on's default, and pick a separate **chat model** in **Models**. Local llama.cpp 2.0 serves every downloaded model from one endpoint. The console names its chat model on every request, while apps that name no model keep getting the default. **Use this model** and **Download & use** choose the chat model only; **Make default** changes what other apps get.
 
 ## Console UI (3.0)
 

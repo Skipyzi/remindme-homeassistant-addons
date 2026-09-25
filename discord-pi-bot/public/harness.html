@@ -1713,11 +1713,15 @@
               x-show="modelError"
               x-text="modelError"
             ></p>
+            <p class="model-roles" x-show="modelPairingConfigured && modelStatus?.defaultModel">
+              Chat uses <b x-text="modelStatus?.chatModel"></b>. Apps that call the
+              add-on without naming a model get <b x-text="modelStatus?.defaultModel"></b>.
+            </p>
             <div class="model-grid" x-show="modelPairingConfigured">
               <template x-for="variant in modelCatalog" :key="variant.model.id"
                 ><article
                   class="model-card"
-                  :class="{active:variant.active,unsafe:!variant.assessment?.safe}"
+                  :class="{active:variant.active,chat:isChatModel(variant),unsafe:!variant.assessment?.safe}"
                 >
                   <header>
                     <div>
@@ -1728,7 +1732,7 @@
                     </div>
                     <em
                       :class="variant.model.tier"
-                      x-text="variant.active ? 'Running' : variant.verified ? 'Verified' : modelOperation?.variantId===variant.model.id ? 'Downloading' : 'Available'"
+                      x-text="isChatModel(variant) && variant.active ? 'Chat · default' : isChatModel(variant) ? 'Chat' : variant.active ? 'Default' : variant.verified ? 'Downloaded' : modelOperation?.variantId===variant.model.id ? 'Downloading' : 'Available'"
                     ></em>
                   </header>
                   <div class="model-capabilities">
@@ -1769,7 +1773,7 @@
                     x-text="variant.assessment?.warnings?.[0]"
                   ></p>
                   <div class="model-actions">
-                    <!-- Not downloaded yet: download, verify, and switch in one go. -->
+                    <!-- Not downloaded yet: download, verify, and chat with it. -->
                     <button
                       class="action"
                       x-show="!variant.verified && !variant.active"
@@ -1777,14 +1781,24 @@
                       @click="useModel(variant.model.id)"
                       x-text="variant.installed ? 'Verify & use' : 'Download & use'"
                     ></button>
-                    <!-- Downloaded and verified: hot-swap to it, no add-on restart. -->
+                    <!-- Downloaded: chat with it at once. The add-on keeps serving
+                         its default to everything else. -->
                     <button
                       class="action"
-                      x-show="variant.verified && !variant.active"
+                      x-show="variant.verified && !isChatModel(variant)"
                       :disabled="modelOperationBusy"
                       @click="useModel(variant.model.id)"
                     >
                       Use this model
+                    </button>
+                    <!-- The default is what other apps get; changing it is its own act. -->
+                    <button
+                      class="ghost"
+                      x-show="variant.verified && !variant.active"
+                      :disabled="modelOperationBusy"
+                      @click="makeDefaultModel(variant.model.id)"
+                    >
+                      Make default
                     </button>
                     <!-- The native-config YAML path stays as an advanced fallback. -->
                     <button
@@ -1796,7 +1810,7 @@
                     </button>
                     <button
                       class="ghost"
-                      x-show="variant.installed && !variant.active"
+                      x-show="variant.installed && !variant.active && !isChatModel(variant)"
                       :disabled="modelOperationBusy"
                       @click="removeModel(variant.model.id)"
                     >
@@ -1881,10 +1895,10 @@
             <section class="model-yaml" x-show="modelPairingConfigured">
               <h3>Native Configuration YAML</h3>
               <p>
-                <b>Use this model</b> switches the running model in place — no
-                restart. This YAML path is a fallback: copy the complete YAML,
-                open the llama.cpp add-on <b>Configuration</b> editor, replace
-                the options, save, and restart the llama.cpp add-on.
+                The YAML sets the default the add-on starts with after a
+                restart. Copy it, open the llama.cpp add-on
+                <b>Configuration</b> editor, replace the options, save, and
+                restart the llama.cpp add-on.
               </p>
               <p class="micro" aria-live="polite" x-text="modelYamlMessage"></p>
               <pre x-show="modelYaml" x-text="modelYaml"></pre>
