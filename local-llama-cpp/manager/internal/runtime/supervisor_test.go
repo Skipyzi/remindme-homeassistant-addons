@@ -35,29 +35,32 @@ func (process *fakeProcess) Exited() bool {
 	return process.exited
 }
 
+// fakeLauncher records router starts and the preset each one was given.
 type fakeLauncher struct {
-	mu       sync.Mutex
-	active   string
-	starts   map[string]int
-	failures map[string]error
+	mu      sync.Mutex
+	starts  int
+	presets []string
+	fail    error
+	last    *fakeProcess
 }
 
 func (launcher *fakeLauncher) Start(_ context.Context, _ string, args []string) (Process, error) {
-	model := argument(args, "--model")
 	launcher.mu.Lock()
 	defer launcher.mu.Unlock()
-	launcher.starts[filepath.Base(model)]++
-	if err := launcher.failures[filepath.Base(model)]; err != nil {
-		return nil, err
+	if launcher.fail != nil {
+		return nil, launcher.fail
 	}
-	launcher.active = filepath.Base(model)
-	return &fakeProcess{}, nil
+	launcher.starts++
+	preset, _ := os.ReadFile(argument(args, "--models-preset"))
+	launcher.presets = append(launcher.presets, string(preset))
+	launcher.last = &fakeProcess{}
+	return launcher.last, nil
 }
 
-func (launcher *fakeLauncher) activeModel() string {
+func (launcher *fakeLauncher) startCount() int {
 	launcher.mu.Lock()
 	defer launcher.mu.Unlock()
-	return launcher.active
+	return launcher.starts
 }
 
 func argument(args []string, name string) string {
@@ -69,134 +72,248 @@ func argument(args []string, name string) string {
 	return ""
 }
 
-func newTestSupervisor(t *testing.T, probeFailures map[string]error) (*Supervisor, *fakeLauncher, state.Store) {
-	t.Helper()
-	launcher := &fakeLauncher{starts: map[string]int{}, failures: map[string]error{}}
-	store := state.Store{Path: filepath.Join(t.TempDir(), "state.json")}
-	supervisor, err := NewSupervisor(Config{
-		Binary: "/app/llama-server.bin", Target: "http://127.0.0.1:8081", ModelDir: t.TempDir(),
-		ReadinessTimeout: 10 * time.Millisecond, ProbeInterval: time.Millisecond,
-	}, launcher, store, func(context.Context) error {
-		return probeFailures[launcher.activeModel()]
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	return supervisor, launcher, store
+// fakeProbe answers per model: an error from failures, otherwise success.
+type fakeProbe struct {
+	mu       sync.Mutex
+	failures map[string]error
+	probed   []string
 }
 
-func TestStartRetriesUntilLlamaServerIsReady(t *testing.T) {
-	attempts := 0
-	launcher := &fakeLauncher{starts: map[string]int{}, failures: map[string]error{}}
-	supervisor, err := NewSupervisor(Config{
-		Binary: "/app/llama-server.bin", Target: "http://127.0.0.1:8081", ModelDir: t.TempDir(),
-		ReadinessTimeout: 100 * time.Millisecond, ProbeInterval: time.Millisecond,
-	}, launcher, state.Store{Path: filepath.Join(t.TempDir(), "state.json")}, func(context.Context) error {
-		attempts++
-		if attempts < 3 {
-			return errors.New("connection refused")
+func (probe *fakeProbe) check(_ context.Context, model string) error {
+	probe.mu.Lock()
+	defer probe.mu.Unlock()
+	probe.probed = append(probe.probed, model)
+	return probe.failures[model]
+}
+
+type fixture struct {
+	supervisor *Supervisor
+	launcher   *fakeLauncher
+	probe      *fakeProbe
+	store      state.Store
+	dir        string
+}
+
+func newFixture(t *testing.T, files ...string) fixture {
+	t.Helper()
+	dir := t.TempDir()
+	for _, file := range files {
+		if err := os.WriteFile(filepath.Join(dir, file), []byte("GGUF"), 0o600); err != nil {
+			t.Fatal(err)
 		}
-		return nil
-	})
+	}
+	launcher := &fakeLauncher{}
+	probe := &fakeProbe{failures: map[string]error{}}
+	store := state.Store{Path: filepath.Join(t.TempDir(), "state.json")}
+	supervisor, err := NewSupervisor(Config{
+		Binary: "/app/llama-server.bin", Target: "http://127.0.0.1:8081", ModelDir: dir,
+		PresetPath: filepath.Join(t.TempDir(), "router-models.ini"), MaxModels: 2,
+		ReadinessTimeout: 20 * time.Millisecond, ProbeInterval: time.Millisecond,
+		Identify: func(file string) string {
+			if file == "Qwen3-4B-Q4_K_M.gguf" {
+				return "qwen3-4b-q4"
+			}
+			return ""
+		},
+	}, launcher, store, probe.check)
 	if err != nil {
 		t.Fatal(err)
 	}
-	model := state.Installed{ID: "delayed", Path: filepath.Join(t.TempDir(), "delayed.gguf")}
-	if err := supervisor.Start(context.Background(), model, hardware.Runtime{Context: 4096, Batch: 128, UBatch: 64, Threads: 4}); err != nil {
+	return fixture{supervisor: supervisor, launcher: launcher, probe: probe, store: store, dir: dir}
+}
+
+func (current fixture) installed(id, file string) state.Installed {
+	return state.Installed{ID: id, File: file, Path: filepath.Join(current.dir, file)}
+}
+
+var testRuntime = hardware.Runtime{Context: 8192, Batch: 256, UBatch: 128, Threads: 4, Parallel: 2, KVUnified: true}
+
+func TestStartServesEveryDownloadedModelWithTheConfiguredDefault(t *testing.T) {
+	current := newFixture(t, "SpeakoFlow-Mini-0.8B-Q4_K_M.gguf", "Qwen3-4B-Q4_K_M.gguf", "half.gguf.partial", "vision-mmproj.gguf")
+	if err := current.supervisor.Start(context.Background(), current.installed("local-model", "SpeakoFlow-Mini-0.8B-Q4_K_M.gguf"), testRuntime); err != nil {
+		t.Fatal(err)
+	}
+	if current.launcher.startCount() != 1 {
+		t.Fatalf("router should start once, started %d times", current.launcher.startCount())
+	}
+	preset := current.launcher.presets[0]
+	for _, expected := range []string{"[qwen3-4b-q4]", "[speakoflow-mini-0.8b-q4_k_m]", "alias = Qwen3-4B-Q4_K_M"} {
+		if !strings.Contains(preset, expected) {
+			t.Fatalf("preset missing %q:\n%s", expected, preset)
+		}
+	}
+	if strings.Contains(preset, "partial") || strings.Contains(preset, "mmproj") {
+		t.Fatalf("preset must skip partial downloads and projectors:\n%s", preset)
+	}
+	if got := current.supervisor.ResolveModel(""); got != "speakoflow-mini-0.8b-q4_k_m" {
+		t.Fatalf("default model = %q", got)
+	}
+	if got := current.probe.probed[len(current.probe.probed)-1]; got != "speakoflow-mini-0.8b-q4_k_m" {
+		t.Fatalf("probed %q, want the default model", got)
+	}
+}
+
+func TestUnknownAndMissingNamesResolveToTheDefault(t *testing.T) {
+	current := newFixture(t, "SpeakoFlow-Mini-0.8B-Q4_K_M.gguf", "Qwen3-4B-Q4_K_M.gguf")
+	if err := current.supervisor.Start(context.Background(), current.installed("local-model", "SpeakoFlow-Mini-0.8B-Q4_K_M.gguf"), testRuntime); err != nil {
+		t.Fatal(err)
+	}
+	cases := map[string]string{
+		"":                     "speakoflow-mini-0.8b-q4_k_m",
+		"gpt-4o":               "speakoflow-mini-0.8b-q4_k_m",
+		"qwen3-1.7b":           "speakoflow-mini-0.8b-q4_k_m",
+		"qwen3-4b-q4":          "qwen3-4b-q4",
+		"Qwen3-4B-Q4_K_M":      "qwen3-4b-q4",
+		"QWEN3-4B-Q4_K_M.gguf": "qwen3-4b-q4",
+	}
+	for requested, want := range cases {
+		if got := current.supervisor.ResolveModel(requested); got != want {
+			t.Fatalf("ResolveModel(%q) = %q, want %q", requested, got, want)
+		}
+	}
+}
+
+func TestStartRetriesUntilTheDefaultAnswers(t *testing.T) {
+	current := newFixture(t, "a.gguf")
+	attempts := 0
+	current.supervisor.probe = func(context.Context, string) error {
+		attempts++
+		if attempts < 3 {
+			return errors.New("loading")
+		}
+		return nil
+	}
+	if err := current.supervisor.Start(context.Background(), current.installed("a", "a.gguf"), testRuntime); err != nil {
 		t.Fatal(err)
 	}
 	if attempts != 3 {
-		t.Fatalf("expected three readiness attempts, got %d", attempts)
+		t.Fatalf("probe attempts = %d", attempts)
 	}
 }
 
 func TestReadinessTimeoutReturnsLastProbeError(t *testing.T) {
-	supervisor, err := NewSupervisor(Config{
-		Binary: "/app/llama-server.bin", Target: "http://127.0.0.1:8081", ModelDir: t.TempDir(),
-		ReadinessTimeout: 5 * time.Millisecond, ProbeInterval: time.Millisecond,
-	}, &fakeLauncher{starts: map[string]int{}, failures: map[string]error{}}, state.Store{Path: filepath.Join(t.TempDir(), "state.json")}, func(context.Context) error {
-		return errors.New("connection refused")
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	err = supervisor.probeWithTimeout(context.Background(), &fakeProcess{})
-	if err == nil || !strings.Contains(err.Error(), "readiness timeout") || !strings.Contains(err.Error(), "connection refused") {
-		t.Fatalf("unexpected timeout error: %v", err)
+	current := newFixture(t, "a.gguf")
+	current.probe.failures["a"] = errors.New("still loading")
+	err := current.supervisor.Start(context.Background(), current.installed("a", "a.gguf"), testRuntime)
+	if err == nil || !strings.Contains(err.Error(), "still loading") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
-func TestReadinessStopsWhenProcessExited(t *testing.T) {
-	supervisor, err := NewSupervisor(Config{
-		Binary: "/app/llama-server.bin", Target: "http://127.0.0.1:8081", ModelDir: t.TempDir(),
-		ReadinessTimeout: time.Second, ProbeInterval: time.Millisecond,
-	}, &fakeLauncher{starts: map[string]int{}, failures: map[string]error{}}, state.Store{Path: filepath.Join(t.TempDir(), "state.json")}, func(context.Context) error {
+func TestReadinessStopsWhenRouterExited(t *testing.T) {
+	current := newFixture(t, "a.gguf")
+	current.supervisor.probe = func(context.Context, string) error {
+		current.launcher.last.mu.Lock()
+		current.launcher.last.exited = true
+		current.launcher.last.mu.Unlock()
 		return errors.New("connection refused")
-	})
-	if err != nil {
-		t.Fatal(err)
 	}
-	err = supervisor.probeWithTimeout(context.Background(), &fakeProcess{exited: true})
-	if err == nil || !strings.Contains(err.Error(), "llama server exited before readiness") {
-		t.Fatalf("unexpected process-exit error: %v", err)
+	err := current.supervisor.Start(context.Background(), current.installed("a", "a.gguf"), testRuntime)
+	if err == nil || !strings.Contains(err.Error(), "exited before readiness") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
-func TestActivateRestoresFallbackWhenCandidateProbeFails(t *testing.T) {
-	supervisor, launcher, store := newTestSupervisor(t, map[string]error{"broken.gguf": errors.New("unhealthy")})
-	stable := state.Installed{ID: "stable", Path: filepath.Join(t.TempDir(), "stable.gguf"), Healthy: true}
-	candidate := state.Installed{ID: "broken", Path: filepath.Join(t.TempDir(), "broken.gguf")}
-	if err := supervisor.Start(context.Background(), stable, hardware.Runtime{Context: 4096, Batch: 128, UBatch: 64, Threads: 4}); err != nil {
+func TestActivateSwitchesTheDefaultWithoutRestartingOrDeleting(t *testing.T) {
+	current := newFixture(t, "SpeakoFlow-Mini-0.8B-Q4_K_M.gguf", "Qwen3-4B-Q4_K_M.gguf")
+	ctx := context.Background()
+	if err := current.supervisor.Start(ctx, current.installed("local-model", "SpeakoFlow-Mini-0.8B-Q4_K_M.gguf"), testRuntime); err != nil {
 		t.Fatal(err)
 	}
-	if err := supervisor.Activate(context.Background(), candidate, hardware.Runtime{Context: 4096, Batch: 128, UBatch: 64, Threads: 4}); err == nil {
-		t.Fatal("expected probe failure")
+	if err := current.supervisor.Activate(ctx, current.installed("qwen3-4b-q4", "Qwen3-4B-Q4_K_M.gguf"), testRuntime); err != nil {
+		t.Fatal(err)
 	}
-	if supervisor.ActiveID() != "stable" || launcher.starts["stable.gguf"] != 2 {
-		t.Fatalf("rollback failed: active=%q starts=%#v", supervisor.ActiveID(), launcher.starts)
+	if current.launcher.startCount() != 1 {
+		t.Fatalf("switching the default must not restart the router (starts=%d)", current.launcher.startCount())
 	}
-	persisted, err := store.Load()
-	if err != nil || persisted.Active == nil || persisted.Active.ID != "stable" || persisted.LastError == nil || persisted.LastError.Code != CodeActivationRolledBack {
+	if got := current.supervisor.ResolveModel(""); got != "qwen3-4b-q4" {
+		t.Fatalf("default after switch = %q", got)
+	}
+	if got := current.supervisor.ResolveModel("SpeakoFlow-Mini-0.8B-Q4_K_M"); got != "speakoflow-mini-0.8b-q4_k_m" {
+		t.Fatalf("the previous model must stay reachable by name, got %q", got)
+	}
+	for _, file := range []string{"SpeakoFlow-Mini-0.8B-Q4_K_M.gguf", "Qwen3-4B-Q4_K_M.gguf"} {
+		if _, err := os.Stat(filepath.Join(current.dir, file)); err != nil {
+			t.Fatalf("%s was removed by a switch: %v", file, err)
+		}
+	}
+	persisted, err := current.store.Load()
+	if err != nil || persisted.Active == nil || persisted.Active.ID != "qwen3-4b-q4" || persisted.Fallback == nil || persisted.Fallback.ID != "local-model" {
 		t.Fatalf("unexpected persisted state: %#v err=%v", persisted, err)
 	}
 }
 
-func TestActivatePromotesCandidateAndRetainsOldModel(t *testing.T) {
-	supervisor, _, store := newTestSupervisor(t, map[string]error{})
-	stable := state.Installed{ID: "stable", Path: filepath.Join(t.TempDir(), "stable.gguf"), Healthy: true}
-	candidate := state.Installed{ID: "candidate", Path: filepath.Join(t.TempDir(), "candidate.gguf")}
-	runtime := hardware.Runtime{Context: 8192, Batch: 256, UBatch: 128, Threads: 4, ReasoningFormat: "deepseek", ReasoningMode: "auto"}
-	if err := supervisor.Start(context.Background(), stable, runtime); err != nil {
+func TestActivatingANewDownloadReloadsTheRouterOnce(t *testing.T) {
+	current := newFixture(t, "a.gguf")
+	ctx := context.Background()
+	if err := current.supervisor.Start(ctx, current.installed("a", "a.gguf"), testRuntime); err != nil {
 		t.Fatal(err)
 	}
-	if err := supervisor.Activate(context.Background(), candidate, runtime); err != nil {
+	if err := os.WriteFile(filepath.Join(current.dir, "b.gguf"), []byte("GGUF"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	persisted, err := store.Load()
-	if err != nil || persisted.Active == nil || persisted.Active.ID != "candidate" || persisted.Fallback == nil || persisted.Fallback.ID != "stable" {
-		t.Fatalf("unexpected persisted state: %#v err=%v", persisted, err)
+	if err := current.supervisor.Activate(ctx, current.installed("b", "b.gguf"), testRuntime); err != nil {
+		t.Fatal(err)
+	}
+	if current.launcher.startCount() != 2 {
+		t.Fatalf("expected one reload, starts=%d", current.launcher.startCount())
+	}
+	if !strings.Contains(current.launcher.presets[1], "[b]") {
+		t.Fatalf("reloaded preset lacks the new model:\n%s", current.launcher.presets[1])
+	}
+	if got := current.supervisor.ResolveModel(""); got != "b" {
+		t.Fatalf("default = %q", got)
 	}
 }
 
-func TestLlamaArgsUseValidatedValuesWithoutShell(t *testing.T) {
-	args := llamaArgs(state.Installed{Path: "/data/models/model.gguf"}, hardware.Runtime{
+func TestFailedSwitchKeepsThePreviousDefault(t *testing.T) {
+	current := newFixture(t, "a.gguf", "b.gguf")
+	ctx := context.Background()
+	if err := current.supervisor.Start(ctx, current.installed("a", "a.gguf"), testRuntime); err != nil {
+		t.Fatal(err)
+	}
+	current.probe.failures["b"] = errors.New("out of memory")
+	err := current.supervisor.Activate(ctx, current.installed("b", "b.gguf"), testRuntime)
+	if err == nil || !strings.Contains(err.Error(), "previous model restored") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got := current.supervisor.ResolveModel(""); got != "a" {
+		t.Fatalf("default after failed switch = %q", got)
+	}
+	if current.launcher.startCount() != 1 {
+		t.Fatalf("a failed switch on a live router must not restart it (starts=%d)", current.launcher.startCount())
+	}
+	persisted := current.supervisor.State()
+	if persisted.Active == nil || persisted.Active.ID != "a" || persisted.LastError == nil || persisted.LastError.Code != CodeActivationRolledBack {
+		t.Fatalf("unexpected state: %#v", persisted)
+	}
+	if _, err := os.Stat(filepath.Join(current.dir, "b.gguf")); err != nil {
+		t.Fatal("the failed candidate's file must be kept")
+	}
+}
+
+func TestRouterArgsCarryRuntimeAndModelLimits(t *testing.T) {
+	args := routerArgs(hardware.Runtime{
 		Context: 8192, Batch: 256, UBatch: 128, Threads: 4, ThreadsBatch: 3,
 		CacheReuse: 512, Parallel: 2, Jinja: true, KVUnified: true, FlashAttention: true,
 		ReasoningFormat: "deepseek", ReasoningMode: "auto",
-	})
+	}, "/data/model-manager/router-models.ini", 2)
 	joined := strings.Join(args, " ")
 	for _, expected := range []string{
-		"--model /data/models/model.gguf", "--port 8081", "--ctx-size 8192", "--parallel 2",
-		"--threads-batch 3", "--cache-reuse 512", "--jinja", "--kv-unified", "--flash-attn",
-		"--reasoning-format deepseek", "--reasoning auto",
+		"--models-preset /data/model-manager/router-models.ini", "--models-max 2", "--port 8081",
+		"--ctx-size 8192", "--parallel 2", "--threads-batch 3", "--cache-reuse 512", "--jinja",
+		"--kv-unified", "--flash-attn", "--reasoning-format deepseek", "--reasoning auto",
 	} {
 		if !strings.Contains(joined, expected) {
 			t.Fatalf("missing %q in %q", expected, joined)
 		}
 	}
+	if strings.Contains(joined, "--model ") {
+		t.Fatalf("a router takes no single --model: %q", joined)
+	}
 }
 
-func TestLlamaArgsKeepOneSlotWithoutUnifiedKV(t *testing.T) {
+func TestRouterArgsKeepOneSlotWithoutUnifiedKV(t *testing.T) {
 	base := hardware.Runtime{Context: 8192, Batch: 256, UBatch: 128, Threads: 4}
 	cases := []struct {
 		parallel int
@@ -210,39 +327,9 @@ func TestLlamaArgsKeepOneSlotWithoutUnifiedKV(t *testing.T) {
 	for _, current := range cases {
 		runtime := base
 		runtime.Parallel, runtime.KVUnified = current.parallel, current.unified
-		joined := strings.Join(llamaArgs(state.Installed{Path: "/m.gguf"}, runtime), " ")
+		joined := strings.Join(routerArgs(runtime, "/p.ini", 2), " ")
 		if !strings.Contains(joined, current.want) {
 			t.Fatalf("parallel=%d unified=%v: want %q in %q", current.parallel, current.unified, current.want, joined)
-		}
-	}
-}
-
-func TestPruneProtectsActiveFallbackAndOperation(t *testing.T) {
-	dir := t.TempDir()
-	paths := map[string]string{
-		"active": filepath.Join(dir, "active.gguf"), "fallback": filepath.Join(dir, "fallback.gguf"),
-		"operation": filepath.Join(dir, "operation.gguf"), "old": filepath.Join(dir, "old.gguf"),
-	}
-	for _, path := range paths {
-		if err := os.WriteFile(path, []byte("GGUF"), 0o600); err != nil {
-			t.Fatal(err)
-		}
-	}
-	supervisor, err := NewSupervisor(Config{Binary: "/app/llama-server.bin", Target: "http://127.0.0.1:8081", ModelDir: dir}, &fakeLauncher{starts: map[string]int{}, failures: map[string]error{}}, state.Store{Path: filepath.Join(t.TempDir(), "state.json")}, func(context.Context) error { return nil })
-	if err != nil {
-		t.Fatal(err)
-	}
-	current := state.State{Active: &state.Installed{Path: paths["active"]}, Fallback: &state.Installed{Path: paths["fallback"]}, Operation: &state.Operation{ModelPath: paths["operation"]}}
-	if err := supervisor.Prune(current); err != nil {
-		t.Fatal(err)
-	}
-	for name, path := range paths {
-		_, statErr := os.Stat(path)
-		if name == "old" && !os.IsNotExist(statErr) {
-			t.Fatal("old model was not pruned")
-		}
-		if name != "old" && statErr != nil {
-			t.Fatalf("protected %s was removed: %v", name, statErr)
 		}
 	}
 }

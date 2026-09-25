@@ -1,17 +1,21 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"log"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -34,9 +38,16 @@ type ModelSupervisor interface {
 	State() state.State
 	Persist(state.State) error
 	ActiveID() string
-	// Activate hot-swaps the running model for candidate, rolling back to the
-	// previous one if it fails to become ready.
+	// Activate makes candidate the default model, keeping the previous one if
+	// the candidate fails to answer.
 	Activate(context.Context, state.Installed, hardware.Runtime) error
+	// ResolveModel maps a request's `model` to a served model; empty and
+	// unknown names resolve to the default. "" while nothing is served.
+	ResolveModel(string) string
+	// ModelIDs lists every model the router serves.
+	ModelIDs() []string
+	// Reload restarts the router after models were added or removed.
+	Reload(context.Context) error
 }
 
 type PairingExchanger interface {
@@ -168,7 +179,82 @@ func (server *Server) ServeHTTP(response http.ResponseWriter, request *http.Requ
 		server.manager.ServeHTTP(response, request)
 		return
 	}
+	if err := server.routeModel(request); err != nil {
+		writeError(response, http.StatusRequestEntityTooLarge, APIError{Code: "request_too_large", Message: "The inference request is too large."})
+		return
+	}
 	server.proxy.ServeHTTP(response, request)
+}
+
+// maxInferenceBody bounds what the proxy buffers to read a request's model:
+// generous enough for a few base64 images, finite for a Pi.
+const maxInferenceBody = 48 << 20
+
+var errInferenceBodyTooLarge = errors.New("inference request too large")
+
+// routeModel names the model an inference request is for. The router needs a
+// model on every request, but clients written for a single-model server — a
+// dictation app, a script, an older RemindMe — send none or a name of their
+// own. Those are pointed at the default model, which is what they reached
+// before; a client naming a served model gets that model.
+func (server *Server) routeModel(request *http.Request) error {
+	resolve := server.dependencies.Supervisor.ResolveModel
+	if resolve("") == "" {
+		return nil
+	}
+	if request.Method == http.MethodGet {
+		switch request.URL.Path {
+		case "/props", "/slots", "/metrics":
+			query := request.URL.Query()
+			query.Set("model", resolve(query.Get("model")))
+			request.URL.RawQuery = query.Encode()
+		}
+		return nil
+	}
+	if request.Method != http.MethodPost || request.Body == nil {
+		return nil
+	}
+	body, err := io.ReadAll(io.LimitReader(request.Body, maxInferenceBody+1))
+	request.Body.Close()
+	if err != nil {
+		return err
+	}
+	if len(body) > maxInferenceBody {
+		return errInferenceBodyTooLarge
+	}
+	trimmed := bytes.TrimSpace(body)
+	if len(trimmed) > 0 && trimmed[0] == '{' {
+		var fields map[string]json.RawMessage
+		if json.Unmarshal(trimmed, &fields) == nil {
+			var requested string
+			if raw, ok := fields["model"]; ok {
+				_ = json.Unmarshal(raw, &requested)
+			}
+			if resolved := resolve(requested); resolved != requested {
+				encoded, _ := json.Marshal(resolved)
+				fields["model"] = encoded
+				if rewritten, err := json.Marshal(fields); err == nil {
+					body = rewritten
+				}
+			}
+		}
+	}
+	request.Body = io.NopCloser(bytes.NewReader(body))
+	request.ContentLength = int64(len(body))
+	request.Header.Set("Content-Length", strconv.Itoa(len(body)))
+	return nil
+}
+
+// reloadRouter restarts the router in the background after the set of model
+// files changed, so a new download can be chosen and a removed one is gone.
+func (server *Server) reloadRouter() {
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+		defer cancel()
+		if err := server.dependencies.Supervisor.Reload(ctx); err != nil {
+			log.Printf("router reload failed: %v", err)
+		}
+	}()
 }
 
 func (server *Server) registerRoutes() {
@@ -245,6 +331,10 @@ func (server *Server) status(response http.ResponseWriter, _ *http.Request) {
 		"operation":            server.events.current(),
 		"activeModelId":        activeID,
 		"activeModel":          activeModel,
+		// The router's view: every model it serves, and the one requests
+		// without a model name go to.
+		"models":       server.dependencies.Supervisor.ModelIDs(),
+		"defaultModel": server.dependencies.Supervisor.ResolveModel(""),
 	})
 }
 
@@ -356,6 +446,7 @@ func (server *Server) runInstall(ctx context.Context, variant catalog.Variant) {
 	current = current.CompleteDownload()
 	_ = server.dependencies.Supervisor.Persist(current)
 	server.events.publish(snapshotFromState(current))
+	server.reloadRouter()
 }
 
 // EmitState publishes a supervisor state to the operation event stream, so a
@@ -531,6 +622,9 @@ func (server *Server) removeInventoryItem(response http.ResponseWriter, request 
 			return
 		}
 	}
+	if item.Source == inventory.SourceManaged {
+		server.reloadRouter()
+	}
 	response.WriteHeader(http.StatusNoContent)
 }
 
@@ -604,6 +698,7 @@ func (server *Server) removeModel(response http.ResponseWriter, request *http.Re
 			return
 		}
 	}
+	server.reloadRouter()
 	response.WriteHeader(http.StatusNoContent)
 }
 

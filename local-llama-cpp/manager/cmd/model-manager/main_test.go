@@ -135,8 +135,8 @@ func TestRecoverExistingConfiguredModelPersistsVerification(t *testing.T) {
 	}
 	stateStore := state.Store{Path: filepath.Join(t.TempDir(), "state.json")}
 	supervisor, err := managerruntime.NewSupervisor(
-		managerruntime.Config{Binary: "/app/llama-server.bin", Target: "http://127.0.0.1:8081", ModelDir: modelDir, ReadinessTimeout: 25 * time.Millisecond, ProbeInterval: time.Millisecond},
-		&bootstrapLauncher{}, stateStore, func(context.Context) error { return nil },
+		managerruntime.Config{Binary: "/app/llama-server.bin", Target: "http://127.0.0.1:8081", ModelDir: modelDir, PresetPath: filepath.Join(t.TempDir(), "router-models.ini"), ReadinessTimeout: 25 * time.Millisecond, ProbeInterval: time.Millisecond},
+		&bootstrapLauncher{}, stateStore, func(context.Context, string) error { return nil },
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -185,8 +185,8 @@ func TestRecoverDownloadedConfiguredModelPersistsVerification(t *testing.T) {
 		t.Fatal(err)
 	}
 	supervisor, err := managerruntime.NewSupervisor(
-		managerruntime.Config{Binary: "/app/llama-server.bin", Target: "http://127.0.0.1:8081", ModelDir: modelDir, ReadinessTimeout: 25 * time.Millisecond, ProbeInterval: time.Millisecond},
-		&bootstrapLauncher{}, state.Store{Path: filepath.Join(t.TempDir(), "state.json")}, func(context.Context) error { return nil },
+		managerruntime.Config{Binary: "/app/llama-server.bin", Target: "http://127.0.0.1:8081", ModelDir: modelDir, PresetPath: filepath.Join(t.TempDir(), "router-models.ini"), ReadinessTimeout: 25 * time.Millisecond, ProbeInterval: time.Millisecond},
+		&bootstrapLauncher{}, state.Store{Path: filepath.Join(t.TempDir(), "state.json")}, func(context.Context, string) error { return nil },
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -213,5 +213,23 @@ func TestRuntimeFromOptionsPreservesCompleteNativeSettings(t *testing.T) {
 	})
 	if profile.ThreadsBatch != 3 || profile.CacheReuse != 512 || !profile.Jinja || !profile.KVUnified || !profile.FlashAttention {
 		t.Fatalf("incomplete runtime: %#v", profile)
+	}
+}
+
+func TestResidentModelCountPrefersExplicitThenMemory(t *testing.T) {
+	cases := []struct {
+		requested int
+		available int64
+		want      int
+	}{
+		{requested: 3, available: 1 << 30, want: 3},
+		{requested: 9, available: 1 << 30, want: 4},
+		{requested: 0, available: 1700 << 20, want: 1},
+		{requested: 0, available: 6 << 30, want: 2},
+	}
+	for _, current := range cases {
+		if got := residentModelCount(current.requested, current.available); got != current.want {
+			t.Fatalf("residentModelCount(%d, %d) = %d, want %d", current.requested, current.available, got, current.want)
+		}
 	}
 }

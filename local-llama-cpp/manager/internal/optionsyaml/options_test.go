@@ -27,6 +27,7 @@ batch_size: 128
 ubatch_size: 64
 cache_reuse: 256
 parallel: 2
+resident_models: 0
 jinja: true
 kv_unified: true
 flash_attention: false
