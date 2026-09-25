@@ -2,8 +2,19 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>RemindMe // command deck</title>
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content"
+    />
+    <meta name="theme-color" content="#0d0a06" />
+    <!-- The saved theme, applied before first paint so nothing flashes. -->
+    <script>
+      try {
+        const theme = localStorage.getItem("remindme.theme");
+        if (theme && theme !== "lucky38") document.documentElement.dataset.theme = theme;
+      } catch (_) {}
+    </script>
+    <title>RemindMe</title>
     <script defer src="./components/timeline.js"></script>
     <script defer src="./components/thinking.js"></script>
     <script defer src="./components/tools.js"></script>
@@ -27,42 +38,50 @@
   </head>
   <body>
     <pre id="ascii" aria-hidden="true"></pre>
-    <!--
-      Two cases on one bench. The artifact gets its own device rather than a
-      third column inside this one: a document the model wrote is a separate
-      thing from the console, and giving it its own bezel says so.
-    -->
     <div
-      class="workbench"
-      :class="{'with-artifact': artifactOpen}"
+      class="app"
       x-data="harness()"
       x-init="init()"
+      :class="{scanlines: scanlines, 'drawer-open': historyOpen, 'with-artifact': artifactOpen}"
+      @keydown.escape.window="historyOpen=false"
     >
-      <div
-        class="deck"
-        :class="{scanlines:scanlines}"
-        :style="benchSplit ? `flex-grow:${(1 - benchSplit).toFixed(3)}` : ''"
-      >
-        <div class="screen">
-        <div class="flicker" aria-hidden="true"></div>
-        <aside
-        class="rail"
+      <!-- Tapping outside the drawer closes it on narrow screens. -->
+      <div class="scrim" x-show="historyOpen" x-cloak @click="historyOpen=false"></div>
+
+      <!--
+        The drawer: chats first, then the rooms of the app. A fixed column on
+        wide screens, an off-canvas panel on phones.
+      -->
+      <aside
+        class="drawer"
         id="conversation-library"
         :class="{open: historyOpen}"
+        aria-label="Chats and settings"
       >
-        <div>
-          <div class="kicker">Local command deck / 01</div>
-          <div class="brand">◉ <b>RemindMe</b><br />AI</div>
+        <div class="drawer-head">
+          <div class="brand"><svg class="emblem" viewBox="0 0 32 32" aria-hidden="true"><ellipse cx="16" cy="10" rx="12" ry="3.4" /><path d="M16 3v4M13 13.2 11 29h10l-2-15.8M11 29h10M14 19h4M13.4 24h5.2" /></svg><span>RemindMe</span></div>
+          <button
+            type="button"
+            class="icon-btn drawer-close"
+            aria-label="Close menu"
+            @click="historyOpen=false"
+          >
+            ✕
+          </button>
         </div>
-        <p class="rail-copy">
-          A private home console for rooms, reminders, and the wider signal.
-        </p>
-        <nav class="nav" aria-label="Conversation controls">
-          <button @click="newChat()">＋ New chat</button>
-          <label class="history-search"
-            >Search<input x-model="conversationSearch" type="search"
-          /></label>
-          <div class="history-list">
+        <button type="button" class="btn primary block" @click="newChat()">
+          <span aria-hidden="true">＋</span> New chat
+        </button>
+        <label class="search-field">
+          <span class="sr-only">Search chats</span>
+          <input
+            x-model="conversationSearch"
+            type="search"
+            placeholder="Search chats"
+            autocomplete="off"
+          />
+        </label>
+        <div class="history-list">
             <template
               x-for="conversation in filteredConversations"
               :key="conversation.id"
@@ -112,20 +131,23 @@
                   </button>
                 </div></div
             ></template>
-          </div>
-          <button @click="clearChat()">Clear conversation</button>
+          <p class="history-empty" x-show="!filteredConversations.length">
+            No chats yet.
+          </p>
+        </div>
+        <nav class="drawer-nav" aria-label="Console">
+          <button @click="modelsOpen=true">Models</button>
           <button @click="openSkills()">Skills</button>
           <button @click="openMcp()">MCP</button>
-          <button @click="modelsOpen=true">Models</button>
           <button @click="openSettings()">Settings</button>
+          <button class="danger" @click="clearChat()">Clear conversation</button>
         </nav>
-        <div class="rail-foot">
+        <div class="drawer-foot">
           <div
             class="status"
             :class="{'offline': offline}"
-            x-text="offline ? 'local tools offline' : 'local tools ready'"
+            x-text="offline ? 'Local tools offline' : 'Local tools ready'"
           ></div>
-          <div class="micro" x-text="hardware"></div>
           <!-- Host telemetry: inference and Home Assistant share this Pi, so
                these are the numbers that explain a slow reply. -->
           <div class="host-stats" x-show="system">
@@ -163,53 +185,85 @@
           </div>
         </div>
       </aside>
-      <main class="main">
-        <header class="topbar">
-          <button
-            class="mobile-toggle"
-            aria-controls="conversation-library"
-            @click="historyOpen=!historyOpen"
-          >
-            ☰ Chats
-          </button>
-          <div class="top-title">
-            Home console<small x-text="sessionLabel"></small>
-          </div>
-          <div class="badge" x-text="modelBadge"></div>
-          <!-- Global model-operation indicator: visible from anywhere while a
-               download or switch is running, so long jobs are never silent. -->
-          <button
-            class="model-working"
-            x-show="modelOperationBusy"
-            x-cloak
-            @click="modelsOpen=true"
-            :title="`Model ${(modelOperation?.phase||'').replaceAll('_',' ')} — open Models`"
-            aria-live="polite"
-          >
-            <span class="model-working-spin" aria-hidden="true"></span>
-            <span x-text="(modelOperation?.phase||'working').replaceAll('_',' ')"></span>
-            <span
-              x-show="modelOperation?.bytesTotal"
-              x-text="` ${Math.round(modelProgressPercent())}%`"
-            ></span>
-          </button>
-          <button
-            class="mobile-toggle"
-            aria-controls="house-board"
-            @click="boardOpen=!boardOpen"
-          >
-            House board
-          </button>
-        </header>
-        <section class="chat" id="timeline" aria-live="polite">
-          <div class="empty" x-show="messages.length===0">
-            <div class="kicker">Signal received</div>
-            <h2>What should we make easier?</h2>
-            <p>
-              Ask about your home, set a reminder, or search the web. Actions
-              wait for your confirmation.
-            </p>
-          </div>
+
+      <!--
+        The bench: the console, and beside it (or over it, on a phone) the
+        document the model wrote. `.workbench` is what the divider measures.
+      -->
+      <div class="workbench">
+        <main
+          class="stage"
+          :style="artifactOpen && benchSplit ? `flex-grow:${(1 - benchSplit).toFixed(3)}` : ''"
+        >
+          <header class="topbar">
+            <button
+              type="button"
+              class="icon-btn menu-btn"
+              aria-controls="conversation-library"
+              :aria-expanded="historyOpen"
+              aria-label="Chats and settings"
+              @click="historyOpen=!historyOpen"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16" /></svg>
+            </button>
+            <div class="top-title">
+              <svg class="emblem" viewBox="0 0 32 32" aria-hidden="true"><ellipse cx="16" cy="10" rx="12" ry="3.4" /><path d="M16 3v4M13 13.2 11 29h10l-2-15.8M11 29h10M14 19h4M13.4 24h5.2" /></svg><b>RemindMe</b>
+            </div>
+            <!-- Global model-operation indicator: visible from anywhere while a
+                 download or switch is running, so long jobs are never silent. -->
+            <button
+              class="model-working"
+              x-show="modelOperationBusy"
+              x-cloak
+              @click="modelsOpen=true"
+              :title="`Model ${(modelOperation?.phase||'').replaceAll('_',' ')} — open Models`"
+              aria-live="polite"
+            >
+              <span class="model-working-spin" aria-hidden="true"></span>
+              <span x-text="(modelOperation?.phase||'working').replaceAll('_',' ')"></span>
+              <span
+                x-show="modelOperation?.bytesTotal"
+                x-text="` ${Math.round(modelProgressPercent())}%`"
+              ></span>
+            </button>
+            <button
+              type="button"
+              class="badge"
+              title="Models"
+              @click="modelsOpen=true"
+              x-text="modelBadge"
+            ></button>
+            <button
+              type="button"
+              class="icon-btn"
+              aria-controls="house-board"
+              aria-label="Model instruments"
+              title="Model instruments"
+              @click="boardOpen=!boardOpen"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19V11M12 19V5M19 19v-5" /></svg>
+            </button>
+          </header>
+
+          <section class="chat" id="timeline" aria-live="polite">
+            <div class="chat-column">
+              <div class="empty" x-show="messages.length===0">
+                <svg class="emblem hero" viewBox="0 0 32 32" aria-hidden="true"><ellipse cx="16" cy="10" rx="12" ry="3.4" /><path d="M16 3v4M13 13.2 11 29h10l-2-15.8M11 29h10M14 19h4M13.4 24h5.2" /></svg>
+                <h2 x-text="greeting"></h2>
+                <ul class="pulse" x-show="pulse.length">
+                  <template x-for="line in pulse" :key="line"><li x-text="line"></li></template>
+                </ul>
+                <div class="suggestions">
+                  <template x-for="suggestion in suggestions" :key="suggestion">
+                    <button
+                      type="button"
+                      class="suggestion"
+                      @click="draft = suggestion; $nextTick(() => $refs.composerInput.focus())"
+                      x-text="suggestion"
+                    ></button>
+                  </template>
+                </div>
+              </div>
           <template
             x-for="message in messages"
             :key="message.id || message.key"
@@ -226,8 +280,13 @@
               :class="{
                 [message.kind || 'answer']: true,
                 settled: message.state==='complete' && (message.kind==='thinking' || message.kind==='tool'),
+                streaming: message.kind==='answer' && message.state==='active',
               }"
             >
+              <!-- The console's mark beside what it says. -->
+              <template x-if="message.kind==='answer' || message.kind==='reader'">
+                <svg class="emblem avatar" viewBox="0 0 32 32" aria-hidden="true"><ellipse cx="16" cy="10" rx="12" ry="3.4" /><path d="M16 3v4M13 13.2 11 29h10l-2-15.8M11 29h10M14 19h4M13.4 24h5.2" /></svg>
+              </template>
               <template x-if="message.kind==='thinking'">
                 <details
                   :open="message.expanded"
@@ -356,7 +415,7 @@
                           ><span
                             class="val"
                             :class="{cool: iconTone(item)==='cool', off: !isActive(item)}"
-                            x-text="item.numericState ?? String(item.state).toUpperCase()"
+                            x-text="item.numericState ?? sentenceCase(item.state)"
                           ></span
                           ><span class="u" x-text="compactDetail(item)"></span></div
                       ></template>
@@ -381,14 +440,15 @@
                               ></div>
                               <div
                                 class="entity"
-                                x-text="item.message ? formatTime(item.time) : item.entityId"
+                                x-show="item.message || item.area"
+                                x-text="item.message ? formatTime(item.time) : item.area"
                               ></div>
                             </div>
                             <span
                               class="pill"
                               x-show="showPill(item)"
                               :class="statePill(item).tone"
-                              x-text="item.message ? 'SCHEDULED' : statePill(item).text"
+                              x-text="item.message ? 'Scheduled' : statePill(item).text"
                             ></span>
                           </header>
 
@@ -467,13 +527,13 @@
                                     :class="{on: lightMode(item)==='warm'}"
                                     @click="setLightMode(item,'warm')"
                                   >
-                                    WARM
+                                    Warm
                                   </button>
                                   <button
                                     :class="{on: lightMode(item)==='color'}"
                                     @click="setLightMode(item,'color')"
                                   >
-                                    COLOUR
+                                    Colour
                                   </button>
                                 </div>
 
@@ -546,7 +606,7 @@
                                   x-if="item.domain==='lock' && item.batteryLevel!=null"
                                   ><div>
                                     <div class="row">
-                                      <span>BATTERY</span
+                                      <span>Battery</span
                                       ><span x-text="`${item.batteryLevel}%`"></span>
                                     </div>
                                     <div class="bar">
@@ -563,7 +623,7 @@
                                   x-if="item.domain==='switch' && item.power!=null"
                                   ><div>
                                     <div class="row">
-                                      <span>DRAWING NOW</span
+                                      <span>Drawing now</span
                                       ><span x-text="`${item.power} W`"></span>
                                     </div>
                                     <div class="bar">
@@ -581,28 +641,28 @@
                                   class="chip"
                                   x-show="item.capabilities?.toggle"
                                   @click="entityAction(item,isActive(item)?'turn_off':'turn_on')"
-                                  x-text="isActive(item)?'TURN OFF':'TURN ON'"
+                                  x-text="isActive(item)?'Turn off':'Turn on'"
                                 ></button>
                                 <!-- destructive: hovers rust, never amber -->
                                 <button
                                   class="chip warn"
                                   x-show="item.capabilities?.lock"
                                   @click="entityAction(item, item.state==='locked'?'unlock':'lock')"
-                                  x-text="item.state==='locked'?'UNLOCK':'LOCK'"
+                                  x-text="item.state==='locked'?'Unlock':'Lock'"
                                 ></button>
                                 <button
                                   class="chip warn"
                                   x-show="item.domain==='cover'"
                                   @click="entityAction(item,'open_cover')"
                                 >
-                                  OPEN
+                                  Open
                                 </button>
                                 <button
                                   class="chip"
                                   x-show="item.domain==='cover'"
                                   @click="entityAction(item,'close_cover')"
                                 >
-                                  CLOSE
+                                  Close
                                 </button>
                                 <!-- Brightness and position are sliders on the
                                      card now, so the fixed-amount chips they
@@ -613,7 +673,7 @@
                                   x-show="item.domain==='fan' && item.fanPercentage!=null"
                                   @click="stepFanSpeed(item)"
                                 >
-                                  SPEED UP
+                                  Speed up
                                 </button>
                                 <!-- One-tap setback, the adjustment you reach
                                      for without opening the stepper. -->
@@ -628,7 +688,7 @@
                                   x-show="item.domain==='climate' && item.state!=='off'"
                                   @click="entityAction(item,'set_hvac_mode','off')"
                                 >
-                                  TURN OFF
+                                  Turn off
                                 </button>
                               </div></div
                           ></template>
@@ -651,7 +711,7 @@
                 >
                   <span class="artifact-kind" x-text="message.artifact.kind"></span>
                   <span class="artifact-title" x-text="message.artifact.title"></span>
-                  <span class="artifact-open">OPEN</span></button
+                  <span class="artifact-open">Open</span></button
               ></template>
               <!-- Gauge line: stats attach under the reply, not a side rail. -->
               <div
@@ -709,7 +769,7 @@
                       <div class="name" x-text="message.confirm.message"></div>
                       <div class="entity" x-text="message.confirm.when"></div>
                     </div>
-                    <span class="pill">PENDING</span>
+                    <span class="pill">Pending</span>
                   </header>
                   <div class="card-body">
                     <div class="meta" x-text="formatTime(message.confirm.at)"></div>
@@ -722,10 +782,10 @@
                   </div>
                   <div class="actions">
                     <button class="chip" @click="confirmAction(message)">
-                      SET REMINDER
+                      Set reminder
                     </button>
                     <button class="chip warn" @click="cancelAction(message)">
-                      CANCEL
+                      Cancel
                     </button>
                   </div>
                 </div></template
@@ -737,10 +797,10 @@
                     class="action"
                     :class="{destructive: message.confirm.destructive}"
                     @click="confirmAction(message)"
-                    x-text="message.confirm.destructive ? 'CONFIRM — UNSAFE' : 'CONFIRM ACTION'"
+                    x-text="message.confirm.destructive ? 'Confirm — unsafe' : 'Confirm action'"
                   ></button
                   ><button class="ghost" @click="cancelAction(message)">
-                    CANCEL
+                    Cancel
                   </button>
                 </div></template
               >
@@ -751,11 +811,11 @@
                 ><div class="task-wizard">
                   <header>
                     <span class="tw-title">New scheduled task</span>
-                    <span class="pill">WIZARD</span>
+                    <span class="pill">Wizard</span>
                   </header>
                   <div class="tw-body">
                     <label class="tw-field">
-                      <span>WHAT SHOULD IT DO</span>
+                      <span>What should it do</span>
                       <textarea
                         rows="2"
                         x-model="message.wizard.what"
@@ -764,7 +824,7 @@
                       ></textarea>
                     </label>
                     <label class="tw-field">
-                      <span>WHEN</span>
+                      <span>When</span>
                       <input
                         type="text"
                         x-model="message.wizard.when"
@@ -777,21 +837,21 @@
                         class="chip"
                         @click="message.wizard.when='every day at 8'"
                       >
-                        DAILY 8AM
+                        Daily 8AM
                       </button>
                       <button
                         type="button"
                         class="chip"
                         @click="message.wizard.when='every 6 hours'"
                       >
-                        EVERY 6H
+                        Every 6h
                       </button>
                       <button
                         type="button"
                         class="chip"
                         @click="message.wizard.when='mondays at 9'"
                       >
-                        WEEKLY MON
+                        Weekly mon
                       </button>
                     </div>
                     <div class="tw-targets">
@@ -801,7 +861,7 @@
                         :class="{on: message.wizard.vault}"
                         @click="message.wizard.vault=!message.wizard.vault"
                       >
-                        ARCHIVE TO VAULT
+                        Archive to vault
                       </button>
                       <button
                         type="button"
@@ -809,7 +869,7 @@
                         :class="{on: message.wizard.notify}"
                         @click="message.wizard.notify=!message.wizard.notify"
                       >
-                        NOTIFY
+                        Notify
                       </button>
                     </div>
                     <p
@@ -823,10 +883,10 @@
                       class="chip"
                       :disabled="message.wizard.submitting"
                       @click="submitTaskWizard(message)"
-                      x-text="message.wizard.submitting ? 'SCHEDULING…' : 'SCHEDULE'"
+                      x-text="message.wizard.submitting ? 'Scheduling…' : 'Schedule'"
                     ></button>
                     <button class="chip warn" @click="cancelTaskWizard(message)">
-                      CANCEL
+                      Cancel
                     </button>
                   </div>
                 </div></template
@@ -869,141 +929,311 @@
               x-text="`${activityElapsed.toFixed(1)} s`"
             ></span>
           </div>
-        </section>
-        <footer
-          class="composer"
-          id="composer"
-          @dragover.prevent
-          @drop.prevent="addAttachments($event.dataTransfer.files)"
-          @paste.window="addAttachments($event.clipboardData.files)"
-        >
-          <form @submit.prevent="send()">
-            <div class="compose-line">
-              <!-- Ghost completion sits behind the textarea, sharing its
-                   metrics so the suggestion lines up with what you typed. -->
-              <div class="compose-field">
-                <div
-                  class="compose-ghost"
-                  aria-hidden="true"
-                  x-show="commandGhost"
-                ><span class="ghost-typed" x-text="draft"></span><span
-                    class="ghost-rest"
-                    x-text="commandGhost"
-                  ></span></div>
-                <textarea
-                  x-ref="composerInput"
-                  x-model="draft"
-                  @input="resizeComposer($event)"
-                  @keydown="handleComposerKeydown($event)"
-                  rows="1"
-                  placeholder="Ask the console anything…"
-                  aria-label="Message"
-                ></textarea>
-              </div
-              ><button
-                class="send"
-                :class="{cancel: busy}"
-                type="button"
-                :disabled="modelSwitching && !busy"
-                @click="busy ? cancel() : send()"
-                :title="modelSwitching && !busy ? 'Switching model — inference is briefly unavailable' : ''"
-                :aria-label="busy ? 'Cancel the current turn' : 'Send message'"
-                x-text="busy ? 'Cancel ✕' : (modelSwitching ? 'Switching…' : 'Send ↑')"
-              ></button>
             </div>
-            <!-- Discoverability: what the prefix could still become. -->
-            <div class="command-hints" x-show="commandMatches.length > 1">
-              <template x-for="command in commandMatches" :key="command.name">
-                <button
-                  type="button"
-                  class="command-hint"
-                  @click="draft = command.name + (command.usage.includes('<') ? ' ' : ''); $refs.composerInput.focus()"
+          </section>
+
+          <footer
+            class="composer"
+            id="composer"
+            @dragover.prevent
+            @drop.prevent="addAttachments($event.dataTransfer.files)"
+            @paste.window="addAttachments($event.clipboardData.files)"
+          >
+            <form class="chat-column" @submit.prevent="send()">
+              <!-- Discoverability: what the prefix could still become. -->
+              <div class="command-hints" x-show="commandMatches.length > 1">
+                <template x-for="command in commandMatches" :key="command.name">
+                  <button
+                    type="button"
+                    class="command-hint"
+                    @click="draft = command.name + (command.usage.includes('<') ? ' ' : ''); $refs.composerInput.focus()"
+                  >
+                    <span x-text="command.usage"></span
+                    ><small x-text="command.blurb"></small>
+                  </button>
+                </template>
+              </div>
+              <div class="attachment-strip" x-show="attachments.length">
+                <template
+                  x-for="(attachment,index) in attachments"
+                  :key="attachment.name+index"
+                  ><span
+                    ><img
+                      :src="attachment.dataUrl"
+                      :alt="attachment.name"
+                    /><button
+                      type="button"
+                      aria-label="Remove image"
+                      @click="attachments.splice(index,1)"
+                    >
+                      ×
+                    </button></span
+                  ></template
                 >
-                  <span x-text="command.usage"></span
-                  ><small x-text="command.blurb"></small>
+              </div>
+              <p
+                class="entity-error"
+                x-show="attachmentError"
+                x-text="attachmentError"
+              ></p>
+              <div class="compose-box">
+                <label class="icon-btn attach-button" title="Attach image">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11.5l-7.8 7.8a5 5 0 0 1-7.1-7.1l8.5-8.5a3.3 3.3 0 0 1 4.7 4.7l-8.5 8.5a1.7 1.7 0 0 1-2.4-2.4l7.8-7.8" /></svg>
+                  <span class="sr-only">Attach image</span>
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    multiple
+                    @change="addAttachments($event.target.files)"
+                  />
+                </label>
+                <!-- Ghost completion sits behind the textarea, sharing its
+                     metrics so the suggestion lines up with what you typed. -->
+                <div class="compose-field">
+                  <div
+                    class="compose-ghost"
+                    aria-hidden="true"
+                    x-show="commandGhost"
+                  ><span class="ghost-typed" x-text="draft"></span><span
+                      class="ghost-rest"
+                      x-text="commandGhost"
+                    ></span></div>
+                  <textarea
+                    x-ref="composerInput"
+                    x-model="draft"
+                    @input="resizeComposer($event)"
+                    @keydown="handleComposerKeydown($event)"
+                    rows="1"
+                    placeholder="Ask anything…"
+                    aria-label="Message"
+                    enterkeyhint="send"
+                  ></textarea>
+                </div>
+                <button
+                  class="send"
+                  :class="{cancel: busy}"
+                  type="button"
+                  :disabled="modelSwitching && !busy"
+                  @click="busy ? cancel() : send()"
+                  :title="modelSwitching && !busy ? 'Switching model — inference is briefly unavailable' : ''"
+                  :aria-label="busy ? 'Cancel the current turn' : 'Send message'"
+                >
+                  <svg x-show="!busy" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7" /></svg>
+                  <svg x-show="busy" x-cloak viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7l10 10M17 7L7 17" /></svg>
                 </button>
-              </template>
+              </div>
+              <div class="compose-meta">
+                <label class="thinking-select"
+                  ><span>Thinking</span>
+                  <select x-model="thinking">
+                    <template x-for="preset in thinkingProfiles" :key="preset.id"
+                      ><option :value="preset.id" x-text="preset.name"></option
+                    ></template></select
+                ></label>
+                <span
+                  class="thinking-hint"
+                  x-text="`${currentThinkingProfile.reasoningBudget} thought · ${currentThinkingProfile.answerReserve} answer tokens${currentThinkingProfile.estimatedMaxSeconds ? ` · up to ${formatDuration(currentThinkingProfile.estimatedMaxSeconds * 1000)}` : ''}`"
+                ></span>
+                <span
+                  class="context-label"
+                  :title="tokenUsage.exact ? `Prompt ${tokenUsage.promptTokens} tokens · Context ${tokenUsage.contextTokens + tokenUsage.promptTokens} / ${tokenUsage.contextCapacity}` : 'Exact token count unavailable'"
+                  x-text="tokenUsage.exact ? `${tokenUsage.contextTokens + tokenUsage.promptTokens} / ${tokenUsage.contextCapacity}` : '— / —'"
+                ></span>
+                <div class="context-track" :class="contextLevel" aria-hidden="true">
+                  <i :style="`width:${contextPercent}%`"></i>
+                </div>
+              </div>
+            </form>
+          </footer>
+        </main>
+
+        <!--
+          The bench divider. Drags the split between the two cases; double-click
+          returns them to the default. Only on wide screens: on a phone the
+          document covers the console instead.
+        -->
+        <div
+          class="bench-grip"
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize the artifact"
+          tabindex="0"
+          x-show="artifactOpen"
+          x-cloak
+          @pointerdown.prevent="startBenchDrag($event)"
+          @dblclick="benchSplit = null"
+          @keydown.arrow-left.prevent="nudgeBench(-1)"
+          @keydown.arrow-right.prevent="nudgeBench(1)"
+        ></div>
+        <!--
+          HTML and SVG render in a frame with sandbox="allow-scripts" and no
+          allow-same-origin, which puts them in an opaque origin: a document the
+          model wrote cannot read the console, its storage, or the Home Assistant
+          session it is embedded in. Those two flags together would undo the
+          sandbox, so they are never combined.
+        -->
+        <section
+          class="artifact-panel"
+          :style="benchSplit ? `flex-grow:${benchSplit}` : ''"
+          x-show="artifactOpen"
+          x-cloak
+        >
+        <aside class="artifact-pane">
+          <header class="artifact-head">
+            <div class="artifact-heading">
+              <span class="artifact-kind" x-text="currentArtifact?.kind"></span>
+              <b x-text="currentArtifact?.title || 'Artifact'"></b>
             </div>
-            <div class="attachment-strip" x-show="attachments.length">
-              <template
-                x-for="(attachment,index) in attachments"
-                :key="attachment.name+index"
+            <div class="artifact-actions">
+              <!--
+                While the model writes there is nothing saved to save or
+                delete, and nothing rendered to preview, so the toggle is the
+                only control that means anything.
+              -->
+              <div class="mode-toggle" role="group" aria-label="Artifact view">
+                <button
+                  :class="{on: artifactView==='source'}"
+                  @click="artifactView='source'"
+                >
+                  Source
+                </button>
+                <button
+                  :class="{on: artifactView==='preview'}"
+                  :disabled="artifactStreaming"
+                  @click="artifactView='preview'"
+                >
+                  Preview
+                </button>
+              </div>
+              <!-- Both act on a stored document, so both wait for one. -->
+              <template x-if="currentArtifact?.id"
                 ><span
-                  ><img
-                    :src="attachment.dataUrl"
-                    :alt="attachment.name"
-                  /><button type="button" @click="attachments.splice(index,1)">
-                    ×
-                  </button></span
-                ></template
+                  ><button class="chip" @click="downloadArtifact()">Save</button>
+                  <button class="chip warn" @click="deleteArtifact()">
+                    Delete</button></span
+              ></template>
+              <button
+                class="chip"
+                @click="artifactOpen=false"
+                aria-label="Close artifact"
               >
+                ✕
+              </button>
             </div>
-            <p
-              class="entity-error"
-              x-show="attachmentError"
-              x-text="attachmentError"
-            ></p>
-            <div class="controls">
-              <label class="attach-button"
-                >Attach image<input
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp"
-                  multiple
-                  @change="addAttachments($event.target.files)"
-              /></label>
-              <label
-                >Thinking
-                <select x-model="thinking">
-                  <template x-for="preset in thinkingProfiles" :key="preset.id"
-                    ><option :value="preset.id" x-text="preset.name"></option
-                  ></template></select></label
-              ><span
-                class="thinking-hint"
-                x-text="`${currentThinkingProfile.reasoningBudget} thought · ${currentThinkingProfile.answerReserve} answer tokens${currentThinkingProfile.estimatedMaxSeconds ? ` · up to ${formatDuration(currentThinkingProfile.estimatedMaxSeconds * 1000)}` : ''}`"
-              ></span
-              ><span
-                x-show="tokenUsage.exact"
-                x-text="`Prompt ${tokenUsage.promptTokens} tokens · Context ${tokenUsage.contextTokens + tokenUsage.promptTokens} / ${tokenUsage.contextCapacity}`"
-              ></span>
-              <span x-show="!tokenUsage.exact"
-                >Exact token count unavailable</span
-              >
-            </div>
-            <div class="context-track" :class="contextLevel">
-              <i :style="`width:${contextPercent}%`"></i>
-            </div>
-          </form>
-        </footer>
-      </main>
+          </header>
+          <div class="artifact-stage">
+            <template x-if="artifactIsFramed()"
+              ><iframe
+                class="artifact-frame"
+                sandbox="allow-scripts"
+                referrerpolicy="no-referrer"
+                :src="artifactFrameSrc()"
+                title="Artifact preview"
+              ></iframe
+            ></template>
+            <template
+              x-if="!artifactIsFramed() && artifactView==='preview' && currentArtifact"
+              ><div
+                class="artifact-text"
+                x-effect="renderArtifactBody($el, currentArtifact)"
+              ></div
+            ></template>
+            <!--
+              While the model is writing, the source is a read-only trace:
+              there is nothing to edit yet and the text is still moving.
+            -->
+            <template x-if="artifactView==='source' && artifactStreaming"
+              ><pre
+                class="artifact-source writing"
+                x-text="currentArtifact?.content"
+              ></pre
+            ></template>
+            <!--
+              Once it has settled the same view is an editor. Ctrl/Cmd+Enter
+              applies, which for a shader means it recompiles where you can
+              see it.
+            -->
+            <template x-if="artifactView==='source' && !artifactStreaming && currentArtifact"
+              ><div class="artifact-editor">
+                <div class="editor-body">
+                  <!-- Line numbers, scrolled to follow the text beside them. -->
+                  <pre
+                    class="editor-gutter"
+                    aria-hidden="true"
+                    x-text="editorGutter()"
+                  ></pre>
+                  <div class="editor-input">
+                    <!--
+                      The painted layer sits behind a textarea whose own text
+                      is transparent. The textarea keeps focus, selection,
+                      undo and IME; this only supplies colour, so the two must
+                      share font, padding and wrapping exactly.
+                    -->
+                    <pre
+                      class="editor-highlight"
+                      aria-hidden="true"
+                      x-effect="editorPaint($el)"
+                    ></pre>
+                    <textarea
+                      class="editor-text"
+                      spellcheck="false"
+                      autocapitalize="off"
+                      autocomplete="off"
+                      wrap="off"
+                      aria-label="Artifact source"
+                      x-model="artifactSource"
+                      @keydown="editorKey($event)"
+                      @scroll="editorScroll($event)"
+                    ></textarea>
+                  </div>
+                </div>
+                <!-- What the frame said last time this ran. -->
+                <div class="artifact-problem" x-show="artifactStatus" x-cloak>
+                  <b>from the frame</b>
+                  <span x-text="artifactStatus"></span>
+                </div>
+                <div class="artifact-editbar">
+                  <span class="editor-where" x-text="editorPosition()"></span>
+                  <span
+                    class="artifact-dirty"
+                    x-show="artifactDirty()"
+                    x-cloak
+                    >unsaved &middot; ctrl+enter</span
+                  >
+                  <button
+                    class="chip"
+                    :disabled="!artifactDirty() || artifactSaving"
+                    @click="applyArtifactEdit()"
+                    x-text="artifactSaving ? 'Applying' : 'Apply'"
+                  ></button>
+                  <button
+                    class="chip"
+                    :disabled="!artifactDirty()"
+                    @click="artifactSource = currentArtifact.content || ''"
+                  >
+                    Revert
+                  </button>
+                </div></div
+            ></template>
+          </div>
+        </aside>
+        </section>
       </div>
-      <aside class="telemetry" id="house-board" :class="{open: boardOpen}">
-        <div class="kicker">Live telemetry</div>
-        <h2>MODEL INSTRUMENTS</h2>
-        <div class="meter">
-          <span>Prompt tokens</span
-          ><strong x-text="metrics.inputTokens || '—'"></strong>
-        </div>
-        <div class="meter">
-          <span>Decode speed</span
-          ><strong
-            x-text="metrics.decode ? metrics.decode.toFixed(1) : '—'"
-          ></strong
-          ><span> tok / sec</span>
-        </div>
-        <div class="meter">
-          <span>First signal</span
-          ><strong x-text="metrics.ttft ? metrics.ttft : '—'"></strong
-          ><span> ms</span>
-        </div>
-        <div class="meter">
-          <span>Context used</span
-          ><strong x-text="metrics.context || '—'"></strong>
-        </div>
-        <div class="meter">
-          <span>Thought trace</span
-          ><strong x-text="metrics.thinking || 0"></strong><span> chars</span>
-        </div>
-      </aside>
+
+      <!-- Model instruments: the last turn's numbers, on demand. -->
+      <div class="settings" id="house-board" x-show="boardOpen" x-cloak @keydown.escape.window="boardOpen=false">
+        <section class="settings-card telemetry" @click.outside="boardOpen=false">
+          <button type="button" class="sheet-close" aria-label="Close" @click="boardOpen=false">✕</button>
+          <h2>Model instruments</h2>
+          <dl class="meters">
+            <div class="meter"><dt>Prompt tokens</dt><dd x-text="metrics.inputTokens || '—'"></dd></div>
+            <div class="meter"><dt>Decode speed</dt><dd x-text="metrics.decode ? `${metrics.decode.toFixed(1)} tok/s` : '—'"></dd></div>
+            <div class="meter"><dt>First token</dt><dd x-text="metrics.ttft ? `${metrics.ttft} ms` : '—'"></dd></div>
+            <div class="meter"><dt>Context used</dt><dd x-text="metrics.context || '—'"></dd></div>
+            <div class="meter"><dt>Thinking</dt><dd x-text="`${metrics.thinking || 0} tok`"></dd></div>
+          </dl>
+        </section>
+      </div>
       <!-- MCP servers: remote tool providers, enabled per server because
            every tool definition is spent from the context window. -->
       <div
@@ -1014,7 +1244,7 @@
         @keydown.escape.window="mcpOpen=false"
       >
         <section class="settings-card" @click.outside="mcpOpen=false">
-          <div class="kicker">Model context protocol</div>
+          <button type="button" class="sheet-close" aria-label="Close" @click="mcpOpen=false">✕</button>
           <h2>Connected servers</h2>
           <p class="settings-note">
             Tools from enabled servers are offered to the model alongside the
@@ -1031,7 +1261,7 @@
                       type="checkbox"
                       :checked="server.enabled"
                       @change="updateMcp(server, {enabled: $event.target.checked})"
-                    /><span x-text="server.enabled ? 'ON' : 'OFF'"></span
+                    /><span x-text="server.enabled ? 'On' : 'Off'"></span
                   ></label>
                   <input
                     class="skill-name"
@@ -1043,7 +1273,7 @@
                     style="flex: none"
                     @click="testMcp(server)"
                   >
-                    TEST
+                    Test
                   </button>
                   <button
                     class="history-delete"
@@ -1097,7 +1327,7 @@
         @keydown.escape.window="skillsOpen=false"
       >
         <section class="settings-card" @click.outside="skillsOpen=false">
-          <div class="kicker">Prompt skills</div>
+          <button type="button" class="sheet-close" aria-label="Close" @click="skillsOpen=false">✕</button>
           <h2>Teach the console</h2>
           <p class="settings-note">
             Enabled skills are added to the system prompt on every turn.
@@ -1114,7 +1344,7 @@
                       type="checkbox"
                       :checked="skill.enabled"
                       @change="toggleSkill(skill, $event.target.checked)"
-                    /><span x-text="skill.enabled ? 'ON' : 'OFF'"></span
+                    /><span x-text="skill.enabled ? 'On' : 'Off'"></span
                   ></label>
                   <input
                     class="skill-name"
@@ -1170,8 +1400,27 @@
         @keydown.escape.window="settingsOpen=false"
       >
         <section class="settings-card" @click.outside="settingsOpen=false">
-          <div class="kicker">Terminal settings</div>
+          <button type="button" class="sheet-close" aria-label="Close" @click="settingsOpen=false">✕</button>
           <h2>Shape the console</h2>
+          <fieldset class="theme-picker">
+            <legend>Theme</legend>
+            <template x-for="option in themes" :key="option.id">
+              <button
+                type="button"
+                class="theme-option"
+                :class="{on: theme===option.id}"
+                :aria-pressed="theme===option.id"
+                @click="theme=option.id"
+              >
+                <span class="theme-swatch" :style="`background:${option.bg}`"
+                  ><i :style="`background:${option.accent}`"></i
+                  ><b :style="`border-color:${option.accent};background:${option.surface}`"></b
+                ></span>
+                <span class="theme-name" x-text="option.name"></span>
+                <small x-text="option.blurb"></small>
+              </button>
+            </template>
+          </fieldset>
           <div class="settings-grid">
             <label
               >Performance profile<select
@@ -1181,7 +1430,7 @@
                 <template x-for="preset in thinkingProfiles" :key="preset.id"
                   ><option
                     :value="preset.id"
-                    x-text="`${preset.name}${preset.recommended ? ' � recommended' : ''}`"
+                    x-text="`${preset.name}${preset.recommended ? ' · recommended' : ''}`"
                   ></option
                 ></template></select
             ></label>
@@ -1233,7 +1482,7 @@
         @keydown.escape.window="modelsOpen=false"
       >
         <section class="settings-card" @click.outside="modelsOpen=false">
-          <div class="kicker">Model workbench</div>
+          <button type="button" class="sheet-close" aria-label="Close" @click="modelsOpen=false">✕</button>
           <h2>Inference endpoint</h2>
           <p class="settings-copy">
             Where the model runs. The local llama.cpp is the default; point at
@@ -1272,7 +1521,7 @@
                   aria-label="Edit endpoint"
                   @click="editEndpoint(endpoint)"
                 >
-                  EDIT
+                  Edit
                 </button>
               </div>
             </template>
@@ -1343,23 +1592,23 @@
                     class="chip"
                     :disabled="endpointBusy"
                     @click="testEndpoint()"
-                    x-text="endpointBusy ? 'WORKING' : 'TEST'"
+                    x-text="endpointBusy ? 'Working' : 'Test'"
                   ></button>
                   <button
                     class="chip"
                     :disabled="endpointBusy"
                     @click="saveEndpoint()"
                   >
-                    SAVE
+                    Save
                   </button>
                   <button
                     class="chip warn"
                     x-show="endpointDraft.id"
                     @click="deleteEndpoint(endpointDraft); cancelEndpoint()"
                   >
-                    DELETE
+                    Delete
                   </button>
-                  <button class="chip" @click="cancelEndpoint()">CANCEL</button>
+                  <button class="chip" @click="cancelEndpoint()">Cancel</button>
                 </div>
               </div>
             </template>
@@ -1379,7 +1628,7 @@
                     <span class="diagnostic-step" x-text="check.step"></span>
                     <span
                       class="diagnostic-state"
-                      x-text="check.ok ? 'PASS' : 'FAIL'"
+                      x-text="check.ok ? 'Pass' : 'Fail'"
                     ></span>
                     <span class="diagnostic-detail" x-text="check.detail"></span>
                     <span
@@ -1399,7 +1648,6 @@
           >
             <header class="model-catalog-head">
               <div>
-                <div class="kicker">Local model vault</div>
                 <b
                   x-text="modelStatus?.state?.active?.id ? `Active // ${modelStatus.state.active.id}` : 'No active managed model'"
                 ></b>
@@ -1565,7 +1813,6 @@
             >
               <div class="model-inventory-head">
                 <div>
-                  <div class="kicker">Persistent storage / physical files</div>
                   <h3 id="model-inventory-title">Downloaded models</h3>
                 </div>
                 <button
@@ -1632,7 +1879,6 @@
               </div>
             </section>
             <section class="model-yaml" x-show="modelPairingConfigured">
-              <div class="kicker">Manual activation (fallback)</div>
               <h3>Native Configuration YAML</h3>
               <p>
                 <b>Use this model</b> switches the running model in place — no
@@ -1681,185 +1927,5 @@
         </section>
       </div>
     </div>
-    <!--
-      The bench divider. Drags the split between the two cases; double-click
-      returns them to the default. It only exists while both cases are out,
-      and the split is a ratio rather than a pixel width so the bench stays
-      responsive when the window changes.
-    -->
-    <div
-      class="bench-grip"
-      role="separator"
-      aria-orientation="vertical"
-      aria-label="Resize the artifact"
-      tabindex="0"
-      x-show="artifactOpen"
-      x-cloak
-      @pointerdown.prevent="startBenchDrag($event)"
-      @dblclick="benchSplit = null"
-      @keydown.arrow-left.prevent="nudgeBench(-1)"
-      @keydown.arrow-right.prevent="nudgeBench(1)"
-    ></div>
-    <!--
-      The artifact's own case. Same bezel and glass as the console so the two
-      read as a matched pair on the bench.
-
-      HTML and SVG render in a frame with sandbox="allow-scripts" and no
-      allow-same-origin, which puts them in an opaque origin: a document the
-      model wrote cannot read the console, its storage, or the Home Assistant
-      session it is embedded in. Those two flags together would undo the
-      sandbox, so they are never combined.
-    -->
-    <div
-      class="deck artifact-deck"
-      :class="{scanlines:scanlines}"
-      :style="benchSplit ? `flex-grow:${benchSplit}` : ''"
-      x-show="artifactOpen"
-      x-cloak
-    >
-      <div class="screen artifact-screen">
-        <div class="flicker" aria-hidden="true"></div>
-        <aside class="artifact-pane">
-          <header class="artifact-head">
-            <div class="artifact-heading">
-              <span class="artifact-kind" x-text="currentArtifact?.kind"></span>
-              <b x-text="currentArtifact?.title || 'Artifact'"></b>
-            </div>
-            <div class="artifact-actions">
-              <!--
-                While the model writes there is nothing saved to save or
-                delete, and nothing rendered to preview, so the toggle is the
-                only control that means anything.
-              -->
-              <div class="mode-toggle" role="group" aria-label="Artifact view">
-                <button
-                  :class="{on: artifactView==='source'}"
-                  @click="artifactView='source'"
-                >
-                  SOURCE
-                </button>
-                <button
-                  :class="{on: artifactView==='preview'}"
-                  :disabled="artifactStreaming"
-                  @click="artifactView='preview'"
-                >
-                  PREVIEW
-                </button>
-              </div>
-              <!-- Both act on a stored document, so both wait for one. -->
-              <template x-if="currentArtifact?.id"
-                ><span
-                  ><button class="chip" @click="downloadArtifact()">SAVE</button>
-                  <button class="chip warn" @click="deleteArtifact()">
-                    DELETE</button></span
-              ></template>
-              <button
-                class="chip"
-                @click="artifactOpen=false"
-                aria-label="Close artifact"
-              >
-                ✕
-              </button>
-            </div>
-          </header>
-          <div class="artifact-stage">
-            <template x-if="artifactIsFramed()"
-              ><iframe
-                class="artifact-frame"
-                sandbox="allow-scripts"
-                referrerpolicy="no-referrer"
-                :src="artifactFrameSrc()"
-                title="Artifact preview"
-              ></iframe
-            ></template>
-            <template
-              x-if="!artifactIsFramed() && artifactView==='preview' && currentArtifact"
-              ><div
-                class="artifact-text"
-                x-effect="renderArtifactBody($el, currentArtifact)"
-              ></div
-            ></template>
-            <!--
-              While the model is writing, the source is a read-only trace:
-              there is nothing to edit yet and the text is still moving.
-            -->
-            <template x-if="artifactView==='source' && artifactStreaming"
-              ><pre
-                class="artifact-source writing"
-                x-text="currentArtifact?.content"
-              ></pre
-            ></template>
-            <!--
-              Once it has settled the same view is an editor. Ctrl/Cmd+Enter
-              applies, which for a shader means it recompiles where you can
-              see it.
-            -->
-            <template x-if="artifactView==='source' && !artifactStreaming && currentArtifact"
-              ><div class="artifact-editor">
-                <div class="editor-body">
-                  <!-- Line numbers, scrolled to follow the text beside them. -->
-                  <pre
-                    class="editor-gutter"
-                    aria-hidden="true"
-                    x-text="editorGutter()"
-                  ></pre>
-                  <div class="editor-input">
-                    <!--
-                      The painted layer sits behind a textarea whose own text
-                      is transparent. The textarea keeps focus, selection,
-                      undo and IME; this only supplies colour, so the two must
-                      share font, padding and wrapping exactly.
-                    -->
-                    <pre
-                      class="editor-highlight"
-                      aria-hidden="true"
-                      x-effect="editorPaint($el)"
-                    ></pre>
-                    <textarea
-                      class="editor-text"
-                      spellcheck="false"
-                      autocapitalize="off"
-                      autocomplete="off"
-                      wrap="off"
-                      aria-label="Artifact source"
-                      x-model="artifactSource"
-                      @keydown="editorKey($event)"
-                      @scroll="editorScroll($event)"
-                    ></textarea>
-                  </div>
-                </div>
-                <!-- What the frame said last time this ran. -->
-                <div class="artifact-problem" x-show="artifactStatus" x-cloak>
-                  <b>from the frame</b>
-                  <span x-text="artifactStatus"></span>
-                </div>
-                <div class="artifact-editbar">
-                  <span class="editor-where" x-text="editorPosition()"></span>
-                  <span
-                    class="artifact-dirty"
-                    x-show="artifactDirty()"
-                    x-cloak
-                    >unsaved &middot; ctrl+enter</span
-                  >
-                  <button
-                    class="chip"
-                    :disabled="!artifactDirty() || artifactSaving"
-                    @click="applyArtifactEdit()"
-                    x-text="artifactSaving ? 'APPLYING' : 'APPLY'"
-                  ></button>
-                  <button
-                    class="chip"
-                    :disabled="!artifactDirty()"
-                    @click="artifactSource = currentArtifact.content || ''"
-                  >
-                    REVERT
-                  </button>
-                </div></div
-            ></template>
-          </div>
-        </aside>
-      </div>
-    </div>
-  </div>
   </body>
 </html>

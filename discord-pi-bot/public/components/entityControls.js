@@ -97,7 +97,7 @@
 	 */
 	const CHANNELS = {
 		brightness: {
-			label: "BRIGHTNESS",
+			label: "Brightness",
 			min: 0,
 			max: 100,
 			step: 1,
@@ -112,7 +112,7 @@
 			},
 		},
 		kelvin: {
-			label: "WARMTH",
+			label: "Warmth",
 			min: (entity) => kelvinRange(entity).min,
 			max: (entity) => kelvinRange(entity).max,
 			step: 50,
@@ -128,7 +128,7 @@
 			},
 		},
 		hue: {
-			label: "HUE",
+			label: "Hue",
 			min: 0,
 			max: 360,
 			step: 1,
@@ -144,7 +144,7 @@
 			},
 		},
 		saturation: {
-			label: "SATURATION",
+			label: "Saturation",
 			min: 0,
 			max: 100,
 			step: 1,
@@ -159,11 +159,11 @@
 			},
 		},
 		position: {
-			label: "POSITION",
+			label: "Position",
 			min: 0,
 			max: 100,
 			step: 1,
-			format: (value) => `${Math.round(value)}% OPEN`,
+			format: (value) => `${Math.round(value)}% open`,
 			read: (entity) => Number(entity.position) || 0,
 			commit: (value) => ["set_position", Math.round(value)],
 			apply: (entity, value) => {
@@ -171,7 +171,7 @@
 			},
 		},
 		speed: {
-			label: "SPEED",
+			label: "Speed",
 			min: 0,
 			max: 100,
 			step: (entity) => Number(entity.fanStep) || 1,
@@ -180,7 +180,7 @@
 				const step = Number(entity?.fanStep) || 0;
 				const percent = Math.round(value);
 				if (step > 0 && step < 100)
-					return `${percent}% · ${Math.round(percent / step)} OF ${Math.round(100 / step)}`;
+					return `${percent}% · ${Math.round(percent / step)} of ${Math.round(100 / step)}`;
 				return `${percent}%`;
 			},
 			read: (entity) => Number(entity.fanPercentage) || 0,

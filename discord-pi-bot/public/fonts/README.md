@@ -8,28 +8,28 @@ Pi that may have no outbound access.
 
 | File | Family | Used for |
 | --- | --- | --- |
-| `big-shoulders-stencil-text-700.woff2` | Big Shoulders Stencil Text, weight 700 | stencil display type — wordmark, headings (`--display`) |
-| `share-tech-mono.woff2` | Share Tech Mono, weight 400 | everything else (`--mono`) |
+| `fraunces-normal-300-700.woff2`, `fraunces-italic-300-700.woff2` | Fraunces (variable: weight, optical size) | display — wordmark, greeting, headings, big readings (`--font-display`) |
+| `ibm-plex-sans-normal-400-600.woff2`, `ibm-plex-sans-italic-400.woff2` | IBM Plex Sans (variable weight) | reading text — replies, cards, panels (`--font`) |
+| `ibm-plex-mono-normal-400.woff2`, `ibm-plex-mono-normal-500.woff2` | IBM Plex Mono | code, figures and small details (`--font-mono`) |
 
-Both are Latin subsets from Google Fonts, declared via `@font-face` at the top
-of `styles.css`. System fallback stacks remain in `--display` and `--mono` so
-the layout holds if a file is ever missing.
+All are Latin subsets from Google Fonts, declared via `@font-face` at the top
+of `styles.css`. System fallback stacks remain in the variables so the layout
+holds if a file is ever missing.
 
 ## Licence
 
-Both faces are licensed under the **SIL Open Font License 1.1**, which permits
-redistribution alongside this add-on provided the licence travels with them and
-they are not sold on their own.
+All three families are licensed under the **SIL Open Font License 1.1**, which
+permits redistribution alongside this add-on provided the licence travels with
+them and they are not sold on their own.
 
-- Big Shoulders Stencil Text — © The Big Shoulders Project Authors
-  <https://fonts.google.com/specimen/Big+Shoulders+Stencil+Text>
-- Share Tech Mono — © Carrois Apostrophe
-  <https://fonts.google.com/specimen/Share+Tech+Mono>
+- Fraunces — © The Fraunces Project Authors
+  <https://fonts.google.com/specimen/Fraunces>
+- IBM Plex Sans, IBM Plex Mono — © IBM Corp.
+  <https://github.com/IBM/plex>
 
 Full licence text: <https://openfontlicense.org>
 
 ## Replacing or extending
 
 Drop a new `.woff2` here and update the matching `@font-face` `src` in
-`styles.css`. To cover more scripts, re-export a wider subset — these files
-carry Latin only, which is why they are ~14 KB each.
+`styles.css`. To cover more scripts, re-export a wider subset.
