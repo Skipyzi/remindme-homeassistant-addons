@@ -2,8 +2,19 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>RemindMe // command deck</title>
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content"
+    />
+    <meta name="theme-color" content="#0d0a06" />
+    <!-- The saved theme, applied before first paint so nothing flashes. -->
+    <script>
+      try {
+        const theme = localStorage.getItem("remindme.theme");
+        if (theme && theme !== "lucky38") document.documentElement.dataset.theme = theme;
+      } catch (_) {}
+    </script>
+    <title>RemindMe</title>
     <script defer src="./components/timeline.js"></script>
     <script defer src="./components/thinking.js"></script>
     <script defer src="./components/tools.js"></script>
@@ -27,42 +38,50 @@
   </head>
   <body>
     <pre id="ascii" aria-hidden="true"></pre>
-    <!--
-      Two cases on one bench. The artifact gets its own device rather than a
-      third column inside this one: a document the model wrote is a separate
-      thing from the console, and giving it its own bezel says so.
-    -->
     <div
-      class="workbench"
-      :class="{'with-artifact': artifactOpen}"
+      class="app"
       x-data="harness()"
       x-init="init()"
+      :class="{scanlines: scanlines, 'drawer-open': historyOpen, 'with-artifact': artifactOpen}"
+      @keydown.escape.window="historyOpen=false"
     >
-      <div
-        class="deck"
-        :class="{scanlines:scanlines}"
-        :style="benchSplit ? `flex-grow:${(1 - benchSplit).toFixed(3)}` : ''"
-      >
-        <div class="screen">
-        <div class="flicker" aria-hidden="true"></div>
-        <aside
-        class="rail"
+      <!-- Tapping outside the drawer closes it on narrow screens. -->
+      <div class="scrim" x-show="historyOpen" x-cloak @click="historyOpen=false"></div>
+
+      <!--
+        The drawer: chats first, then the rooms of the app. A fixed column on
+        wide screens, an off-canvas panel on phones.
+      -->
+      <aside
+        class="drawer"
         id="conversation-library"
         :class="{open: historyOpen}"
+        aria-label="Chats and settings"
       >
-        <div>
-          <div class="kicker">Local command deck / 01</div>
-          <div class="brand">◉ <b>RemindMe</b><br />AI</div>
+        <div class="drawer-head">
+          <div class="brand"><svg class="emblem" viewBox="0 0 32 32" aria-hidden="true"><ellipse cx="16" cy="10" rx="12" ry="3.4" /><path d="M16 3v4M13 13.2 11 29h10l-2-15.8M11 29h10M14 19h4M13.4 24h5.2" /></svg><span>RemindMe</span></div>
+          <button
+            type="button"
+            class="icon-btn drawer-close"
+            aria-label="Close menu"
+            @click="historyOpen=false"
+          >
+            ✕
+          </button>
         </div>
-        <p class="rail-copy">
-          A private home console for rooms, reminders, and the wider signal.
-        </p>
-        <nav class="nav" aria-label="Conversation controls">
-          <button @click="newChat()">＋ New chat</button>
-          <label class="history-search"
-            >Search<input x-model="conversationSearch" type="search"
-          /></label>
-          <div class="history-list">
+        <button type="button" class="btn primary block" @click="newChat()">
+          <span aria-hidden="true">＋</span> New chat
+        </button>
+        <label class="search-field">
+          <span class="sr-only">Search chats</span>
+          <input
+            x-model="conversationSearch"
+            type="search"
+            placeholder="Search chats"
+            autocomplete="off"
+          />
+        </label>
+        <div class="history-list">
             <template
               x-for="conversation in filteredConversations"
               :key="conversation.id"
@@ -112,20 +131,23 @@
                   </button>
                 </div></div
             ></template>
-          </div>
-          <button @click="clearChat()">Clear conversation</button>
+          <p class="history-empty" x-show="!filteredConversations.length">
+            No chats yet.
+          </p>
+        </div>
+        <nav class="drawer-nav" aria-label="Console">
+          <button @click="modelsOpen=true">Models</button>
           <button @click="openSkills()">Skills</button>
           <button @click="openMcp()">MCP</button>
-          <button @click="modelsOpen=true">Models</button>
           <button @click="openSettings()">Settings</button>
+          <button class="danger" @click="clearChat()">Clear conversation</button>
         </nav>
-        <div class="rail-foot">
+        <div class="drawer-foot">
           <div
             class="status"
             :class="{'offline': offline}"
-            x-text="offline ? 'local tools offline' : 'local tools ready'"
+            x-text="offline ? 'Local tools offline' : 'Local tools ready'"
           ></div>
-          <div class="micro" x-text="hardware"></div>
           <!-- Host telemetry: inference and Home Assistant share this Pi, so
                these are the numbers that explain a slow reply. -->
           <div class="host-stats" x-show="system">
@@ -163,53 +185,85 @@
           </div>
         </div>
       </aside>
-      <main class="main">
-        <header class="topbar">
-          <button
-            class="mobile-toggle"
-            aria-controls="conversation-library"
-            @click="historyOpen=!historyOpen"
-          >
-            ☰ Chats
-          </button>
-          <div class="top-title">
-            Home console<small x-text="sessionLabel"></small>
-          </div>
-          <div class="badge" x-text="modelBadge"></div>
-          <!-- Global model-operation indicator: visible from anywhere while a
-               download or switch is running, so long jobs are never silent. -->
-          <button
-            class="model-working"
-            x-show="modelOperationBusy"
-            x-cloak
-            @click="modelsOpen=true"
-            :title="`Model ${(modelOperation?.phase||'').replaceAll('_',' ')} — open Models`"
-            aria-live="polite"
-          >
-            <span class="model-working-spin" aria-hidden="true"></span>
-            <span x-text="(modelOperation?.phase||'working').replaceAll('_',' ')"></span>
-            <span
-              x-show="modelOperation?.bytesTotal"
-              x-text="` ${Math.round(modelProgressPercent())}%`"
-            ></span>
-          </button>
-          <button
-            class="mobile-toggle"
-            aria-controls="house-board"
-            @click="boardOpen=!boardOpen"
-          >
-            House board
-          </button>
-        </header>
-        <section class="chat" id="timeline" aria-live="polite">
-          <div class="empty" x-show="messages.length===0">
-            <div class="kicker">Signal received</div>
-            <h2>What should we make easier?</h2>
-            <p>
-              Ask about your home, set a reminder, or search the web. Actions
-              wait for your confirmation.
-            </p>
-          </div>
+
+      <!--
+        The bench: the console, and beside it (or over it, on a phone) the
+        document the model wrote. `.workbench` is what the divider measures.
+      -->
+      <div class="workbench">
+        <main
+          class="stage"
+          :style="artifactOpen && benchSplit ? `flex-grow:${(1 - benchSplit).toFixed(3)}` : ''"
+        >
+          <header class="topbar">
+            <button
+              type="button"
+              class="icon-btn menu-btn"
+              aria-controls="conversation-library"
+              :aria-expanded="historyOpen"
+              aria-label="Chats and settings"
+              @click="historyOpen=!historyOpen"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16" /></svg>
+            </button>
+            <div class="top-title">
+              <svg class="emblem" viewBox="0 0 32 32" aria-hidden="true"><ellipse cx="16" cy="10" rx="12" ry="3.4" /><path d="M16 3v4M13 13.2 11 29h10l-2-15.8M11 29h10M14 19h4M13.4 24h5.2" /></svg><b>RemindMe</b>
+            </div>
+            <!-- Global model-operation indicator: visible from anywhere while a
+                 download or switch is running, so long jobs are never silent. -->
+            <button
+              class="model-working"
+              x-show="modelOperationBusy"
+              x-cloak
+              @click="modelsOpen=true"
+              :title="`Model ${(modelOperation?.phase||'').replaceAll('_',' ')} — open Models`"
+              aria-live="polite"
+            >
+              <span class="model-working-spin" aria-hidden="true"></span>
+              <span x-text="(modelOperation?.phase||'working').replaceAll('_',' ')"></span>
+              <span
+                x-show="modelOperation?.bytesTotal"
+                x-text="` ${Math.round(modelProgressPercent())}%`"
+              ></span>
+            </button>
+            <button
+              type="button"
+              class="badge"
+              title="Models"
+              @click="modelsOpen=true"
+              x-text="modelBadge"
+            ></button>
+            <button
+              type="button"
+              class="icon-btn"
+              aria-controls="house-board"
+              aria-label="Model instruments"
+              title="Model instruments"
+              @click="boardOpen=!boardOpen"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19V11M12 19V5M19 19v-5" /></svg>
+            </button>
+          </header>
+
+          <section class="chat" id="timeline" aria-live="polite">
+            <div class="chat-column">
+              <div class="empty" x-show="messages.length===0">
+                <svg class="emblem hero" viewBox="0 0 32 32" aria-hidden="true"><ellipse cx="16" cy="10" rx="12" ry="3.4" /><path d="M16 3v4M13 13.2 11 29h10l-2-15.8M11 29h10M14 19h4M13.4 24h5.2" /></svg>
+                <h2 x-text="greeting"></h2>
+                <ul class="pulse" x-show="pulse.length">
+                  <template x-for="line in pulse" :key="line"><li x-text="line"></li></template>
+                </ul>
+                <div class="suggestions">
+                  <template x-for="suggestion in suggestions" :key="suggestion">
+                    <button
+                      type="button"
+                      class="suggestion"
+                      @click="draft = suggestion; $nextTick(() => $refs.composerInput.focus())"
+                      x-text="suggestion"
+                    ></button>
+                  </template>
+                </div>
+              </div>
           <template
             x-for="message in messages"
             :key="message.id || message.key"
@@ -226,8 +280,13 @@
               :class="{
                 [message.kind || 'answer']: true,
                 settled: message.state==='complete' && (message.kind==='thinking' || message.kind==='tool'),
+                streaming: message.kind==='answer' && message.state==='active',
               }"
             >
+              <!-- The console's mark beside what it says. -->
+              <template x-if="message.kind==='answer' || message.kind==='reader'">
+                <svg class="emblem avatar" viewBox="0 0 32 32" aria-hidden="true"><ellipse cx="16" cy="10" rx="12" ry="3.4" /><path d="M16 3v4M13 13.2 11 29h10l-2-15.8M11 29h10M14 19h4M13.4 24h5.2" /></svg>
+              </template>
               <template x-if="message.kind==='thinking'">
                 <details
                   :open="message.expanded"
@@ -356,7 +415,7 @@
                           ><span
                             class="val"
                             :class="{cool: iconTone(item)==='cool', off: !isActive(item)}"
-                            x-text="item.numericState ?? String(item.state).toUpperCase()"
+                            x-text="item.numericState ?? sentenceCase(item.state)"
                           ></span
                           ><span class="u" x-text="compactDetail(item)"></span></div
                       ></template>
@@ -381,14 +440,15 @@
                               ></div>
                               <div
                                 class="entity"
-                                x-text="item.message ? formatTime(item.time) : item.entityId"
+                                x-show="item.message || item.area"
+                                x-text="item.message ? formatTime(item.time) : item.area"
                               ></div>
                             </div>
                             <span
                               class="pill"
                               x-show="showPill(item)"
                               :class="statePill(item).tone"
-                              x-text="item.message ? 'SCHEDULED' : statePill(item).text"
+                              x-text="item.message ? 'Scheduled' : statePill(item).text"
                             ></span>
                           </header>
 
@@ -467,13 +527,13 @@
                                     :class="{on: lightMode(item)==='warm'}"
                                     @click="setLightMode(item,'warm')"
                                   >
-                                    WARM
+                                    Warm
                                   </button>
                                   <button
                                     :class="{on: lightMode(item)==='color'}"
                                     @click="setLightMode(item,'color')"
                                   >
-                                    COLOUR
+                                    Colour
                                   </button>
                                 </div>
 
@@ -546,7 +606,7 @@
                                   x-if="item.domain==='lock' && item.batteryLevel!=null"
                                   ><div>
                                     <div class="row">
-                                      <span>BATTERY</span
+                                      <span>Battery</span
                                       ><span x-text="`${item.batteryLevel}%`"></span>
                                     </div>
                                     <div class="bar">
@@ -563,7 +623,7 @@
                                   x-if="item.domain==='switch' && item.power!=null"
                                   ><div>
                                     <div class="row">
-                                      <span>DRAWING NOW</span
+                                      <span>Drawing now</span
                                       ><span x-text="`${item.power} W`"></span>
                                     </div>
                                     <div class="bar">
@@ -581,28 +641,28 @@
                                   class="chip"
                                   x-show="item.capabilities?.toggle"
                                   @click="entityAction(item,isActive(item)?'turn_off':'turn_on')"
-                                  x-text="isActive(item)?'TURN OFF':'TURN ON'"
+                                  x-text="isActive(item)?'Turn off':'Turn on'"
                                 ></button>
                                 <!-- destructive: hovers rust, never amber -->
                                 <button
                                   class="chip warn"
                                   x-show="item.capabilities?.lock"
                                   @click="entityAction(item, item.state==='locked'?'unlock':'lock')"
-                                  x-text="item.state==='locked'?'UNLOCK':'LOCK'"
+                                  x-text="item.state==='locked'?'Unlock':'Lock'"
                                 ></button>
                                 <button
                                   class="chip warn"
                                   x-show="item.domain==='cover'"
                                   @click="entityAction(item,'open_cover')"
                                 >
-                                  OPEN
+                                  Open
                                 </button>
                                 <button
                                   class="chip"
                                   x-show="item.domain==='cover'"
                                   @click="entityAction(item,'close_cover')"
                                 >
-                                  CLOSE
+                                  Close
                                 </button>
                                 <!-- Brightness and position are sliders on the
                                      card now, so the fixed-amount chips they
@@ -613,7 +673,7 @@
                                   x-show="item.domain==='fan' && item.fanPercentage!=null"
                                   @click="stepFanSpeed(item)"
                                 >
-                                  SPEED UP
+                                  Speed up
                                 </button>
                                 <!-- One-tap setback, the adjustment you reach
                                      for without opening the stepper. -->
@@ -628,7 +688,7 @@
                                   x-show="item.domain==='climate' && item.state!=='off'"
                                   @click="entityAction(item,'set_hvac_mode','off')"
                                 >
-                                  TURN OFF
+                                  Turn off
                                 </button>
                               </div></div
                           ></template>
@@ -651,7 +711,7 @@
                 >
                   <span class="artifact-kind" x-text="message.artifact.kind"></span>
                   <span class="artifact-title" x-text="message.artifact.title"></span>
-                  <span class="artifact-open">OPEN</span></button
+                  <span class="artifact-open">Open</span></button
               ></template>
               <!-- Gauge line: stats attach under the reply, not a side rail. -->
               <div
@@ -709,7 +769,7 @@
                       <div class="name" x-text="message.confirm.message"></div>
                       <div class="entity" x-text="message.confirm.when"></div>
                     </div>
-                    <span class="pill">PENDING</span>
+                    <span class="pill">Pending</span>
                   </header>
                   <div class="card-body">
                     <div class="meta" x-text="formatTime(message.confirm.at)"></div>
@@ -722,10 +782,10 @@
                   </div>
                   <div class="actions">
                     <button class="chip" @click="confirmAction(message)">
-                      SET REMINDER
+                      Set reminder
                     </button>
                     <button class="chip warn" @click="cancelAction(message)">
-                      CANCEL
+                      Cancel
                     </button>
                   </div>
                 </div></template
@@ -737,10 +797,10 @@
                     class="action"
                     :class="{destructive: message.confirm.destructive}"
                     @click="confirmAction(message)"
-                    x-text="message.confirm.destructive ? 'CONFIRM — UNSAFE' : 'CONFIRM ACTION'"
+                    x-text="message.confirm.destructive ? 'Confirm — unsafe' : 'Confirm action'"
                   ></button
                   ><button class="ghost" @click="cancelAction(message)">
-                    CANCEL
+                    Cancel
                   </button>
                 </div></template
               >
@@ -751,11 +811,11 @@
                 ><div class="task-wizard">
                   <header>
                     <span class="tw-title">New scheduled task</span>
-                    <span class="pill">WIZARD</span>
+                    <span class="pill">Wizard</span>
                   </header>
                   <div class="tw-body">
                     <label class="tw-field">
-                      <span>WHAT SHOULD IT DO</span>
+                      <span>What should it do</span>
                       <textarea
                         rows="2"
                         x-model="message.wizard.what"
@@ -764,7 +824,7 @@
                       ></textarea>
                     </label>
                     <label class="tw-field">
-                      <span>WHEN</span>
+                      <span>When</span>
                       <input
                         type="text"
                         x-model="message.wizard.when"
@@ -777,21 +837,21 @@
                         class="chip"
                         @click="message.wizard.when='every day at 8'"
                       >
-                        DAILY 8AM
+                        Daily 8AM
                       </button>
                       <button
                         type="button"
                         class="chip"
                         @click="message.wizard.when='every 6 hours'"
                       >
-                        EVERY 6H
+                        Every 6h
                       </button>
                       <button
                         type="button"
                         class="chip"
                         @click="message.wizard.when='mondays at 9'"
                       >
-                        WEEKLY MON
+                        Weekly mon
                       </button>
                     </div>
                     <div class="tw-targets">
@@ -801,7 +861,7 @@
                         :class="{on: message.wizard.vault}"
                         @click="message.wizard.vault=!message.wizard.vault"
                       >
-                        ARCHIVE TO VAULT
+                        Archive to vault
                       </button>
                       <button
                         type="button"
@@ -809,7 +869,7 @@
                         :class="{on: message.wizard.notify}"
                         @click="message.wizard.notify=!message.wizard.notify"
                       >
-                        NOTIFY
+                        Notify
                       </button>
                     </div>
                     <p
@@ -823,10 +883,10 @@
                       class="chip"
                       :disabled="message.wizard.submitting"
                       @click="submitTaskWizard(message)"
-                      x-text="message.wizard.submitting ? 'SCHEDULING…' : 'SCHEDULE'"
+                      x-text="message.wizard.submitting ? 'Scheduling…' : 'Schedule'"
                     ></button>
                     <button class="chip warn" @click="cancelTaskWizard(message)">
-                      CANCEL
+                      Cancel
                     </button>
                   </div>
                 </div></template
@@ -869,856 +929,155 @@
               x-text="`${activityElapsed.toFixed(1)} s`"
             ></span>
           </div>
-        </section>
-        <footer
-          class="composer"
-          id="composer"
-          @dragover.prevent
-          @drop.prevent="addAttachments($event.dataTransfer.files)"
-          @paste.window="addAttachments($event.clipboardData.files)"
-        >
-          <form @submit.prevent="send()">
-            <div class="compose-line">
-              <!-- Ghost completion sits behind the textarea, sharing its
-                   metrics so the suggestion lines up with what you typed. -->
-              <div class="compose-field">
-                <div
-                  class="compose-ghost"
-                  aria-hidden="true"
-                  x-show="commandGhost"
-                ><span class="ghost-typed" x-text="draft"></span><span
-                    class="ghost-rest"
-                    x-text="commandGhost"
-                  ></span></div>
-                <textarea
-                  x-ref="composerInput"
-                  x-model="draft"
-                  @input="resizeComposer($event)"
-                  @keydown="handleComposerKeydown($event)"
-                  rows="1"
-                  placeholder="Ask the console anything…"
-                  aria-label="Message"
-                ></textarea>
-              </div
-              ><button
-                class="send"
-                :class="{cancel: busy}"
-                type="button"
-                :disabled="modelSwitching && !busy"
-                @click="busy ? cancel() : send()"
-                :title="modelSwitching && !busy ? 'Switching model — inference is briefly unavailable' : ''"
-                :aria-label="busy ? 'Cancel the current turn' : 'Send message'"
-                x-text="busy ? 'Cancel ✕' : (modelSwitching ? 'Switching…' : 'Send ↑')"
-              ></button>
             </div>
-            <!-- Discoverability: what the prefix could still become. -->
-            <div class="command-hints" x-show="commandMatches.length > 1">
-              <template x-for="command in commandMatches" :key="command.name">
-                <button
-                  type="button"
-                  class="command-hint"
-                  @click="draft = command.name + (command.usage.includes('<') ? ' ' : ''); $refs.composerInput.focus()"
-                >
-                  <span x-text="command.usage"></span
-                  ><small x-text="command.blurb"></small>
-                </button>
-              </template>
-            </div>
-            <div class="attachment-strip" x-show="attachments.length">
-              <template
-                x-for="(attachment,index) in attachments"
-                :key="attachment.name+index"
-                ><span
-                  ><img
-                    :src="attachment.dataUrl"
-                    :alt="attachment.name"
-                  /><button type="button" @click="attachments.splice(index,1)">
-                    ×
-                  </button></span
-                ></template
-              >
-            </div>
-            <p
-              class="entity-error"
-              x-show="attachmentError"
-              x-text="attachmentError"
-            ></p>
-            <div class="controls">
-              <label class="attach-button"
-                >Attach image<input
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp"
-                  multiple
-                  @change="addAttachments($event.target.files)"
-              /></label>
-              <label
-                >Thinking
-                <select x-model="thinking">
-                  <template x-for="preset in thinkingProfiles" :key="preset.id"
-                    ><option :value="preset.id" x-text="preset.name"></option
-                  ></template></select></label
-              ><span
-                class="thinking-hint"
-                x-text="`${currentThinkingProfile.reasoningBudget} thought · ${currentThinkingProfile.answerReserve} answer tokens${currentThinkingProfile.estimatedMaxSeconds ? ` · up to ${formatDuration(currentThinkingProfile.estimatedMaxSeconds * 1000)}` : ''}`"
-              ></span
-              ><span
-                x-show="tokenUsage.exact"
-                x-text="`Prompt ${tokenUsage.promptTokens} tokens · Context ${tokenUsage.contextTokens + tokenUsage.promptTokens} / ${tokenUsage.contextCapacity}`"
-              ></span>
-              <span x-show="!tokenUsage.exact"
-                >Exact token count unavailable</span
-              >
-            </div>
-            <div class="context-track" :class="contextLevel">
-              <i :style="`width:${contextPercent}%`"></i>
-            </div>
-          </form>
-        </footer>
-      </main>
-      </div>
-      <aside class="telemetry" id="house-board" :class="{open: boardOpen}">
-        <div class="kicker">Live telemetry</div>
-        <h2>MODEL INSTRUMENTS</h2>
-        <div class="meter">
-          <span>Prompt tokens</span
-          ><strong x-text="metrics.inputTokens || '—'"></strong>
-        </div>
-        <div class="meter">
-          <span>Decode speed</span
-          ><strong
-            x-text="metrics.decode ? metrics.decode.toFixed(1) : '—'"
-          ></strong
-          ><span> tok / sec</span>
-        </div>
-        <div class="meter">
-          <span>First signal</span
-          ><strong x-text="metrics.ttft ? metrics.ttft : '—'"></strong
-          ><span> ms</span>
-        </div>
-        <div class="meter">
-          <span>Context used</span
-          ><strong x-text="metrics.context || '—'"></strong>
-        </div>
-        <div class="meter">
-          <span>Thought trace</span
-          ><strong x-text="metrics.thinking || 0"></strong><span> chars</span>
-        </div>
-      </aside>
-      <!-- MCP servers: remote tool providers, enabled per server because
-           every tool definition is spent from the context window. -->
-      <div
-        class="settings"
-        id="mcp-view"
-        x-show="mcpOpen"
-        x-cloak
-        @keydown.escape.window="mcpOpen=false"
-      >
-        <section class="settings-card" @click.outside="mcpOpen=false">
-          <div class="kicker">Model context protocol</div>
-          <h2>Connected servers</h2>
-          <p class="settings-note">
-            Tools from enabled servers are offered to the model alongside the
-            built-in ones. Each definition costs context on every request, so
-            enable only what you use.
-          </p>
+          </section>
 
-          <div class="skill-list">
-            <template x-for="server in mcpServers" :key="server.id">
-              <div class="skill-row" :class="{disabled: !server.enabled}">
-                <div class="skill-head">
-                  <label class="skill-toggle"
-                    ><input
-                      type="checkbox"
-                      :checked="server.enabled"
-                      @change="updateMcp(server, {enabled: $event.target.checked})"
-                    /><span x-text="server.enabled ? 'ON' : 'OFF'"></span
-                  ></label>
-                  <input
-                    class="skill-name"
-                    :value="server.name"
-                    @change="updateMcp(server, {name: $event.target.value})"
-                  />
-                  <button
-                    class="chip"
-                    style="flex: none"
-                    @click="testMcp(server)"
-                  >
-                    TEST
-                  </button>
-                  <button
-                    class="history-delete"
-                    title="Remove server"
-                    @click="deleteMcp(server)"
-                  >
-                    &times;
-                  </button>
-                </div>
-                <input
-                  class="skill-body"
-                  :value="server.url"
-                  @change="updateMcp(server, {url: $event.target.value})"
-                />
-                <p
-                  class="settings-note"
-                  x-show="server.probe"
-                  x-text="server.probe"
-                ></p>
-              </div>
-            </template>
-            <p class="settings-note" x-show="!mcpServers.length">
-              No servers yet. Add one below.
-            </p>
-          </div>
-
-          <div class="skill-new">
-            <input x-model="newMcpName" placeholder="Name, e.g. Weather" />
-            <input x-model="newMcpUrl" placeholder="https://host/mcp" />
-            <input
-              x-model="newMcpAuth"
-              placeholder="Authorization header (optional)"
-            />
-            <button class="action" @click="addMcp()">Add server</button>
-          </div>
-
-          <p class="settings-note" x-show="mcpError" x-text="mcpError"></p>
-          <div class="settings-actions">
-            <button class="send" @click="mcpOpen=false">Close</button>
-          </div>
-        </section>
-      </div>
-      <!-- Skill manager: named instruction blocks injected into the system
-           prompt when enabled. They cost context every turn, so enabling is
-           explicit and the panel shows the running total. -->
-      <div
-        class="settings"
-        id="skills-view"
-        x-show="skillsOpen"
-        x-cloak
-        @keydown.escape.window="skillsOpen=false"
-      >
-        <section class="settings-card" @click.outside="skillsOpen=false">
-          <div class="kicker">Prompt skills</div>
-          <h2>Teach the console</h2>
-          <p class="settings-note">
-            Enabled skills are added to the system prompt on every turn.
-            <b x-text="`${enabledSkillCount} of ${skills.length} enabled`"></b>
-            <span x-text="`· ~${skillTokenCost} tok per request`"></span>
-          </p>
-
-          <div class="skill-list">
-            <template x-for="skill in skills" :key="skill.id">
-              <div class="skill-row" :class="{disabled: !skill.enabled}">
-                <div class="skill-head">
-                  <label class="skill-toggle"
-                    ><input
-                      type="checkbox"
-                      :checked="skill.enabled"
-                      @change="toggleSkill(skill, $event.target.checked)"
-                    /><span x-text="skill.enabled ? 'ON' : 'OFF'"></span
-                  ></label>
-                  <input
-                    class="skill-name"
-                    :value="skill.name"
-                    @change="updateSkill(skill, {name: $event.target.value})"
-                  />
-                  <button
-                    class="history-delete"
-                    title="Delete skill"
-                    @click="deleteSkill(skill)"
-                  >
-                    &times;
-                  </button>
-                </div>
-                <textarea
-                  class="skill-body"
-                  rows="3"
-                  :value="skill.instructions"
-                  placeholder="Instructions to follow on every reply…"
-                  @change="updateSkill(skill, {instructions: $event.target.value})"
-                ></textarea>
-              </div>
-            </template>
-            <p class="settings-note" x-show="!skills.length">
-              No skills yet. Add one below.
-            </p>
-          </div>
-
-          <div class="skill-new">
-            <input
-              x-model="newSkillName"
-              placeholder="Skill name, e.g. Terse replies"
-            />
-            <textarea
-              x-model="newSkillBody"
-              rows="2"
-              placeholder="What should the console always do?"
-            ></textarea>
-            <button class="action" @click="addSkill()">Add skill</button>
-          </div>
-
-          <p class="settings-note" x-show="skillError" x-text="skillError"></p>
-          <div class="settings-actions">
-            <button class="send" @click="skillsOpen=false">Close</button>
-          </div>
-        </section>
-      </div>
-      <div
-        class="settings"
-        id="settings-view"
-        x-show="settingsOpen"
-        x-cloak
-        @keydown.escape.window="settingsOpen=false"
-      >
-        <section class="settings-card" @click.outside="settingsOpen=false">
-          <div class="kicker">Terminal settings</div>
-          <h2>Shape the console</h2>
-          <div class="settings-grid">
-            <label
-              >Performance profile<select
-                x-model="profile"
-                @change="thinking=profile"
-              >
-                <template x-for="preset in thinkingProfiles" :key="preset.id"
-                  ><option
-                    :value="preset.id"
-                    x-text="`${preset.name}${preset.recommended ? ' � recommended' : ''}`"
-                  ></option
-                ></template></select
-            ></label>
-            <label
-              >Glow intensity<input
-                type="range"
-                min="0"
-                max="100"
-                x-model="glow"
-                @input="document.documentElement.style.setProperty('--glow', glow / 100)"
-            /></label>
-            <label class="settings-toggle"
-              ><span>CRT scanlines</span
-              ><input type="checkbox" x-model="scanlines"
-            /></label>
-          </div>
-          <div class="settings-persona">
-            <label
-              >System prompt
-              <textarea
-                x-model="persona"
-                rows="6"
-                spellcheck="false"
-                placeholder="You are RemindMe, a concise general and home assistant…"
-              ></textarea>
-            </label>
-            <p class="settings-note">
-              The model's base instructions. Memory, tools and skills are always
-              added on top of this.
-            </p>
-            <p
-              class="settings-note"
-              x-show="personaStatus"
-              x-text="personaStatus"
-            ></p>
-          </div>
-          <div class="settings-actions">
-            <button class="action" @click="savePersona()">Save prompt</button>
-            <button class="action" @click="resetPersona()">Reset to default</button>
-            <button class="send" @click="settingsOpen=false">Close</button>
-          </div>
-        </section>
-      </div>
-      <div
-        class="settings"
-        id="models-view"
-        x-show="modelsOpen"
-        x-cloak
-        @keydown.escape.window="modelsOpen=false"
-      >
-        <section class="settings-card" @click.outside="modelsOpen=false">
-          <div class="kicker">Model workbench</div>
-          <h2>Inference endpoint</h2>
-          <p class="settings-copy">
-            Where the model runs. The local llama.cpp is the default; point at
-            a stronger box on your network or an OpenAI-compatible API to run
-            faster than a Pi can.
-          </p>
-          <div class="endpoint-list">
-            <!-- The built-in local model is always the first choice. -->
-            <button
-              class="endpoint-row"
-              :class="{active: !endpointActiveId}"
-              @click="activateEndpoint('')"
-            >
-              <span class="endpoint-dot" aria-hidden="true"></span>
-              <span class="endpoint-name">Local llama.cpp</span>
-              <span class="endpoint-model">on this device</span>
-            </button>
-            <template x-for="endpoint in endpoints" :key="endpoint.id">
-              <div
-                class="endpoint-row"
-                :class="{active: endpoint.id===endpointActiveId}"
-              >
-                <button
-                  class="endpoint-pick"
-                  @click="activateEndpoint(endpoint.id)"
-                >
-                  <span class="endpoint-dot" aria-hidden="true"></span>
-                  <span class="endpoint-name" x-text="endpoint.name"></span>
-                  <span class="endpoint-model">
-                    <span x-text="endpoint.model || 'default model'"></span
-                    ><span x-show="endpoint.hasKey" class="endpoint-key" title="API key set">🔑</span>
-                  </span>
-                </button>
-                <button
-                  class="endpoint-edit"
-                  aria-label="Edit endpoint"
-                  @click="editEndpoint(endpoint)"
-                >
-                  EDIT
-                </button>
-              </div>
-            </template>
-          </div>
-          <button
-            class="chip"
-            x-show="!endpointDraft"
-            @click="newEndpoint()"
+          <footer
+            class="composer"
+            id="composer"
+            @dragover.prevent
+            @drop.prevent="addAttachments($event.dataTransfer.files)"
+            @paste.window="addAttachments($event.clipboardData.files)"
           >
-            ＋ Add endpoint
-          </button>
-
-          <!-- Editor for a new or existing endpoint. -->
-          <div class="endpoint-editor" x-show="endpointDraft" x-cloak>
-            <template x-if="endpointDraft">
-              <div>
-                <label class="endpoint-field"
-                  >Name<input
-                    x-model="endpointDraft.name"
-                    placeholder="Studio box"
-                /></label>
-                <label class="endpoint-field"
-                  >URL<input
-                    x-model="endpointDraft.url"
-                    placeholder="http://192.168.1.40:8080/v1/chat/completions"
-                    spellcheck="false"
-                /></label>
-                <label class="endpoint-field"
-                  >Model<input
-                    x-model="endpointDraft.model"
-                    placeholder="qwen2.5-7b"
-                    spellcheck="false"
-                /></label>
-                <label class="endpoint-field"
-                  >API key
-                  <input
-                    type="password"
-                    autocomplete="off"
-                    x-model="endpointDraft.apiKey"
-                    :placeholder="endpointDraft.hasKey ? '•••••• (leave blank to keep)' : 'optional'"
-                  />
-                </label>
-                <label class="endpoint-toggle">
-                  <input type="checkbox" x-model="endpointDraft.openaiCompat" />
-                  OpenAI-compatible
-                  <small
-                    >— send only standard fields (turn off for llama.cpp's
-                    thinking controls)</small
-                  >
-                </label>
-                <div class="endpoint-error" x-show="endpointError" x-text="endpointError"></div>
-                <div
-                  class="endpoint-result"
-                  x-show="endpointTest"
-                  x-cloak
-                  :class="{bad: endpointTest && !endpointTest.ok}"
-                >
-                  <template x-if="endpointTest?.ok"
-                    ><span
-                      >Replied: <b x-text="endpointTest.reply"></b></span
-                  ></template>
-                  <template x-if="endpointTest && !endpointTest.ok"
-                    ><span x-text="endpointTest.error"></span
-                  ></template>
-                </div>
-                <div class="endpoint-actions">
+            <form class="chat-column" @submit.prevent="send()">
+              <!-- Discoverability: what the prefix could still become. -->
+              <div class="command-hints" x-show="commandMatches.length > 1">
+                <template x-for="command in commandMatches" :key="command.name">
                   <button
-                    class="chip"
-                    :disabled="endpointBusy"
-                    @click="testEndpoint()"
-                    x-text="endpointBusy ? 'WORKING' : 'TEST'"
-                  ></button>
-                  <button
-                    class="chip"
-                    :disabled="endpointBusy"
-                    @click="saveEndpoint()"
+                    type="button"
+                    class="command-hint"
+                    @click="draft = command.name + (command.usage.includes('<') ? ' ' : ''); $refs.composerInput.focus()"
                   >
-                    SAVE
+                    <span x-text="command.usage"></span
+                    ><small x-text="command.blurb"></small>
                   </button>
-                  <button
-                    class="chip warn"
-                    x-show="endpointDraft.id"
-                    @click="deleteEndpoint(endpointDraft); cancelEndpoint()"
-                  >
-                    DELETE
-                  </button>
-                  <button class="chip" @click="cancelEndpoint()">CANCEL</button>
-                </div>
-              </div>
-            </template>
-          </div>
-
-          <h2 class="endpoint-divider">Local model vault</h2>
-          <!-- Attributes a manager failure to a layer instead of reporting a
-               single opaque "unavailable". -->
-          <div class="model-diagnostics">
-            <button class="chip" @click="runModelDiagnostics()">
-              Diagnose connection
-            </button>
-            <template x-if="modelDiagnostics">
-              <div class="diagnostic-list">
-                <template x-for="check in modelDiagnostics.checks" :key="check.step">
-                  <div class="diagnostic-row" :class="{bad: !check.ok}">
-                    <span class="diagnostic-step" x-text="check.step"></span>
-                    <span
-                      class="diagnostic-state"
-                      x-text="check.ok ? 'PASS' : 'FAIL'"
-                    ></span>
-                    <span class="diagnostic-detail" x-text="check.detail"></span>
-                    <span
-                      class="diagnostic-hint"
-                      x-show="check.hint"
-                      x-text="check.hint"
-                    ></span>
-                  </div>
                 </template>
               </div>
-            </template>
-          </div>
-          <div
-            class="model-catalog"
-            data-model-catalog
-            x-show="modelManagerEnabled"
-          >
-            <header class="model-catalog-head">
-              <div>
-                <div class="kicker">Local model vault</div>
-                <b
-                  x-text="modelStatus?.state?.active?.id ? `Active // ${modelStatus.state.active.id}` : 'No active managed model'"
-                ></b>
-                <small
-                  x-show="modelStatus?.state?.fallback?.id"
-                  x-text="`Fallback // ${modelStatus?.state?.fallback?.id}`"
-                ></small>
-              </div>
-              <button class="ghost" @click="reloadModels()">Refresh</button>
-            </header>
-            <form
-              class="model-pairing"
-              x-show="!modelPairingConfigured"
-              @submit.prevent="pairModelManager()"
-            >
-              <b>Direct manager pairing required</b>
-              <p>
-                Open the llama.cpp add-on log and enter its six-character code.
-                The code expires and can only be used once.
-              </p>
-              <label
-                >Six-character code
-                <input
-                  x-model="pairingCode"
-                  inputmode="text"
-                  maxlength="6"
-                  autocomplete="one-time-code"
-                  spellcheck="false"
-                  placeholder="ABC234"
-                />
-              </label>
-              <button class="action" type="submit" :disabled="pairingBusy">
-                <span x-text="pairingBusy ? 'Pairing…' : 'Pair manager'"></span>
-              </button>
-            </form>
-            <div
-              class="model-operation"
-              aria-live="polite"
-              x-show="modelOperation?.phase && modelOperation.phase!=='idle'"
-            >
-              <div>
-                <b
-                  x-text="(modelOperation?.phase || '').replaceAll('_',' ')"
-                ></b>
-                <span
-                  x-text="modelOperation?.bytesTotal ? `${formatModelBytes(modelOperation.bytesDone)} / ${formatModelBytes(modelOperation.bytesTotal)}` : modelOperation?.variantId || ''"
-                ></span>
-              </div>
-              <div class="model-progress">
-                <i :style="`width:${modelProgressPercent()}%`"></i>
-              </div>
-              <button
-                class="ghost"
-                x-show="modelOperation?.phase==='downloading'"
-                @click="cancelModelOperation()"
-              >
-                Cancel download
-              </button>
-            </div>
-            <p
-              class="model-error"
-              role="alert"
-              x-show="modelError"
-              x-text="modelError"
-            ></p>
-            <div class="model-grid" x-show="modelPairingConfigured">
-              <template x-for="variant in modelCatalog" :key="variant.model.id"
-                ><article
-                  class="model-card"
-                  :class="{active:variant.active,unsafe:!variant.assessment?.safe}"
+              <div class="attachment-strip" x-show="attachments.length">
+                <template
+                  x-for="(attachment,index) in attachments"
+                  :key="attachment.name+index"
+                  ><span
+                    ><img
+                      :src="attachment.dataUrl"
+                      :alt="attachment.name"
+                    /><button
+                      type="button"
+                      aria-label="Remove image"
+                      @click="attachments.splice(index,1)"
+                    >
+                      ×
+                    </button></span
+                  ></template
                 >
-                  <header>
-                    <div>
-                      <b x-text="variant.model.family"></b>
-                      <small
-                        x-text="`${variant.model.quantization} · ${variant.model.source}`"
-                      ></small>
-                    </div>
-                    <em
-                      :class="variant.model.tier"
-                      x-text="variant.active ? 'Running' : variant.verified ? 'Verified' : modelOperation?.variantId===variant.model.id ? 'Downloading' : 'Available'"
-                    ></em>
-                  </header>
-                  <div class="model-capabilities">
-                    <template
-                      x-for="capability in variant.model.capabilities"
-                      :key="capability"
-                      ><span x-text="capability"></span
-                    ></template>
-                  </div>
-                  <dl>
-                    <div>
-                      <dt>Download</dt>
-                      <dd
-                        x-text="formatModelBytes(variant.model.expectedBytes)"
-                      ></dd>
-                    </div>
-                    <div>
-                      <dt>Memory est.</dt>
-                      <dd
-                        x-text="formatModelBytes(variant.assessment?.requiredRAM)"
-                      ></dd>
-                    </div>
-                    <div>
-                      <dt>Context</dt>
-                      <dd
-                        x-text="variant.assessment?.runtime?.context || variant.model.recommendedContext"
-                      ></dd>
-                    </div>
-                    <div>
-                      <dt>Fit</dt>
-                      <dd
-                        x-text="variant.assessment?.safe ? `${variant.assessment.score}/100` : variant.assessment?.code"
-                      ></dd>
-                    </div>
-                  </dl>
-                  <p
-                    x-show="variant.assessment?.warnings?.length"
-                    x-text="variant.assessment?.warnings?.[0]"
-                  ></p>
-                  <div class="model-actions">
-                    <!-- Not downloaded yet: download, verify, and switch in one go. -->
-                    <button
-                      class="action"
-                      x-show="!variant.verified && !variant.active"
-                      :disabled="modelOperationBusy || !variant.assessment?.safe"
-                      @click="useModel(variant.model.id)"
-                      x-text="variant.installed ? 'Verify & use' : 'Download & use'"
-                    ></button>
-                    <!-- Downloaded and verified: hot-swap to it, no add-on restart. -->
-                    <button
-                      class="action"
-                      x-show="variant.verified && !variant.active"
-                      :disabled="modelOperationBusy"
-                      @click="useModel(variant.model.id)"
-                    >
-                      Use this model
-                    </button>
-                    <!-- The native-config YAML path stays as an advanced fallback. -->
-                    <button
-                      class="ghost"
-                      x-show="variant.verified"
-                      @click="copyModelYaml(variant.model.id)"
-                    >
-                      Copy YAML
-                    </button>
-                    <button
-                      class="ghost"
-                      x-show="variant.installed && !variant.active"
-                      :disabled="modelOperationBusy"
-                      @click="removeModel(variant.model.id)"
-                    >
-                      Remove
-                    </button>
-                  </div>
-                </article></template
-              >
-            </div>
-            <section
-              class="model-inventory"
-              x-show="modelPairingConfigured"
-              aria-labelledby="model-inventory-title"
-            >
-              <div class="model-inventory-head">
-                <div>
-                  <div class="kicker">Persistent storage / physical files</div>
-                  <h3 id="model-inventory-title">Downloaded models</h3>
-                </div>
-                <button
-                  class="ghost"
-                  :disabled="modelInventoryLoading"
-                  @click="reloadModels()"
-                >
-                  Refresh
-                </button>
               </div>
-              <p class="micro" x-show="modelInventoryLoading">
-                Scanning model storage…
-              </p>
               <p
-                class="model-error"
-                role="alert"
-                x-show="modelInventoryError"
-                x-text="modelInventoryError"
+                class="entity-error"
+                x-show="attachmentError"
+                x-text="attachmentError"
               ></p>
-              <template
-                x-for="warning in modelInventoryWarnings"
-                :key="warning.source"
-              >
-                <p class="model-inventory-warning" x-text="warning.message"></p>
-              </template>
-              <p
-                class="micro"
-                x-show="!modelInventoryLoading && !modelInventoryError && modelInventory.length === 0"
-              >
-                No downloaded model files found.
-              </p>
-              <div class="model-inventory-list">
-                <template x-for="item in modelInventory" :key="item.id">
-                  <article class="model-inventory-row">
-                    <div class="model-inventory-copy">
-                      <b x-text="item.name"></b>
-                      <small
-                        x-text="`${item.source === 'legacy_cache' ? 'Legacy cache' : 'Managed'} · ${formatModelBytes(item.size)}`"
-                      ></small>
-                      <small
-                        x-show="!item.validGguf"
-                        class="model-inventory-warning"
-                        >Invalid GGUF</small
-                      >
-                      <small
-                        x-show="item.catalogId"
-                        x-text="`Catalog: ${item.catalogId}`"
-                      ></small>
-                      <small x-show="!item.catalogId">Unknown model</small>
-                    </div>
-                    <span
-                      class="model-inventory-state"
-                      :class="{protected:item.active || item.inProgress}"
-                      x-text="item.active ? 'Running' : item.inProgress ? 'In progress' : item.removable ? 'Stored' : 'Protected'"
-                    ></span>
-                    <button
-                      class="ghost danger"
-                      :disabled="!item.removable || modelOperationBusy"
-                      @click="removeInventoryItem(item)"
-                      x-text="item.removable ? 'Remove' : 'In use'"
-                    ></button>
-                  </article>
-                </template>
-              </div>
-            </section>
-            <section class="model-yaml" x-show="modelPairingConfigured">
-              <div class="kicker">Manual activation (fallback)</div>
-              <h3>Native Configuration YAML</h3>
-              <p>
-                <b>Use this model</b> switches the running model in place — no
-                restart. This YAML path is a fallback: copy the complete YAML,
-                open the llama.cpp add-on <b>Configuration</b> editor, replace
-                the options, save, and restart the llama.cpp add-on.
-              </p>
-              <p class="micro" aria-live="polite" x-text="modelYamlMessage"></p>
-              <pre x-show="modelYaml" x-text="modelYaml"></pre>
-            </section>
-            <details class="model-advanced" x-show="modelPairingConfigured">
-              <summary>Hugging Face access and custom GGUF</summary>
-              <div class="model-advanced-grid">
-                <label
-                  >Hugging Face token
+              <div class="compose-box">
+                <label class="icon-btn attach-button" title="Attach image">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11.5l-7.8 7.8a5 5 0 0 1-7.1-7.1l8.5-8.5a3.3 3.3 0 0 1 4.7 4.7l-8.5 8.5a1.7 1.7 0 0 1-2.4-2.4l7.8-7.8" /></svg>
+                  <span class="sr-only">Attach image</span>
                   <input
-                    x-model="hfToken"
-                    type="password"
-                    autocomplete="off"
-                    placeholder="hf_…"
-                /></label>
-                <button class="action" @click="saveModelToken()">
-                  Save token server-side
-                </button>
-                <label
-                  >Custom repository
-                  <input
-                    x-model="customModel.repo"
-                    placeholder="owner/repository"
-                /></label>
-                <label
-                  >Exact GGUF filename
-                  <input
-                    x-model="customModel.file"
-                    placeholder="model-Q4_K_M.gguf"
-                /></label>
-                <button class="action" @click="saveCustomModel()">
-                  Add unverified model
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    multiple
+                    @change="addAttachments($event.target.files)"
+                  />
+                </label>
+                <!-- Ghost completion sits behind the textarea, sharing its
+                     metrics so the suggestion lines up with what you typed. -->
+                <div class="compose-field">
+                  <div
+                    class="compose-ghost"
+                    aria-hidden="true"
+                    x-show="commandGhost"
+                  ><span class="ghost-typed" x-text="draft"></span><span
+                      class="ghost-rest"
+                      x-text="commandGhost"
+                    ></span></div>
+                  <textarea
+                    x-ref="composerInput"
+                    x-model="draft"
+                    @input="resizeComposer($event)"
+                    @keydown="handleComposerKeydown($event)"
+                    rows="1"
+                    placeholder="Ask anything…"
+                    aria-label="Message"
+                    enterkeyhint="send"
+                  ></textarea>
+                </div>
+                <button
+                  class="send"
+                  :class="{cancel: busy}"
+                  type="button"
+                  :disabled="modelSwitching && !busy"
+                  @click="busy ? cancel() : send()"
+                  :title="modelSwitching && !busy ? 'Switching model — inference is briefly unavailable' : ''"
+                  :aria-label="busy ? 'Cancel the current turn' : 'Send message'"
+                >
+                  <svg x-show="!busy" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7" /></svg>
+                  <svg x-show="busy" x-cloak viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7l10 10M17 7L7 17" /></svg>
                 </button>
               </div>
-            </details>
-          </div>
-          <div class="settings-actions">
-            <button class="send" @click="modelsOpen=false">Close</button>
-          </div>
-        </section>
-      </div>
-    </div>
-    <!--
-      The bench divider. Drags the split between the two cases; double-click
-      returns them to the default. It only exists while both cases are out,
-      and the split is a ratio rather than a pixel width so the bench stays
-      responsive when the window changes.
-    -->
-    <div
-      class="bench-grip"
-      role="separator"
-      aria-orientation="vertical"
-      aria-label="Resize the artifact"
-      tabindex="0"
-      x-show="artifactOpen"
-      x-cloak
-      @pointerdown.prevent="startBenchDrag($event)"
-      @dblclick="benchSplit = null"
-      @keydown.arrow-left.prevent="nudgeBench(-1)"
-      @keydown.arrow-right.prevent="nudgeBench(1)"
-    ></div>
-    <!--
-      The artifact's own case. Same bezel and glass as the console so the two
-      read as a matched pair on the bench.
+              <div class="compose-meta">
+                <label class="thinking-select"
+                  ><span>Thinking</span>
+                  <select x-model="thinking">
+                    <template x-for="preset in thinkingProfiles" :key="preset.id"
+                      ><option :value="preset.id" x-text="preset.name"></option
+                    ></template></select
+                ></label>
+                <span
+                  class="thinking-hint"
+                  x-text="`${currentThinkingProfile.reasoningBudget} thought · ${currentThinkingProfile.answerReserve} answer tokens${currentThinkingProfile.estimatedMaxSeconds ? ` · up to ${formatDuration(currentThinkingProfile.estimatedMaxSeconds * 1000)}` : ''}`"
+                ></span>
+                <span
+                  class="context-label"
+                  :title="tokenUsage.exact ? `Prompt ${tokenUsage.promptTokens} tokens · Context ${tokenUsage.contextTokens + tokenUsage.promptTokens} / ${tokenUsage.contextCapacity}` : 'Exact token count unavailable'"
+                  x-text="tokenUsage.exact ? `${tokenUsage.contextTokens + tokenUsage.promptTokens} / ${tokenUsage.contextCapacity}` : '— / —'"
+                ></span>
+                <div class="context-track" :class="contextLevel" aria-hidden="true">
+                  <i :style="`width:${contextPercent}%`"></i>
+                </div>
+              </div>
+            </form>
+          </footer>
+        </main>
 
-      HTML and SVG render in a frame with sandbox="allow-scripts" and no
-      allow-same-origin, which puts them in an opaque origin: a document the
-      model wrote cannot read the console, its storage, or the Home Assistant
-      session it is embedded in. Those two flags together would undo the
-      sandbox, so they are never combined.
-    -->
-    <div
-      class="deck artifact-deck"
-      :class="{scanlines:scanlines}"
-      :style="benchSplit ? `flex-grow:${benchSplit}` : ''"
-      x-show="artifactOpen"
-      x-cloak
-    >
-      <div class="screen artifact-screen">
-        <div class="flicker" aria-hidden="true"></div>
+        <!--
+          The bench divider. Drags the split between the two cases; double-click
+          returns them to the default. Only on wide screens: on a phone the
+          document covers the console instead.
+        -->
+        <div
+          class="bench-grip"
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize the artifact"
+          tabindex="0"
+          x-show="artifactOpen"
+          x-cloak
+          @pointerdown.prevent="startBenchDrag($event)"
+          @dblclick="benchSplit = null"
+          @keydown.arrow-left.prevent="nudgeBench(-1)"
+          @keydown.arrow-right.prevent="nudgeBench(1)"
+        ></div>
+        <!--
+          HTML and SVG render in a frame with sandbox="allow-scripts" and no
+          allow-same-origin, which puts them in an opaque origin: a document the
+          model wrote cannot read the console, its storage, or the Home Assistant
+          session it is embedded in. Those two flags together would undo the
+          sandbox, so they are never combined.
+        -->
+        <section
+          class="artifact-panel"
+          :style="benchSplit ? `flex-grow:${benchSplit}` : ''"
+          x-show="artifactOpen"
+          x-cloak
+        >
         <aside class="artifact-pane">
           <header class="artifact-head">
             <div class="artifact-heading">
@@ -1736,22 +1095,22 @@
                   :class="{on: artifactView==='source'}"
                   @click="artifactView='source'"
                 >
-                  SOURCE
+                  Source
                 </button>
                 <button
                   :class="{on: artifactView==='preview'}"
                   :disabled="artifactStreaming"
                   @click="artifactView='preview'"
                 >
-                  PREVIEW
+                  Preview
                 </button>
               </div>
               <!-- Both act on a stored document, so both wait for one. -->
               <template x-if="currentArtifact?.id"
                 ><span
-                  ><button class="chip" @click="downloadArtifact()">SAVE</button>
+                  ><button class="chip" @click="downloadArtifact()">Save</button>
                   <button class="chip warn" @click="deleteArtifact()">
-                    DELETE</button></span
+                    Delete</button></span
               ></template>
               <button
                 class="chip"
@@ -1845,21 +1204,742 @@
                     class="chip"
                     :disabled="!artifactDirty() || artifactSaving"
                     @click="applyArtifactEdit()"
-                    x-text="artifactSaving ? 'APPLYING' : 'APPLY'"
+                    x-text="artifactSaving ? 'Applying' : 'Apply'"
                   ></button>
                   <button
                     class="chip"
                     :disabled="!artifactDirty()"
                     @click="artifactSource = currentArtifact.content || ''"
                   >
-                    REVERT
+                    Revert
                   </button>
                 </div></div
             ></template>
           </div>
         </aside>
+        </section>
+      </div>
+
+      <!-- Model instruments: the last turn's numbers, on demand. -->
+      <div class="settings" id="house-board" x-show="boardOpen" x-cloak @keydown.escape.window="boardOpen=false">
+        <section class="settings-card telemetry" @click.outside="boardOpen=false">
+          <button type="button" class="sheet-close" aria-label="Close" @click="boardOpen=false">✕</button>
+          <h2>Model instruments</h2>
+          <dl class="meters">
+            <div class="meter"><dt>Prompt tokens</dt><dd x-text="metrics.inputTokens || '—'"></dd></div>
+            <div class="meter"><dt>Decode speed</dt><dd x-text="metrics.decode ? `${metrics.decode.toFixed(1)} tok/s` : '—'"></dd></div>
+            <div class="meter"><dt>First token</dt><dd x-text="metrics.ttft ? `${metrics.ttft} ms` : '—'"></dd></div>
+            <div class="meter"><dt>Context used</dt><dd x-text="metrics.context || '—'"></dd></div>
+            <div class="meter"><dt>Thinking</dt><dd x-text="`${metrics.thinking || 0} tok`"></dd></div>
+          </dl>
+        </section>
+      </div>
+      <!-- MCP servers: remote tool providers, enabled per server because
+           every tool definition is spent from the context window. -->
+      <div
+        class="settings"
+        id="mcp-view"
+        x-show="mcpOpen"
+        x-cloak
+        @keydown.escape.window="mcpOpen=false"
+      >
+        <section class="settings-card" @click.outside="mcpOpen=false">
+          <button type="button" class="sheet-close" aria-label="Close" @click="mcpOpen=false">✕</button>
+          <h2>Connected servers</h2>
+          <p class="settings-note">
+            Tools from enabled servers are offered to the model alongside the
+            built-in ones. Each definition costs context on every request, so
+            enable only what you use.
+          </p>
+
+          <div class="skill-list">
+            <template x-for="server in mcpServers" :key="server.id">
+              <div class="skill-row" :class="{disabled: !server.enabled}">
+                <div class="skill-head">
+                  <label class="skill-toggle"
+                    ><input
+                      type="checkbox"
+                      :checked="server.enabled"
+                      @change="updateMcp(server, {enabled: $event.target.checked})"
+                    /><span x-text="server.enabled ? 'On' : 'Off'"></span
+                  ></label>
+                  <input
+                    class="skill-name"
+                    :value="server.name"
+                    @change="updateMcp(server, {name: $event.target.value})"
+                  />
+                  <button
+                    class="chip"
+                    style="flex: none"
+                    @click="testMcp(server)"
+                  >
+                    Test
+                  </button>
+                  <button
+                    class="history-delete"
+                    title="Remove server"
+                    @click="deleteMcp(server)"
+                  >
+                    &times;
+                  </button>
+                </div>
+                <input
+                  class="skill-body"
+                  :value="server.url"
+                  @change="updateMcp(server, {url: $event.target.value})"
+                />
+                <p
+                  class="settings-note"
+                  x-show="server.probe"
+                  x-text="server.probe"
+                ></p>
+              </div>
+            </template>
+            <p class="settings-note" x-show="!mcpServers.length">
+              No servers yet. Add one below.
+            </p>
+          </div>
+
+          <div class="skill-new">
+            <input x-model="newMcpName" placeholder="Name, e.g. Weather" />
+            <input x-model="newMcpUrl" placeholder="https://host/mcp" />
+            <input
+              x-model="newMcpAuth"
+              placeholder="Authorization header (optional)"
+            />
+            <button class="action" @click="addMcp()">Add server</button>
+          </div>
+
+          <p class="settings-note" x-show="mcpError" x-text="mcpError"></p>
+          <div class="settings-actions">
+            <button class="send" @click="mcpOpen=false">Close</button>
+          </div>
+        </section>
+      </div>
+      <!-- Skill manager: named instruction blocks injected into the system
+           prompt when enabled. They cost context every turn, so enabling is
+           explicit and the panel shows the running total. -->
+      <div
+        class="settings"
+        id="skills-view"
+        x-show="skillsOpen"
+        x-cloak
+        @keydown.escape.window="skillsOpen=false"
+      >
+        <section class="settings-card" @click.outside="skillsOpen=false">
+          <button type="button" class="sheet-close" aria-label="Close" @click="skillsOpen=false">✕</button>
+          <h2>Teach the console</h2>
+          <p class="settings-note">
+            Enabled skills are added to the system prompt on every turn.
+            <b x-text="`${enabledSkillCount} of ${skills.length} enabled`"></b>
+            <span x-text="`· ~${skillTokenCost} tok per request`"></span>
+          </p>
+
+          <div class="skill-list">
+            <template x-for="skill in skills" :key="skill.id">
+              <div class="skill-row" :class="{disabled: !skill.enabled}">
+                <div class="skill-head">
+                  <label class="skill-toggle"
+                    ><input
+                      type="checkbox"
+                      :checked="skill.enabled"
+                      @change="toggleSkill(skill, $event.target.checked)"
+                    /><span x-text="skill.enabled ? 'On' : 'Off'"></span
+                  ></label>
+                  <input
+                    class="skill-name"
+                    :value="skill.name"
+                    @change="updateSkill(skill, {name: $event.target.value})"
+                  />
+                  <button
+                    class="history-delete"
+                    title="Delete skill"
+                    @click="deleteSkill(skill)"
+                  >
+                    &times;
+                  </button>
+                </div>
+                <textarea
+                  class="skill-body"
+                  rows="3"
+                  :value="skill.instructions"
+                  placeholder="Instructions to follow on every reply…"
+                  @change="updateSkill(skill, {instructions: $event.target.value})"
+                ></textarea>
+              </div>
+            </template>
+            <p class="settings-note" x-show="!skills.length">
+              No skills yet. Add one below.
+            </p>
+          </div>
+
+          <div class="skill-new">
+            <input
+              x-model="newSkillName"
+              placeholder="Skill name, e.g. Terse replies"
+            />
+            <textarea
+              x-model="newSkillBody"
+              rows="2"
+              placeholder="What should the console always do?"
+            ></textarea>
+            <button class="action" @click="addSkill()">Add skill</button>
+          </div>
+
+          <p class="settings-note" x-show="skillError" x-text="skillError"></p>
+          <div class="settings-actions">
+            <button class="send" @click="skillsOpen=false">Close</button>
+          </div>
+        </section>
+      </div>
+      <div
+        class="settings"
+        id="settings-view"
+        x-show="settingsOpen"
+        x-cloak
+        @keydown.escape.window="settingsOpen=false"
+      >
+        <section class="settings-card" @click.outside="settingsOpen=false">
+          <button type="button" class="sheet-close" aria-label="Close" @click="settingsOpen=false">✕</button>
+          <h2>Shape the console</h2>
+          <fieldset class="theme-picker">
+            <legend>Theme</legend>
+            <template x-for="option in themes" :key="option.id">
+              <button
+                type="button"
+                class="theme-option"
+                :class="{on: theme===option.id}"
+                :aria-pressed="theme===option.id"
+                @click="theme=option.id"
+              >
+                <span class="theme-swatch" :style="`background:${option.bg}`"
+                  ><i :style="`background:${option.accent}`"></i
+                  ><b :style="`border-color:${option.accent};background:${option.surface}`"></b
+                ></span>
+                <span class="theme-name" x-text="option.name"></span>
+                <small x-text="option.blurb"></small>
+              </button>
+            </template>
+          </fieldset>
+          <div class="settings-grid">
+            <label
+              >Performance profile<select
+                x-model="profile"
+                @change="thinking=profile"
+              >
+                <template x-for="preset in thinkingProfiles" :key="preset.id"
+                  ><option
+                    :value="preset.id"
+                    x-text="`${preset.name}${preset.recommended ? ' · recommended' : ''}`"
+                  ></option
+                ></template></select
+            ></label>
+            <label
+              >Glow intensity<input
+                type="range"
+                min="0"
+                max="100"
+                x-model="glow"
+                @input="document.documentElement.style.setProperty('--glow', glow / 100)"
+            /></label>
+            <label class="settings-toggle"
+              ><span>CRT scanlines</span
+              ><input type="checkbox" x-model="scanlines"
+            /></label>
+          </div>
+          <div class="settings-persona">
+            <label
+              >System prompt
+              <textarea
+                x-model="persona"
+                rows="6"
+                spellcheck="false"
+                placeholder="You are RemindMe, a concise general and home assistant…"
+              ></textarea>
+            </label>
+            <p class="settings-note">
+              The model's base instructions. Memory, tools and skills are always
+              added on top of this.
+            </p>
+            <p
+              class="settings-note"
+              x-show="personaStatus"
+              x-text="personaStatus"
+            ></p>
+          </div>
+          <div class="settings-actions">
+            <button class="action" @click="savePersona()">Save prompt</button>
+            <button class="action" @click="resetPersona()">Reset to default</button>
+            <button class="send" @click="settingsOpen=false">Close</button>
+          </div>
+        </section>
+      </div>
+      <div
+        class="settings"
+        id="models-view"
+        x-show="modelsOpen"
+        x-cloak
+        @keydown.escape.window="modelsOpen=false"
+      >
+        <section class="settings-card" @click.outside="modelsOpen=false">
+          <button type="button" class="sheet-close" aria-label="Close" @click="modelsOpen=false">✕</button>
+          <h2>Inference endpoint</h2>
+          <p class="settings-copy">
+            Where the model runs. The local llama.cpp is the default; point at
+            a stronger box on your network or an OpenAI-compatible API to run
+            faster than a Pi can.
+          </p>
+          <div class="endpoint-list">
+            <!-- The built-in local model is always the first choice. -->
+            <button
+              class="endpoint-row"
+              :class="{active: !endpointActiveId}"
+              @click="activateEndpoint('')"
+            >
+              <span class="endpoint-dot" aria-hidden="true"></span>
+              <span class="endpoint-name">Local llama.cpp</span>
+              <span class="endpoint-model">on this device</span>
+            </button>
+            <template x-for="endpoint in endpoints" :key="endpoint.id">
+              <div
+                class="endpoint-row"
+                :class="{active: endpoint.id===endpointActiveId}"
+              >
+                <button
+                  class="endpoint-pick"
+                  @click="activateEndpoint(endpoint.id)"
+                >
+                  <span class="endpoint-dot" aria-hidden="true"></span>
+                  <span class="endpoint-name" x-text="endpoint.name"></span>
+                  <span class="endpoint-model">
+                    <span x-text="endpoint.model || 'default model'"></span
+                    ><span x-show="endpoint.hasKey" class="endpoint-key" title="API key set">🔑</span>
+                  </span>
+                </button>
+                <button
+                  class="endpoint-edit"
+                  aria-label="Edit endpoint"
+                  @click="editEndpoint(endpoint)"
+                >
+                  Edit
+                </button>
+              </div>
+            </template>
+          </div>
+          <button
+            class="chip"
+            x-show="!endpointDraft"
+            @click="newEndpoint()"
+          >
+            ＋ Add endpoint
+          </button>
+
+          <!-- Editor for a new or existing endpoint. -->
+          <div class="endpoint-editor" x-show="endpointDraft" x-cloak>
+            <template x-if="endpointDraft">
+              <div>
+                <label class="endpoint-field"
+                  >Name<input
+                    x-model="endpointDraft.name"
+                    placeholder="Studio box"
+                /></label>
+                <label class="endpoint-field"
+                  >URL<input
+                    x-model="endpointDraft.url"
+                    placeholder="http://192.168.1.40:8080/v1/chat/completions"
+                    spellcheck="false"
+                /></label>
+                <label class="endpoint-field"
+                  >Model<input
+                    x-model="endpointDraft.model"
+                    placeholder="qwen2.5-7b"
+                    spellcheck="false"
+                /></label>
+                <label class="endpoint-field"
+                  >API key
+                  <input
+                    type="password"
+                    autocomplete="off"
+                    x-model="endpointDraft.apiKey"
+                    :placeholder="endpointDraft.hasKey ? '•••••• (leave blank to keep)' : 'optional'"
+                  />
+                </label>
+                <label class="endpoint-toggle">
+                  <input type="checkbox" x-model="endpointDraft.openaiCompat" />
+                  OpenAI-compatible
+                  <small
+                    >— send only standard fields (turn off for llama.cpp's
+                    thinking controls)</small
+                  >
+                </label>
+                <div class="endpoint-error" x-show="endpointError" x-text="endpointError"></div>
+                <div
+                  class="endpoint-result"
+                  x-show="endpointTest"
+                  x-cloak
+                  :class="{bad: endpointTest && !endpointTest.ok}"
+                >
+                  <template x-if="endpointTest?.ok"
+                    ><span
+                      >Replied: <b x-text="endpointTest.reply"></b></span
+                  ></template>
+                  <template x-if="endpointTest && !endpointTest.ok"
+                    ><span x-text="endpointTest.error"></span
+                  ></template>
+                </div>
+                <div class="endpoint-actions">
+                  <button
+                    class="chip"
+                    :disabled="endpointBusy"
+                    @click="testEndpoint()"
+                    x-text="endpointBusy ? 'Working' : 'Test'"
+                  ></button>
+                  <button
+                    class="chip"
+                    :disabled="endpointBusy"
+                    @click="saveEndpoint()"
+                  >
+                    Save
+                  </button>
+                  <button
+                    class="chip warn"
+                    x-show="endpointDraft.id"
+                    @click="deleteEndpoint(endpointDraft); cancelEndpoint()"
+                  >
+                    Delete
+                  </button>
+                  <button class="chip" @click="cancelEndpoint()">Cancel</button>
+                </div>
+              </div>
+            </template>
+          </div>
+
+          <h2 class="endpoint-divider">Local model vault</h2>
+          <!-- Attributes a manager failure to a layer instead of reporting a
+               single opaque "unavailable". -->
+          <div class="model-diagnostics">
+            <button class="chip" @click="runModelDiagnostics()">
+              Diagnose connection
+            </button>
+            <template x-if="modelDiagnostics">
+              <div class="diagnostic-list">
+                <template x-for="check in modelDiagnostics.checks" :key="check.step">
+                  <div class="diagnostic-row" :class="{bad: !check.ok}">
+                    <span class="diagnostic-step" x-text="check.step"></span>
+                    <span
+                      class="diagnostic-state"
+                      x-text="check.ok ? 'Pass' : 'Fail'"
+                    ></span>
+                    <span class="diagnostic-detail" x-text="check.detail"></span>
+                    <span
+                      class="diagnostic-hint"
+                      x-show="check.hint"
+                      x-text="check.hint"
+                    ></span>
+                  </div>
+                </template>
+              </div>
+            </template>
+          </div>
+          <div
+            class="model-catalog"
+            data-model-catalog
+            x-show="modelManagerEnabled"
+          >
+            <header class="model-catalog-head">
+              <div>
+                <b
+                  x-text="modelStatus?.state?.active?.id ? `Active // ${modelStatus.state.active.id}` : 'No active managed model'"
+                ></b>
+                <small
+                  x-show="modelStatus?.state?.fallback?.id"
+                  x-text="`Fallback // ${modelStatus?.state?.fallback?.id}`"
+                ></small>
+              </div>
+              <button class="ghost" @click="reloadModels()">Refresh</button>
+            </header>
+            <form
+              class="model-pairing"
+              x-show="!modelPairingConfigured"
+              @submit.prevent="pairModelManager()"
+            >
+              <b>Direct manager pairing required</b>
+              <p>
+                Open the llama.cpp add-on log and enter its six-character code.
+                The code expires and can only be used once.
+              </p>
+              <label
+                >Six-character code
+                <input
+                  x-model="pairingCode"
+                  inputmode="text"
+                  maxlength="6"
+                  autocomplete="one-time-code"
+                  spellcheck="false"
+                  placeholder="ABC234"
+                />
+              </label>
+              <button class="action" type="submit" :disabled="pairingBusy">
+                <span x-text="pairingBusy ? 'Pairing…' : 'Pair manager'"></span>
+              </button>
+            </form>
+            <div
+              class="model-operation"
+              aria-live="polite"
+              x-show="modelOperation?.phase && modelOperation.phase!=='idle'"
+            >
+              <div>
+                <b
+                  x-text="(modelOperation?.phase || '').replaceAll('_',' ')"
+                ></b>
+                <span
+                  x-text="modelOperation?.bytesTotal ? `${formatModelBytes(modelOperation.bytesDone)} / ${formatModelBytes(modelOperation.bytesTotal)}` : modelOperation?.variantId || ''"
+                ></span>
+              </div>
+              <div class="model-progress">
+                <i :style="`width:${modelProgressPercent()}%`"></i>
+              </div>
+              <button
+                class="ghost"
+                x-show="modelOperation?.phase==='downloading'"
+                @click="cancelModelOperation()"
+              >
+                Cancel download
+              </button>
+            </div>
+            <p
+              class="model-error"
+              role="alert"
+              x-show="modelError"
+              x-text="modelError"
+            ></p>
+            <p class="model-roles" x-show="modelPairingConfigured && modelStatus?.defaultModel">
+              Chat uses <b x-text="modelStatus?.chatModel"></b>. Apps that call the
+              add-on without naming a model get <b x-text="modelStatus?.defaultModel"></b>.
+            </p>
+            <div class="model-grid" x-show="modelPairingConfigured">
+              <template x-for="variant in modelCatalog" :key="variant.model.id"
+                ><article
+                  class="model-card"
+                  :class="{active:variant.active,chat:isChatModel(variant),unsafe:!variant.assessment?.safe}"
+                >
+                  <header>
+                    <div>
+                      <b x-text="variant.model.family"></b>
+                      <small
+                        x-text="`${variant.model.quantization} · ${variant.model.source}`"
+                      ></small>
+                    </div>
+                    <em
+                      :class="variant.model.tier"
+                      x-text="isChatModel(variant) && variant.active ? 'Chat · default' : isChatModel(variant) ? 'Chat' : variant.active ? 'Default' : variant.verified ? 'Downloaded' : modelOperation?.variantId===variant.model.id ? 'Downloading' : 'Available'"
+                    ></em>
+                  </header>
+                  <div class="model-capabilities">
+                    <template
+                      x-for="capability in variant.model.capabilities"
+                      :key="capability"
+                      ><span x-text="capability"></span
+                    ></template>
+                  </div>
+                  <dl>
+                    <div>
+                      <dt>Download</dt>
+                      <dd
+                        x-text="formatModelBytes(variant.model.expectedBytes)"
+                      ></dd>
+                    </div>
+                    <div>
+                      <dt>Memory est.</dt>
+                      <dd
+                        x-text="formatModelBytes(variant.assessment?.requiredRAM)"
+                      ></dd>
+                    </div>
+                    <div>
+                      <dt>Context</dt>
+                      <dd
+                        x-text="variant.assessment?.runtime?.context || variant.model.recommendedContext"
+                      ></dd>
+                    </div>
+                    <div>
+                      <dt>Fit</dt>
+                      <dd
+                        x-text="variant.assessment?.safe ? `${variant.assessment.score}/100` : variant.assessment?.code"
+                      ></dd>
+                    </div>
+                  </dl>
+                  <p
+                    x-show="variant.assessment?.warnings?.length"
+                    x-text="variant.assessment?.warnings?.[0]"
+                  ></p>
+                  <div class="model-actions">
+                    <!-- Not downloaded yet: download, verify, and chat with it. -->
+                    <button
+                      class="action"
+                      x-show="!variant.verified && !variant.active"
+                      :disabled="modelOperationBusy || !variant.assessment?.safe"
+                      @click="useModel(variant.model.id)"
+                      x-text="variant.installed ? 'Verify & use' : 'Download & use'"
+                    ></button>
+                    <!-- Downloaded: chat with it at once. The add-on keeps serving
+                         its default to everything else. -->
+                    <button
+                      class="action"
+                      x-show="variant.verified && !isChatModel(variant)"
+                      :disabled="modelOperationBusy"
+                      @click="useModel(variant.model.id)"
+                    >
+                      Use this model
+                    </button>
+                    <!-- The default is what other apps get; changing it is its own act. -->
+                    <button
+                      class="ghost"
+                      x-show="variant.verified && !variant.active"
+                      :disabled="modelOperationBusy"
+                      @click="makeDefaultModel(variant.model.id)"
+                    >
+                      Make default
+                    </button>
+                    <!-- The native-config YAML path stays as an advanced fallback. -->
+                    <button
+                      class="ghost"
+                      x-show="variant.verified"
+                      @click="copyModelYaml(variant.model.id)"
+                    >
+                      Copy YAML
+                    </button>
+                    <button
+                      class="ghost"
+                      x-show="variant.installed && !variant.active && !isChatModel(variant)"
+                      :disabled="modelOperationBusy"
+                      @click="removeModel(variant.model.id)"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                </article></template
+              >
+            </div>
+            <section
+              class="model-inventory"
+              x-show="modelPairingConfigured"
+              aria-labelledby="model-inventory-title"
+            >
+              <div class="model-inventory-head">
+                <div>
+                  <h3 id="model-inventory-title">Downloaded models</h3>
+                </div>
+                <button
+                  class="ghost"
+                  :disabled="modelInventoryLoading"
+                  @click="reloadModels()"
+                >
+                  Refresh
+                </button>
+              </div>
+              <p class="micro" x-show="modelInventoryLoading">
+                Scanning model storage…
+              </p>
+              <p
+                class="model-error"
+                role="alert"
+                x-show="modelInventoryError"
+                x-text="modelInventoryError"
+              ></p>
+              <template
+                x-for="warning in modelInventoryWarnings"
+                :key="warning.source"
+              >
+                <p class="model-inventory-warning" x-text="warning.message"></p>
+              </template>
+              <p
+                class="micro"
+                x-show="!modelInventoryLoading && !modelInventoryError && modelInventory.length === 0"
+              >
+                No downloaded model files found.
+              </p>
+              <div class="model-inventory-list">
+                <template x-for="item in modelInventory" :key="item.id">
+                  <article class="model-inventory-row">
+                    <div class="model-inventory-copy">
+                      <b x-text="item.name"></b>
+                      <small
+                        x-text="`${item.source === 'legacy_cache' ? 'Legacy cache' : 'Managed'} · ${formatModelBytes(item.size)}`"
+                      ></small>
+                      <small
+                        x-show="!item.validGguf"
+                        class="model-inventory-warning"
+                        >Invalid GGUF</small
+                      >
+                      <small
+                        x-show="item.catalogId"
+                        x-text="`Catalog: ${item.catalogId}`"
+                      ></small>
+                      <small x-show="!item.catalogId">Unknown model</small>
+                    </div>
+                    <span
+                      class="model-inventory-state"
+                      :class="{protected:item.active || item.inProgress}"
+                      x-text="item.active ? 'Running' : item.inProgress ? 'In progress' : item.removable ? 'Stored' : 'Protected'"
+                    ></span>
+                    <button
+                      class="ghost danger"
+                      :disabled="!item.removable || modelOperationBusy"
+                      @click="removeInventoryItem(item)"
+                      x-text="item.removable ? 'Remove' : 'In use'"
+                    ></button>
+                  </article>
+                </template>
+              </div>
+            </section>
+            <section class="model-yaml" x-show="modelPairingConfigured">
+              <h3>Native Configuration YAML</h3>
+              <p>
+                The YAML sets the default the add-on starts with after a
+                restart. Copy it, open the llama.cpp add-on
+                <b>Configuration</b> editor, replace the options, save, and
+                restart the llama.cpp add-on.
+              </p>
+              <p class="micro" aria-live="polite" x-text="modelYamlMessage"></p>
+              <pre x-show="modelYaml" x-text="modelYaml"></pre>
+            </section>
+            <details class="model-advanced" x-show="modelPairingConfigured">
+              <summary>Hugging Face access and custom GGUF</summary>
+              <div class="model-advanced-grid">
+                <label
+                  >Hugging Face token
+                  <input
+                    x-model="hfToken"
+                    type="password"
+                    autocomplete="off"
+                    placeholder="hf_…"
+                /></label>
+                <button class="action" @click="saveModelToken()">
+                  Save token server-side
+                </button>
+                <label
+                  >Custom repository
+                  <input
+                    x-model="customModel.repo"
+                    placeholder="owner/repository"
+                /></label>
+                <label
+                  >Exact GGUF filename
+                  <input
+                    x-model="customModel.file"
+                    placeholder="model-Q4_K_M.gguf"
+                /></label>
+                <button class="action" @click="saveCustomModel()">
+                  Add unverified model
+                </button>
+              </div>
+            </details>
+          </div>
+          <div class="settings-actions">
+            <button class="send" @click="modelsOpen=false">Close</button>
+          </div>
+        </section>
       </div>
     </div>
-  </div>
   </body>
 </html>

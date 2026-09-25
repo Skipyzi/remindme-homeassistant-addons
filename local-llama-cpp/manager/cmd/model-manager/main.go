@@ -51,6 +51,8 @@ type addonOptions struct {
 	BatchSize       int    `json:"batch_size"`
 	UBatchSize      int    `json:"ubatch_size"`
 	CacheReuse      int    `json:"cache_reuse"`
+	Parallel        int    `json:"parallel"`
+	ResidentModels  int    `json:"resident_models"`
 	Jinja           bool   `json:"jinja"`
 	KVUnified       bool   `json:"kv_unified"`
 	FlashAttention  bool   `json:"flash_attention"`
@@ -73,9 +75,33 @@ func main() {
 		log.Fatal(err)
 	}
 	store := state.Store{Path: configured.state}
+	// How many models the router keeps loaded at once. Read ahead of the full
+	// options, which are applied later during bootstrap. 0 means automatic.
+	requestedResident := 0
+	if early, earlyErr := readOptions(configured.options); earlyErr == nil {
+		requestedResident = early.ResidentModels
+	}
+	availableRAM := int64(0)
+	if facts, factsErr := hardware.ReadFacts(configured.models); factsErr == nil {
+		availableRAM = facts.FreeRAM
+	}
+	residentModels := residentModelCount(requestedResident, availableRAM)
+	log.Printf("router keeps up to %d model(s) loaded", residentModels)
 	supervisor, err := managerruntime.NewSupervisor(managerruntime.Config{
 		Binary: configured.llama, Target: "http://127.0.0.1:8081", ModelDir: configured.models,
 		Stdout: os.Stdout, Stderr: os.Stderr,
+		PresetPath: filepath.Join(filepath.Dir(configured.state), "router-models.ini"),
+		MaxModels:  residentModels,
+		// Name files by catalog ID where there is one. modelCatalog is read at
+		// call time, so custom entries merged in below are included.
+		Identify: func(file string) string {
+			for _, variant := range modelCatalog.Variants {
+				if variant.File == file {
+					return variant.ID
+				}
+			}
+			return ""
+		},
 	}, nil, store, nil)
 	if err != nil {
 		log.Fatal(err)
@@ -288,17 +314,36 @@ func runtimeFor(installed state.Installed, modelCatalog catalog.Catalog, facts f
 	return hardware.Assess(variant, factsValue, variant.RecommendedContext, true).Runtime
 }
 
+// residentModelCount is how many models stay loaded at once. An explicit
+// option wins. Automatic keeps two only when there is room for a second model
+// beside everything else on the host; with one, the router still serves every
+// model, loading each on demand and unloading the last.
+func residentModelCount(requested int, availableRAM int64) int {
+	if requested > 0 {
+		return min(requested, 4)
+	}
+	if availableRAM >= 4<<30 {
+		return 2
+	}
+	return 1
+}
+
 func runtimeFromOptions(options addonOptions) hardware.Runtime {
 	threads := max(options.Threads, 1)
 	threadsBatch := options.ThreadsBatch
 	if threadsBatch <= 0 {
 		threadsBatch = threads
 	}
+	// Options saved before this setting existed carry no value: use the default.
+	parallel := options.Parallel
+	if parallel <= 0 {
+		parallel = 2
+	}
 	return hardware.Runtime{
 		Context: max(options.ContextSize, 4096), Batch: max(options.BatchSize, 128),
 		UBatch: max(options.UBatchSize, 64), Threads: threads,
 		ThreadsBatch: threadsBatch,
-		CacheReuse:   max(options.CacheReuse, 0), Jinja: options.Jinja,
+		CacheReuse:   max(options.CacheReuse, 0), Parallel: parallel, Jinja: options.Jinja,
 		KVUnified: options.KVUnified, FlashAttention: options.FlashAttention,
 		ReasoningFormat: options.ReasoningFormat, ReasoningMode: options.ReasoningMode,
 	}

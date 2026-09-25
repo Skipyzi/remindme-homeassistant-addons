@@ -96,12 +96,12 @@ func TestCustomShorthandResolveDownloadAndActivate(t *testing.T) {
 	launcher := &integrationLauncher{starts: map[string]int{}}
 	supervisor, err := managerruntime.NewSupervisor(
 		managerruntime.Config{
-			Binary: "/app/llama-server.bin", Target: "http://127.0.0.1:8081", ModelDir: modelDir,
+			Binary: "/app/llama-server.bin", Target: "http://127.0.0.1:8081", ModelDir: modelDir, PresetPath: filepath.Join(t.TempDir(), "router-models.ini"),
 			ReadinessTimeout: 25 * time.Millisecond, ProbeInterval: time.Millisecond,
 		},
 		launcher,
 		store,
-		func(context.Context) error { return nil },
+		func(context.Context, string) error { return nil },
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -167,7 +167,10 @@ func TestCustomShorthandResolveDownloadAndActivate(t *testing.T) {
 	if status := post("/manager/v1/activate", `{"id":"`+variant.ID+`"}`); status != http.StatusAccepted {
 		t.Fatalf("activate status=%d", status)
 	}
-	waitFor(func() bool { return launcher.activeModel() == variant.File }, "custom model did not activate")
+	// The router serves every downloaded model; activating moves the default.
+	waitFor(func() bool {
+		return supervisor.ActiveID() == variant.ID && supervisor.ResolveModel("") != "stable"
+	}, "custom model did not become the default")
 	contents, err := os.ReadFile(filepath.Join(modelDir, variant.File))
 	if err != nil || !bytes.HasPrefix(contents, []byte("GGUF")) {
 		t.Fatalf("contents=%q err=%v", contents, err)
@@ -196,12 +199,12 @@ func TestDownloadLeavesPreviousModelRunning(t *testing.T) {
 	launcher := &integrationLauncher{starts: map[string]int{}}
 	supervisor, err := managerruntime.NewSupervisor(
 		managerruntime.Config{
-			Binary: "/app/llama-server.bin", Target: "http://127.0.0.1:8081", ModelDir: modelDir,
+			Binary: "/app/llama-server.bin", Target: "http://127.0.0.1:8081", ModelDir: modelDir, PresetPath: filepath.Join(t.TempDir(), "router-models.ini"),
 			ReadinessTimeout: 25 * time.Millisecond, ProbeInterval: time.Millisecond,
 		},
 		launcher,
 		store,
-		func(context.Context) error { return nil },
+		func(context.Context, string) error { return nil },
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -250,8 +253,13 @@ func TestDownloadLeavesPreviousModelRunning(t *testing.T) {
 			if current.Active == nil || current.Active.ID != "stable" {
 				t.Fatalf("active model=%#v", current.Active)
 			}
-			if launcher.starts["stable.gguf"] != 1 || launcher.starts["candidate.gguf"] != 0 {
-				t.Fatalf("starts=%#v", launcher.starts)
+			// A download never changes which model answers by default. The
+			// router reloads once so the new file can be chosen later.
+			if got := supervisor.ResolveModel(""); got != "stable" {
+				t.Fatalf("default model after download = %q", got)
+			}
+			if launcher.starts[""] > 2 {
+				t.Fatalf("router restarted more than once for a download: %#v", launcher.starts)
 			}
 			if _, err := os.Stat(filepath.Join(modelDir, "candidate.gguf")); err != nil {
 				t.Fatalf("candidate was not downloaded: %v", err)

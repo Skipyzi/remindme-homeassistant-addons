@@ -13,7 +13,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -36,6 +35,14 @@ type Config struct {
 	Stderr           io.Writer
 	ReadinessTimeout time.Duration
 	ProbeInterval    time.Duration
+	// PresetPath is where the router's model list is written. Defaults to
+	// router-models.ini beside the model directory.
+	PresetPath string
+	// MaxModels is how many models the router keeps loaded at once; the least
+	// recently used one is unloaded past it.
+	MaxModels int
+	// Identify maps a model file name to its catalog ID, or "" when unknown.
+	Identify func(file string) string
 }
 
 type Process interface {
@@ -51,8 +58,16 @@ type Launcher interface {
 	Start(context.Context, string, []string) (Process, error)
 }
 
-type Probe func(context.Context) error
+// Probe checks that the router can answer with the named model, loading it
+// if it is not resident yet.
+type Probe func(ctx context.Context, model string) error
 
+// Supervisor runs llama.cpp as a router over every downloaded model. The
+// "active" model is the default: requests that name no model, or a model the
+// router does not know, are served by it. Switching the default is a pointer
+// move plus a load, not a restart, and no model file is ever deleted by a
+// switch — so a dictation app on one model and a chat console on another
+// can share the add-on without evicting each other.
 type Supervisor struct {
 	mu             sync.RWMutex
 	config         Config
@@ -63,6 +78,8 @@ type Supervisor struct {
 	process        Process
 	current        *state.Installed
 	currentRuntime hardware.Runtime
+	models         []RouterModel
+	names          ModelNames
 	persisted      state.State
 	emit           func(state.State)
 }
@@ -105,6 +122,12 @@ func NewSupervisor(config Config, launcher Launcher, store state.Store, probe Pr
 	if config.ProbeInterval <= 0 {
 		config.ProbeInterval = 500 * time.Millisecond
 	}
+	if config.PresetPath == "" {
+		config.PresetPath = filepath.Join(filepath.Dir(filepath.Clean(config.ModelDir)), "router-models.ini")
+	}
+	if config.MaxModels <= 0 {
+		config.MaxModels = 2
+	}
 	persisted, loadErr := store.Load()
 	if loadErr != nil && persisted.Phase != state.PhaseDegraded {
 		return nil, loadErr
@@ -126,6 +149,25 @@ func (supervisor *Supervisor) ActiveID() string {
 	return supervisor.current.ID
 }
 
+// ResolveModel maps a request's `model` field to a model the router serves;
+// empty and unknown names resolve to the default model.
+func (supervisor *Supervisor) ResolveModel(requested string) string {
+	supervisor.mu.RLock()
+	defer supervisor.mu.RUnlock()
+	return supervisor.names.Resolve(requested)
+}
+
+// ModelIDs lists the models the router serves, by canonical ID.
+func (supervisor *Supervisor) ModelIDs() []string {
+	supervisor.mu.RLock()
+	defer supervisor.mu.RUnlock()
+	ids := make([]string, 0, len(supervisor.models))
+	for _, model := range supervisor.models {
+		ids = append(ids, model.ID)
+	}
+	return ids
+}
+
 func (supervisor *Supervisor) State() state.State {
 	supervisor.mu.RLock()
 	defer supervisor.mu.RUnlock()
@@ -145,37 +187,72 @@ func (supervisor *Supervisor) Persist(current state.State) error {
 func (supervisor *Supervisor) Start(ctx context.Context, installed state.Installed, runtime hardware.Runtime) error {
 	supervisor.mu.Lock()
 	defer supervisor.mu.Unlock()
-	return supervisor.startLocked(ctx, installed, runtime, true)
-}
-
-func (supervisor *Supervisor) startLocked(ctx context.Context, installed state.Installed, runtime hardware.Runtime, persist bool) error {
-	process, err := supervisor.launcher.Start(ctx, supervisor.config.Binary, llamaArgs(installed, runtime))
-	if err != nil {
-		return fmt.Errorf("start llama server: %w", err)
-	}
-	supervisor.process = process
-	supervisor.current = copyInstalled(&installed)
-	supervisor.currentRuntime = runtime
-	if err := supervisor.probeWithTimeout(ctx, process); err != nil {
-		_ = process.Stop(5 * time.Second)
-		supervisor.process = nil
-		supervisor.current = nil
-		return fmt.Errorf("probe llama server: %w", err)
+	if err := supervisor.launchRouterLocked(ctx, installed, runtime); err != nil {
+		return err
 	}
 	installed.Healthy = true
 	if installed.ActivatedAt.IsZero() {
 		installed.ActivatedAt = time.Now().UTC()
 	}
 	supervisor.current = copyInstalled(&installed)
-	if persist {
-		supervisor.persisted = supervisor.persisted.Succeed(installed)
-		if err := supervisor.store.Save(supervisor.persisted); err != nil {
-			return fmt.Errorf("persist active model: %w", err)
-		}
+	supervisor.persisted = supervisor.persisted.Succeed(installed)
+	if err := supervisor.store.Save(supervisor.persisted); err != nil {
+		return fmt.Errorf("persist active model: %w", err)
 	}
 	return nil
 }
 
+// Reload restarts the router so it picks up models added to or removed from
+// the model directory. The default model is unchanged.
+func (supervisor *Supervisor) Reload(ctx context.Context) error {
+	supervisor.mu.Lock()
+	defer supervisor.mu.Unlock()
+	if supervisor.current == nil {
+		return errors.New("no default model to serve")
+	}
+	return supervisor.launchRouterLocked(ctx, *supervisor.current, supervisor.currentRuntime)
+}
+
+// launchRouterLocked (re)writes the model list, (re)starts the router and
+// waits until it answers with the default model.
+func (supervisor *Supervisor) launchRouterLocked(ctx context.Context, defaultModel state.Installed, runtime hardware.Runtime) error {
+	models, err := ScanModels(filepath.Dir(defaultModel.Path), supervisor.config.Identify)
+	if err != nil {
+		return fmt.Errorf("scan models: %w", err)
+	}
+	defaultID := routerIDForPath(models, defaultModel.Path)
+	if defaultID == "" {
+		return fmt.Errorf("default model %s is not in the model directory", filepath.Base(defaultModel.Path))
+	}
+	if err := writeFileAtomic(supervisor.config.PresetPath, []byte(RenderPreset(models))); err != nil {
+		return fmt.Errorf("write router presets: %w", err)
+	}
+	if supervisor.process != nil {
+		_ = supervisor.process.Stop(20 * time.Second)
+		supervisor.process = nil
+	}
+	process, err := supervisor.launcher.Start(ctx, supervisor.config.Binary, routerArgs(runtime, supervisor.config.PresetPath, supervisor.config.MaxModels))
+	if err != nil {
+		return fmt.Errorf("start llama router: %w", err)
+	}
+	supervisor.process = process
+	supervisor.models = models
+	supervisor.names = NewModelNames(models, defaultID)
+	supervisor.current = copyInstalled(&defaultModel)
+	supervisor.currentRuntime = runtime
+	if err := supervisor.probeWithTimeout(ctx, process, defaultID); err != nil {
+		_ = process.Stop(5 * time.Second)
+		supervisor.process = nil
+		supervisor.current = nil
+		return fmt.Errorf("probe llama router: %w", err)
+	}
+	return nil
+}
+
+// Activate makes candidate the default model. The router already serves every
+// downloaded model, so this loads the candidate and moves the default to it;
+// nothing is restarted unless the candidate was downloaded after the router
+// started, and no other model is unloaded from disk.
 func (supervisor *Supervisor) Activate(ctx context.Context, candidate state.Installed, runtime hardware.Runtime) error {
 	supervisor.mu.Lock()
 	defer supervisor.mu.Unlock()
@@ -183,7 +260,6 @@ func (supervisor *Supervisor) Activate(ctx context.Context, candidate state.Inst
 		return errors.New("no healthy active model is available for rollback")
 	}
 	previous := *supervisor.current
-	previousRuntime := supervisor.currentRuntime
 	previousFallback := copyInstalled(supervisor.persisted.Fallback)
 
 	operationID := fmt.Sprintf("activate-%d", time.Now().UnixNano())
@@ -195,30 +271,26 @@ func (supervisor *Supervisor) Activate(ctx context.Context, candidate state.Inst
 		return err
 	}
 	supervisor.emitState()
-	if err := supervisor.process.Stop(20 * time.Second); err != nil {
-		return supervisor.rollbackLocked(ctx, previous, previousRuntime, previousFallback, candidate, fmt.Errorf("stop active model: %w", err))
-	}
-	supervisor.process = nil
-	supervisor.current = nil
 
-	process, err := supervisor.launcher.Start(ctx, supervisor.config.Binary, llamaArgs(candidate, runtime))
-	if err != nil {
-		return supervisor.rollbackLocked(ctx, previous, previousRuntime, previousFallback, candidate, fmt.Errorf("start candidate: %w", err))
+	candidateID := routerIDForPath(supervisor.models, candidate.Path)
+	if candidateID == "" {
+		// Downloaded after the router started: restart it with the new list,
+		// still defaulting to the previous model until the candidate proves out.
+		if err := supervisor.launchRouterLocked(ctx, previous, supervisor.currentRuntime); err != nil {
+			return supervisor.restoreLocked(ctx, previous, previousFallback, candidate, err)
+		}
+		candidateID = routerIDForPath(supervisor.models, candidate.Path)
+		if candidateID == "" {
+			return supervisor.restoreLocked(ctx, previous, previousFallback, candidate, errors.New("candidate file is not in the model directory"))
+		}
 	}
-	supervisor.process = process
-	supervisor.current = copyInstalled(&candidate)
-	supervisor.currentRuntime = runtime
 	supervisor.persisted = supervisor.persisted.Transition(state.PhaseProbing, 0)
 	if err := supervisor.store.Save(supervisor.persisted); err != nil {
-		_ = process.Stop(5 * time.Second)
-		return supervisor.rollbackLocked(ctx, previous, previousRuntime, previousFallback, candidate, err)
+		return supervisor.restoreLocked(ctx, previous, previousFallback, candidate, err)
 	}
 	supervisor.emitState()
-	if err := supervisor.probeWithTimeout(ctx, process); err != nil {
-		_ = process.Stop(5 * time.Second)
-		supervisor.process = nil
-		supervisor.current = nil
-		return supervisor.rollbackLocked(ctx, previous, previousRuntime, previousFallback, candidate, err)
+	if err := supervisor.probeWithTimeout(ctx, supervisor.process, candidateID); err != nil {
+		return supervisor.restoreLocked(ctx, previous, previousFallback, candidate, err)
 	}
 
 	candidate.Healthy = true
@@ -227,39 +299,38 @@ func (supervisor *Supervisor) Activate(ctx context.Context, candidate state.Inst
 	supervisor.persisted.Fallback = previousFallback
 	supervisor.persisted = supervisor.persisted.Succeed(candidate)
 	supervisor.current = copyInstalled(&candidate)
+	supervisor.names = NewModelNames(supervisor.models, candidateID)
 	if err := supervisor.store.Save(supervisor.persisted); err != nil {
 		return err
 	}
 	supervisor.emitState()
-	return supervisor.PruneLocked(supervisor.persisted)
+	return nil
 }
 
-func (supervisor *Supervisor) rollbackLocked(ctx context.Context, previous state.Installed, previousRuntime hardware.Runtime, previousFallback *state.Installed, failed state.Installed, cause error) error {
+// restoreLocked keeps the previous default after a failed switch. The router
+// is only relaunched if it is no longer running.
+func (supervisor *Supervisor) restoreLocked(ctx context.Context, previous state.Installed, previousFallback *state.Installed, failed state.Installed, cause error) error {
 	supervisor.persisted = supervisor.persisted.Transition(state.PhaseRollback, 0)
 	failed.Healthy = false
 	supervisor.persisted.Failed = append(supervisor.persisted.Failed, failed)
 	_ = supervisor.store.Save(supervisor.persisted)
 
-	process, startErr := supervisor.launcher.Start(ctx, supervisor.config.Binary, llamaArgs(previous, previousRuntime))
-	if startErr == nil {
-		supervisor.process = process
+	var restartErr error
+	if status, ok := supervisor.process.(ProcessStatus); supervisor.process == nil || (ok && status.Exited()) {
+		restartErr = supervisor.launchRouterLocked(ctx, previous, supervisor.currentRuntime)
+	} else {
 		supervisor.current = copyInstalled(&previous)
-		supervisor.currentRuntime = previousRuntime
-		startErr = supervisor.probeWithTimeout(ctx, process)
+		supervisor.names = NewModelNames(supervisor.models, routerIDForPath(supervisor.models, previous.Path))
 	}
-	if startErr != nil {
-		if process != nil {
-			_ = process.Stop(5 * time.Second)
-		}
-		supervisor.process = nil
-		supervisor.current = nil
+	if restartErr != nil {
 		supervisor.persisted.Phase = state.PhaseDegraded
 		supervisor.persisted.Active = nil
 		supervisor.persisted.Fallback = previousFallback
 		supervisor.persisted.Operation = nil
 		supervisor.persisted.LastError = &state.LastError{Code: CodeRollbackFailed, Message: "Candidate and fallback models failed to start.", At: time.Now().UTC()}
 		_ = supervisor.store.Save(supervisor.persisted)
-		return fmt.Errorf("activation failed (%v) and rollback failed (%v)", cause, startErr)
+		supervisor.emitState()
+		return fmt.Errorf("activation failed (%v) and rollback failed (%v)", cause, restartErr)
 	}
 	previous.Healthy = true
 	supervisor.persisted.Phase = state.PhaseActive
@@ -270,15 +341,42 @@ func (supervisor *Supervisor) rollbackLocked(ctx context.Context, previous state
 	if err := supervisor.store.Save(supervisor.persisted); err != nil {
 		return err
 	}
+	supervisor.emitState()
 	return fmt.Errorf("candidate activation failed; previous model restored: %w", cause)
 }
 
-func (supervisor *Supervisor) probeWithTimeout(ctx context.Context, process Process) error {
+func routerIDForPath(models []RouterModel, path string) string {
+	for _, model := range models {
+		if sameFile(model.Path, path) {
+			return model.ID
+		}
+	}
+	return ""
+}
+
+func sameFile(left, right string) bool {
+	leftPath, leftErr := filepath.Abs(left)
+	rightPath, rightErr := filepath.Abs(right)
+	return leftErr == nil && rightErr == nil && filepath.Clean(leftPath) == filepath.Clean(rightPath)
+}
+
+func writeFileAtomic(path string, data []byte) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return err
+	}
+	temporary := path + ".tmp"
+	if err := os.WriteFile(temporary, data, 0o600); err != nil {
+		return err
+	}
+	return os.Rename(temporary, path)
+}
+
+func (supervisor *Supervisor) probeWithTimeout(ctx context.Context, process Process, model string) error {
 	probeCtx, cancel := context.WithTimeout(ctx, supervisor.config.ReadinessTimeout)
 	defer cancel()
 	var lastErr error
 	for {
-		if err := supervisor.probe(probeCtx); err == nil {
+		if err := supervisor.probe(probeCtx, model); err == nil {
 			return nil
 		} else {
 			lastErr = err
@@ -313,13 +411,22 @@ func (supervisor *Supervisor) Stop(timeout time.Duration) error {
 	return err
 }
 
-func llamaArgs(model state.Installed, runtime hardware.Runtime) []string {
+// routerArgs starts llama-server as a router: models come from the preset
+// file, and every flag here is passed down to each model it loads.
+func routerArgs(runtime hardware.Runtime, presetPath string, maxModels int) []string {
 	threadsBatch := runtime.ThreadsBatch
 	if threadsBatch <= 0 {
 		threadsBatch = runtime.Threads
 	}
+	// Without a unified KV cache the context is split between slots, and two
+	// slots would halve what each request can see. One slot is the safe choice.
+	slots := min(max(runtime.Parallel, 1), 4)
+	if !runtime.KVUnified {
+		slots = 1
+	}
 	args := []string{
-		"--model", model.Path,
+		"--models-preset", presetPath,
+		"--models-max", strconv.Itoa(min(max(maxModels, 1), 4)),
 		"--host", "127.0.0.1",
 		"--port", "8081",
 		"--ctx-size", strconv.Itoa(runtime.Context),
@@ -327,7 +434,7 @@ func llamaArgs(model state.Installed, runtime hardware.Runtime) []string {
 		"--threads-batch", strconv.Itoa(threadsBatch),
 		"--batch-size", strconv.Itoa(runtime.Batch),
 		"--ubatch-size", strconv.Itoa(runtime.UBatch),
-		"--cache-prompt", "--parallel", "1",
+		"--cache-prompt", "--parallel", strconv.Itoa(slots),
 	}
 	if runtime.CacheReuse > 0 {
 		args = append(args, "--cache-reuse", strconv.Itoa(runtime.CacheReuse))
@@ -350,57 +457,8 @@ func llamaArgs(model state.Installed, runtime hardware.Runtime) []string {
 	return args
 }
 
-func (supervisor *Supervisor) Prune(current state.State) error {
-	supervisor.mu.Lock()
-	defer supervisor.mu.Unlock()
-	return supervisor.PruneLocked(current)
-}
-
-func (supervisor *Supervisor) PruneLocked(current state.State) error {
-	modelDir, err := filepath.Abs(supervisor.config.ModelDir)
-	if err != nil {
-		return err
-	}
-	protected := make(map[string]bool)
-	protect := func(path string) {
-		if path == "" {
-			return
-		}
-		absolute, absErr := filepath.Abs(path)
-		if absErr == nil {
-			protected[filepath.Clean(absolute)] = true
-		}
-	}
-	if current.Active != nil {
-		protect(current.Active.Path)
-	}
-	if current.Fallback != nil {
-		protect(current.Fallback.Path)
-	}
-	if current.Operation != nil {
-		protect(current.Operation.ModelPath)
-	}
-	entries, err := os.ReadDir(modelDir)
-	if err != nil {
-		return err
-	}
-	for _, entry := range entries {
-		if entry.IsDir() || entry.Type()&os.ModeSymlink != 0 || !strings.HasSuffix(strings.ToLower(entry.Name()), ".gguf") {
-			continue
-		}
-		path := filepath.Join(modelDir, entry.Name())
-		if protected[filepath.Clean(path)] {
-			continue
-		}
-		if err := os.Remove(path); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 func HTTPProbe(target *url.URL, client *http.Client) Probe {
-	return func(ctx context.Context) error {
+	return func(ctx context.Context, model string) error {
 		healthURL := target.ResolveReference(&url.URL{Path: "/health"})
 		healthRequest, err := http.NewRequestWithContext(ctx, http.MethodGet, healthURL.String(), nil)
 		if err != nil {
@@ -415,7 +473,10 @@ func HTTPProbe(target *url.URL, client *http.Client) Probe {
 		if healthResponse.StatusCode != http.StatusOK {
 			return fmt.Errorf("health status %d", healthResponse.StatusCode)
 		}
+		// A real completion with the model named: this is what loads it into
+		// the router, and what proves it can answer.
 		payload, _ := json.Marshal(map[string]any{
+			"model":      model,
 			"messages":   []map[string]string{{"role": "user", "content": "Reply OK"}},
 			"max_tokens": 8, "temperature": 0, "stream": false,
 		})

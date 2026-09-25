@@ -22,6 +22,12 @@
 		sensor: '<circle cx="12" cy="12" r="7"/><line x1="12" y1="8" x2="12" y2="13"/>',
 	};
 
+	/** "heat_cool" → "Heat cool": states read as words, not shouted codes. */
+	function sentence(value) {
+		const text = String(value ?? "").replaceAll("_", " ");
+		return text.charAt(0).toUpperCase() + text.slice(1);
+	}
+
 	function iconPaths(entity) {
 		return (
 			ICONS[entity.deviceClass] || ICONS[entity.domain] || ICONS.sensor
@@ -47,23 +53,23 @@
 		const state = String(entity.state || "").toLowerCase();
 		if (entity.domain === "lock")
 			return state === "locked"
-				? { text: "LOCKED", tone: "good" }
-				: { text: "UNLOCKED", tone: "bad" };
+				? { text: "Locked", tone: "good" }
+				: { text: "Unlocked", tone: "bad" };
 		if (entity.deviceClass === "battery" && Number(entity.numericState) <= 20)
-			return { text: "LOW", tone: "bad" };
+			return { text: "Low", tone: "bad" };
 		if (entity.domain === "binary_sensor") {
 			const kind = entity.deviceClass;
 			if (kind === "motion")
 				return state === "on"
-					? { text: "DETECTED", tone: "on" }
-					: { text: "CLEAR", tone: "good" };
+					? { text: "Detected", tone: "on" }
+					: { text: "Clear", tone: "good" };
 			return state === "on"
-				? { text: "OPEN", tone: "bad" }
-				: { text: "CLOSED", tone: "good" };
+				? { text: "Open", tone: "bad" }
+				: { text: "Closed", tone: "good" };
 		}
 		if (!state || state === "unavailable" || state === "unknown")
-			return { text: "OFFLINE", tone: "" };
-		return { text: state.toUpperCase(), tone: isActive(entity) ? "on" : "" };
+			return { text: "Offline", tone: "" };
+		return { text: sentence(state), tone: isActive(entity) ? "on" : "" };
 	}
 
 	/**
@@ -101,18 +107,18 @@
 		const elapsed = Date.now() - new Date(iso).getTime();
 		if (!Number.isFinite(elapsed) || elapsed < 0) return "";
 		const minutes = Math.floor(elapsed / 60000);
-		if (minutes < 1) return `${Math.floor(elapsed / 1000)} SECONDS AGO`;
-		if (minutes < 60) return `${minutes}M AGO`;
+		if (minutes < 1) return `${Math.floor(elapsed / 1000)}s ago`;
+		if (minutes < 60) return `${minutes}m ago`;
 		const hours = Math.floor(minutes / 60);
-		return `${hours}H ${minutes % 60}M AGO`;
+		return `${hours}h ${minutes % 60}m ago`;
 	}
 
 	/** Binary sensors report dwell — how long they have held the current state. */
 	function formatDwell(entity) {
-		const since = formatRelative(entity.lastChanged).replace(" AGO", "");
-		if (!since) return "NO STATE HISTORY";
+		const since = formatRelative(entity.lastChanged).replace(" ago", "");
+		if (!since) return "";
 		const label = statePill(entity).text;
-		return `${label} FOR ${since}`;
+		return `${label} for ${since}`;
 	}
 
 	/**
@@ -124,12 +130,12 @@
 		const percentage = Number(entity.fanPercentage || 0);
 		const step = Number(entity.fanStep || 0);
 		const preset = entity.presetMode
-			? String(entity.presetMode).toUpperCase()
+			? sentence(entity.presetMode)
 			: "";
 		if (step > 0 && step < 100) {
 			const steps = Math.round(100 / step);
 			const current = Math.round(percentage / step);
-			return `${preset || `${percentage}%`} · ${current} OF ${steps}`;
+			return `${preset || `${percentage}%`} · ${current} of ${steps}`;
 		}
 		return preset ? `${preset} · ${percentage}%` : `${percentage}%`;
 	}
@@ -152,7 +158,7 @@
 		if (entity.domain === "fan" && entity.fanPercentage != null)
 			return `${entity.fanPercentage}%`;
 		if (entity.domain === "cover" && entity.position != null)
-			return `${entity.position}% OPEN`;
+			return `${entity.position}% open`;
 		return entity.unit || "—";
 	}
 
@@ -160,22 +166,22 @@
 		const when = formatRelative(entity.lastChanged);
 		if (entity.domain === "climate" && entity.currentTemperature != null) {
 			const doing = entity.hvacAction
-				? ` · ${String(entity.hvacAction).toUpperCase()}`
+				? ` · ${String(entity.hvacAction).replaceAll("_", " ")}`
 				: "";
 			return `CURRENTLY ${entity.currentTemperature}° · TARGET ${
 				entity.targetTemperature ?? "—"
 			}°${doing} · ${when}`;
 		}
 		if (entity.domain === "fan" && entity.oscillating)
-			return `OSCILLATING · ${when}`;
+			return `Oscillating · ${when}`;
 		if (entity.domain === "switch" && entity.power != null) {
 			// How long it has been running is derivable from lastChanged alone.
 			const running = isActive(entity) && entity.lastChanged
-				? ` · ON FOR ${compactDuration(Date.now() - new Date(entity.lastChanged).getTime())}`
+				? ` · on for ${compactDuration(Date.now() - new Date(entity.lastChanged).getTime())}`
 				: "";
-			return `DRAWING ${entity.power} W${running}`;
+			return `Drawing ${entity.power} W${running}`;
 		}
-		return when ? `LAST CHANGED — ${when}` : "NO STATE HISTORY";
+		return when ? `Changed ${when}` : "";
 	}
 
 	/**
@@ -216,9 +222,9 @@
 
 	function compactDuration(ms) {
 		const minutes = Math.max(0, Math.round(ms / 60000));
-		if (minutes < 60) return `${minutes} MIN`;
+		if (minutes < 60) return `${minutes} min`;
 		const hours = Math.floor(minutes / 60);
-		return minutes % 60 ? `${hours}H ${minutes % 60}M` : `${hours}H`;
+		return minutes % 60 ? `${hours}h ${minutes % 60}m` : `${hours}h`;
 	}
 
 	/**
@@ -230,7 +236,7 @@
 		const peak = points.reduce((a, b) => (b.value > a.value ? b : a));
 		const when = clockTime(peak.at);
 		const value = peak.value >= 1000 ? groupThousands(peak.value) : peak.value;
-		return `PEAK ${value}${unit ? ` ${unit}` : ""}${when ? ` AT ${when}` : ""}`;
+		return `Peak ${value}${unit ? ` ${unit}` : ""}${when ? ` at ${when}` : ""}`;
 	}
 
 	/**
@@ -249,7 +255,7 @@
 		}
 		const elapsed = Date.now() - new Date(since).getTime();
 		if (!Number.isFinite(elapsed) || elapsed < 60000) return "";
-		return `ABOVE ${threshold}${unit || ""} FOR ${compactDuration(elapsed)}`;
+		return `Above ${threshold}${unit || ""} for ${compactDuration(elapsed)}`;
 	}
 
 	/** Drift across the whole window — the question a battery card asks. */
@@ -257,8 +263,8 @@
 		if (!points || points.length < 2) return "";
 		const delta = points[points.length - 1].value - points[0].value;
 		if (Math.abs(delta) < 1) return "";
-		const direction = delta < 0 ? "DROPPED" : "ROSE";
-		return `${direction} ${Math.abs(Math.round(delta))}${unit || ""} IN ${windowLabel}`;
+		const direction = delta < 0 ? "Dropped" : "Rose";
+		return `${direction} ${Math.abs(Math.round(delta))}${unit || ""} in ${windowLabel}`;
 	}
 
 	/**
@@ -274,13 +280,13 @@
 				change.state === activeState && new Date(change.at) >= startOfDay,
 		);
 		const parts = [];
-		if (today.length) parts.push(`${today.length} EVENTS TODAY`);
+		if (today.length) parts.push(`${today.length} events today`);
 		const lastActive = [...changes]
 			.reverse()
 			.find((change) => change.state === activeState);
 		if (lastActive && !today.length) {
 			const when = clockTime(lastActive.at);
-			if (when) parts.push(`LAST AT ${when}`);
+			if (when) parts.push(`last at ${when}`);
 		}
 		return parts.join(" · ");
 	}
@@ -291,9 +297,9 @@
 		const delta = values[values.length - 1] - values[0];
 		const sign = delta >= 0 ? "+" : "";
 		const suffix = unit ? `${unit}` : "";
-		return `${sign}${delta.toFixed(1)}${suffix} OVER ${windowLabel || "WINDOW"} · MIN ${Math.min(
+		return `${sign}${delta.toFixed(1)}${suffix} over ${windowLabel || "the window"} · min ${Math.min(
 			...values,
-		).toFixed(1)} · MAX ${Math.max(...values).toFixed(1)}`;
+		).toFixed(1)} · max ${Math.max(...values).toFixed(1)}`;
 	}
 
 	async function loadHistory(entity, hours = 6) {

@@ -188,17 +188,17 @@
 		const copy = document.createElement("button");
 		copy.type = "button";
 		copy.className = "rt-copy";
-		copy.textContent = "COPY";
+		copy.textContent = "Copy";
 		copy.addEventListener("click", () => {
 			navigator.clipboard?.writeText(code).then(
 				() => {
-					copy.textContent = "COPIED";
+					copy.textContent = "Copied";
 					setTimeout(() => {
-						copy.textContent = "COPY";
+						copy.textContent = "Copy";
 					}, 1200);
 				},
 				() => {
-					copy.textContent = "FAILED";
+					copy.textContent = "Failed";
 				},
 			);
 		});

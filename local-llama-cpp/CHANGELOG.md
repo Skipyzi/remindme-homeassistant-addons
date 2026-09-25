@@ -1,5 +1,32 @@
 # Changelog
 
+## 2.0.0 - 2026-09-25
+
+### Changed
+
+- **Every downloaded model is served at once, from the same endpoint.** `llama-server` now
+  runs in router mode. A request's `model` field picks the model; requests that name no
+  model, or a model the add-on doesn't have, get the default model. Clients written for a
+  single-model server (such as a dictation cleanup app) therefore keep working unchanged,
+  while RemindMe chats with a model of its own.
+- **Switching the default no longer restarts anything.** Activation loads and checks the
+  candidate, then moves the default; if the candidate fails to answer, the previous
+  default stays.
+- **Switching no longer deletes models.** Previously every activation removed all model
+  files except the new model and its fallback, so switching back meant downloading again.
+  Files are now removed only when you remove them.
+
+### Added
+
+- **`resident_models`** (default `0`, automatic): how many models stay loaded. Automatic
+  keeps two when the host has at least 4 GB free at start-up and one otherwise; with one,
+  the router loads each requested model on demand and unloads the previous one.
+- **`parallel`** (default 2): llama-server slots per model. With `kv_unified` on, each slot
+  can use the whole context and keeps its own prompt cache, so RemindMe's routing call and
+  its answer, or a chat turn and a dictation request, no longer evict each other's cached
+  prompt. Without `kv_unified` the server keeps one slot.
+- `/manager/v1/status` reports `models` (every model served) and `defaultModel`.
+
 ## 1.14.0 - 2026-08-19
 
 ### Added

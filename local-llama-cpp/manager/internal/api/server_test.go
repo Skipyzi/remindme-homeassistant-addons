@@ -67,6 +67,7 @@ type fakeSupervisor struct {
 	active        string
 	startCalls    int
 	activateCalls int
+	reloadCalls   int
 }
 
 func (fake *fakeSupervisor) State() state.State {
@@ -78,6 +79,22 @@ func (fake *fakeSupervisor) Persist(current state.State) error {
 	fake.mu.Lock()
 	defer fake.mu.Unlock()
 	fake.current = current
+	return nil
+}
+
+// The router fake serves "speakoflow" (default) and "qwen3-4b-q4".
+func (fake *fakeSupervisor) ResolveModel(requested string) string {
+	switch strings.ToLower(requested) {
+	case "qwen3-4b-q4", "qwen3-4b-q4_k_m":
+		return "qwen3-4b-q4"
+	}
+	return "speakoflow"
+}
+func (fake *fakeSupervisor) ModelIDs() []string { return []string{"qwen3-4b-q4", "speakoflow"} }
+func (fake *fakeSupervisor) Reload(context.Context) error {
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	fake.reloadCalls++
 	return nil
 }
 func (fake *fakeSupervisor) ActiveID() string {
@@ -834,3 +851,41 @@ func TestInventoryRoutesRequireAuthentication(t *testing.T) {
 }
 
 var _ = url.URL{}
+
+func TestInferenceRequestsAreRoutedToAServedModel(t *testing.T) {
+	var seen []map[string]any
+	var queries []string
+	upstream := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		queries = append(queries, request.URL.RawQuery)
+		if request.Method == http.MethodPost {
+			var body map[string]any
+			_ = json.NewDecoder(request.Body).Decode(&body)
+			seen = append(seen, body)
+		}
+		response.WriteHeader(http.StatusOK)
+	}))
+	defer upstream.Close()
+	server := NewServer(Dependencies{Supervisor: &fakeSupervisor{}, InferenceURL: upstream.URL, Token: func() string { return "t" }})
+	send := func(method, path, body string) {
+		request := httptest.NewRequest(method, path, strings.NewReader(body))
+		request.Header.Set("Content-Type", "application/json")
+		server.ServeHTTP(httptest.NewRecorder(), request)
+	}
+	send(http.MethodPost, "/v1/chat/completions", `{"messages":[],"temperature":0.2}`)
+	send(http.MethodPost, "/v1/chat/completions", `{"model":"local","messages":[]}`)
+	send(http.MethodPost, "/v1/chat/completions", `{"model":"Qwen3-4B-Q4_K_M","messages":[]}`)
+	send(http.MethodPost, "/tokenize", `{"content":"hi"}`)
+	send(http.MethodGet, "/props", "")
+	want := []string{"speakoflow", "speakoflow", "qwen3-4b-q4", "speakoflow"}
+	for index, model := range want {
+		if seen[index]["model"] != model {
+			t.Fatalf("request %d routed to %v, want %s", index, seen[index]["model"], model)
+		}
+	}
+	if seen[0]["temperature"] != 0.2 {
+		t.Fatalf("other fields must survive the rewrite: %#v", seen[0])
+	}
+	if queries[len(queries)-1] != "model=speakoflow" {
+		t.Fatalf("GET /props should name the default model, got %q", queries[len(queries)-1])
+	}
+}

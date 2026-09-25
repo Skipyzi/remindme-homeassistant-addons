@@ -6,7 +6,7 @@ const html = readFileSync("public/harness.html", "utf8");
 const app = readFileSync("public/app.js", "utf8");
 
 test("settings contains only local harness preferences", () => {
-	for (const field of ["profile", "glow", "scanlines"]) {
+	for (const field of ["profile", "glow", "scanlines", "theme"]) {
 		assert.match(html, new RegExp(field), field);
 	}
 	for (const forbidden of [
@@ -33,6 +33,7 @@ test("settings contains only local harness preferences", () => {
 		"remindme.profile",
 		"remindme.glow",
 		"remindme.scanlines",
+		"remindme.theme",
 	]) {
 		assert.match(app, new RegExp(`localStorage\\.setItem\\(\\"${key}`), key);
 	}

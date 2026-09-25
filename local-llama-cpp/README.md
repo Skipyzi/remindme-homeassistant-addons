@@ -11,15 +11,21 @@ The add-on runs a small authenticated model manager in front of `llama-server`:
 - Interrupted `.partial` downloads can resume.
 - Verified models expose complete credential-free options YAML.
 
-### One-click switching (in-place activation)
+### Several models, one endpoint
 
-`POST /manager/v1/activate {"id": "<model>"}` hot-swaps the running model without restarting the add-on: the manager stops `llama-server`, starts it on the chosen verified model, and probes readiness (health plus a real completion). If the candidate fails to become ready, the manager **rolls back to the previous model automatically**. Progress streams over the operation SSE feed as `activating → probing → active` (or `rollback`). Because a Pi cannot hold two models in RAM at once, inference is briefly unavailable during the swap.
+Since 2.0 the manager runs `llama-server` in **router mode**: every downloaded model is served from the same `http://homeassistant:8080/v1/...` endpoint, and each request picks its model with the standard `model` field.
 
-In the RemindMe **Models** sidebar, **Use this model** switches to a verified model, and **Download & use** downloads, verifies, and switches in one action. The console blocks sending while a swap is in flight.
+- **Named requests** get the model they name. Catalog IDs (`qwen3-4b-q4`), file names and file stems all work. RemindMe's console names its chat model this way.
+- **Unnamed or unknown names** get the **default model**. A dictation cleanup app, a script, or anything written for a single-model server keeps getting exactly what it got before, without changes on its side.
+- **Loading is automatic.** A request for a model that isn't in memory loads it. Past `resident_models`, the least recently used model is unloaded (it stays on disk).
+
+`resident_models` sets how many models stay loaded at once. `0` (the default) chooses automatically: two when the host has at least 4 GB of memory available at start-up, otherwise one. With one, alternating between two apps' models swaps them on demand, which takes a few seconds per swap.
+
+**Make default** in RemindMe's Models tab (`POST /manager/v1/activate`) changes which model unnamed requests get. It loads and checks the candidate, then moves the default, with no restart. If the candidate fails to answer, the previous default stays. Switching never deletes a model file; remove models explicitly under **Downloaded models**. After a download or removal, the router restarts once, in a second or two, to pick up the new set of files.
 
 ### Manual activation (fallback)
 
-Activation through the llama.cpp add-on's native **Configuration** page still works: choose **Copy YAML**, paste the complete document into the Configuration YAML editor, save, and restart the llama.cpp add-on. This path does not change the running model until that restart, and is kept as a fallback to the one-click switch above.
+Activation through the llama.cpp add-on's native **Configuration** page still works: choose **Copy YAML**, paste the complete document into the Configuration YAML editor, save, and restart the llama.cpp add-on. It sets the default the add-on starts with; **Make default** changes it without a restart.
 
 At startup, the add-on log prints a short-lived six-character pairing code. Enter it in RemindMe's Model Workbench. The code is single-use, expires, and is rate-limited; the protected manager token returned by the direct exchange never enters browser state.
 
@@ -41,6 +47,8 @@ threads_batch: 4
 batch_size: 256
 ubatch_size: 128
 cache_reuse: 256
+parallel: 2
+resident_models: 0
 jinja: true
 kv_unified: true
 flash_attention: false
@@ -93,7 +101,7 @@ The legacy `manager_token` option is migration-only. It is imported only when `/
 
 RemindMe's **Models → Downloaded models** section scans the add-on's persistent `/data/models` directory and legacy GGUF files under `/data/.cache`. It lists physical files independently of the curated catalog, so custom and older downloads remain visible.
 
-A non-running file can be removed after confirmation. The manager refuses to remove the active model or a model involved in an operation. The browser receives opaque inventory identifiers rather than filesystem paths.
+A file other than the default model can be removed after confirmation. The manager refuses to remove the default model or a model involved in an operation, and reloads the router afterwards. The browser receives opaque inventory identifiers rather than filesystem paths.
 
 ## Recovery and safety
 

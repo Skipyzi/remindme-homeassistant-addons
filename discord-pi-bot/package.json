@@ -10,6 +10,8 @@
     "bridge": "tsx src/pi-bridge-server.mts",
     "dev": "ts-node src/index.ts",
     "lint": "biome check src/",
+    "test": "node --test --import tsx test/*.test.ts test/*.test.mjs",
+    "eval": "node --import tsx eval/run.mts",
     "format": "biome format --write src/"
   },
   "dependencies": {

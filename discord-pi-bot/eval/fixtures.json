@@ -1,0 +1,668 @@
+{
+ "house": [
+  {
+   "entity_id": "light.kitchen",
+   "state": "off",
+   "attributes": {
+    "friendly_name": "Kitchen Light",
+    "supported_color_modes": [
+     "hs",
+     "color_temp"
+    ],
+    "area_name": "Kitchen"
+   }
+  },
+  {
+   "entity_id": "light.desk_lamp",
+   "state": "on",
+   "attributes": {
+    "friendly_name": "Desk Lamp",
+    "supported_color_modes": [
+     "brightness"
+    ],
+    "brightness": 180,
+    "area_name": "Office"
+   }
+  },
+  {
+   "entity_id": "light.living_room_ceiling",
+   "state": "on",
+   "attributes": {
+    "friendly_name": "Ceiling Light",
+    "supported_color_modes": [
+     "hs",
+     "color_temp"
+    ],
+    "brightness": 200,
+    "area_name": "Living Room"
+   }
+  },
+  {
+   "entity_id": "light.floor_lamp",
+   "state": "off",
+   "attributes": {
+    "friendly_name": "Floor Lamp",
+    "supported_color_modes": [
+     "brightness"
+    ],
+    "area_name": "Living Room"
+   }
+  },
+  {
+   "entity_id": "light.bedroom",
+   "state": "off",
+   "attributes": {
+    "friendly_name": "Bedroom Light",
+    "supported_color_modes": [
+     "hs",
+     "color_temp"
+    ],
+    "area_name": "Bedroom"
+   }
+  },
+  {
+   "entity_id": "light.hallway",
+   "state": "off",
+   "attributes": {
+    "friendly_name": "Hallway Light",
+    "supported_color_modes": [
+     "onoff"
+    ],
+    "area_name": "Hallway"
+   }
+  },
+  {
+   "entity_id": "switch.coffee_machine",
+   "state": "off",
+   "attributes": {
+    "friendly_name": "Coffee Machine",
+    "area_name": "Kitchen"
+   }
+  },
+  {
+   "entity_id": "switch.pc_plug",
+   "state": "on",
+   "attributes": {
+    "friendly_name": "PC Plug",
+    "current_power_w": 87,
+    "area_name": "Office"
+   }
+  },
+  {
+   "entity_id": "climate.living_room",
+   "state": "heat",
+   "attributes": {
+    "friendly_name": "Living Room Thermostat",
+    "temperature": 21,
+    "current_temperature": 20.5,
+    "min_temp": 5,
+    "max_temp": 30,
+    "area_name": "Living Room"
+   }
+  },
+  {
+   "entity_id": "sensor.living_room_temperature",
+   "state": "20.5",
+   "attributes": {
+    "friendly_name": "Living Room Temperature",
+    "unit_of_measurement": "\u00b0C",
+    "device_class": "temperature",
+    "area_name": "Living Room"
+   }
+  },
+  {
+   "entity_id": "sensor.bedroom_temperature",
+   "state": "18.9",
+   "attributes": {
+    "friendly_name": "Bedroom Temperature",
+    "unit_of_measurement": "\u00b0C",
+    "device_class": "temperature",
+    "area_name": "Bedroom"
+   }
+  },
+  {
+   "entity_id": "sensor.outdoor_temperature",
+   "state": "11.2",
+   "attributes": {
+    "friendly_name": "Outdoor Temperature",
+    "unit_of_measurement": "\u00b0C",
+    "device_class": "temperature"
+   }
+  },
+  {
+   "entity_id": "sensor.bedroom_humidity",
+   "state": "54",
+   "attributes": {
+    "friendly_name": "Bedroom Humidity",
+    "unit_of_measurement": "%",
+    "device_class": "humidity",
+    "area_name": "Bedroom"
+   }
+  },
+  {
+   "entity_id": "sensor.washing_machine_power",
+   "state": "0",
+   "attributes": {
+    "friendly_name": "Washing Machine Power",
+    "unit_of_measurement": "W",
+    "device_class": "power",
+    "area_name": "Bathroom"
+   }
+  },
+  {
+   "entity_id": "cover.bedroom_blinds",
+   "state": "open",
+   "attributes": {
+    "friendly_name": "Bedroom Blinds",
+    "current_position": 100,
+    "area_name": "Bedroom"
+   }
+  },
+  {
+   "entity_id": "cover.garage_door",
+   "state": "closed",
+   "attributes": {
+    "friendly_name": "Garage Door",
+    "area_name": "Garage"
+   }
+  },
+  {
+   "entity_id": "lock.front_door",
+   "state": "locked",
+   "attributes": {
+    "friendly_name": "Front Door",
+    "area_name": "Hallway"
+   }
+  },
+  {
+   "entity_id": "media_player.living_room_tv",
+   "state": "off",
+   "attributes": {
+    "friendly_name": "Living Room TV",
+    "area_name": "Living Room"
+   }
+  },
+  {
+   "entity_id": "media_player.kitchen_speaker",
+   "state": "playing",
+   "attributes": {
+    "friendly_name": "Kitchen Speaker",
+    "area_name": "Kitchen"
+   }
+  },
+  {
+   "entity_id": "vacuum.robo",
+   "state": "docked",
+   "attributes": {
+    "friendly_name": "Robo Vac",
+    "area_name": "Living Room"
+   }
+  },
+  {
+   "entity_id": "binary_sensor.kitchen_window",
+   "state": "off",
+   "attributes": {
+    "friendly_name": "Kitchen Window",
+    "device_class": "window",
+    "area_name": "Kitchen"
+   }
+  },
+  {
+   "entity_id": "fan.bedroom_fan",
+   "state": "off",
+   "attributes": {
+    "friendly_name": "Bedroom Fan",
+    "percentage": 0,
+    "area_name": "Bedroom"
+   }
+  },
+  {
+   "entity_id": "scene.movie_night",
+   "state": "2026-09-01T20:00:00",
+   "attributes": {
+    "friendly_name": "Movie Night"
+   }
+  },
+  {
+   "entity_id": "button.desk_lamp_identify",
+   "state": "unknown",
+   "attributes": {
+    "friendly_name": "Desk Lamp Identify",
+    "area_name": "Office"
+   }
+  },
+  {
+   "entity_id": "number.desk_lamp_on_level",
+   "state": "100",
+   "attributes": {
+    "friendly_name": "Desk Lamp On Level",
+    "area_name": "Office"
+   }
+  },
+  {
+   "entity_id": "update.desk_lamp_firmware",
+   "state": "off",
+   "attributes": {
+    "friendly_name": "Desk Lamp Firmware",
+    "area_name": "Office"
+   }
+  }
+ ],
+ "cases": [
+  {
+   "prompt": "turn on the kitchen light",
+   "expect": {
+    "action": "home_control",
+    "targets": [
+     "Kitchen Light"
+    ],
+    "command": "turn_on"
+   }
+  },
+  {
+   "prompt": "switch off my desk lamp",
+   "expect": {
+    "action": "home_control",
+    "targets": [
+     "Desk Lamp"
+    ],
+    "command": "turn_off"
+   }
+  },
+  {
+   "prompt": "set the ceiling light to 40%",
+   "expect": {
+    "action": "home_control",
+    "targets": [
+     "Ceiling Light"
+    ],
+    "command": "set_brightness",
+    "value": "40"
+   }
+  },
+  {
+   "prompt": "turn off all the lights in the living room",
+   "expect": {
+    "action": "home_control",
+    "targets": [
+     "Ceiling Light",
+     "Floor Lamp"
+    ],
+    "command": "turn_off"
+   }
+  },
+  {
+   "prompt": "make the bedroom light red",
+   "expect": {
+    "action": "home_control",
+    "targets": [
+     "Bedroom Light"
+    ],
+    "command": "set_color",
+    "value": "red"
+   }
+  },
+  {
+   "prompt": "start the coffee machine",
+   "expect": {
+    "action": "home_control",
+    "targets": [
+     "Coffee Machine"
+    ],
+    "command": "turn_on"
+   }
+  },
+  {
+   "prompt": "set the thermostat to 22 degrees",
+   "expect": {
+    "action": "home_control",
+    "targets": [
+     "Living Room Thermostat"
+    ],
+    "command": "set_temperature",
+    "value": "22"
+   }
+  },
+  {
+   "prompt": "close the bedroom blinds",
+   "expect": {
+    "action": "home_control",
+    "targets": [
+     "Bedroom Blinds"
+    ],
+    "command": "close"
+   }
+  },
+  {
+   "prompt": "open the garage",
+   "expect": {
+    "action": "home_control",
+    "targets": [
+     "Garage Door"
+    ],
+    "command": "open"
+   }
+  },
+  {
+   "prompt": "unlock the front door",
+   "expect": {
+    "action": "home_control",
+    "targets": [
+     "Front Door"
+    ],
+    "command": "unlock"
+   }
+  },
+  {
+   "prompt": "pause the music in the kitchen",
+   "expect": {
+    "action": "home_control",
+    "targets": [
+     "Kitchen Speaker"
+    ],
+    "command": "pause"
+   }
+  },
+  {
+   "prompt": "start vacuuming",
+   "expect": {
+    "action": "home_control",
+    "targets": [
+     "Robo Vac"
+    ],
+    "command": "start"
+   }
+  },
+  {
+   "prompt": "turn the bedroom fan on",
+   "expect": {
+    "action": "home_control",
+    "targets": [
+     "Bedroom Fan"
+    ],
+    "command": "turn_on"
+   }
+  },
+  {
+   "prompt": "hallway light on please",
+   "expect": {
+    "action": "home_control",
+    "targets": [
+     "Hallway Light"
+    ],
+    "command": "turn_on"
+   }
+  },
+  {
+   "prompt": "activate movie night",
+   "expect": {
+    "action": "home_control",
+    "targets": [
+     "Movie Night"
+    ],
+    "command": "turn_on"
+   }
+  },
+  {
+   "prompt": "how warm is it in the living room?",
+   "expect": {
+    "action": "home_status",
+    "targets": [
+     "Living Room Temperature"
+    ]
+   }
+  },
+  {
+   "prompt": "what's the temperature outside",
+   "expect": {
+    "action": "home_status",
+    "targets": [
+     "Outdoor Temperature"
+    ]
+   }
+  },
+  {
+   "prompt": "is the kitchen window open?",
+   "expect": {
+    "action": "home_status",
+    "targets": [
+     "Kitchen Window"
+    ]
+   }
+  },
+  {
+   "prompt": "is the front door locked",
+   "expect": {
+    "action": "home_status",
+    "targets": [
+     "Front Door"
+    ]
+   }
+  },
+  {
+   "prompt": "how much power is the PC using?",
+   "expect": {
+    "action": "home_status",
+    "targets": [
+     "PC Plug"
+    ]
+   }
+  },
+  {
+   "prompt": "what's the humidity in the bedroom",
+   "expect": {
+    "action": "home_status",
+    "targets": [
+     "Bedroom Humidity"
+    ]
+   }
+  },
+  {
+   "prompt": "why do LED lights flicker on camera?",
+   "expect": {
+    "action": "reply"
+   }
+  },
+  {
+   "prompt": "what's a good temperature for sleeping?",
+   "expect": {
+    "action": "reply"
+   }
+  },
+  {
+   "prompt": "explain how a thermostat works",
+   "expect": {
+    "action": "reply"
+   }
+  },
+  {
+   "prompt": "hi! how are you today?",
+   "expect": {
+    "action": "reply"
+   }
+  },
+  {
+   "prompt": "thanks, that's perfect",
+   "expect": {
+    "action": "reply"
+   },
+   "history": [
+    {
+     "role": "user",
+     "content": "turn on the kitchen light"
+    },
+    {
+     "role": "assistant",
+     "content": "Kitchen Light is on."
+    }
+   ]
+  },
+  {
+   "prompt": "write a limerick about a lazy robot vacuum",
+   "expect": {
+    "action": "reply"
+   }
+  },
+  {
+   "prompt": "what's 17 times 23?",
+   "expect": {
+    "action": "reply"
+   }
+  },
+  {
+   "prompt": "translate 'good morning' into Spanish",
+   "expect": {
+    "action": "reply"
+   }
+  },
+  {
+   "prompt": "can you recommend a good sci-fi book?",
+   "expect": {
+    "action": "reply"
+   }
+  },
+  {
+   "prompt": "what does a smart plug do?",
+   "expect": {
+    "action": "reply"
+   }
+  },
+  {
+   "prompt": "remind me to take out the bins at 8pm",
+   "expect": {
+    "action": "reminder_add"
+   }
+  },
+  {
+   "prompt": "remind me in 20 minutes to check the oven",
+   "expect": {
+    "action": "reminder_add"
+   }
+  },
+  {
+   "prompt": "what reminders do I have?",
+   "expect": {
+    "action": "reminder_list"
+   }
+  },
+  {
+   "prompt": "what's the latest news about the Artemis mission?",
+   "expect": {
+    "action": "web_search"
+   }
+  },
+  {
+   "prompt": "who won the champions league final this year?",
+   "expect": {
+    "action": "web_search"
+   }
+  },
+  {
+   "prompt": "what time does the ikea in berlin close today",
+   "expect": {
+    "action": "web_search"
+   }
+  },
+  {
+   "prompt": "what did I say my bike lock code was?",
+   "expect": {
+    "action": "memory_recall"
+   }
+  },
+  {
+   "prompt": "remember that my coffee order is a flat white with oat milk",
+   "expect": {
+    "action": "memory_save"
+   }
+  },
+  {
+   "prompt": "keep in mind that I'm allergic to peanuts",
+   "expect": {
+    "action": "memory_save"
+   }
+  },
+  {
+   "prompt": "make me an svg diagram of the water cycle",
+   "expect": {
+    "action": "document_write"
+   }
+  },
+  {
+   "prompt": "build an html page that shows a pomodoro timer",
+   "expect": {
+    "action": "document_write"
+   }
+  },
+  {
+   "prompt": "track my parcel 00340434161094042557",
+   "expect": {
+    "action": "parcel_track"
+   }
+  },
+  {
+   "prompt": "where are my packages?",
+   "expect": {
+    "action": "parcel_list"
+   }
+  },
+  {
+   "prompt": "and the floor lamp too",
+   "expect": {
+    "action": "home_control",
+    "targets": [
+     "Floor Lamp"
+    ],
+    "command": "turn_on"
+   },
+   "history": [
+    {
+     "role": "user",
+     "content": "turn on the ceiling light"
+    },
+    {
+     "role": "assistant",
+     "content": "Ceiling Light is on."
+    }
+   ]
+  },
+  {
+   "prompt": "now turn it off",
+   "expect": {
+    "action": "home_control",
+    "targets": [
+     "Kitchen Light"
+    ],
+    "command": "turn_off"
+   },
+   "history": [
+    {
+     "role": "user",
+     "content": "turn on the kitchen light"
+    },
+    {
+     "role": "assistant",
+     "content": "Kitchen Light is on."
+    }
+   ]
+  },
+  {
+   "prompt": "and in the bedroom?",
+   "expect": {
+    "action": "home_status",
+    "targets": [
+     "Bedroom Temperature"
+    ]
+   },
+   "history": [
+    {
+     "role": "user",
+     "content": "how warm is it in the living room"
+    },
+    {
+     "role": "assistant",
+     "content": "Living Room Temperature is 20.5 \u00b0C."
+    }
+   ]
+  }
+ ]
+}

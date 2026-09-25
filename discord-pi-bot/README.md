@@ -2,6 +2,51 @@
 
 Install this add-on after `local-llama-cpp`. Version 2.3.4 replaces Supervisor-mirrored settings and automatic model activation with a reliable manual model workbench. It retains direct one-time pairing, Discord chat, reminders, Assist tools, Exa search, the Pi bridge, persistent presence data, and local model diagnostics.
 
+## Agent core (3.0)
+
+Version 3.0 replaces the tool-calling loop with an agent core built for small local models. The model no longer receives a tool list and never emits a tool call. Each chat turn goes through up to four steps, and any of them can finish it:
+
+1. **Home Assistant first.** Plain device commands and questions ("turn off the kitchen light", "what's the temperature in the office") go to Home Assistant's built-in intent engine (`conversation.home_assistant`). If it handles them, no model runs at all. Requests mentioning locks, doors, the garage, covers, alarms, scenes, scripts or the vacuum never take this path, because Home Assistant would act on them without confirmation.
+2. **One constrained decision.** The model picks a single action (`reply`, `home_control`, `home_status`, `reminder_add`, `web_search`, `memory_recall`, `document_write`, …) by filling in a JSON schema that llama.cpp compiles into a grammar. It cannot produce invalid JSON, invent an action, or name a device that isn't on the shortlist. The shortlist is ranked in code from device names, areas and the previous request.
+3. **The action runs in code.** Home commands become checked service calls, such as percent → 0–255 brightness, colour names → RGB and "warmer" → kelvin. Lights, switches, fans, media and climate run straight away. Locks, covers, valves, alarms, scripts, scenes, vacuums and anything unfamiliar wait for a confirm tap.
+4. **A spoken answer, only when needed.** Device actions and status reads answer from a template. Search results, notes and chat go to the model as plain text generation, with no tools on offer. Documents are streamed as plain source (no JSON escaping) and saved.
+
+Guard rails a model can't bypass:
+
+- `home_control` is only in the grammar when the message contains a command word ("turn", "set", "dim", "open", "lock", …) or is a short follow-up to one. "Why do LED lights flicker?" can read a device state but never switch anything.
+- Memory is saved only when you ask ("remember that…", "keep in mind…", "make a note"). Relevant notes are still recalled automatically into every answer.
+- If a decision fails (the endpoint rejects the schema, or the model is unreachable mid-turn), the turn falls back to a plain answer instead of a broken tool call.
+
+### Measuring a model
+
+`eval/run.mts` runs the routing decision against a live endpoint over a fixture house and 47 labelled prompts. It covers commands, state questions, knowledge questions that mention devices, follow-ups, reminders, search, memory, documents and parcels:
+
+```sh
+LOCAL_LLM_URL=http://homeassistant:8080/v1/chat/completions pnpm eval
+```
+
+Results at release (same prompts; decision latency measured on a desktop CPU, so a Pi will be slower):
+
+| Model | Exact | Right action | v1 tool-calling, same prompts |
+|---|---|---|---|
+| SpeakoFlow-Mini 0.8B Q4 | 87% | 91% | 23% |
+| Qwen3 1.7B Q8 | 91% | 98% | — |
+| Qwen3 4B Q4 | 96% | 100% | — |
+
+SpeakoFlow-Mini is a dictation-cleanup model: it routes well under the grammar, but it rewrites your message instead of answering it. If the llama.cpp add-on is also serving a cleanup model to a dictation app, keep it as the add-on's default, and pick a separate **chat model** in **Models**. Local llama.cpp 2.0 serves every downloaded model from one endpoint. The console names its chat model on every request, while apps that name no model keep getting the default. **Use this model** and **Download & use** choose the chat model only; **Make default** changes what other apps get.
+
+## Console UI (3.0)
+
+The web console was rebuilt mobile-first in a warmer version of the amber Lucky 38 style:
+
+- **Voice, not capitals:** Fraunces, a soft serif, for the greeting, headings and readings; IBM Plex Sans for reading text; Plex Mono only for code. All three are bundled locally, so nothing is fetched at runtime.
+- **A face:** a small tower-and-disc emblem marks the console and sits beside its replies. A cursor blinks while a reply is being written.
+- **The house at a glance:** a new chat opens with a time-of-day greeting, a one-line pulse (lights on, indoor temperature, open doors or windows, the next reminder, from `/api/pulse`), and a few one-tap suggestions.
+- **Phone:** one column, with a drawer for chats and the Models, Skills, MCP and Settings panels. Panels open as bottom sheets and documents open full screen. Text fields use 16px type, so iOS no longer zooms in when you tap one.
+- **Desktop (1024px and up):** a fixed sidebar, a centred chat column, and documents in a resizable pane beside it.
+- **Themes:** pick one under Settings: Lucky 38 (amber lamplight, the default), Vault (green phosphor), Nocturne (moonlit blue) or Daylight (warm paper and ink, a light theme). The choice is saved in the browser and applied before the page first paints.
+- **Calmer by default:** warm lamplight and a fine grain instead of flicker. Scanlines are off until you enable them in Settings, and the background ASCII animation runs only on desktop, at about 12 frames per second.
+
 ## Local endpoints
 
 Use the Home Assistant host endpoint for local inference:

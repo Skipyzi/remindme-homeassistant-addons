@@ -9,27 +9,12 @@ import {
 	deleteReminder,
 	listReminders,
 } from "./utils/reminderManager";
-import {
-	createPhaseId,
-	createToolCall,
-	estimateTokens,
-	normalizePhaseMetrics,
-	reasoningText,
-	routeThinkTags,
-	stripReasoningTags,
-	type ActiveModelMetadata,
-	type PhaseMetrics,
-	type ToolCall,
-} from "./harness/modelPhases";
+import type { ActiveModelMetadata } from "./harness/modelPhases";
 import { createSseSender } from "./harness/sse";
-import {
-	fitHistory,
-	validateHistory,
-	type HistoryTurn,
-} from "./harness/history";
+import { validateHistory, type HistoryTurn } from "./harness/history";
 import { measureTokenUsage, tokenizerUrl } from "./harness/tokenizer";
 import { normalizeEntity, type HassEntity } from "./harness/entities";
-import { compactEntity, resolveEntities } from "./harness/entityResolver";
+import { resolveEntities } from "./harness/entityResolver";
 import {
 	validateEntityAction,
 	type EntityAction,
@@ -37,6 +22,7 @@ import {
 import { ConversationStore } from "./harness/conversations";
 import { SkillStore, skillPrompt } from "./harness/skills";
 import { DEFAULT_PERSONA, PersonaStore } from "./harness/persona";
+import { ChatModelStore } from "./harness/chatModel";
 import { VaultStore, type VaultNote } from "./harness/vault";
 import {
 	TaskStore,
@@ -59,38 +45,31 @@ import {
 } from "./harness/trackingmore";
 import { readSystemStats } from "./harness/systemStats";
 import { ArtifactStore, toDocument } from "./harness/artifacts";
-import { applyEdit, isEditFailure, modelView } from "./harness/artifactEdit";
-import { partialStringField } from "./harness/streamingJson";
-import { EndpointStore, validateEndpointUrl } from "./harness/endpoints";
+import { EndpointStore } from "./harness/endpoints";
 import { readablePage, ReaderError } from "./harness/reader";
-import { parseReminder, describeWhen } from "./harness/reminderParser";
+import { describeWhen } from "./harness/reminderParser";
 import {
 	McpServerStore,
 	callTool as callMcpTool,
 	connect as connectMcp,
 	parseToolCallName,
-	toOpenAiTool,
+	toolCallName,
 } from "./harness/mcp";
 import {
 	describeTransportError,
 	invalidateManagerToken,
 } from "./harness/modelManager";
 
-import {
-	allowedToolNames,
-	detectPositiveFeedback,
-	toolCallKey,
-} from "./harness/intentRouting";
+import type { McpToolRef } from "./agent/actions";
+import { HomeApi } from "./agent/home";
+import { describeActions } from "./agent/prompts";
+import { runTurn, type TurnDeps } from "./agent/turn";
 import {
 	getThinkingProfile,
 	thinkingProfilesForHardware,
 	type ThinkingMode,
 } from "./harness/thinkingProfiles";
-import {
-	userContent,
-	validateAttachments,
-	type ImageAttachment,
-} from "./harness/attachments";
+import { validateAttachments, type ImageAttachment } from "./harness/attachments";
 import {
 	ModelManagerClient,
 	ModelManagerError,
@@ -149,6 +128,8 @@ void tasks.load();
 /* The editable base system prompt. Persisted so an edit survives restarts; the
  * capability instructions are always appended on top of it. */
 const persona = new PersonaStore();
+const chatModel = new ChatModelStore();
+void chatModel.load();
 void persona.load();
 /*
  * Tracked parcels. TrackingMore registers each number once and polls the carrier
@@ -194,34 +175,6 @@ function noteFrontmatter(
 	return patch;
 }
 
-/*
- * The model's curated long-term memory lives in its own folder, sorted by kind,
- * so recall and the /memory view stay focused — the rest of the vault (task
- * reports, journal, project notes) is still reachable by search, just not
- * auto-surfaced. write_memory files here regardless of the path the model gives.
- */
-const MEMORY_DIR = "memory";
-const MEMORY_KINDS = ["user", "feedback", "project", "reference"];
-
-/** Normalise a write_memory path to `memory/<kind>/<slug>`, kind-sorted. */
-function memoryNotePath(rawPath: unknown, type: unknown): string {
-	const segments = String(rawPath || "")
-		.trim()
-		.replace(/\.md$/i, "")
-		.replace(/^\/+/, "")
-		.replace(new RegExp(`^${MEMORY_DIR}/`, "i"), "")
-		.split("/")
-		.map((segment) => segment.trim())
-		.filter(Boolean);
-	// Ensure a kind subfolder: honour one the model already used, else the type.
-	if (!MEMORY_KINDS.includes(segments[0])) {
-		const kind = MEMORY_KINDS.includes(String(type)) ? String(type) : "";
-		if (kind) segments.unshift(kind);
-	}
-	if (!segments.length) segments.push("note");
-	return `${MEMORY_DIR}/${segments.join("/")}`;
-}
-
 /** A note trimmed to what a list or a tool receipt needs — never the full body. */
 function summariseNote(note: VaultNote) {
 	return {
@@ -240,7 +193,9 @@ function summariseNote(note: VaultNote) {
 function resolveEndpoint() {
 	return endpoints.resolve({
 		url: process.env.LOCAL_LLM_URL || "http://homeassistant:8080/v1/chat/completions",
-		model: config.localLlmModel,
+		// The chosen chat model, by name; the add-on routes unnamed or unknown
+		// names to its default, so an empty choice still works.
+		model: chatModel.get() || config.localLlmModel,
 	});
 }
 
@@ -694,16 +649,8 @@ app.get("/api/reader", async (request, response) => {
 	}
 });
 app.get("/api/tools", (_request, response) => {
-	response.json(
-		tools.map((tool) => ({
-			name: tool.function.name,
-			description: tool.function.description,
-			parameters: Object.keys(
-				(tool.function.parameters as { properties?: Record<string, unknown> })
-					?.properties || {},
-			),
-		})),
-	);
+	// The agent has no tool list any more; these are the actions it chooses between.
+	response.json(describeActions());
 });
 app.get("/api/conversations", (request, response) => {
 	response.json(
@@ -878,7 +825,38 @@ app.get("/api/models", async (_request, response) => {
 	await proxyModelManager(response, "/catalog");
 });
 app.get("/api/models/status", async (_request, response) => {
-	await proxyModelManager(response, "/status");
+	try {
+		const status = await (await getModelManagerClient()).request<ManagerStatus>("/status");
+		const chosen = chatModel.get();
+		response.json({
+			...status,
+			/* What the console chats with, and whether that was a choice. */
+			chatModel: chosen && status.models?.includes(chosen) ? chosen : status.defaultModel || "",
+			chatModelChosen: Boolean(chosen && status.models?.includes(chosen)),
+		});
+	} catch (error) {
+		await forgetRejectedPairing(error);
+		sendModelManagerError(response, error);
+	}
+});
+/*
+ * Choose the console's chat model. This never touches the add-on's default,
+ * so other apps using the add-on keep the model they expect.
+ */
+app.put("/api/models/chat", async (request, response) => {
+	const id = typeof request.body?.id === "string" ? request.body.id.trim() : "";
+	if (id && !/^[a-z0-9._-]{1,120}$/i.test(id))
+		return response.status(400).json(safeModelError("invalid_model", "Model selection is invalid."));
+	if (id) {
+		const status = await managerStatus(true);
+		if (status?.models && !status.models.includes(id))
+			return response
+				.status(409)
+				.json(safeModelError("model_not_served", "That model is not downloaded in the llama.cpp add-on yet."));
+	}
+	await chatModel.set(id);
+	managerStatusCache = undefined;
+	response.json({ chatModel: id });
 });
 app.get("/api/models/inventory", async (_request, response) => {
 	await proxyModelManager(response, "/models/inventory");
@@ -1139,6 +1117,55 @@ app.post("/api/entities/action", async (request, response) => {
 		});
 	}
 });
+/*
+ * The house at a glance, for the empty console: a few plain facts rather than
+ * a dashboard. Each part is optional — no Home Assistant, no reminders, and it
+ * simply says less.
+ */
+app.get("/api/pulse", async (_request, response) => {
+	const pulse: string[] = [];
+	if (home) {
+		try {
+			const cards = (await home.cards()).filter((card) => card.available);
+			const lights = cards.filter((card) => card.domain === "light");
+			if (lights.length) {
+				const on = lights.filter((card) => card.state === "on").length;
+				pulse.push(on ? `${on} of ${lights.length} lights on` : "All lights off");
+			}
+			const indoor = cards.filter(
+				(card) =>
+					card.domain === "sensor" &&
+					card.deviceClass === "temperature" &&
+					card.numericState !== undefined &&
+					!/outdoor|outside|garden|balcony|weather/i.test(`${card.name} ${card.area || ""}`),
+			);
+			if (indoor.length) {
+				const mean =
+					indoor.reduce((sum, card) => sum + Number(card.numericState), 0) / indoor.length;
+				pulse.push(`${mean.toFixed(1)}° inside`);
+			}
+			const open = cards.filter(
+				(card) =>
+					card.domain === "binary_sensor" &&
+					["door", "window", "garage_door", "opening"].includes(card.deviceClass || "") &&
+					card.state === "on",
+			);
+			if (open.length === 1) pulse.push(`${open[0].name} open`);
+			else if (open.length > 1) pulse.push(`${open.length} doors or windows open`);
+		} catch (error) {
+			console.warn("Pulse: Home Assistant unavailable:", error instanceof Error ? error.message : error);
+		}
+	}
+	try {
+		const next = (await listReminders(process.env.OWNER_ID || ""))
+			.filter((item) => item.time.getTime() > Date.now())
+			.sort((a, b) => a.time.getTime() - b.time.getTime())[0];
+		if (next) pulse.push(`Next: ${next.message}, ${describeWhen(next.time)}`);
+	} catch {
+		/* reminders are optional */
+	}
+	response.set("Cache-Control", "no-store").json({ pulse });
+});
 app.get("/api/reminders", async (_request, response) => {
 	const reminders = await listReminders(process.env.OWNER_ID || "");
 	response.json(
@@ -1163,7 +1190,7 @@ app.get("/api/status", async (_request, response) => {
 	 * instead. The manager is only consulted when inference is local.
 	 */
 	const activeEndpoint = endpoints.active();
-	const managed = activeEndpoint ? undefined : await managedActiveModel();
+	const managed = activeEndpoint ? undefined : await managedActiveModel(true);
 	const contextSize =
 		managed?.recommendedContext ||
 		Number(process.env.LOCAL_LLM_CONTEXT_SIZE || 8192);
@@ -1267,6 +1294,11 @@ app.post("/api/chat", async (request, response) => {
 		Connection: "keep-alive",
 	});
 	const send = createSseSender(response);
+	/* A closed tab or a Cancel stops generation instead of running it out. */
+	const abort = new AbortController();
+	response.on("close", () => {
+		if (!response.writableFinished) abort.abort();
+	});
 	try {
 		const attachments = validateAttachments(
 			request.body?.attachments,
@@ -1283,9 +1315,11 @@ app.post("/api/chat", async (request, response) => {
 			typeof request.body?.artifactId === "string"
 				? request.body.artifactId
 				: "",
+			abort.signal,
 		);
 		send("complete", {});
 	} catch (error) {
+		if (abort.signal.aborted) return;
 		console.error("Harness request failed:", error);
 		send("error", {
 			message: error instanceof Error ? error.message : "Unknown error",
@@ -1388,316 +1422,102 @@ async function purgeParcel(parcel: Parcel): Promise<void> {
 	await parcels.remove(parcel.id);
 }
 
-const tools = [
-	{
-		type: "function",
-		function: {
-			name: "get_entity_state",
-			description: "Read a Home Assistant entity state.",
-			parameters: {
-				type: "object",
-				properties: { entity_id: { type: "string" } },
-				required: ["entity_id"],
-			},
-		},
-	},
-	{
-		type: "function",
-		function: {
-			name: "list_entities",
-			description:
-				"Find Home Assistant entities by plain-language name, e.g. 'kitchen light'. Optionally narrow by domain such as light or sensor. Returns the closest matches only.",
-			parameters: {
-				type: "object",
-				properties: {
-					query: {
-						type: "string",
-						description: "Plain-language name, room, or partial match.",
-					},
-					domain: { type: "string" },
-				},
-			},
-		},
-	},
-	{
-		type: "function",
-		function: {
-			name: "control_entity",
-			description:
-				"Prepare a Home Assistant device action. A user confirmation is always required.",
-			parameters: {
-				type: "object",
-				properties: {
-					domain: { type: "string" },
-					service: { type: "string" },
-					entity_id: { type: "string" },
-					service_data: { type: "object" },
-				},
-				required: ["domain", "service", "entity_id"],
-			},
-		},
-	},
-	{
-		type: "function",
-		function: {
-			name: "list_reminders",
-			description: "List reminders belonging to the configured Discord owner.",
-			parameters: { type: "object", properties: {} },
-		},
-	},
-	{
-		type: "function",
-		function: {
-			name: "create_reminder",
-			description:
-				"Schedule a reminder. Pass the user's own wording, including the time — 'check the mail at 5' — and it is parsed here. Always confirmed before it is set.",
-			parameters: {
-				type: "object",
-				properties: {
-					request: {
-						type: "string",
-						description: "The reminder in the user's words, with its timing.",
-					},
-				},
-				required: ["request"],
-			},
-		},
-	},
-	{
-		type: "function",
-		function: {
-			name: "create_artifact",
-			description:
-				"Create a rendered document the user can view: an HTML page, an SVG diagram, a markdown note, a code file, or a shader that runs on the viewer's GPU. Use for anything worth keeping or looking at, rather than pasting it into the reply.",
-			parameters: {
-				type: "object",
-				properties: {
-					title: { type: "string" },
-					kind: {
-						type: "string",
-						enum: ["html", "svg", "markdown", "code", "glsl", "wgsl", "three", "lua"],
-						description:
-							"Use three for a 3D scene: write only scene code against the supplied THREE, scene, camera and renderer, and optionally define update(delta, elapsed) to animate — do not create a renderer or a resize handler. Use lua for a Lua program; print() writes to the frame. Use glsl for a WebGL2 fragment shader: write either a Shadertoy-style 'void mainImage(out vec4 fragColor, in vec2 fragCoord)' or a plain 'void main()'. iResolution, iTime, iTimeDelta, iFrame and iMouse are declared for you; do not write a #version line. Use wgsl for a WebGPU shader: define '@fragment fn fs_main(@builtin(position) pos: vec4f) -> @location(0) vec4f'. The vertex stage and a uniform block 'U' with resolution, time, timeDelta, mouse and frame are supplied.",
-					},
-					language: { type: "string" },
-					content: { type: "string" },
-				},
-				required: ["title", "kind", "content"],
-			},
-		},
-	},
-	{
-		type: "function",
-		function: {
-			name: "read_artifact",
-			description:
-				"Read the current content of an artifact. Use before editing when you are unsure what the document says now.",
-			parameters: {
-				type: "object",
-				properties: { id: { type: "string" } },
-				required: ["id"],
-			},
-		},
-	},
-	{
-		type: "function",
-		function: {
-			name: "rewrite_artifact",
-			description:
-				"Replace the entire content of an existing artifact with a new version. Use when the change affects most of the document, or when you cannot quote the exact text to replace.",
-			parameters: {
-				type: "object",
-				properties: {
-					id: { type: "string" },
-					content: {
-						type: "string",
-						description: "The complete new document, not a fragment.",
-					},
-				},
-				required: ["id", "content"],
-			},
-		},
-	},
-	{
-		type: "function",
-		function: {
-			name: "edit_artifact",
-			description:
-				"Change a small part of an existing artifact by quoting the exact text to replace. Use rewrite_artifact instead when replacing most of the document. Returns the document as it stands after the edit.",
-			parameters: {
-				type: "object",
-				properties: {
-					id: { type: "string" },
-					old_string: {
-						type: "string",
-						description:
-							"The exact text to find, copied character for character including indentation. Must appear exactly once unless replace_all is set.",
-					},
-					new_string: {
-						type: "string",
-						description: "The replacement text. Use an empty string to delete.",
-					},
-					replace_all: {
-						type: "boolean",
-						description: "Replace every occurrence rather than requiring one.",
-					},
-				},
-				required: ["id", "old_string", "new_string"],
-			},
-		},
-	},
-	{
-		type: "function",
-		function: {
-			name: "web_search",
-			description:
-				"Search the public web for current information and return the top results.",
-			parameters: {
-				type: "object",
-				properties: { query: { type: "string" } },
-				required: ["query"],
-			},
-		},
-	},
-	{
-		type: "function",
-		function: {
-			name: "search_memory",
-			description:
-				"Search your whole notes vault — your curated long-term memory under memory/ plus every other note (task reports, journal, project notes). Use it to find anything saved before. Returns matching titles and paths, not full text.",
-			parameters: {
-				type: "object",
-				properties: {
-					query: { type: "string", description: "Words to look for in title or body." },
-					tag: { type: "string", description: "Restrict to notes with this tag." },
-					type: {
-						type: "string",
-						enum: ["user", "feedback", "project", "reference"],
-						description: "Restrict to one kind of memory.",
-					},
-				},
-			},
-		},
-	},
-	{
-		type: "function",
-		function: {
-			name: "read_memory",
-			description:
-				"Read the full text of one memory note by its path, taken from search_memory. Returns the body plus its links and backlinks.",
-			parameters: {
-				type: "object",
-				properties: { path: { type: "string" } },
-				required: ["path"],
-			},
-		},
-	},
-	{
-		type: "function",
-		function: {
-			name: "write_memory",
-			description:
-				"Save or update a long-term memory. Use it to remember a durable fact, a preference, a project detail, or a reference — not this turn's chatter. Memories are filed automatically under the memory/ folder, sorted by type, and tagged #memory. Reuse an existing path to update that note; link related notes with [[Note Title]] in the body and classify with type and tags.",
-			parameters: {
-				type: "object",
-				properties: {
-					path: {
-						type: "string",
-						description:
-							"Short kebab-case name without extension, e.g. preferences or coffee-order. Filed under memory/<type>/ for you; reuse the same name to update.",
-					},
-					title: { type: "string" },
-					type: {
-						type: "string",
-						enum: ["user", "feedback", "project", "reference"],
-					},
-					tags: {
-						type: "array",
-						items: { type: "string" },
-						description: "Topic tags without the leading #.",
-					},
-					body: {
-						type: "string",
-						description: "The note's Markdown. Link others with [[Title]].",
-					},
-				},
-				required: ["path", "body"],
-			},
-		},
-	},
-	{
-		type: "function",
-		function: {
-			name: "track_parcel",
-			description:
-				"Start tracking a parcel by its carrier tracking number and report its current status. The courier is auto-detected. Adding the same number twice just returns its current status. Use when the user wants to follow a package or delivery.",
-			parameters: {
-				type: "object",
-				properties: {
-					tracking_number: { type: "string", description: "The carrier tracking number." },
-					label: {
-						type: "string",
-						description: "A short human label, e.g. 'Keyboard from Amazon'.",
-					},
-					courier: {
-						type: "string",
-						description:
-							"Optional TrackingMore courier code (e.g. dhl, ups, hermes, dpd, gls) if auto-detection is wrong.",
-					},
-				},
-				required: ["tracking_number"],
-			},
-		},
-	},
-	{
-		type: "function",
-		function: {
-			name: "list_parcels",
-			description:
-				"List the parcels currently being tracked and their latest status. Use when the user asks where their packages or deliveries are.",
-			parameters: { type: "object", properties: {} },
-		},
-	},
-];
+/* ── Agent ──────────────────────────────────────────────────────────── */
 
-/*
- * An image is worth far more tokens than its base64 length suggests, and
- * the projector's real cost is not visible from here. This is a deliberate
- * over-estimate: spending history on a miscounted image is the failure
- * that ends the turn with an HTTP 500.
- */
-const IMAGE_TOKEN_ALLOWANCE = 1024;
+const home = supervisorToken ? new HomeApi(supervisorToken, homeAssistantUrl) : undefined;
 
-/*
- * Headroom for what grows after this sum is taken: the chat template's
- * own scaffolding, and the tool calls and tool results the agent loop
- * appends to `messages` as the turn proceeds.
- */
-const CONTEXT_SAFETY_MARGIN = 512;
+function parcelLine(card: ReturnType<typeof parcelCard>): string {
+	const name = card.label || card.trackingNumber;
+	const where = card.location ? ` — ${card.location}` : "";
+	const eta =
+		card.expectedDelivery && !card.delivered
+			? `, expected ${new Date(card.expectedDelivery).toDateString()}`
+			: "";
+	return `${name}: ${card.status}${where}${eta}`;
+}
 
 /**
- * What is left of the context window for prior turns once everything
- * mandatory has been paid for — including the reply the model has not
- * written yet, which is the part that is easy to forget and the part
- * that truncates the answer when it is missed.
+ * The agent's view of this add-on: every store and service it may act
+ * through. Built per turn so option changes (search, TrackingMore, MCP
+ * servers) apply without a restart.
  */
-function historyBudget(
-	prompt: string,
-	systemPrompt: string,
-	requestTools: unknown[],
-	attachments: ImageAttachment[],
-	thinkingMode: ThinkingMode,
-): number {
-	const contextSize = Number(process.env.LOCAL_LLM_CONTEXT_SIZE || 8192);
-	const profile = getThinkingProfile(thinkingMode, os.totalmem(), contextSize);
-	const reserved =
-		estimateTokens(systemPrompt) +
-		estimateTokens(prompt) +
-		estimateTokens(requestTools.length ? JSON.stringify(requestTools) : "") +
-		attachments.length * IMAGE_TOKEN_ALLOWANCE +
-		profile.maxTokens +
-		CONTEXT_SAFETY_MARGIN;
-	return Math.max(0, contextSize - reserved);
+function agentDeps(): TurnDeps {
+	return {
+		endpoint: resolveEndpoint,
+		activeModel: activeModelMetadata,
+		contextSize: Number(process.env.LOCAL_LLM_CONTEXT_SIZE || 8192),
+		systemPrompt: () => persona.get() + skillPrompt(skills.enabled()),
+		recall: (prompt) => vault.recall(prompt, 5),
+		home,
+		holdAction(action) {
+			const token = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+			pendingActions.set(token, action);
+			return token;
+		},
+		holdReminder(reminder) {
+			const token = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+			pendingReminders.set(token, reminder);
+			return token;
+		},
+		listReminders: () => listReminders(process.env.OWNER_ID || ""),
+		webSearch: getSearxngUrl() || process.env.EXA_API_KEY ? webSearch : undefined,
+		vault,
+		parcels: config.trackingMoreApiKey
+			? {
+					async track(number, label) {
+						const result = await trackParcel(number, label, "");
+						if (!result.ok) return { error: result.error };
+						const card = parcelCard(result.parcel);
+						return {
+							text: `${result.existed ? "Already tracking" : "Now tracking"} ${parcelLine(card)}.`,
+							card,
+						};
+					},
+					list() {
+						const cards = parcels.list().map(parcelCard);
+						return {
+							text: cards.length
+								? cards.map((card) => `- ${parcelLine(card)}`).join("\n")
+								: "No parcels are being tracked.",
+							cards,
+						};
+					},
+				}
+			: undefined,
+		/*
+		 * MCP tools join the decision as one grammar branch each. A server
+		 * that is down must not take the turn with it.
+		 */
+		async mcpTools() {
+			const refs: McpToolRef[] = [];
+			for (const server of mcpServers.enabled()) {
+				try {
+					const session = await connectMcp(server, 5000);
+					for (const tool of session.tools)
+						refs.push({
+							name: toolCallName(server.id, tool.name),
+							description: tool.description || `MCP tool ${tool.name}`,
+							inputSchema: tool.inputSchema || { type: "object", properties: {} },
+						});
+				} catch (error) {
+					console.warn(
+						`MCP server ${server.name} unavailable:`,
+						error instanceof Error ? error.message : error,
+					);
+				}
+			}
+			return refs;
+		},
+		async callMcp(name, args) {
+			const parsed = parseToolCallName(name);
+			const server = parsed ? mcpServers.get(parsed.serverId) : undefined;
+			if (!parsed || !server || !server.enabled)
+				throw new Error("That MCP server is not enabled.");
+			return callMcpTool(server, parsed.tool, args);
+		},
+		artifacts,
+		features: { reminders: true, parcels: Boolean(config.trackingMoreApiKey) },
+	};
 }
 
 async function runAgent(
@@ -1708,431 +1528,13 @@ async function runAgent(
 	attachments: ImageAttachment[],
 	history: HistoryTurn[] = [],
 	openArtifactId = "",
+	signal?: AbortSignal,
 ): Promise<void> {
-	const activeModel = await activeModelMetadata();
-	const openArtifact = openArtifactId ? artifacts.get(openArtifactId) : undefined;
-	const allowedNames = allowedToolNames(prompt, {
-		hasArtifact: Boolean(openArtifact),
-	});
-	const requestTools: Array<Record<string, unknown>> = tools.filter((tool) =>
-		allowedNames.has(tool.function.name),
+	await runTurn(
+		{ prompt, thinkingMode, requestId, attachments, history, openArtifactId, signal },
+		agentDeps(),
+		send,
 	);
-	/*
-	 * Tools from enabled MCP servers join the same loop. Each definition is
-	 * paid for out of the context window on every request, which is why this
-	 * is gated per server rather than discovering everything reachable.
-	 * A server that is down must not take the turn with it.
-	 */
-	for (const server of mcpServers.enabled()) {
-		try {
-			const session = await connectMcp(server, 5000);
-			for (const tool of session.tools)
-				requestTools.push(toOpenAiTool(server.id, tool));
-		} catch (error) {
-			console.warn(
-				`MCP server ${server.name} unavailable:`,
-				error instanceof Error ? error.message : error,
-			);
-		}
-	}
-	const seenToolCalls = new Set<string>();
-	/*
-	 * Entity cards surfaced by tools this turn. They attach to the answer
-	 * rather than to the tool row: a tool call is a mechanism and belongs in
-	 * its disclosure as raw JSON, while the cards ARE the reply.
-	 */
-	const answerCards: unknown[] = [];
-	/*
-	 * Naming the open document is what makes an edit possible: the model
-	 * cannot quote an id it was never told, and "change the footer" carries
-	 * no id of its own. The content stays out — it is on screen already,
-	 * and read_artifact fetches it when the model actually needs to see it.
-	 */
-	const artifactPrompt = openArtifact
-		? ` The document "${openArtifact.title}" (id ${openArtifact.id}, ${openArtifact.kind}) is open. For a small change use edit_artifact with that id, quoting the exact text to replace. For a change affecting most of the document, or when you cannot quote the existing text exactly, use rewrite_artifact with the complete new document. Use read_artifact first if you need to see its current state.`
-		: "";
-	/*
-	 * Long-term memory: the vault the model shares with the remindme-vault
-	 * editor. Notes touching this turn's prompt are surfaced up front so the
-	 * model recalls without a tool round-trip; it can still write_memory to
-	 * save durable facts and read_memory for a note's full text. Injected into
-	 * the system prompt, so historyBudget already pays for its tokens.
-	 */
-	const recalled = vault.recall(prompt, 5);
-	const memoryPrompt = recalled.length
-		? "\n\nFrom your long-term memory (shared notes vault). Treat as things you already know; use read_memory for a note's full text before relying on specifics:\n" +
-			recalled
-				.map((note) => {
-					const tags = note.tags.length
-						? ` [${note.tags.map((tag) => `#${tag}`).join(" ")}]`
-						: "";
-					const snippet = note.body.replace(/\s+/g, " ").trim().slice(0, 140);
-					return `- ${note.title} (${note.path})${tags}: ${snippet}`;
-				})
-				.join("\n")
-		: "";
-	/*
-	 * When the user just signals that the last thing worked, that is the moment
-	 * to learn from it: save the reusable lesson so the next conversation starts
-	 * ahead. Only on short acknowledgements, and only with something to look back
-	 * on — the prior turn is what holds what worked.
-	 */
-	const learningPrompt =
-		history.length > 0 && detectPositiveFeedback(prompt)
-			? "\n\nThe user is confirming the previous approach worked. If the exchange above holds a durable, reusable lesson — a fix that worked, a method, a confirmed preference — call write_memory with type feedback to save it: a short kebab name, a clear title, and a body stating what worked and why (link related notes with [[Title]]). It is filed under memory/feedback/ for you. Then acknowledge in one short line. If nothing is durable enough to keep, just acknowledge."
-			: "";
-	/*
-	 * The persona (voice + standing rules) is user-editable in Settings; the
-	 * capability line is always appended, so editing the persona can never
-	 * strip the model's memory or tools. Skills bind for the whole turn.
-	 */
-	const systemPrompt =
-		persona.get() +
-		" You have a long-term memory kept in the memory/ folder of your notes vault: write_memory saves durable facts, preferences, and project details there to carry across conversations; search_memory searches the whole vault (memory plus everything else) and read_memory reads any note." +
-		artifactPrompt +
-		memoryPrompt +
-		learningPrompt +
-		skillPrompt(skills.enabled());
-	const budget = historyBudget(
-		prompt,
-		systemPrompt,
-		requestTools,
-		attachments,
-		thinkingMode,
-	);
-	const messages: Array<Record<string, unknown>> = [
-		{ role: "system", content: systemPrompt },
-		...fitHistory(history, budget),
-		{ role: "user", content: userContent(prompt, attachments) },
-	];
-	for (let iteration = 0; iteration < 5; iteration += 1) {
-		const phaseId = createPhaseId(requestId, iteration);
-		send("phase_start", {
-			phaseId,
-			iteration,
-			kind: thinkingMode === "fast" ? "answer" : "thinking",
-			state: "active",
-		});
-		/* What this phase's tools fed back into the window. Reported on the
-		 * phase so the running context total reflects it, not just the
-		 * individual tool rows. */
-		let phaseToolTokens = 0;
-		const result = await streamModel(
-			messages,
-			thinkingMode,
-			requestTools,
-			send,
-			phaseId,
-			iteration,
-			activeModel,
-		);
-		if (!result.toolCalls.length) {
-			send("answer", {
-				phaseId,
-				iteration,
-				text: result.text,
-				cards: answerCards,
-			});
-			send("phase_complete", {
-				phaseId,
-				iteration,
-				kind: "answer",
-				state: "complete",
-				metrics: result.metrics,
-			});
-			return;
-		}
-		messages.push({
-			role: "assistant",
-			content: result.text,
-			tool_calls: result.toolCalls,
-		});
-		for (const call of result.toolCalls) {
-			let args: Record<string, unknown> = {};
-			try {
-				args = JSON.parse(call.function.arguments || "{}");
-			} catch {
-				send("tool", { name: call.function.name, state: "invalid arguments" });
-			}
-			send("tool", {
-				name: call.function.name,
-				state: "running",
-				arguments: args,
-			});
-			send("tool_start", {
-				phaseId,
-				iteration,
-				kind: "tool",
-				state: "active",
-				name: call.function.name,
-				arguments: args,
-				metrics: result.metrics,
-			});
-			const callKey = toolCallKey(
-				call.function.name,
-				call.function.arguments || "{}",
-			);
-			const value: ToolResult = seenToolCalls.has(callKey)
-				? { model: { error: "Duplicate tool call suppressed" } }
-				: await executeTool(call.function.name, args);
-			seenToolCalls.add(callKey);
-			const serialized = JSON.stringify(value.model);
-			if (Array.isArray(value.view)) answerCards.push(...value.view);
-			// What this tool pushes back into the window, tracked separately from
-			// the model's own output so context bloat is attributable per call.
-			const resultTokens = estimateTokens(serialized);
-			phaseToolTokens += resultTokens;
-			const toolMetrics = {
-				...result.metrics,
-				toolResultTokens: resultTokens,
-			};
-			send("tool", {
-				name: call.function.name,
-				state: "complete",
-				result: value.model,
-			});
-			send("tool_complete", {
-				phaseId,
-				iteration,
-				kind: "tool",
-				state: "complete",
-				name: call.function.name,
-				result: value.model,
-				/*
-				 * Card data travels beside the model's receipt rather than
-				 * inside it. Only array views were being forwarded, so an
-				 * artifact the model wrote produced no card and could not be
-				 * opened — the document existed and nothing pointed at it.
-				 */
-				view: Array.isArray(value.view) ? undefined : value.view,
-				metrics: toolMetrics,
-			});
-			messages.push({
-				role: "tool",
-				tool_call_id: call.id,
-				content: serialized,
-			});
-		}
-		send("phase_complete", {
-			phaseId,
-			iteration,
-			kind: "tool",
-			state: "complete",
-			metrics: { ...result.metrics, toolResultTokens: phaseToolTokens },
-		});
-	}
-	send("answer", {
-		text: "I reached the tool-call limit before completing the request.",
-	});
-}
-
-/**
- * Push a document to the pane while the model is still writing it.
- *
- * `create_artifact` carries its whole document in one tool-call argument,
- * which does not become valid JSON until the closing brace — minutes after
- * the first tag at a Pi's decode rate. Reading the field out of the partial
- * text means the console can show the write as it happens instead of
- * staring at a spinner and then producing a finished page from nowhere.
- *
- * This is a preview, not a commitment. Nothing is stored until the tool
- * actually runs, and the pane swaps the draft for the saved artifact when
- * its receipt arrives.
- */
-function streamArtifactPreview(
-	call: ToolCall,
-	emitted: Map<string, number>,
-	send: Send,
-): void {
-	if (call.function.name !== "create_artifact") return;
-	const args = call.function.arguments;
-	const content = partialStringField(args, "content");
-	if (!content) return;
-	if (!emitted.has(call.id)) {
-		const title = partialStringField(args, "title");
-		const kind = partialStringField(args, "kind");
-		emitted.set(call.id, 0);
-		send("artifact_draft", {
-			id: call.id,
-			// The header fields normally land first, but the schema does not
-			// oblige the model to emit them in order, so neither is required.
-			title: title?.complete ? title.value : "Writing…",
-			kind: kind?.complete ? kind.value : "code",
-		});
-	}
-	const already = emitted.get(call.id) || 0;
-	if (content.value.length <= already) return;
-	send("artifact_delta", {
-		id: call.id,
-		text: content.value.slice(already),
-	});
-	emitted.set(call.id, content.value.length);
-}
-
-async function streamModel(
-	messages: Array<Record<string, unknown>>,
-	thinkingMode: ThinkingMode,
-	requestTools: unknown[],
-	send: Send,
-	phaseId: string,
-	iteration: number,
-	activeModel: ActiveModelMetadata,
-) {
-	const started = Date.now();
-	const thinkingProfile = getThinkingProfile(
-		thinkingMode,
-		os.totalmem(),
-		Number(process.env.LOCAL_LLM_CONTEXT_SIZE || 8192),
-	);
-	const endpoint = resolveEndpoint();
-	const requestBody: Record<string, unknown> = {
-		model: endpoint.model,
-		messages,
-		stream: true,
-		max_tokens: thinkingProfile.maxTokens,
-	};
-	/*
-	 * The reasoning controls are llama.cpp extensions. A plain OpenAI-style
-	 * server rejects unknown fields with a 400, so they go only to an
-	 * endpoint that understands them.
-	 */
-	if (!endpoint.openaiCompat) {
-		requestBody.chat_template_kwargs = { enable_thinking: thinkingMode !== "fast" };
-		requestBody.reasoning_format = thinkingMode === "fast" ? "none" : "deepseek";
-		requestBody.reasoning = thinkingMode === "fast" ? "off" : "on";
-		requestBody.reasoning_budget = thinkingProfile.reasoningBudget;
-	}
-	if (requestTools.length) {
-		requestBody.tools = requestTools;
-		requestBody.tool_choice = "auto";
-	}
-	const response = await fetch(endpoint.url, {
-		method: "POST",
-		headers: endpoint.headers,
-		body: JSON.stringify(requestBody),
-	});
-	if (!response.ok)
-		throw new Error(
-			`${endpoint.label} endpoint returned HTTP ${response.status}: ${await response.text()}`,
-		);
-	if (!response.body) throw new Error("The endpoint returned no stream");
-	let buffer = "";
-	let text = "";
-	let thinking = "";
-	let timings: Record<string, number> = {};
-	let usage: Record<string, number> = {};
-	let firstTokenAt: number | undefined;
-	/* "length" means the answer hit max_tokens rather than finishing. */
-	let finishReason = "";
-	const thinkState = { active: false };
-	const toolCalls: ToolCall[] = [];
-	/* Per tool call, how much of its document has already gone to the pane. */
-	const artifactStreamed = new Map<string, number>();
-	for await (const chunk of response.body as unknown as AsyncIterable<Uint8Array>) {
-		buffer += Buffer.from(chunk).toString("utf8");
-		const lines = buffer.split("\n");
-		buffer = lines.pop() || "";
-		for (const line of lines) {
-			if (!line.startsWith("data: ") || line === "data: [DONE]") continue;
-			let payload: {
-				usage?: Record<string, number>;
-				timings?: Record<string, number>;
-				choices?: Array<{
-					delta?: {
-						content?: string;
-						reasoning_content?: string;
-						reasoning?: string;
-						tool_calls?: Array<{
-							index?: number;
-							id?: string;
-							function?: { name?: string; arguments?: string };
-						}>;
-					};
-					timings?: Record<string, number>;
-					finish_reason?: string | null;
-				}>;
-			};
-			try {
-				payload = JSON.parse(line.slice(6));
-			} catch {
-				continue;
-			}
-			const choice = payload.choices?.[0];
-			if (choice?.finish_reason) finishReason = choice.finish_reason;
-			if (payload.timings) timings = { ...timings, ...payload.timings };
-			if (payload.usage) usage = { ...usage, ...payload.usage };
-			if (choice?.timings) timings = { ...timings, ...choice.timings };
-			const delta = choice?.delta;
-			if (!delta) continue;
-			const explicitReasoning = reasoningText(delta);
-			const routed = explicitReasoning
-				? {
-						reasoning: explicitReasoning,
-						answer: stripReasoningTags(delta.content || ""),
-					}
-				: routeThinkTags(delta.content || "", thinkState);
-			if (routed.answer) {
-				firstTokenAt ??= Date.now();
-				text += routed.answer;
-				send("token", { text: routed.answer });
-				send("answer_delta", {
-					phaseId,
-					iteration,
-					kind: "answer",
-					text: routed.answer,
-				});
-			}
-			if (routed.reasoning && thinkingMode !== "fast") {
-				firstTokenAt ??= Date.now();
-				thinking += routed.reasoning;
-				send("thinking", { text: routed.reasoning });
-				send("thinking_delta", {
-					phaseId,
-					iteration,
-					kind: "thinking",
-					text: routed.reasoning,
-				});
-			}
-			for (const call of delta.tool_calls || []) {
-				const index = call.index || 0;
-				toolCalls[index] ??= createToolCall(call.id || `tool-${index}`, "", "");
-				if (call.function?.name)
-					toolCalls[index].function.name += call.function.name;
-				if (call.function?.arguments)
-					toolCalls[index].function.arguments += call.function.arguments;
-				streamArtifactPreview(toolCalls[index], artifactStreamed, send);
-			}
-		}
-	}
-	const elapsed = Date.now() - started;
-	const metrics: PhaseMetrics = {
-		...normalizePhaseMetrics(
-			usage,
-			timings,
-			firstTokenAt ? firstTokenAt - started : elapsed,
-			elapsed,
-			{ answer: text, thinking },
-			activeModel,
-		),
-		truncated: finishReason === "length",
-	};
-	send("metrics", {
-		inputTokens: metrics.inputTokens,
-		outputTokens: metrics.outputTokens,
-		promptTokensPerSecond: metrics.encodeTokensPerSecond,
-		generationTokensPerSecond: metrics.decodeTokensPerSecond,
-		firstTokenMs: metrics.firstTokenMs,
-		totalMs: metrics.totalMs,
-		thinkingTokens: metrics.thinkingTokens,
-		truncated: metrics.truncated,
-	});
-	send("phase_metrics", {
-		phaseId,
-		iteration,
-		kind: toolCalls.length ? "tool" : "answer",
-		metrics,
-	});
-	return { text, toolCalls: toolCalls.filter(Boolean), metrics };
 }
 
 function getLocalLlmUrl(): URL {
@@ -2156,369 +1558,6 @@ function getLocalLlmUrl(): URL {
 	}
 }
 
-/**
- * Tool results are split in two: `model` is the trimmed payload that enters the
- * context window, `view` is the rich payload the UI renders as cards. Keeping
- * them separate is what stops an entity listing from eating the whole window.
- */
-interface ToolResult {
-	model: unknown;
-	view?: unknown;
-}
-
-async function executeTool(
-	name: string,
-	args: Record<string, unknown>,
-): Promise<ToolResult> {
-	const mcp = parseToolCallName(name);
-	if (mcp) {
-		const server = mcpServers.get(mcp.serverId);
-		if (!server || !server.enabled)
-			return { model: { error: "That MCP server is not enabled." } };
-		try {
-			return { model: await callMcpTool(server, mcp.tool, args) };
-		} catch (error) {
-			return {
-				model: {
-					error: error instanceof Error ? error.message : "MCP call failed",
-				},
-			};
-		}
-	}
-	if (name === "get_entity_state") {
-		const state = await hassRequest(
-			`/states/${encodeURIComponent(String(args.entity_id))}`,
-		);
-		if (!state || typeof state !== "object" || !("entity_id" in state))
-			return { model: state };
-		const card = normalizeEntity(state as HassEntity);
-		return { model: compactEntity(card), view: [card] };
-	}
-	if (name === "list_entities") {
-		const states = await hassRequest("/states");
-		if (!Array.isArray(states)) return { model: states };
-		const cards = resolveEntities(
-			states.map((item) => normalizeEntity(item as HassEntity)),
-			{
-				query: typeof args.query === "string" ? args.query : "",
-				domain: typeof args.domain === "string" ? args.domain : "",
-			},
-		);
-		if (!cards.length)
-			return {
-				model: {
-					matches: [],
-					hint: "No entity matched. Try a broader query or omit it.",
-				},
-			};
-		return { model: cards.map(compactEntity), view: cards };
-	}
-	if (name === "control_entity") {
-		const token = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-		const domain = String(args.domain);
-		const service = String(args.service);
-		const entityId = String(args.entity_id);
-		const serviceData =
-			args.service_data &&
-			typeof args.service_data === "object" &&
-			!Array.isArray(args.service_data)
-				? (args.service_data as Record<string, unknown>)
-				: {};
-		if (
-			!/^[a-z0-9_]+$/.test(domain) ||
-			!/^[a-z0-9_]+$/.test(service) ||
-			!/^[a-z0-9_]+\.[a-z0-9_]+$/.test(entityId)
-		)
-			return { model: { error: "Invalid entity action" } };
-		const destructive = service === "unlock" || service === "open_cover";
-		pendingActions.set(token, {
-			domain,
-			service,
-			entityId,
-			serviceData,
-			destructive,
-		});
-		const confirmation = {
-			confirmation_required: true,
-			token,
-			destructive,
-			message: `Confirm ${domain}.${service} for ${entityId}`,
-		};
-		return { model: confirmation, view: confirmation };
-	}
-	if (name === "list_reminders") {
-		const reminders = (await listReminders(process.env.OWNER_ID || "")).map((item) => ({
-			id: item.id,
-			message: item.message,
-			time: item.time.toISOString(),
-		}));
-		return { model: reminders, view: reminders };
-	}
-	if (name === "create_reminder") {
-		const parsed = parseReminder(String(args.request || ""));
-		if (!parsed.at)
-			return {
-				model: {
-					error: "No time found in that request. Ask the user when.",
-					message: parsed.message,
-				},
-			};
-		/*
-		 * Held for confirmation rather than set outright. The parse is a
-		 * reading of ambiguous words — "at 5" is a guess about the evening —
-		 * and a reminder set for the wrong half of the day is worse than one
-		 * that took an extra tap.
-		 */
-		const token = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-		pendingReminders.set(token, {
-			message: parsed.message,
-			at: parsed.at.toISOString(),
-		});
-		const confirmation = {
-			confirmation_required: true,
-			kind: "reminder",
-			token,
-			message: parsed.message,
-			at: parsed.at.toISOString(),
-			when: describeWhen(parsed.at),
-			assumedEvening: parsed.assumedEvening,
-			/*
-			 * A nudge the model reads in its tool result, so it stops announcing
-			 * the reminder as set. The confirmation card, not the reply, is what
-			 * commits it.
-			 */
-			awaiting_confirmation: true,
-		};
-		/*
-		 * The confirmation travels as `model`, not just `view`, because the
-		 * `tool` stream event the console renders carries `value.model`. Sending
-		 * only a lean receipt here left the console with no confirmation_required
-		 * flag, so the card — and with it the only way to actually schedule the
-		 * reminder — never appeared. control_entity works for exactly this
-		 * reason: its model IS the confirmation.
-		 */
-		return { model: confirmation, view: confirmation };
-	}
-	if (name === "create_artifact") {
-		const artifact = await artifacts.create({
-			title: String(args.title || "Untitled"),
-			kind: args.kind as never,
-			language: args.language ? String(args.language) : undefined,
-			content: String(args.content || ""),
-		});
-		/*
-		 * The model gets a receipt, not the document. Echoing the content back
-		 * would double its cost in a window it just spent writing it into.
-		 */
-		return {
-			model: {
-				created: true,
-				id: artifact.id,
-				title: artifact.title,
-				kind: artifact.kind,
-			},
-			view: { artifact: { ...artifact, content: undefined } },
-		};
-	}
-	if (name === "read_artifact") {
-		const artifact = artifacts.get(String(args.id || ""));
-		if (!artifact) return { model: { error: `No artifact with id ${args.id}` } };
-		const view = modelView(artifact.content);
-		return {
-			model: {
-				id: artifact.id,
-				title: artifact.title,
-				kind: artifact.kind,
-				bytes: view.bytes,
-				lines: view.lines,
-				truncated: view.windowed,
-				content: view.content,
-			},
-		};
-	}
-	if (name === "rewrite_artifact") {
-		const artifact = artifacts.get(String(args.id || ""));
-		if (!artifact) return { model: { error: `No artifact with id ${args.id}` } };
-		const content = String(args.content ?? "");
-		if (!content.trim())
-			return { model: { error: "content is required and cannot be empty" } };
-		const updated = await artifacts.update(artifact.id, { content });
-		const view = modelView(content);
-		return {
-			model: {
-				rewritten: true,
-				id: artifact.id,
-				bytes: view.bytes,
-				lines: view.lines,
-				truncated: view.windowed,
-				content: view.content,
-			},
-			view: { artifact: { ...updated, content: undefined } },
-		};
-	}
-	if (name === "edit_artifact") {
-		const artifact = artifacts.get(String(args.id || ""));
-		if (!artifact) return { model: { error: `No artifact with id ${args.id}` } };
-		const newString = String(args.new_string ?? "");
-		const result = applyEdit(
-			artifact.content,
-			String(args.old_string ?? ""),
-			newString,
-			args.replace_all === true,
-		);
-		/*
-		 * A failed edit is reported, not thrown. The model sees why it missed
-		 * — wrong quote, or one that matched three places — and gets another
-		 * pass at it inside the same turn.
-		 */
-		if (isEditFailure(result)) return { model: { error: result.error } };
-		const updated = await artifacts.update(artifact.id, {
-			content: result.content,
-		});
-		/*
-		 * The document as it now stands, not just a receipt. A patch can move
-		 * everything below it, and an edit aimed at what the model remembers
-		 * writing lands in the wrong place once that memory is one edit stale.
-		 * Bounded, and centred on what just changed, so a long document costs
-		 * a window rather than the whole context.
-		 */
-		const view = modelView(result.content, result.content.indexOf(newString));
-		return {
-			model: {
-				edited: true,
-				id: artifact.id,
-				replacements: result.replacements,
-				/*
-				 * Say what was actually done. A quote that only matched with
-				 * whitespace collapsed, or a call that was really a rewrite,
-				 * both produced the right document by a route the model did
-				 * not ask for — and it should know for the next call.
-				 */
-				...(result.rewrote
-					? {
-							note: "old_string covered almost none of the document while new_string restarted it, so this was applied as a full rewrite. Use rewrite_artifact for that.",
-						}
-					: {}),
-				...(result.loose
-					? { note: "old_string matched only after collapsing whitespace." }
-					: {}),
-				bytes: view.bytes,
-				lines: view.lines,
-				truncated: view.windowed,
-				content: view.content,
-			},
-			view: { artifact: { ...updated, content: undefined } },
-		};
-	}
-	if (name === "web_search") {
-		return { model: await webSearch(String(args.query)) };
-	}
-	if (name === "search_memory") {
-		const matches = vault
-			.list({
-				search: typeof args.query === "string" ? args.query : undefined,
-				tag: typeof args.tag === "string" ? args.tag : undefined,
-				type: typeof args.type === "string" ? args.type : undefined,
-			})
-			.slice(0, 8)
-			.map(summariseNote);
-		return {
-			model: matches.length
-				? matches.map(({ path, title, type, tags, snippet }) => ({
-						path,
-						title,
-						type,
-						tags,
-						snippet,
-					}))
-				: { matches: [], hint: "Nothing saved matches. Broaden the query or omit the tag." },
-			view: { memory: matches },
-		};
-	}
-	if (name === "read_memory") {
-		const note = vault.get(String(args.path || ""));
-		if (!note)
-			return { model: { error: `No memory note at ${args.path}. Use search_memory to find its path.` } };
-		const related = vault.related(note.path);
-		return {
-			model: {
-				path: note.path,
-				title: note.title,
-				type: note.type,
-				tags: note.tags,
-				body: note.body,
-				links: note.links,
-				backlinks: related.backlinks.map((entry) => entry.path),
-			},
-			view: { memory: [summariseNote(note)] },
-		};
-	}
-	if (name === "write_memory") {
-		if (!String(args.path || "").trim())
-			return { model: { error: "A note path is required." } };
-		const body = typeof args.body === "string" ? args.body : "";
-		if (!body.trim()) return { model: { error: "A note body is required." } };
-		// File under memory/<kind>/… and always tag #memory, so the folder and
-		// the tag both mark it as long-term memory.
-		const path = memoryNotePath(args.path, args.type);
-		const frontmatter = noteFrontmatter(args);
-		const tags = Array.isArray(frontmatter.tags) ? frontmatter.tags : [];
-		frontmatter.tags = [...new Set(["memory", ...tags])];
-		try {
-			const note = await vault.write(path, { body, frontmatter });
-			return {
-				model: {
-					saved: true,
-					path: note.path,
-					title: note.title,
-					tags: note.tags,
-					/* Surface dangling links so the model can offer to fill them in. */
-					unresolved_links: note.unresolvedLinks,
-				},
-				view: { memory: [summariseNote(note)] },
-			};
-		} catch (error) {
-			return {
-				model: { error: error instanceof Error ? error.message : "Write failed" },
-			};
-		}
-	}
-	if (name === "track_parcel") {
-		const result = await trackParcel(
-			String(args.tracking_number || args.number || ""),
-			String(args.label || ""),
-			String(args.courier || ""),
-		);
-		if (!result.ok) return { model: { error: result.error } };
-		const card = parcelCard(result.parcel);
-		return {
-			model: {
-				tracked: true,
-				already_tracking: result.existed,
-				...card,
-			},
-			view: { parcels: [card] },
-		};
-	}
-	if (name === "list_parcels") {
-		if (!config.trackingMoreApiKey)
-			return {
-				model: {
-					error:
-						"Parcel tracking is off. Set the TrackingMore API key in the add-on configuration.",
-				},
-			};
-		const cards = parcels.list().map(parcelCard);
-		return {
-			model: cards.length
-				? cards
-				: { parcels: [], hint: "No parcels are being tracked yet." },
-			view: { parcels: cards },
-		};
-	}
-	return { model: { error: `Unknown tool: ${name}` } };
-}
-
 type ManagedActiveModel = {
 	id: string;
 	family: string;
@@ -2528,28 +1567,77 @@ type ManagedActiveModel = {
 	capabilities: string[];
 };
 
-async function managedActiveModel(): Promise<ManagedActiveModel | undefined> {
+type ManagerStatus = {
+	activeModel?: ManagedActiveModel;
+	/* Every model the add-on's router serves, and the one unnamed requests get. */
+	models?: string[];
+	defaultModel?: string;
+};
+
+let managerStatusCache: { at: number; value?: ManagerStatus } | undefined;
+async function managerStatus(fresh = false): Promise<ManagerStatus | undefined> {
 	if (process.env.MODEL_MANAGER_ENABLED !== "true") return undefined;
+	// A chat turn may reuse a status a few seconds old; the status route and a
+	// model choice always ask fresh.
+	if (!fresh && managerStatusCache && Date.now() - managerStatusCache.at < 3_000)
+		return managerStatusCache.value;
+	let value: ManagerStatus | undefined;
 	try {
-		const status = await (await getModelManagerClient()).request<{
-			activeModel?: ManagedActiveModel;
-		}>("/status", {
+		value = await (await getModelManagerClient()).request<ManagerStatus>("/status", {
 			signal: AbortSignal.timeout(2_000),
 		});
-		return status.activeModel;
 	} catch {
-		return undefined;
+		value = undefined;
 	}
+	managerStatusCache = { at: Date.now(), value };
+	return value;
+}
+
+let catalogCache: { at: number; variants: Array<{ model: ManagedActiveModel }> } | undefined;
+async function catalogModels(): Promise<Array<{ model: ManagedActiveModel }>> {
+	if (catalogCache && Date.now() - catalogCache.at < 60_000) return catalogCache.variants;
+	try {
+		const catalog = await (await getModelManagerClient()).request<{
+			variants?: Array<{ model: ManagedActiveModel }>;
+		}>("/catalog", { signal: AbortSignal.timeout(4_000) });
+		catalogCache = { at: Date.now(), variants: catalog.variants || [] };
+	} catch {
+		catalogCache = { at: Date.now(), variants: catalogCache?.variants || [] };
+	}
+	return catalogCache.variants;
 }
 
 /**
- * Identify the model actually serving requests.
+ * The model the console actually chats with: the chosen chat model when the
+ * add-on serves it, otherwise the add-on's default (which is what an unnamed
+ * or unknown name is routed to).
+ */
+async function managedActiveModel(fresh = false): Promise<ManagedActiveModel | undefined> {
+	const status = await managerStatus(fresh);
+	if (!status) return undefined;
+	const chosen = chatModel.get();
+	const serving = chosen && status.models?.includes(chosen) ? chosen : status.defaultModel;
+	// The default's metadata is what the manager reports as active.
+	if (!serving || serving === status.defaultModel) return status.activeModel;
+	const variant = (await catalogModels()).find((entry) => entry.model.id === serving);
+	return (
+		variant?.model || {
+			id: serving,
+			family: serving,
+			file: "",
+			quantization: "",
+			recommendedContext: Number(process.env.LOCAL_LLM_CONTEXT_SIZE || 8192),
+			capabilities: [],
+		}
+	);
+}
+
+/**
+ * Identify the model actually serving the console's requests.
  *
- * The model manager is optional — when it is disabled, or reachable but not
- * managing this endpoint, inference still runs against LOCAL_LLM_URL with
- * LOCAL_LLM_MODEL. Reporting "runtime unavailable" in that case was wrong:
- * it described the manager, not the runtime. Fall back to the configured
- * model, which is what the requests are actually sent with.
+ * The model manager is optional — when it is disabled, inference still runs
+ * against LOCAL_LLM_URL with LOCAL_LLM_MODEL, so fall back to the configured
+ * model, which is what the requests are sent with.
  */
 async function activeModelMetadata(): Promise<ActiveModelMetadata> {
 	const active = await managedActiveModel();

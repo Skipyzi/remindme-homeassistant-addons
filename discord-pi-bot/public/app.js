@@ -59,6 +59,24 @@ function harness() {
 		mcpError: "",
 		modelsOpen: false,
 		historyOpen: false,
+		theme: "lucky38",
+		/* Swatch colours mirror each theme's tokens in styles.css. */
+		themes: [
+			{ id: "lucky38", name: "Lucky 38", blurb: "Amber lamplight on warm black", bg: "#0d0a06", surface: "#201810", accent: "#ffb200" },
+			{ id: "vault", name: "Vault", blurb: "Green phosphor, wrist-mounted", bg: "#060d08", surface: "#112116", accent: "#4dff95" },
+			{ id: "nocturne", name: "Nocturne", blurb: "Moonlit blue, quiet and cool", bg: "#0a0c16", surface: "#171b34", accent: "#8db8ff" },
+			{ id: "daylight", name: "Daylight", blurb: "Warm paper and ink", bg: "#f3eadb", surface: "#fbf6ec", accent: "#b4531a" },
+		],
+		/* A few plain facts about the house for the empty console. */
+		pulse: [],
+		/* Starters on an empty chat: one per thing the console is good at. */
+		suggestions: [
+			"Turn off the living room lights",
+			"How warm is it inside?",
+			"Remind me in 20 minutes to check the oven",
+			"What's in the news today?",
+			"/help",
+		],
 		boardOpen: false,
 		offline: false,
 		scanlines: true,
@@ -140,6 +158,29 @@ function harness() {
 				this.modelOperation?.phase,
 			);
 		},
+		applyTheme(id) {
+			const root = document.documentElement;
+			if (id === "lucky38") delete root.dataset.theme;
+			else root.dataset.theme = id;
+			const option = this.themes.find((entry) => entry.id === id);
+			document.querySelector('meta[name="theme-color"]')?.setAttribute("content", option?.bg || "#0d0a06");
+		},
+		get greeting() {
+			const hour = new Date().getHours();
+			if (hour < 5) return "Still up?";
+			if (hour < 12) return "Good morning.";
+			if (hour < 18) return "Good afternoon.";
+			if (hour < 23) return "Good evening.";
+			return "Late one tonight.";
+		},
+		async loadPulse() {
+			try {
+				const response = await fetch("./api/pulse");
+				if (response.ok) this.pulse = (await response.json()).pulse || [];
+			} catch {
+				this.pulse = [];
+			}
+		},
 		get contextLevel() {
 			return this.contextPercent >= 90
 				? "danger"
@@ -149,7 +190,14 @@ function harness() {
 		},
 		init() {
 			this.restore();
-			this.scanlines = localStorage.getItem("remindme.scanlines") !== "0";
+			this.scanlines = localStorage.getItem("remindme.scanlines") === "1";
+			const savedTheme = localStorage.getItem("remindme.theme");
+			if (this.themes.some((option) => option.id === savedTheme)) this.theme = savedTheme;
+			this.applyTheme(this.theme);
+			this.$watch("theme", (value) => {
+				localStorage.setItem("remindme.theme", value);
+				this.applyTheme(value);
+			});
 			this.glow = Number(localStorage.getItem("remindme.glow") || 55);
 			document.documentElement.style.setProperty("--glow", this.glow / 100);
 			this.$watch("thinking", (value) => {
@@ -163,9 +211,15 @@ function harness() {
 				localStorage.setItem("remindme.scanlines", value ? "1" : "0"),
 			);
 			this.$watch("draft", () => window.RemindMeComposer.measure(this));
+			/* Opening any panel from the drawer puts the drawer away. */
+			for (const panel of ["modelsOpen", "settingsOpen", "skillsOpen", "mcpOpen", "boardOpen"])
+				this.$watch(panel, (open) => {
+					if (open) this.historyOpen = false;
+				});
 			window.RemindMeComposer.measure(this, 0);
 			window.RemindMeConversations.load(this).catch(() => {});
 			this.refreshStatus();
+			this.loadPulse();
 			window.RemindMeModelCookbook.load(this);
 			window.RemindMeEndpoints.load(this);
 			this.startSystemPolling();
@@ -202,7 +256,7 @@ function harness() {
 				.then((d) => {
 					const custom = this.endpointActiveId;
 					this.modelBadge =
-						(custom ? "" : "LOCAL • ") + (d.modelName || d.model);
+						d.modelName || d.model || "No model";
 					this.visionEnabled = Boolean(d.vision);
 					if (Array.isArray(d.profiles) && d.profiles.length) {
 						this.thinkingProfiles = d.profiles;
@@ -381,10 +435,13 @@ function harness() {
 			return message;
 		},
 		async newChat() {
+			this.historyOpen = false;
+			this.loadPulse();
 			await window.RemindMeConversations.create(this);
-			this.add("answer", "Fresh channel. What are we checking?");
+			this.$nextTick(() => this.$refs.composerInput?.focus());
 		},
 		selectConversation(conversation) {
+			this.historyOpen = false;
 			return window.RemindMeConversations.select(this, conversation);
 		},
 		/** Pin to the top. The store already sorts pinned first. */
@@ -464,8 +521,12 @@ function harness() {
 			return window.RemindMeTools.toolActivity(message.name);
 		},
 		completedToolLabel(message) {
-			const duration = this.formatDuration(message.metrics?.totalMs);
-			return `${String(message.name || "Tool").replaceAll("_", " ")} · ${duration}`;
+			return window.RemindMeTools.toolDone(message.name);
+		},
+		/** "heat_cool" → "Heat cool". States read as words, not shouted codes. */
+		sentenceCase(value) {
+			const text = String(value ?? "").replaceAll("_", " ");
+			return text.charAt(0).toUpperCase() + text.slice(1);
 		},
 		formatSpeed(value) {
 			return `${Number(value || 0).toFixed(1)} tok/s`;
@@ -1058,7 +1119,7 @@ function harness() {
 			const kind = entity.deviceClass;
 			// Battery drifts over days; everything else over hours.
 			const hours = kind === "battery" ? 168 : 6;
-			const windowLabel = kind === "battery" ? "7 DAYS" : `${hours}H`;
+			const windowLabel = kind === "battery" ? "7 days" : `${hours}h`;
 			const history = await cards.loadHistory(entity, hours);
 			if (!history) return;
 			const points = history.points || [];
@@ -1877,9 +1938,16 @@ function harness() {
 		async downloadModel(id) {
 			return window.RemindMeModelCookbook.download(this, id);
 		},
-		/** One click: switch to a model, downloading and verifying first if needed. */
+		/** One click: chat with a model, downloading and verifying first if needed. */
 		async useModel(id) {
 			return window.RemindMeModelCookbook.use(this, id);
+		},
+		/** Make a model the add-on's default — what other apps get. */
+		async makeDefaultModel(id) {
+			return window.RemindMeModelCookbook.activate(this, id);
+		},
+		isChatModel(variant) {
+			return this.modelStatus?.chatModel === variant?.model?.id;
 		},
 		async copyModelYaml(id) {
 			return window.RemindMeModelCookbook.copyYaml(this, id);
@@ -1921,6 +1989,15 @@ function harness() {
 	const target = document.getElementById("ascii");
 	if (!target) return;
 	if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+	/*
+	 * Ambient decoration for a desk screen only. On a phone it is hidden by the
+	 * stylesheet anyway, and repainting a full-screen text node would still
+	 * cost battery for nothing.
+	 */
+	if (!window.matchMedia("(min-width: 1024px) and (hover: hover)").matches) return;
+	/* A slow drift needs ~12 frames a second, not 60. */
+	const FRAME_MS = 80;
+	let last = 0;
 
 	const CHARS = " .:-=+";
 	/* Vertical advance is set by line-height, so rows can use it directly. */
@@ -1955,8 +2032,13 @@ function harness() {
 		rows = Math.ceil(window.innerHeight / LINE) + 2;
 	}
 
-	function paint() {
-		time += 0.014;
+	function paint(now = 0) {
+		if (now - last < FRAME_MS) {
+			frame = requestAnimationFrame(paint);
+			return;
+		}
+		last = now;
+		time += 0.014 * (FRAME_MS / 16);
 		let out = "";
 		for (let y = 0; y < rows; y += 1) {
 			let line = "";

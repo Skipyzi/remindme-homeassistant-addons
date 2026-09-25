@@ -27,12 +27,17 @@ type Facts struct {
 }
 
 type Runtime struct {
-	Context         int    `json:"context"`
-	Batch           int    `json:"batch"`
-	UBatch          int    `json:"ubatch"`
-	Threads         int    `json:"threads"`
-	ThreadsBatch    int    `json:"threadsBatch"`
-	CacheReuse      int    `json:"cacheReuse"`
+	Context      int `json:"context"`
+	Batch        int `json:"batch"`
+	UBatch       int `json:"ubatch"`
+	Threads      int `json:"threads"`
+	ThreadsBatch int `json:"threadsBatch"`
+	CacheReuse   int `json:"cacheReuse"`
+	// Parallel is the number of llama-server slots. With a unified KV cache
+	// every slot can use the whole context, and each keeps its own prompt
+	// cache — so a harness alternating two different prompts (a routing call
+	// and an answer) stops evicting one with the other.
+	Parallel        int    `json:"parallel"`
 	Jinja           bool   `json:"jinja"`
 	KVUnified       bool   `json:"kvUnified"`
 	FlashAttention  bool   `json:"flashAttention"`
@@ -83,6 +88,7 @@ func Assess(variant catalog.Variant, facts Facts, requestedContext int, override
 			Threads:         min(max(facts.CPUCores, 1), max(profile.Threads, 1)),
 			ThreadsBatch:    min(max(facts.CPUCores, 1), max(profile.Threads, 1)),
 			CacheReuse:      256,
+			Parallel:        2,
 			Jinja:           true,
 			KVUnified:       true,
 			FlashAttention:  false,
