@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.0.1 - 2026-09-25
+
+### Fixed
+
+- **Two apps using different models at the same moment no longer knock each other out.**
+  With room for one model, a chat request and a dictation request arriving together each
+  made the router unload the other's model while it was still loading, and both failed
+  with "failed to load". Requests for another model now wait until the current model's
+  requests finish (up to two minutes), and the router then switches once.
+
 ## 2.0.0 - 2026-09-25
 
 ### Changed

@@ -157,6 +157,11 @@ func (supervisor *Supervisor) ResolveModel(requested string) string {
 	return supervisor.names.Resolve(requested)
 }
 
+// ResidentLimit is how many models the router keeps loaded at once.
+func (supervisor *Supervisor) ResidentLimit() int {
+	return supervisor.config.MaxModels
+}
+
 // ModelIDs lists the models the router serves, by canonical ID.
 func (supervisor *Supervisor) ModelIDs() []string {
 	supervisor.mu.RLock()

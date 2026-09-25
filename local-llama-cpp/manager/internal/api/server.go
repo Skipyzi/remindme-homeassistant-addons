@@ -48,6 +48,8 @@ type ModelSupervisor interface {
 	ModelIDs() []string
 	// Reload restarts the router after models were added or removed.
 	Reload(context.Context) error
+	// ResidentLimit is how many models the router keeps loaded at once.
+	ResidentLimit() int
 }
 
 type PairingExchanger interface {
@@ -118,6 +120,7 @@ type Server struct {
 	dependencies Dependencies
 	manager      *http.ServeMux
 	proxy        *httputil.ReverseProxy
+	gate         *modelGate
 	mutation     chan struct{}
 	cancelMu     sync.Mutex
 	cancel       context.CancelFunc
@@ -165,6 +168,7 @@ func NewServer(dependencies Dependencies) *Server {
 		}},
 	}
 	server.proxy = newInferenceProxy(dependencies.InferenceURL)
+	server.gate = newModelGate()
 	server.registerRoutes()
 	initial := snapshotFromState(dependencies.Supervisor.State())
 	if initial.Phase == "" {
@@ -179,11 +183,77 @@ func (server *Server) ServeHTTP(response http.ResponseWriter, request *http.Requ
 		server.manager.ServeHTTP(response, request)
 		return
 	}
-	if err := server.routeModel(request); err != nil {
+	model, err := server.routeModel(request)
+	if err != nil {
 		writeError(response, http.StatusRequestEntityTooLarge, APIError{Code: "request_too_large", Message: "The inference request is too large."})
 		return
 	}
+	if model != "" {
+		release := server.gate.acquire(request.Context(), model, server.dependencies.Supervisor.ResidentLimit())
+		defer release()
+	}
 	server.proxy.ServeHTTP(response, request)
+}
+
+// modelGate keeps the router from swapping a model out from under a request.
+// With room for N models, a request for a model that is not busy waits while
+// N other models have requests in flight; once they finish, the router swaps
+// once. Without it, a chat turn and a dictation request arriving together on a
+// one-model host each evicted the other mid-load, and both failed.
+type modelGate struct {
+	mu       sync.Mutex
+	inflight map[string]int
+	changed  chan struct{}
+}
+
+func newModelGate() *modelGate {
+	return &modelGate{inflight: map[string]int{}, changed: make(chan struct{})}
+}
+
+// maxGateWait bounds how long a request queues for another model to finish;
+// past it the request goes ahead rather than hang.
+const maxGateWait = 2 * time.Minute
+
+func (gate *modelGate) acquire(ctx context.Context, model string, limit int) func() {
+	deadline := time.NewTimer(maxGateWait)
+	defer deadline.Stop()
+	for {
+		gate.mu.Lock()
+		busy := 0
+		for name, count := range gate.inflight {
+			if count > 0 && name != model {
+				busy++
+			}
+		}
+		if limit <= 0 || gate.inflight[model] > 0 || busy < limit {
+			gate.inflight[model]++
+			gate.mu.Unlock()
+			return func() { gate.release(model) }
+		}
+		changed := gate.changed
+		gate.mu.Unlock()
+		select {
+		case <-changed:
+		case <-ctx.Done():
+			return func() {}
+		case <-deadline.C:
+			gate.mu.Lock()
+			gate.inflight[model]++
+			gate.mu.Unlock()
+			return func() { gate.release(model) }
+		}
+	}
+}
+
+func (gate *modelGate) release(model string) {
+	gate.mu.Lock()
+	defer gate.mu.Unlock()
+	gate.inflight[model]--
+	if gate.inflight[model] <= 0 {
+		delete(gate.inflight, model)
+	}
+	close(gate.changed)
+	gate.changed = make(chan struct{})
 }
 
 // maxInferenceBody bounds what the proxy buffers to read a request's model:
@@ -197,31 +267,36 @@ var errInferenceBodyTooLarge = errors.New("inference request too large")
 // dictation app, a script, an older RemindMe — send none or a name of their
 // own. Those are pointed at the default model, which is what they reached
 // before; a client naming a served model gets that model.
-func (server *Server) routeModel(request *http.Request) error {
+// It returns the model the request will run on, or "" when it names none
+// (a model listing, a health check).
+func (server *Server) routeModel(request *http.Request) (string, error) {
 	resolve := server.dependencies.Supervisor.ResolveModel
 	if resolve("") == "" {
-		return nil
+		return "", nil
 	}
 	if request.Method == http.MethodGet {
 		switch request.URL.Path {
 		case "/props", "/slots", "/metrics":
 			query := request.URL.Query()
-			query.Set("model", resolve(query.Get("model")))
+			model := resolve(query.Get("model"))
+			query.Set("model", model)
 			request.URL.RawQuery = query.Encode()
+			return model, nil
 		}
-		return nil
+		return "", nil
 	}
 	if request.Method != http.MethodPost || request.Body == nil {
-		return nil
+		return "", nil
 	}
 	body, err := io.ReadAll(io.LimitReader(request.Body, maxInferenceBody+1))
 	request.Body.Close()
 	if err != nil {
-		return err
+		return "", err
 	}
 	if len(body) > maxInferenceBody {
-		return errInferenceBodyTooLarge
+		return "", errInferenceBodyTooLarge
 	}
+	model := ""
 	trimmed := bytes.TrimSpace(body)
 	if len(trimmed) > 0 && trimmed[0] == '{' {
 		var fields map[string]json.RawMessage
@@ -230,7 +305,9 @@ func (server *Server) routeModel(request *http.Request) error {
 			if raw, ok := fields["model"]; ok {
 				_ = json.Unmarshal(raw, &requested)
 			}
-			if resolved := resolve(requested); resolved != requested {
+			resolved := resolve(requested)
+			model = resolved
+			if resolved != requested {
 				encoded, _ := json.Marshal(resolved)
 				fields["model"] = encoded
 				if rewritten, err := json.Marshal(fields); err == nil {
@@ -242,7 +319,7 @@ func (server *Server) routeModel(request *http.Request) error {
 	request.Body = io.NopCloser(bytes.NewReader(body))
 	request.ContentLength = int64(len(body))
 	request.Header.Set("Content-Length", strconv.Itoa(len(body)))
-	return nil
+	return model, nil
 }
 
 // reloadRouter restarts the router in the background after the set of model

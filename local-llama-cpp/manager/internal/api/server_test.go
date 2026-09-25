@@ -90,6 +90,7 @@ func (fake *fakeSupervisor) ResolveModel(requested string) string {
 	}
 	return "speakoflow"
 }
+func (fake *fakeSupervisor) ResidentLimit() int { return 1 }
 func (fake *fakeSupervisor) ModelIDs() []string { return []string{"qwen3-4b-q4", "speakoflow"} }
 func (fake *fakeSupervisor) Reload(context.Context) error {
 	fake.mu.Lock()
@@ -479,9 +480,26 @@ func TestObsoleteFallbackMetadataDoesNotBlockRemoval(t *testing.T) {
 
 func TestConcurrentMutationReturnsConflict(t *testing.T) {
 	dependencies := testDependencies(t, "http://127.0.0.1:1")
-	fake := &fakeDownloader{started: make(chan struct{}), release: make(chan struct{}), path: filepath.Join(dependencies.ModelDir, "test.gguf")}
+	// The downloader clears its own `started` field once signalled, so the test
+	// keeps its own handle on the channel.
+	started := make(chan struct{})
+	fake := &fakeDownloader{started: started, release: make(chan struct{}), path: filepath.Join(dependencies.ModelDir, "test.gguf")}
 	dependencies.Downloader = fake
 	server := NewServer(dependencies)
+	// Let the held download finish before the temporary model directory is
+	// removed, so cleanup never races the file it writes.
+	t.Cleanup(func() {
+		deadline := time.Now().Add(2 * time.Second)
+		for time.Now().Before(deadline) {
+			if dependencies.Supervisor.State().Operation == nil || dependencies.Supervisor.State().Phase != state.PhaseDownloading {
+				if _, err := os.Stat(fake.path); err == nil {
+					break
+				}
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+		time.Sleep(20 * time.Millisecond)
+	})
 	first := httptest.NewRequest(http.MethodPost, "/manager/v1/install", strings.NewReader(`{"id":"test-q4"}`))
 	first.Header.Set("Authorization", "Bearer manager-secret")
 	firstResponse := httptest.NewRecorder()
@@ -489,7 +507,7 @@ func TestConcurrentMutationReturnsConflict(t *testing.T) {
 	if firstResponse.Code != http.StatusAccepted {
 		t.Fatalf("first status=%d body=%s", firstResponse.Code, firstResponse.Body.String())
 	}
-	<-fake.started
+	<-started
 	second := httptest.NewRequest(http.MethodPost, "/manager/v1/install", strings.NewReader(`{"id":"test-q4"}`))
 	second.Header.Set("Authorization", "Bearer manager-secret")
 	secondResponse := httptest.NewRecorder()
@@ -888,4 +906,67 @@ func TestInferenceRequestsAreRoutedToAServedModel(t *testing.T) {
 	if queries[len(queries)-1] != "model=speakoflow" {
 		t.Fatalf("GET /props should name the default model, got %q", queries[len(queries)-1])
 	}
+}
+
+func TestOneModelHostQueuesAnotherModelUntilTheFirstFinishes(t *testing.T) {
+	release := make(chan struct{})
+	var mu sync.Mutex
+	var order []string
+	upstream := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		var body map[string]any
+		_ = json.NewDecoder(request.Body).Decode(&body)
+		model, _ := body["model"].(string)
+		mu.Lock()
+		order = append(order, "start "+model)
+		mu.Unlock()
+		if model == "speakoflow" {
+			<-release
+		}
+		mu.Lock()
+		order = append(order, "end "+model)
+		mu.Unlock()
+	}))
+	defer upstream.Close()
+	server := NewServer(Dependencies{Supervisor: &fakeSupervisor{}, InferenceURL: upstream.URL, Token: func() string { return "t" }})
+	send := func(body string, done chan<- struct{}) {
+		request := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(body))
+		server.ServeHTTP(httptest.NewRecorder(), request)
+		close(done)
+	}
+	first, second := make(chan struct{}), make(chan struct{})
+	go send(`{"messages":[]}`, first)
+	time.Sleep(50 * time.Millisecond)
+	go send(`{"model":"qwen3-4b-q4","messages":[]}`, second)
+	time.Sleep(100 * time.Millisecond)
+	mu.Lock()
+	started := append([]string(nil), order...)
+	mu.Unlock()
+	if len(started) != 1 || started[0] != "start speakoflow" {
+		t.Fatalf("the second model must wait while the first is busy, saw %v", started)
+	}
+	close(release)
+	<-first
+	<-second
+	mu.Lock()
+	defer mu.Unlock()
+	if order[len(order)-2] != "start qwen3-4b-q4" {
+		t.Fatalf("unexpected order %v", order)
+	}
+}
+
+func TestSameModelRequestsRunTogether(t *testing.T) {
+	gate := newModelGate()
+	first := gate.acquire(context.Background(), "a", 1)
+	done := make(chan struct{})
+	go func() {
+		release := gate.acquire(context.Background(), "a", 1)
+		release()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("a second request for the busy model must not wait")
+	}
+	first()
 }
