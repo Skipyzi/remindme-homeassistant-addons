@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.15.0 - 2026-09-25
+
+### Added
+
+- **`parallel` option (default 2): the number of llama-server slots.** With `kv_unified`
+  on, every slot can use the whole context, and each keeps its own prompt cache. RemindMe
+  3.0 sends two different kinds of request per turn: a short routing call, then the
+  answer. With a single slot each one evicted the other's cached prompt, so a Pi re-read
+  the routing prefix on every message. With two, llama.cpp sends each request to the
+  slot whose cached prompt matches best. If `kv_unified` is off, the context would be
+  split between slots, so the server keeps one slot and ignores this option. Range 1–4.
+
 ## 1.14.0 - 2026-08-19
 
 ### Added

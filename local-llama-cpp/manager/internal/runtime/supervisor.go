@@ -318,6 +318,12 @@ func llamaArgs(model state.Installed, runtime hardware.Runtime) []string {
 	if threadsBatch <= 0 {
 		threadsBatch = runtime.Threads
 	}
+	// Without a unified KV cache the context is split between slots, and two
+	// slots would halve what each request can see. One slot is the safe choice.
+	slots := min(max(runtime.Parallel, 1), 4)
+	if !runtime.KVUnified {
+		slots = 1
+	}
 	args := []string{
 		"--model", model.Path,
 		"--host", "127.0.0.1",
@@ -327,7 +333,7 @@ func llamaArgs(model state.Installed, runtime hardware.Runtime) []string {
 		"--threads-batch", strconv.Itoa(threadsBatch),
 		"--batch-size", strconv.Itoa(runtime.Batch),
 		"--ubatch-size", strconv.Itoa(runtime.UBatch),
-		"--cache-prompt", "--parallel", "1",
+		"--cache-prompt", "--parallel", strconv.Itoa(slots),
 	}
 	if runtime.CacheReuse > 0 {
 		args = append(args, "--cache-reuse", strconv.Itoa(runtime.CacheReuse))

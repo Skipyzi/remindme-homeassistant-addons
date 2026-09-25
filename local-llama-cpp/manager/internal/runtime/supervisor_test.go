@@ -181,17 +181,38 @@ func TestActivatePromotesCandidateAndRetainsOldModel(t *testing.T) {
 func TestLlamaArgsUseValidatedValuesWithoutShell(t *testing.T) {
 	args := llamaArgs(state.Installed{Path: "/data/models/model.gguf"}, hardware.Runtime{
 		Context: 8192, Batch: 256, UBatch: 128, Threads: 4, ThreadsBatch: 3,
-		CacheReuse: 512, Jinja: true, KVUnified: true, FlashAttention: true,
+		CacheReuse: 512, Parallel: 2, Jinja: true, KVUnified: true, FlashAttention: true,
 		ReasoningFormat: "deepseek", ReasoningMode: "auto",
 	})
 	joined := strings.Join(args, " ")
 	for _, expected := range []string{
-		"--model /data/models/model.gguf", "--port 8081", "--ctx-size 8192",
+		"--model /data/models/model.gguf", "--port 8081", "--ctx-size 8192", "--parallel 2",
 		"--threads-batch 3", "--cache-reuse 512", "--jinja", "--kv-unified", "--flash-attn",
 		"--reasoning-format deepseek", "--reasoning auto",
 	} {
 		if !strings.Contains(joined, expected) {
 			t.Fatalf("missing %q in %q", expected, joined)
+		}
+	}
+}
+
+func TestLlamaArgsKeepOneSlotWithoutUnifiedKV(t *testing.T) {
+	base := hardware.Runtime{Context: 8192, Batch: 256, UBatch: 128, Threads: 4}
+	cases := []struct {
+		parallel int
+		unified  bool
+		want     string
+	}{
+		{parallel: 2, unified: false, want: "--parallel 1"},
+		{parallel: 0, unified: true, want: "--parallel 1"},
+		{parallel: 9, unified: true, want: "--parallel 4"},
+	}
+	for _, current := range cases {
+		runtime := base
+		runtime.Parallel, runtime.KVUnified = current.parallel, current.unified
+		joined := strings.Join(llamaArgs(state.Installed{Path: "/m.gguf"}, runtime), " ")
+		if !strings.Contains(joined, current.want) {
+			t.Fatalf("parallel=%d unified=%v: want %q in %q", current.parallel, current.unified, current.want, joined)
 		}
 	}
 }

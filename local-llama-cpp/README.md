@@ -41,6 +41,7 @@ threads_batch: 4
 batch_size: 256
 ubatch_size: 128
 cache_reuse: 256
+parallel: 2
 jinja: true
 kv_unified: true
 flash_attention: false

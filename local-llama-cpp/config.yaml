@@ -1,5 +1,5 @@
 name: Local llama.cpp
-version: "1.14.0"
+version: "1.15.0"
 slug: local_llama_cpp
 description: Local OpenAI-compatible llama.cpp server with Hugging Face model downloads
 arch:
@@ -32,6 +32,7 @@ options:
   batch_size: 512
   ubatch_size: 128
   cache_reuse: 256
+  parallel: 2
   jinja: true
   kv_unified: true
   flash_attention: false
@@ -49,6 +50,7 @@ schema:
   batch_size: int
   ubatch_size: int
   cache_reuse: int
+  parallel: int(1,4)
   jinja: bool
   kv_unified: bool
   flash_attention: bool

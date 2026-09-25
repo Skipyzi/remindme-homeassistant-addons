@@ -51,6 +51,7 @@ type addonOptions struct {
 	BatchSize       int    `json:"batch_size"`
 	UBatchSize      int    `json:"ubatch_size"`
 	CacheReuse      int    `json:"cache_reuse"`
+	Parallel        int    `json:"parallel"`
 	Jinja           bool   `json:"jinja"`
 	KVUnified       bool   `json:"kv_unified"`
 	FlashAttention  bool   `json:"flash_attention"`
@@ -294,11 +295,16 @@ func runtimeFromOptions(options addonOptions) hardware.Runtime {
 	if threadsBatch <= 0 {
 		threadsBatch = threads
 	}
+	// Options saved before this setting existed carry no value: use the default.
+	parallel := options.Parallel
+	if parallel <= 0 {
+		parallel = 2
+	}
 	return hardware.Runtime{
 		Context: max(options.ContextSize, 4096), Batch: max(options.BatchSize, 128),
 		UBatch: max(options.UBatchSize, 64), Threads: threads,
 		ThreadsBatch: threadsBatch,
-		CacheReuse:   max(options.CacheReuse, 0), Jinja: options.Jinja,
+		CacheReuse:   max(options.CacheReuse, 0), Parallel: parallel, Jinja: options.Jinja,
 		KVUnified: options.KVUnified, FlashAttention: options.FlashAttention,
 		ReasoningFormat: options.ReasoningFormat, ReasoningMode: options.ReasoningMode,
 	}
