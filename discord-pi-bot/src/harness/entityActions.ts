@@ -40,7 +40,24 @@ const immediateDomains = new Set([
 	"climate",
 ]);
 /** Actions that reduce physical security, regardless of domain. */
-const destructiveActions = new Set(["unlock", "open_cover"]);
+const destructiveActions = new Set(["unlock", "open_cover", "open_valve", "alarm_disarm"]);
+
+/**
+ * Whether a service call runs straight away or waits for a tap. Anything that
+ * opens the house, plus any domain not explicitly known to be harmless —
+ * lights, switches, fans, media and climate run directly.
+ */
+export function confirmationPolicy(
+	domain: string,
+	service: string,
+): { requiresConfirmation: boolean; destructive: boolean } {
+	const destructive = destructiveActions.has(service);
+	return {
+		requiresConfirmation:
+			destructive || sensitiveDomains.has(domain) || !immediateDomains.has(domain),
+		destructive,
+	};
+}
 
 function boundedNumber(
 	value: unknown,
@@ -124,18 +141,12 @@ export function validateEntityAction(
 		serviceData.percentage = boundedNumber(value, 0, 100, "Fan speed");
 	}
 
-	const destructive = destructiveActions.has(action);
+	const policy = confirmationPolicy(entity.domain, action);
 	return {
 		domain: entity.domain,
 		service,
 		entityId: entity.entityId,
 		serviceData,
-		// Anything that opens the house, plus any domain we do not explicitly
-		// treat as safe to fire immediately.
-		requiresConfirmation:
-			destructive ||
-			sensitiveDomains.has(entity.domain) ||
-			!immediateDomains.has(entity.domain),
-		destructive,
+		...policy,
 	};
 }
