@@ -81,11 +81,11 @@ func main() {
 	if early, earlyErr := readOptions(configured.options); earlyErr == nil {
 		requestedResident = early.ResidentModels
 	}
-	availableRAM := int64(0)
+	totalRAM, availableRAM := int64(0), int64(0)
 	if facts, factsErr := hardware.ReadFacts(configured.models); factsErr == nil {
-		availableRAM = facts.FreeRAM
+		totalRAM, availableRAM = facts.TotalRAM, facts.FreeRAM
 	}
-	residentModels := residentModelCount(requestedResident, availableRAM)
+	residentModels := residentModelCount(requestedResident, totalRAM, availableRAM)
 	log.Printf("router keeps up to %d model(s) loaded", residentModels)
 	supervisor, err := managerruntime.NewSupervisor(managerruntime.Config{
 		Binary: configured.llama, Target: "http://127.0.0.1:8081", ModelDir: configured.models,
@@ -315,14 +315,16 @@ func runtimeFor(installed state.Installed, modelCatalog catalog.Catalog, facts f
 }
 
 // residentModelCount is how many models stay loaded at once. An explicit
-// option wins. Automatic keeps two only when there is room for a second model
-// beside everything else on the host; with one, the router still serves every
-// model, loading each on demand and unloading the last.
-func residentModelCount(requested int, availableRAM int64) int {
+// option wins. Automatic keeps two only on a host with real headroom: free
+// memory at start-up is a poor guide on a busy 8 GB board (it spikes right
+// after something was killed), and a second model there ends in the OOM
+// killer. With one, the router still serves every model, loading each on
+// demand and unloading the last.
+func residentModelCount(requested int, totalRAM, availableRAM int64) int {
 	if requested > 0 {
 		return min(requested, 4)
 	}
-	if availableRAM >= 4<<30 {
+	if totalRAM >= 12<<30 && availableRAM >= 6<<30 {
 		return 2
 	}
 	return 1

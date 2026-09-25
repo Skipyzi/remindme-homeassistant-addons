@@ -19,7 +19,7 @@ Since 2.0 the manager runs `llama-server` in **router mode**: every downloaded m
 - **Unnamed or unknown names** get the **default model**. A dictation cleanup app, a script, or anything written for a single-model server keeps getting exactly what it got before, without changes on its side.
 - **Loading is automatic.** A request for a model that isn't in memory loads it. Past `resident_models`, the least recently used model is unloaded (it stays on disk).
 
-`resident_models` sets how many models stay loaded at once. `0` (the default) chooses automatically: two when the host has at least 4 GB of memory available at start-up, otherwise one. With one, alternating between two apps' models swaps them on demand, which takes a few seconds per swap.
+`resident_models` sets how many models stay loaded at once. `0` (the default) chooses automatically: two on a host with at least 12 GB of RAM and 6 GB free at start-up, otherwise one. On a busy 8 GB board, also consider a `context_size` of 4096: it halves each model's KV cache. With one, alternating between two apps' models swaps them on demand, which takes a few seconds per swap.
 
 **Make default** in RemindMe's Models tab (`POST /manager/v1/activate`) changes which model unnamed requests get. It loads and checks the candidate, then moves the default, with no restart. If the candidate fails to answer, the previous default stays. Switching never deletes a model file; remove models explicitly under **Downloaded models**. After a download or removal, the router restarts once, in a second or two, to pick up the new set of files.
 

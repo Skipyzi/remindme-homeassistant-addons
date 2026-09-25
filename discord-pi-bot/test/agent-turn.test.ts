@@ -185,3 +185,15 @@ test("the fence stripper passes unfenced text through untouched", () => {
 	const out = ["<svg>", "<rect/>", "</svg>"].map((part) => stripper.push(part)).join("") + stripper.end();
 	assert.equal(out, "<svg><rect/></svg>");
 });
+
+test("a model that dies while loading is explained, not dumped as JSON", async () => {
+	const { describeEndpointError } = await import("../src/agent/llm.ts");
+	const message = describeEndpointError(
+		"local",
+		500,
+		'{"error":{"code":500,"message":"model name=qwen3-1.7b-q8 failed to load","type":"server_error"}}',
+	);
+	assert.match(message, /out of memory/);
+	assert.doesNotMatch(message, /\{"error"/);
+	assert.match(describeEndpointError("local", 502, "bad gateway"), /HTTP 502/);
+});

@@ -219,17 +219,20 @@ func TestRuntimeFromOptionsPreservesCompleteNativeSettings(t *testing.T) {
 func TestResidentModelCountPrefersExplicitThenMemory(t *testing.T) {
 	cases := []struct {
 		requested int
+		total     int64
 		available int64
 		want      int
 	}{
-		{requested: 3, available: 1 << 30, want: 3},
-		{requested: 9, available: 1 << 30, want: 4},
-		{requested: 0, available: 1700 << 20, want: 1},
-		{requested: 0, available: 6 << 30, want: 2},
+		{requested: 3, total: 8 << 30, available: 1 << 30, want: 3},
+		{requested: 9, total: 8 << 30, available: 1 << 30, want: 4},
+		{requested: 0, total: 8 << 30, available: 1700 << 20, want: 1},
+		// A spike in free memory on a small board is not room for two.
+		{requested: 0, total: 8 << 30, available: 5 << 30, want: 1},
+		{requested: 0, total: 16 << 30, available: 8 << 30, want: 2},
 	}
 	for _, current := range cases {
-		if got := residentModelCount(current.requested, current.available); got != current.want {
-			t.Fatalf("residentModelCount(%d, %d) = %d, want %d", current.requested, current.available, got, current.want)
+		if got := residentModelCount(current.requested, current.total, current.available); got != current.want {
+			t.Fatalf("residentModelCount(%d, %d, %d) = %d, want %d", current.requested, current.total, current.available, got, current.want)
 		}
 	}
 }

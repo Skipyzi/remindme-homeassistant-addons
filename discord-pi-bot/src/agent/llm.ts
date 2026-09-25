@@ -19,6 +19,19 @@ export interface ModelEndpoint {
 
 export type ChatMessage = { role: "system" | "user" | "assistant"; content: unknown };
 
+/**
+ * What a failed request means, in words. llama.cpp's router answers
+ * "model ... failed to load" when the model's process died while loading,
+ * which on a small host is almost always the kernel reclaiming memory.
+ */
+export function describeEndpointError(label: string, status: number, body: string): string {
+	if (/failed to load/i.test(body))
+		return "The chat model couldn't be loaded. The Home Assistant host is most likely out of memory: pick a smaller chat model, lower the llama.cpp add-on's context_size, or stop an add-on you don't need.";
+	if (/not found/i.test(body) && status === 400)
+		return "The llama.cpp add-on doesn't have that model. Choose a chat model under Models.";
+	return `${label} endpoint returned HTTP ${status}: ${body.slice(0, 300)}`;
+}
+
 export interface DecideResult {
 	value: unknown;
 	raw: string;
@@ -69,9 +82,7 @@ export async function decide(
 		signal: options.signal,
 	});
 	if (!response.ok)
-		throw new Error(
-			`${endpoint.label} endpoint returned HTTP ${response.status}: ${(await response.text()).slice(0, 300)}`,
-		);
+		throw new Error(describeEndpointError(endpoint.label, response.status, await response.text()));
 	const data = (await response.json()) as {
 		choices?: Array<{ message?: { content?: string; reasoning_content?: string } }>;
 		usage?: Record<string, number>;
@@ -178,9 +189,7 @@ export async function streamText(
 		signal: options.signal,
 	});
 	if (!response.ok)
-		throw new Error(
-			`${endpoint.label} endpoint returned HTTP ${response.status}: ${(await response.text()).slice(0, 300)}`,
-		);
+		throw new Error(describeEndpointError(endpoint.label, response.status, await response.text()));
 	if (!response.body) throw new Error("The endpoint returned no stream");
 	let buffer = "";
 	let text = "";

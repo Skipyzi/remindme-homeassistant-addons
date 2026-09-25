@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.0.2 - 2026-09-26
+
+### Fixed
+
+- **Automatic `resident_models` no longer keeps two models on an 8 GB board.** It read
+  free memory at start-up, which spikes right after the kernel has killed something, and
+  then kept a second model loaded that ran the host out of memory. Automatic now keeps two
+  only with at least 12 GB of RAM and 6 GB free; otherwise one.
+
 ## 2.0.1 - 2026-09-25
 
 ### Fixed
