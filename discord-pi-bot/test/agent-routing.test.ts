@@ -85,12 +85,47 @@ test("device changes are only on offer when the wording commands something", () 
 });
 
 test("home_control is absent from the grammar when the request commands nothing", () => {
-	const names = availableActions(context({ homeControl: false }));
+	const candidates = findCandidates(cards, "desk lamp");
+	const names = availableActions(context({ homeControl: false, candidates }));
 	assert.ok(!names.includes("home_control"));
 	assert.ok(names.includes("home_status"));
-	const schema = JSON.stringify(decisionSchema(context({ homeControl: false })));
+	const schema = JSON.stringify(decisionSchema(context({ homeControl: false, candidates })));
 	assert.ok(!schema.includes('"home_control"'));
 });
+
+test("with nothing shortlisted there is no device action to invent a name for", () => {
+	const names = availableActions(context({ candidates: [] }));
+	assert.ok(!names.includes("home_status"));
+	assert.ok(!names.includes("home_control"));
+});
+
+/* Shaped like a real house: an unhelpfully named indoor sensor, offline plant
+ * sensors, and a weather entity. */
+const realHouse = [
+	{ entity_id: "sensor.shelly_blu_h_t_73a2_temperature", state: "22.4", attributes: { friendly_name: "Shelly BLU H&T 73A2 Temperature", device_class: "temperature", unit_of_measurement: "°C" } },
+	{ entity_id: "sensor.shelly_blu_h_t_73a2_humidity", state: "45", attributes: { friendly_name: "Shelly BLU H&T 73A2 Humidity", device_class: "humidity", unit_of_measurement: "%" } },
+	{ entity_id: "sensor.monstera_temperature", state: "unavailable", attributes: { friendly_name: "Monstera Temperature", device_class: "temperature", unit_of_measurement: "°C" } },
+	{ entity_id: "weather.forecast_home", state: "clear-night", attributes: { friendly_name: "Forecast Home", temperature: 14, temperature_unit: "°C" } },
+	{ entity_id: "light.desk", state: "on", attributes: { friendly_name: "Desk Lamp", supported_color_modes: ["color_temp"] } },
+].map((state) => normalizeEntity(state as HassEntity));
+const shortlist = (text: string) => findCandidates(realHouse, text).map((candidate) => candidate.label);
+
+test("temperature questions find temperature sensors by what they measure", () => {
+	assert.deepEqual(shortlist("How warm is it inside?"), ["Shelly BLU H&T 73A2 Temperature"]);
+	assert.ok(shortlist("is it cold outside?").includes("Forecast Home"));
+	assert.ok(!shortlist("is it cold outside?").includes("Shelly BLU H&T 73A2 Temperature"));
+	assert.deepEqual(shortlist("how humid is it inside"), ["Shelly BLU H&T 73A2 Humidity"]);
+});
+
+test("offline devices stay off the list unless named", () => {
+	assert.ok(!shortlist("how warm is it").includes("Monstera Temperature"));
+	assert.ok(shortlist("monstera temperature").includes("Monstera Temperature"));
+});
+
+test("a warm light is about colour, not the thermostat", () => {
+	assert.deepEqual(shortlist("make the desk lamp warm"), ["Desk Lamp"]);
+});
+
 
 test("targets are an enum of the shortlist, so an entity cannot be invented", () => {
 	const candidates = findCandidates(cards, "turn on the desk lamp");

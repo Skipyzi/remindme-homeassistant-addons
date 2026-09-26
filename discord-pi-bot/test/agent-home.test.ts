@@ -103,3 +103,7 @@ test("states read as words a person would say", () => {
 	assert.equal(stateText(entity("binary_sensor.window", "on", { device_class: "window" })), "open");
 	assert.equal(stateText(entity("sensor.temp", "20.5", { unit_of_measurement: "°C" })), "20.5 °C");
 });
+
+test("weather reads as a condition and a temperature", () => {
+	assert.equal(stateText(entity("weather.home", "clear-night", { temperature: 14, temperature_unit: "°C" })), "clear night, 14°C");
+});

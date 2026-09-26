@@ -397,6 +397,12 @@ export function stateText(card: EntityCard): string {
 			return card.position !== undefined && card.state === "open"
 				? `open ${card.position}%`
 				: card.state;
+		case "weather": {
+			const temperature = card.attributes?.temperature;
+			const unit = card.attributes?.temperature_unit || "°";
+			const condition = card.state.replace(/-/g, " ");
+			return temperature !== undefined ? `${condition}, ${temperature}${unit === "°C" || unit === "°F" ? unit : "°"}` : condition;
+		}
 		case "switch":
 			return card.power !== undefined && card.state === "on"
 				? `on, drawing ${card.power} W`

@@ -168,9 +168,12 @@ export function availableActions(context: ActionContext): ActionName[] {
 	const names: ActionName[] = ["reply"];
 	// A shortlist of sensors has nothing to command; an empty enum is also
 	// a schema llama.cpp refuses outright.
-	if (context.home && context.homeControl && commandsFor(context.candidates).length)
+	// Device actions need a shortlist to pick from. Without one the model can
+	// only invent a name — in practice, one from its examples.
+	const shortlisted = context.home && context.candidates.length > 0;
+	if (shortlisted && context.homeControl && commandsFor(context.candidates).length)
 		names.push("home_control");
-	if (context.home) names.push("home_status");
+	if (shortlisted) names.push("home_status");
 	if (context.reminders) names.push("reminder_add", "reminder_list");
 	if (context.web) names.push("web_search");
 	if (context.memory) names.push("memory_recall");

@@ -129,16 +129,65 @@ export interface CandidateOptions {
  * about. Ranking happens here, in code, so the model only ever chooses among
  * a dozen plausible names — it never has to spell an entity_id.
  */
+/*
+ * What a question is about when it names no device: "how warm is it" is about
+ * temperature sensors and thermostats, whatever they are called. Real sensors
+ * carry names like "Shelly BLU H&T 73A2 Temperature", which share no word with
+ * the question.
+ */
+const concepts: Array<{ words: string[]; matches: (card: EntityCard) => boolean }> = [
+	{
+		words: ["warm", "warmer", "cold", "colder", "hot", "chilly", "freezing", "temperature", "temp", "degrees", "celsius", "fahrenheit"],
+		matches: (card) =>
+			card.deviceClass === "temperature" || card.domain === "climate" || card.domain === "weather",
+	},
+	{
+		words: ["humid", "humidity", "damp", "muggy", "moisture", "dry"],
+		matches: (card) => card.deviceClass === "humidity" || card.domain === "weather",
+	},
+];
+const insideWords = new Set(["inside", "indoor", "indoors", "house", "home", "apartment", "flat", "here"]);
+const outsideWords = new Set(["outside", "outdoor", "outdoors", "garden", "balcony", "yard", "weather", "forecast"]);
+
+function isOutdoor(card: EntityCard): boolean {
+	return (
+		card.domain === "weather" ||
+		/outdoor|outside|garden|balcony|weather|forecast|yard/i.test(`${card.name} ${card.area || ""}`)
+	);
+}
+
+function nameMentioned(card: EntityCard, tokens: string[]): boolean {
+	const nameWords = new Set(words(card.name).map(singular));
+	return tokens.some((token) => nameWords.has(singular(token)));
+}
+
 export function findCandidates(
 	cards: EntityCard[],
 	text: string,
 	{ limit = 12 }: CandidateOptions = {},
 ): Candidate[] {
 	const tokens = contentWords(text);
-	const domains = domainsMentioned(words(text));
+	const all = words(text);
+	const domains = domainsMentioned(all);
+	// "Make it warm" is about a light's colour, not the thermostat.
+	const active = domains.has("light")
+		? []
+		: concepts.filter((concept) => concept.words.some((word) => all.includes(word)));
+	const inside = all.some((word) => insideWords.has(word));
+	const outside = all.some((word) => outsideWords.has(word));
 	const scored = cards
 		.filter((card) => addressableDomains.has(card.domain))
-		.map((card) => ({ card, score: scoreCandidate(card, tokens, domains) }))
+		// A device that is offline has nothing to report or do, unless asked for by name.
+		.filter((card) => card.available || nameMentioned(card, tokens))
+		.map((card) => {
+			let score = scoreCandidate(card, tokens, domains);
+			if (active.some((concept) => concept.matches(card))) {
+				if (inside && isOutdoor(card)) return { card, score: 0 };
+				if (outside && !isOutdoor(card) && score === 0) return { card, score: 0 };
+				score += 12;
+			}
+			return { card, score };
+		})
 		.filter((entry) => entry.score > 0)
 		.sort(
 			(left, right) =>
