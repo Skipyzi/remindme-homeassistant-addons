@@ -3121,3 +3121,18 @@ body {
 	border-color: var(--amber);
 	color: var(--on-amber);
 }
+
+/* Conversation identity and account controls share the existing console tokens. */
+.history-agent { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 10px; }
+.conversation-origin { margin: 0; padding: 4px 24px; color: var(--muted); font-size: 11px; display: flex; flex-wrap: wrap; gap: 4px 20px; border-bottom: 1px solid var(--line); }
+.agent-picker { position: absolute; z-index: 20; right: 16px; top: 68px; width: min(390px, calc(100vw - 32px)); padding: 20px; background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--radius); box-shadow: 0 12px 40px #0008; }
+.agent-picker h3 { margin: 0 0 12px; }
+.agent-picker-actions, .console-controls, .console-links, .console-keys { display: flex; flex-wrap: wrap; gap: 8px; align-items: end; margin: 12px 0; }
+.agent-settings-link { padding: 10px 0 0; color: var(--muted); font-size: 12px; }
+.account-console-sheet { z-index: 120; }
+.account-console-card { width: min(850px, calc(100vw - 24px)); max-width: 850px; }
+.console-controls .endpoint-field { flex: 1; min-width: 150px; }
+#account-terminal { background: #090b09; border: 1px solid var(--line-strong); border-radius: var(--radius); padding: 10px; overflow-x: auto; max-width: 100%; }
+.console-input { display: flex; gap: 10px; align-items: end; margin: 12px 0; }
+.console-input .endpoint-field { flex: 1; }
+@media (max-width: 600px) { .conversation-origin { padding: 4px 12px; } .agent-picker { top: 58px; } .console-input { display: block; } .account-console-card { padding: 18px; } }

@@ -8,9 +8,11 @@ import { usesResponses } from "../harness/responses";
 import { binary, JsonProcess, nativeEnvironment } from "./native-process";
 import { agentDirectory, type AgentBackend, type AgentSession } from "./runtime-store";
 import type { AgentTool } from "./tool-gateway";
+import { codexAccount } from "./native-accounts";
 
 export interface NativeTurn {
 	backend: AgentBackend; model: string; prompt: string; system: string; effort: ThinkingMode;
+	nativeAuth?: boolean;
 	session: AgentSession; save(): void; signal: AbortSignal; endpoint: ResolvedEndpoint;
 	tools: AgentTool[]; call(name: string, args: unknown): Promise<unknown>;
 	bridge: { url: string; token: string }; delta(text: string): void;
@@ -21,7 +23,8 @@ export function nativePrompt(turn: NativeTurn): string {
 
 export async function runCodex(turn: NativeTurn) {
 	const options = await nativeEnvironment("codex");
-	await chatgptAuth.accessToken();
+	if (turn.nativeAuth) await codexAccount(worker => worker.request("account/read", { refreshToken: true }));
+	else await chatgptAuth.accessToken();
 	options.env.ACCESS_TOKEN = turn.bridge.token;
 	const config: Record<string, unknown> = {
 		model_provider: "openai_chatgpt_plan",
@@ -53,7 +56,7 @@ export async function runCodex(turn: NativeTurn) {
 		else if (message.method === "turn/completed") message.params.turn.status === "completed" ? complete() : fail(new Error(message.params.turn.error?.message || `Codex turn ${message.params.turn.status}`));
 	});
 	try {
-		await worker.request("initialize", { clientInfo: { name: "RemindMe Home Assistant", title: "RemindMe Home Assistant", version: "3.1.0" }, capabilities: { experimentalApi: true } });
+		await worker.request("initialize", { clientInfo: { name: "RemindMe Home Assistant", title: "RemindMe Home Assistant", version: "3.1.1" }, capabilities: { experimentalApi: true } });
 		worker.write({ method: "initialized" });
 		const previous = turn.session.threads.codex;
 		const thread = await worker.request(previous ? "thread/resume" : "thread/start", { ...(previous ? { threadId: previous } : { dynamicTools: turn.tools.map(tool => ({ type: "function", deferLoading: false, ...tool })) }), model: turn.model, cwd: options.cwd, approvalPolicy: "never", sandbox: "read-only", baseInstructions: turn.system, developerInstructions: "Use only supplied home tools. Filesystem, terminal, coding, external MCP and delegation are disabled.", config });
@@ -94,15 +97,15 @@ export async function runClaude(turn: NativeTurn) {
 
 /** OpenCode's headless runner retains its native SQLite session between turns. */
 export async function runOpenCode(turn: NativeTurn) {
-	if (turn.endpoint.authProvider === "claude") throw new Error("Choose an API or local/network endpoint for OpenCode, or use the Claude backend.");
+	if (!turn.nativeAuth && turn.endpoint.authProvider === "claude") throw new Error("Choose an API or local/network endpoint for OpenCode, or use the Claude backend.");
 	const options = await nativeEnvironment("opencode");
 	const token = turn.bridge.token;
 	const baseURL = turn.bridge.url.replace("/agent-tools", "/agent-inference/v1");
 	const model = turn.model || turn.endpoint.model;
 	if (!model) throw new Error("Choose an endpoint model for OpenCode.");
 	const config = {
-		$schema: "https://opencode.ai/config.json", autoupdate: false, share: "disabled", snapshot: false, plugin: [], enabled_providers: ["remindme"],
-		provider: { remindme: { npm: usesResponses(turn.endpoint.url) ? "@ai-sdk/openai" : "@ai-sdk/openai-compatible", name: "RemindMe endpoint", options: { baseURL, apiKey: token }, models: { [model]: { name: model } } } },
+		$schema: "https://opencode.ai/config.json", autoupdate: false, share: "disabled", snapshot: false, plugin: [], ...(turn.nativeAuth ? { enabled_providers: [model.split("/")[0]] } : { enabled_providers: ["remindme"],
+		provider: { remindme: { npm: usesResponses(turn.endpoint.url) ? "@ai-sdk/openai" : "@ai-sdk/openai-compatible", name: "RemindMe endpoint", options: { baseURL, apiKey: token }, models: { [model]: { name: model } } } } }),
 		permission: { "*": "deny", "home_*": "allow" },
 		mcp: { home: { type: "local", command: [process.execPath, bridgeScript()], environment: bridgeEnvironment(turn), enabled: true } },
 		agent: { home: { mode: "primary", description: "Home Assistant", prompt: turn.system, permission: { "*": "deny", "home_*": "allow" } } }, default_agent: "home",
@@ -114,7 +117,7 @@ export async function runOpenCode(turn: NativeTurn) {
 	const previous = turn.session.threads.opencode;
 	let resultSeen = false;
 	let error = "";
-	const args = ["run", "--pure", "--format", "json", "--agent", "home", "--model", `remindme/${model}`, ...(previous ? ["--session", previous] : []), ...(turn.effort === "none" ? [] : ["--variant", turn.effort])];
+	const args = ["run", "--pure", "--format", "json", "--agent", "home", "--model", turn.nativeAuth ? model : `remindme/${model}`, ...(previous ? ["--session", previous] : []), ...(turn.effort === "none" ? [] : ["--variant", turn.effort])];
 	const worker = new JsonProcess(binary("opencode"), args, { ...options, signal: turn.signal }, message => {
 		if (message.sessionID && !turn.session.threads.opencode) { turn.session.threads.opencode = message.sessionID; turn.save(); }
 		if (message.type === "text") turn.delta(message.part?.text || "");
@@ -129,7 +132,7 @@ export async function runOpenCode(turn: NativeTurn) {
 /** Dynamic import preserves Pi's ESM API when this add-on builds as CommonJS. */
 const importEsm = new Function("specifier", "return import(specifier)") as (specifier: string) => Promise<any>;
 export async function runPi(turn: NativeTurn) {
-	if (turn.endpoint.authProvider === "claude") throw new Error("Choose an API or local/network endpoint for Pi, or use the Claude backend.");
+	if (!turn.nativeAuth && turn.endpoint.authProvider === "claude") throw new Error("Choose an API or local/network endpoint for Pi, or use the Claude backend.");
 	const sdk = await importEsm(pathToFileURL(join(process.cwd(), "node_modules/@earendil-works/pi-coding-agent/dist/index.js")).href);
 	const options = await nativeEnvironment("pi");
 	const agentDir = join(agentDirectory(), "pi");
@@ -138,11 +141,13 @@ export async function runPi(turn: NativeTurn) {
 	const token = turn.bridge.token;
 	const modelId = turn.model || turn.endpoint.model;
 	if (!modelId) throw new Error("Choose an endpoint model for Pi.");
-	registry.registerProvider("remindme", {
+	if (!turn.nativeAuth) registry.registerProvider("remindme", {
 		baseUrl: turn.bridge.url.replace("/agent-tools", "/agent-inference/v1"), api: usesResponses(turn.endpoint.url) ? "openai-responses" : "openai-completions", apiKey: token,
 		models: [{ id: modelId, name: modelId, reasoning: true, input: ["text"], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 32768, maxTokens: 4096 }],
 	});
-	const model = registry.find("remindme", modelId);
+	const separator = modelId.indexOf("/");
+	const model = turn.nativeAuth ? registry.find(modelId.slice(0, separator), modelId.slice(separator + 1)) : registry.find("remindme", modelId);
+	if (!model || (turn.nativeAuth && !auth.has(model.provider))) throw new Error("Sign in to this Pi provider and choose one of its available models.");
 	const loader = new sdk.DefaultResourceLoader({ cwd: options.cwd, agentDir, noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true, systemPrompt: turn.system });
 	await loader.reload();
 	const previous = turn.session.threads.pi;

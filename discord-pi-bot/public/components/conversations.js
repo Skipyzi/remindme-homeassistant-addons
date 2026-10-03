@@ -5,6 +5,8 @@
 		app.conversations = response.ok ? await response.json() : [];
 		if (!app.currentConversationId && app.conversations[0])
 			app.currentConversationId = app.conversations[0].id;
+        await window.RemindMeAgents.load(app);
+        await app.refreshStatus();
 	}
 	async function create(app) {
 		const response = await fetch("./api/conversations", { method: "POST" });
@@ -84,6 +86,7 @@
 									kind: message.kind,
 									state: message.state,
 									metrics: message.metrics,
+                                    agent: message.agent,
 									key: message.key,
 									phaseId: message.phaseId,
 									name: message.name,
@@ -195,6 +198,8 @@
 		}
 		app.currentConversationId = fresh.id;
 		app.messages = toMessages(fresh);
+        await window.RemindMeAgents.load(app);
+        await app.refreshStatus();
 	}
 	globalScope.RemindMeConversations = {
 		load,

@@ -33,6 +33,9 @@
     <script defer src="./components/endpoints.js"></script>
     <script defer src="./components/providers.js"></script>
     <script defer src="./components/agents.js"></script>
+    <script defer src="./vendor/xterm.js"></script>
+    <script defer src="./components/account-console.js"></script>
+    <link rel="stylesheet" href="./vendor/xterm.css" />
     <script defer src="./components/attachments.js"></script>
     <script defer src="./components/model-cookbook.js"></script>
     <script defer src="./app.js"></script>
@@ -105,6 +108,7 @@
                   ></span>
                   <!-- Enough to tell two conversations apart at a glance:
                        when it last moved, how long it ran, how it opened. -->
+                  <small class="history-agent" :title="window.RemindMeAgents.label(conversation)" x-text="window.RemindMeAgents.label(conversation)"></small>
                   <small class="history-meta">
                     <span x-text="conversationWhen(conversation)"></span
                     ><span x-text="conversationSize(conversation)"></span>
@@ -230,11 +234,13 @@
                 x-text="` ${Math.round(modelProgressPercent())}%`"
               ></span>
             </button>
+            <button class="chip" x-show="authConsole.running" x-cloak @click="window.RemindMeAccountConsole.open($data, authConsole.backend)">Sign-in running</button>
             <button
               type="button"
               class="badge"
-              title="Models"
-              @click="modelsOpen=true"
+              title="Switch assistant and model for this chat"
+              aria-controls="chat-model-picker" :aria-expanded="agentPickerOpen" :disabled="busy"
+              @click="window.RemindMeAgents.open($data)"
               x-text="modelBadge"
             ></button>
             <button
@@ -249,6 +255,36 @@
             </button>
           </header>
 
+          <section class="agent-picker" id="chat-model-picker" x-show="agentPickerOpen" x-cloak @keydown.escape.stop="agentPickerOpen=false" @click.outside="if (!$event.target.closest('.badge')) agentPickerOpen=false" aria-label="Conversation assistant">
+            <h3>Assistant for this chat</h3>
+            <label class="endpoint-field">Assistant
+                <select x-effect="agentBackends; $nextTick(() => { $el.value = agentBackend })" x-model="agentBackend" :disabled="busy || agentLoading" @change="window.RemindMeAgents.select($data)">
+                  <template x-for="backend in agentBackends" :key="backend.id"><option :value="backend.id" x-text="backend.label"></option></template>
+                </select>
+              </label>
+              <label class="endpoint-field">Account or endpoint
+                <select x-effect="agentSources; $nextTick(() => { $el.value = agentSource })" x-model="agentSource" :disabled="busy || agentLoading" @change="window.RemindMeAgents.source($data)">
+                  <template x-for="source in agentSources" :key="source.id"><option :value="source.id" x-text="source.name"></option></template>
+                </select>
+              </label>
+              <label class="endpoint-field">Model
+                <select x-effect="agentChoices; $nextTick(() => { $el.value = agentModel })" x-model="agentModel" :disabled="busy || agentLoading || !agentChoices.length">
+                  <option value="" x-show="!agentChoices.length">Sign in or configure an endpoint</option>
+                  <template x-for="model in agentChoices" :key="model.id"><option :value="model.id" x-text="model.provider ? `${model.provider} / ${model.name}` : model.name"></option></template>
+                </select>
+              </label>
+              <p class="micro" role="status" x-show="agentLoading">Loading models...</p>
+              <p class="endpoint-error" role="alert" x-show="agentError" x-text="agentError"></p>
+              <div class="agent-picker-actions">
+                <button class="chip" :disabled="busy || agentLoading || !agentModel" @click="window.RemindMeAgents.save($data)">Use for this chat</button>
+                <button class="chip" :disabled="busy" @click="window.RemindMeAccountConsole.open($data)">Sign-in console</button>
+              </div>
+            <button class="agent-settings-link" @click="agentPickerOpen=false; modelsOpen=true">Manage accounts and endpoints</button>
+          </section>
+          <p class="conversation-origin" x-show="agentOrigin || agentCurrent" x-cloak>
+            <span x-text="agentOrigin ? `Started with ${agentOrigin.label}` : 'Earlier provider not recorded'"></span>
+            <span x-show="agentCurrent && agentCurrent.label !== agentOrigin?.label" x-text="agentCurrent ? `Latest turn: ${agentCurrent.label}` : ''"></span>
+          </p>
           <section class="chat" id="timeline" aria-live="polite">
             <div class="chat-column">
               <div class="empty" x-show="messages.length===0">
@@ -738,7 +774,7 @@
                     ><span
                       >&middot;
                       <b
-                        x-text="message.metrics?.modelName || message.metrics?.modelId"
+                        x-text="message.agent?.label || message.metrics?.modelName || message.metrics?.modelId"
                       ></b></span
                   ></template>
                   <!--
@@ -1479,6 +1515,44 @@
           </div>
         </section>
       </div>
+      <div class="settings account-console-sheet" x-show="authConsoleOpen" x-cloak @keydown.escape.stop="window.RemindMeAccountConsole.close($data)">
+        <section class="settings-card account-console-card" role="dialog" aria-modal="true" aria-labelledby="account-console-title">
+          <button class="sheet-close" aria-label="Close sign-in console" @click="window.RemindMeAccountConsole.close($data)">✕</button>
+          <h2 id="account-console-title">Sign-in console</h2>
+          <p class="settings-copy">Sign in on the Pi. Follow the link shown below, then enter a code here if prompted. Closing this panel keeps sign-in running.</p>
+          <div class="console-controls">
+            <label class="endpoint-field">Assistant
+              <select x-model="authConsoleBackend" :disabled="authConsole.running || authConsoleBusy">
+                <option value="codex">Codex</option><option value="claude">Claude Code</option><option value="opencode">OpenCode</option><option value="pi">Pi</option>
+              </select>
+            </label>
+            <label class="endpoint-field" x-show="authConsoleBackend==='pi'">Pi account
+              <select x-model="authConsoleProvider" :disabled="authConsole.running"><template x-for="provider in agentPiProviders" :key="provider.id"><option :value="provider.id" x-text="provider.name"></option></template></select>
+            </label>
+            <button class="chip" :disabled="busy || authConsole.running || authConsoleBusy" @click="window.RemindMeAccountConsole.start($data)">Start sign-in</button>
+            <button class="chip" :disabled="!authConsole.running" @click="window.RemindMeAccountConsole.cancel($data)">Cancel sign-in</button>
+          </div>
+          <p class="micro" x-show="authConsoleBackend==='codex'">Codex can also use your ChatGPT connection in Models. This console creates a separate native CLI login; select “CLI accounts” to use it.</p>
+          <p class="micro" x-show="authConsole.running" x-text="`Sign-in running for ${authConsole.backend}`"></p>
+          <div id="account-terminal" aria-label="CLI sign-in output"></div>
+          <div class="console-links"><template x-for="url in authConsole.urls" :key="url"><a class="chip" :href="url" target="_blank" rel="noreferrer noopener">Open sign-in link</a></template></div>
+          <div class="console-keys" x-show="authConsole.running && ['codex','opencode'].includes(authConsole.backend)">
+            <button class="chip" @click="window.RemindMeAccountConsole.key($data, '\x1b[A')">↑</button>
+            <button class="chip" @click="window.RemindMeAccountConsole.key($data, '\x1b[B')">↓</button>
+            <button class="chip" @click="window.RemindMeAccountConsole.key($data, '\r')">Enter</button>
+          </div>
+          <p class="micro" x-show="authConsole.prompt" x-text="authConsole.prompt"></p>
+          <div class="console-links"><template x-for="option in (authConsole.options || [])" :key="option.id"><button class="chip" @click="window.RemindMeAccountConsole.input($data, option.id)" x-text="option.label"></button></template></div>
+          <form class="console-input" @submit.prevent="window.RemindMeAccountConsole.input($data)">
+            <label class="endpoint-field">Code, callback URL or requested input
+              <input type="password" x-model="authConsoleInput" autocomplete="off" spellcheck="false" :disabled="!authConsole.running || authConsoleBusy" />
+            </label>
+            <button class="chip" type="submit" :disabled="!authConsole.running || authConsoleBusy || !authConsoleInput">Send input</button>
+          </form>
+          <p class="endpoint-error" role="alert" x-show="authConsoleError" x-text="authConsoleError"></p>
+          <button class="chip" @click="window.RemindMeAccountConsole.close($data)">Back to chat and refresh models</button>
+        </section>
+      </div>
       <div
         class="settings"
         id="models-view"
@@ -1491,20 +1565,29 @@
           <h2>Inference endpoint</h2>
           <section class="endpoint-editor" aria-label="Assistant backend">
             <h3>Assistant backend</h3>
-            <label class="endpoint-field">Run conversations with
-              <select x-model="agentBackend" :disabled="busy" @change="window.RemindMeAgents.select($data)">
-                <template x-for="backend in agentBackends" :key="backend.id"><option :value="backend.id" x-text="backend.label + (backend.available ? '' : ' · sign-in required')"></option></template>
-              </select>
-            </label>
-            <p class="micro" x-text="agentBackends.find(b => b.id === agentBackend)?.detail || ''"></p>
-            <p class="micro">Conversations resume after reloads and restarts. Home actions appear with app receipts and device state checks. Sensitive actions wait for a confirmation card.</p>
-            <div x-show="agentBackend !== 'harness'" x-cloak>
-              <label class="endpoint-field">Model override (optional)
-                <input x-model="agentModel" :placeholder="agentBackend === 'claude' ? 'sonnet' : agentDefaultModel" spellcheck="false" autocomplete="off" />
+<label class="endpoint-field">Assistant
+                <select x-effect="agentBackends; $nextTick(() => { $el.value = agentBackend })" x-model="agentBackend" :disabled="busy || agentLoading" @change="window.RemindMeAgents.select($data)">
+                  <template x-for="backend in agentBackends" :key="backend.id"><option :value="backend.id" x-text="backend.label"></option></template>
+                </select>
               </label>
-              <button class="chip" :disabled="busy" @click="window.RemindMeAgents.save($data)">Save model</button>
-            </div>
-            <p class="endpoint-error" role="status" x-show="agentError" x-text="agentError"></p>
+              <label class="endpoint-field">Account or endpoint
+                <select x-effect="agentSources; $nextTick(() => { $el.value = agentSource })" x-model="agentSource" :disabled="busy || agentLoading" @change="window.RemindMeAgents.source($data)">
+                  <template x-for="source in agentSources" :key="source.id"><option :value="source.id" x-text="source.name"></option></template>
+                </select>
+              </label>
+              <label class="endpoint-field">Model
+                <select x-effect="agentChoices; $nextTick(() => { $el.value = agentModel })" x-model="agentModel" :disabled="busy || agentLoading || !agentChoices.length">
+                  <option value="" x-show="!agentChoices.length">Sign in or configure an endpoint</option>
+                  <template x-for="model in agentChoices" :key="model.id"><option :value="model.id" x-text="model.provider ? `${model.provider} / ${model.name}` : model.name"></option></template>
+                </select>
+              </label>
+              <p class="micro" role="status" x-show="agentLoading">Loading models...</p>
+              <p class="endpoint-error" role="alert" x-show="agentError" x-text="agentError"></p>
+              <div class="agent-picker-actions">
+                <button class="chip" :disabled="busy || agentLoading || !agentModel" @click="window.RemindMeAgents.save($data)">Use for this chat</button>
+                <button class="chip" :disabled="busy" @click="window.RemindMeAccountConsole.open($data)">Sign-in console</button>
+              </div><p class="micro" x-text="agentSaved"></p>
+            <p class="micro">This choice is saved with the conversation. Other chats keep their own assistant.</p>
             <div x-show="agentConfirmations.length" x-cloak>
               <h3>Pending confirmations</h3>
               <template x-for="confirm in agentConfirmations" :key="confirm.token">

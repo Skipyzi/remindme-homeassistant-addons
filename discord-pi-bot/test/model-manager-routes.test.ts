@@ -288,6 +288,18 @@ test("model manager routes proxy safely", async (context) => {
 				assert.equal(metric.modelId, "cloud-luna");
 				assert.equal(metric.modelName, "Cloud Luna");
 			}
+			const conversation = await nativeFetch(`${baseUrl}/api/conversations`, { method: "POST" }).then(r => r.json());
+			const selected = await nativeFetch(`${baseUrl}/api/agents/conversations/${conversation.id}`, { method: "PUT", headers, body: JSON.stringify({ backend: "harness", source: "endpoint", endpointId: endpoint.id, model: "cloud-luna" }) });
+			assert.equal(selected.status, 200);
+			// Changing the global endpoint cannot redirect a pinned chat or its attribution.
+			await nativeFetch(`${baseUrl}/api/endpoints/active`, { method: "POST", headers, body: JSON.stringify({ id: "" }) });
+			const pinned = await nativeFetch(`${baseUrl}/api/chat`, { method: "POST", headers, body: JSON.stringify({ conversationId: conversation.id, message: "Another joke", thinkingMode: "low" }) });
+			const pinnedEvents = (await pinned.text()).split("\n").filter(line => line.startsWith("data:")).map(line => JSON.parse(line.slice(5)));
+			assert.equal(pinnedEvents.find(event => event.provider)?.model, "cloud-luna");
+			for (const event of pinnedEvents.filter(event => event.metrics)) assert.equal(event.metrics.modelName, "Cloud Luna");
+			const catalog = await nativeFetch(`${baseUrl}/api/conversations`).then(r => r.json());
+			assert.equal(catalog.find((c: any) => c.id === conversation.id)?.agent?.origin.model, "cloud-luna");
+			await nativeFetch(`${baseUrl}/api/conversations/${conversation.id}`, { method: "DELETE" });
 		} finally {
 			await nativeFetch(`${baseUrl}/api/endpoints/active`, { method: "POST", headers, body: JSON.stringify({ id: "" }) });
 			await nativeFetch(`${baseUrl}/api/endpoints/${endpoint.id}`, { method: "DELETE" });

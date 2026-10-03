@@ -5,6 +5,8 @@ import type { HistoryTurn } from "../harness/history";
 
 export const BACKENDS = ["harness", "codex", "claude", "opencode", "pi"] as const;
 export type AgentBackend = typeof BACKENDS[number];
+export interface AgentSelection { backend: AgentBackend; model: string; source: "endpoint" | "native"; endpointId?: string }
+export interface AgentIdentity extends AgentSelection { provider: string; label: string; at: string }
 export const agentDirectory = () => resolve(process.env.AGENT_DATA_DIR || "./data/agents");
 export function internalAgentKey() {
 	const path = join(agentDirectory(), "internal-key.json");
@@ -52,6 +54,11 @@ export interface AgentSession {
 	threads: Partial<Record<AgentBackend, string>>;
 	/** Tool receipts are server-owned, never reconstructed from browser prose. */
 	receipts: Array<{ at: string; name: string; result: unknown }>;
+	selection?: AgentSelection;
+	origin?: AgentIdentity;
+	originUnknown?: boolean;
+	current?: AgentIdentity;
+	switches?: AgentIdentity[];
 }
 export class AgentStore {
 	private settingsPath: string;
@@ -62,6 +69,33 @@ export class AgentStore {
 		this.settings = read(this.settingsPath, { backend: "harness", models: {} });
 	}
 	getSettings() { return structuredClone(this.settings); }
+	isBusy() { return this.busy; }
+	selection(id?: string): AgentSelection {
+		return (id ? this.load(id).selection : undefined) || { backend: this.settings.backend, model: this.settings.models[this.settings.backend] || "", source: "endpoint" };
+	}
+	select(id: string, input: AgentSelection) {
+		if (this.busy) throw new Error("Wait for the current assistant turn to finish before switching.");
+		if (!BACKENDS.includes(input.backend) || typeof input.model !== "string" || input.model.length > 200 || /[\r\n\0]/.test(input.model)) throw new Error("Invalid assistant or model");
+		if (!["endpoint", "native"].includes(input.source) || (input.source === "native" && !["codex", "opencode", "pi"].includes(input.backend))) throw new Error("Invalid account source");
+		if (input.endpointId !== undefined && (typeof input.endpointId !== "string" || input.endpointId.length > 200)) throw new Error("Invalid endpoint");
+		const session = this.load(id);
+		const previous = session.selection || this.selection();
+		// A resumed native session would miss intervening turns from another
+		// assistant. Import the shared transcript when switching back instead.
+		if (previous.backend !== input.backend || previous.source !== input.source || previous.endpointId !== input.endpointId) delete session.threads[input.backend];
+		session.selection = { backend: input.backend, model: input.model.trim(), source: input.source, ...(input.endpointId !== undefined ? { endpointId: input.endpointId } : {}) };
+		this.save(session);
+		return session;
+	}
+	identify(session: AgentSession, identity: Omit<AgentIdentity, "at">) {
+		const entry = { ...identity, at: new Date().toISOString() };
+		const previous = session.current;
+		if (previous && ["backend", "model", "source", "endpointId", "provider"].some(key => (previous as any)[key] !== (entry as any)[key])) session.switches = [...(session.switches || []), entry].slice(-100);
+		if (!session.originUnknown) session.origin ||= entry;
+		session.current = entry;
+		this.save(session);
+		return entry;
+	}
 	configure(input: { backend?: unknown; model?: unknown }) {
 		if (!BACKENDS.includes(input.backend as AgentBackend)) throw new Error("Unknown agent backend");
 		const backend = input.backend as AgentBackend;

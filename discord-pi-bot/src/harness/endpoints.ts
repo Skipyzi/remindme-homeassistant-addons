@@ -235,8 +235,9 @@ export class EndpointStore {
 	 * otherwise the built-in local default, whose URL keeps the original
 	 * hostname allowlist since it is not something a user typed.
 	 */
-	resolve(fallback: { url: string; model: string }): ResolvedEndpoint {
-		const endpoint = this.active();
+	resolve(fallback: { url: string; model: string }, id?: string): ResolvedEndpoint {
+		const endpoint = id === undefined ? this.active() : id ? this.get(id) : undefined;
+		if (id && !endpoint) throw new Error("This conversation's endpoint was removed. Choose another model.");
 		if (endpoint) {
 			validateSubscriptionEndpoint(endpoint);
 			const headers: Record<string, string> = {

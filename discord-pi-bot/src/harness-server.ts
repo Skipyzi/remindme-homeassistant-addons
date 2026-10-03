@@ -53,7 +53,7 @@ import { ArtifactStore, toDocument } from "./harness/artifacts";
 import { modelFetch } from "./harness/providerRequests";
 import { claudeCompletion } from "./harness/claudeAuth";
 import { providerRoutes } from "./harness/providerRoutes";
-import { EndpointStore, validateSubscriptionEndpoint } from "./harness/endpoints";
+import { EndpointStore, validateSubscriptionEndpoint, type ResolvedEndpoint } from "./harness/endpoints";
 import { responsesBody, responseText, usesResponses, type ModelResponse } from "./harness/responses";
 import { readablePage, ReaderError } from "./harness/reader";
 import { describeWhen } from "./harness/reminderParser";
@@ -199,13 +199,13 @@ function summariseNote(note: VaultNote) {
 }
 
 /** The endpoint every request resolves against, custom or the local default. */
-function resolveEndpoint() {
+function resolveEndpoint(id?: string) {
 	return endpoints.resolve({
 		url: process.env.LOCAL_LLM_URL || "http://homeassistant:8080/v1/chat/completions",
 		// The chosen chat model, by name; the add-on routes unnamed or unknown
 		// names to its default, so an empty choice still works.
 		model: chatModel.get() || config.localLlmModel,
-	});
+	}, id);
 }
 
 /*
@@ -219,7 +219,7 @@ function resolveEndpoint() {
 app.use(express.json({ limit: "2mb" }));
 const startupReady = Promise.all(startupLoads);
 app.use(async (_request, response, next) => { try { await startupReady; next(); } catch { response.status(503).json({ error: "Assistant stores could not be loaded" }); } });
-const agentRuntime = new AgentRuntime(agentDeps, port);
+const agentRuntime = new AgentRuntime(agentDeps, port, endpoints, resolveEndpoint, activeModelMetadata);
 agentRuntime.register(app);
 app.use("/api/auth", providerRoutes(endpoints));
 app.get("/api/mcp", (_request, response) => {
@@ -673,7 +673,7 @@ app.get("/api/conversations", (request, response) => {
 	response.json(
 		conversations.list(
 			typeof request.query.search === "string" ? request.query.search : "",
-		),
+		).map(conversation => { const session = agentRuntime.store.load(conversation.id); return { ...conversation, agent: { origin: session.origin, current: session.current, selection: session.selection } }; }),
 	);
 });
 app.post("/api/conversations", async (_request, response) => {
@@ -1207,18 +1207,18 @@ app.get("/api/status", async (_request, response) => {
 	 * view does not apply — the badge and profiles come from the endpoint
 	 * instead. The manager is only consulted when inference is local.
 	 */
-	const activeEndpoint = endpoints.active();
-	const agentSettings = agentRuntime.store.getSettings();
-	const nativeBackend = agentSettings.backend !== "harness";
-	const resolvedEndpoint = resolveEndpoint();
+	const context = agentRuntime.context(typeof _request.query.conversationId === "string" ? _request.query.conversationId : undefined);
+	const activeEndpoint = context.selection.endpointId === undefined ? endpoints.active() : context.selection.endpointId ? endpoints.get(context.selection.endpointId) : undefined;
+    const nativeBackend = context.backend !== "harness";
+	const resolvedEndpoint = context.endpoint;
 	const managed = activeEndpoint || nativeBackend ? undefined : await managedActiveModel(true);
-	const nativeModel = agentSettings.models[agentSettings.backend] || (agentSettings.backend === "claude" ? resolvedEndpoint.authProvider === "claude" ? resolvedEndpoint.model : "sonnet" : resolvedEndpoint.model);
+	const nativeModel = context.model;
 	const contextSize = conversationBudget(resolvedEndpoint, managed?.recommendedContext || Number(process.env.LOCAL_LLM_CONTEXT_SIZE || 8192));
 	response.set("Cache-Control", "no-store").json({
 		instanceId,
-		model: activeEndpoint?.model || managed?.id || config.localLlmModel || "runtime-unavailable",
-		modelName: nativeBackend ? `${agentSettings.backend} · ${nativeModel}` : activeEndpoint
-			? `${activeEndpoint.name} · ${activeEndpoint.model}`
+		model: managed?.id || context.model || "runtime-unavailable",
+		modelName: nativeBackend ? `${context.backend} · ${nativeModel}` : activeEndpoint
+			? `${activeEndpoint.name} · ${context.model}`
 			: managed
 				? `${managed.family} ${managed.quantization}`.trim()
 				: config.localLlmModel || "Runtime unavailable",
@@ -1236,7 +1236,7 @@ app.get("/api/status", async (_request, response) => {
 		/* The companion remindme-vault editor's URL, if configured — lets the
 		 * console deep-link a note into that add-on. Empty means no link shown. */
 		vaultUrl: process.env.VAULT_UI_URL || "",
-		profiles: thinkingProfilesForBackend(os.totalmem(), contextSize, nativeBackend ? { ...resolvedEndpoint, model: nativeModel, openaiCompat: true, authProvider: agentSettings.backend === "claude" ? "claude" : resolvedEndpoint.authProvider } : resolvedEndpoint),
+		profiles: thinkingProfilesForBackend(os.totalmem(), contextSize, nativeBackend ? { ...resolvedEndpoint, model: nativeModel, openaiCompat: true, authProvider: context.backend === "claude" ? "claude" : resolvedEndpoint.authProvider } : resolvedEndpoint),
 		remoteInference: nativeBackend || resolvedEndpoint.openaiCompat,
 		hardware: {
 			architecture: process.arch,
@@ -1313,9 +1313,9 @@ app.post("/api/chat", async (request, response) => {
 		typeof request.body?.message === "string"
 			? request.body.message.trim()
 			: "";
-	const agentSettings = agentRuntime.store.getSettings();
-	const endpoint = resolveEndpoint();
-	const effortBackend = agentSettings.backend === "harness" ? endpoint : { ...endpoint, openaiCompat: true, model: agentSettings.models[agentSettings.backend] || endpoint.model, authProvider: agentSettings.backend === "claude" ? "claude" as const : endpoint.authProvider };
+	const context = agentRuntime.context(typeof request.body?.conversationId === "string" ? request.body.conversationId : undefined);
+	const endpoint = context.endpoint;
+	const effortBackend = context.backend === "harness" ? endpoint : { ...endpoint, openaiCompat: true, model: context.model, authProvider: context.backend === "claude" ? "claude" as const : endpoint.authProvider };
 	const thinkingMode = getThinkingProfile(
 		typeof request.body?.thinkingMode === "string"
 			? request.body.thinkingMode
@@ -1681,9 +1681,8 @@ async function managedActiveModel(fresh = false): Promise<ManagedActiveModel | u
  * against LOCAL_LLM_URL with LOCAL_LLM_MODEL, so fall back to the configured
  * model, which is what the requests are sent with.
  */
-async function activeModelMetadata(): Promise<ActiveModelMetadata> {
-	const endpoint = endpoints.active();
-	if (endpoint) return { modelId: resolveEndpoint().model, modelName: endpoint.name };
+async function activeModelMetadata(endpoint: ResolvedEndpoint = resolveEndpoint()): Promise<ActiveModelMetadata> {
+	if (endpoint.label !== "local" || endpoint.openaiCompat) return { modelId: endpoint.model, modelName: endpoint.label };
 	const active = await managedActiveModel();
 	if (active)
 		return {
@@ -2167,6 +2166,8 @@ function startParcelScheduler(
  * handler on the page fails at once. ETags still make this cheap: unchanged
  * files answer 304.
  */
+app.get("/vendor/xterm.js", (_request, response) => response.sendFile(resolve(process.cwd(), "node_modules/@xterm/xterm/lib/xterm.js")));
+app.get("/vendor/xterm.css", (_request, response) => response.sendFile(resolve(process.cwd(), "node_modules/@xterm/xterm/css/xterm.css")));
 app.use(
 	express.static(resolve(process.cwd(), "public"), {
 		etag: true,

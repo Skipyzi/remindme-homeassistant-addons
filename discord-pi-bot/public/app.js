@@ -8,6 +8,8 @@ function harness() {
 		conversations: [],
 		currentConversationId: "",
 		agentBackend: "harness",
+        agentPickerOpen: false, agentLoading: false, agentSources: [], agentSource: "", agentChoices: [], agentSelection: {}, agentOrigin: null, agentCurrent: null, agentPiProviders: [], agentSaved: "",
+        authConsoleOpen: false, authConsoleBackend: "codex", authConsoleProvider: "", authConsoleInput: "", authConsoleError: "", authConsoleBusy: false, authConsole: {id: "", running: false, output: "", urls: []},
 		agentBackends: [],
 		agentModels: {},
 		agentModel: "",
@@ -271,7 +273,7 @@ function harness() {
 		 * without a reload — a custom endpoint reports its own name and model.
 		 */
 		refreshStatus() {
-			return fetch("./api/status")
+			return fetch(`./api/status${this.currentConversationId ? "?conversationId=" + encodeURIComponent(this.currentConversationId) : ""}`)
 				.then((r) => r.json())
 				.then((d) => {
 					const custom = this.endpointActiveId;
@@ -427,6 +429,8 @@ function harness() {
 			this.historyOpen = false;
 			this.loadPulse();
 			await window.RemindMeConversations.create(this);
+            await window.RemindMeAgents.load(this);
+            await this.refreshStatus();
 			this.$nextTick(() => this.$refs.composerInput?.focus());
 		},
 		selectConversation(conversation) {
@@ -1403,7 +1407,8 @@ function harness() {
 			// Captured before the new turn joins the transcript: it travels as
 			// `message`, and sending it twice would have the model answer an
 			// echo of the question.
-			const history = this.modelHistory();
+			const priorRows = new Set(this.messages.map(message => message.key || message.id));
+            const history = this.modelHistory();
 			this.add("user", text);
 			this.busy = true;
 			this.startActivity("Working");
@@ -1440,6 +1445,11 @@ function harness() {
 						if (line.startsWith("event: ")) event = line.slice(7);
 						if (!line.startsWith("data: ")) continue;
 						const data = JSON.parse(line.slice(6));
+                        if (event === "agent_identity") {
+                            this.agentCurrent = data; this.agentOrigin = data.origin || null;
+                            const chat = this.conversations.find(c => c.id === this.currentConversationId);
+                            if (chat) chat.agent = { origin: data.origin, current: data, selection: this.agentSelection };
+                        }
 						if (
 							[
 								"phase_start",
@@ -1457,8 +1467,9 @@ function harness() {
 								event,
 								data,
 							);
-							this.scrollToBottom();
-							if (event === "phase_start")
+							this.messages = this.messages.map(message => message.kind !== "user" && !priorRows.has(message.key || message.id) && !message.agent ? { ...message, agent: this.agentCurrent } : message);
+                            this.scrollToBottom();
+                            if (event === "phase_start")
 								this.setActivityLabel(
 									data.kind === "thinking" ? "Thinking" : "Working",
 								);
@@ -1509,6 +1520,7 @@ function harness() {
 				this.busy = false;
 				if (!this.offline) this.attachments = [];
 				this.persist();
+                await window.RemindMeAgents.load(this);
 			}
 		},
 		/**

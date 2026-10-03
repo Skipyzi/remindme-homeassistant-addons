@@ -20,6 +20,8 @@ function cli(args: string[], cwd: string, signal?: AbortSignal) {
 }
 
 export class ClaudeAuth {
+	private transcript = "";
+	console() { return { output: this.transcript, attemptId: this.login?.id || "", running: Boolean(this.login) }; }
 	private login?: { id: string; process: ChildProcessWithoutNullStreams; url: string; error: string; timer: ReturnType<typeof setTimeout> };
 	async status() {
 		const process = cli(["auth", "status"], await workDirectory());
@@ -36,6 +38,7 @@ export class ClaudeAuth {
 	}
 	async start() {
 		this.cancel();
+		this.transcript = "Starting Claude subscription sign-in...\r\n";
 		const process = cli(["auth", "login", "--claudeai"], await workDirectory());
 		const id = randomUUID();
 		const login = { id, process, url: "", error: "", timer: setTimeout(() => this.cancel(), 600_000) };
@@ -45,6 +48,7 @@ export class ClaudeAuth {
 		return new Promise<{ attemptId: string; url: string; instructions: string }>((resolve, reject) => {
 			const timeout = setTimeout(() => { this.cancel(); reject(new Error("Claude sign-in did not start. Retry.")); }, 30_000);
 			const consume = (chunk: Buffer) => {
+				this.transcript = (this.transcript + chunk.toString()).slice(-64_000);
 				output = (output + chunk.toString()).slice(-16_000);
 				const match = output.match(/https:\/\/[^\s\x1b]+/);
 				if (!match) return;
