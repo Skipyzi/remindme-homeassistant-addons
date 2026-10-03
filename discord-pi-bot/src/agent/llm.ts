@@ -9,6 +9,7 @@ import {
 import { modelEvents, responsesBody, responseText, responseUsage, strictDecisionSchema, unwrapDecision, usesResponses, type ModelResponse } from "../harness/responses";
 import { modelFetch } from "../harness/providerRequests";
 import { claudeCompletion } from "../harness/claudeAuth";
+import { effortForBudget, type ReasoningEffort } from "../harness/thinkingProfiles";
 
 /** Where a request goes. Mirrors `ResolvedEndpoint` without importing the store. */
 export interface ModelEndpoint {
@@ -146,8 +147,10 @@ export function parseJsonLoose(text: string): unknown {
 
 export interface StreamOptions {
 	maxTokens: number;
-	/** Reasoning on/off. Responses maps the budget to low, medium or high effort. */
+	/** Reasoning on/off for local runtimes and streamed summaries. */
 	thinking: boolean;
+	/** Explicit cloud effort. Older callers can still supply a local token budget. */
+	effort?: ReasoningEffort;
 	reasoningBudget?: number;
 	model?: ActiveModelMetadata;
 	signal?: AbortSignal;
@@ -175,12 +178,12 @@ export async function streamText(
 	options: StreamOptions,
 	handlers: StreamHandlers,
 ): Promise<StreamResult> {
+	const effort = options.effort ?? effortForBudget(options.thinking, options.reasoningBudget);
 	if (endpoint.authProvider === "claude") {
-		return claudeCompletion(endpoint.model, messages, { thinking: options.thinking, signal: options.signal, modelMetadata: options.model }, handlers);
+		return claudeCompletion(endpoint.model, messages, { effort, thinking: options.thinking, signal: options.signal, modelMetadata: options.model }, handlers);
 	}
 	const started = Date.now();
 	const responses = usesResponses(endpoint.url);
-	const effort = !options.thinking ? "none" : (options.reasoningBudget || 0) >= 4096 ? "high" : (options.reasoningBudget || 0) >= 2048 ? "medium" : "low";
 	const body: Record<string, unknown> = responses ? {
 		...responsesBody(endpoint.model, messages, options.maxTokens, true, effort),
 	} : {

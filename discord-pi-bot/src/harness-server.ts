@@ -71,7 +71,7 @@ import { describeActions } from "./agent/prompts";
 import { runTurn, type TurnDeps } from "./agent/turn";
 import {
 	getThinkingProfile,
-	thinkingProfilesForHardware,
+	thinkingProfilesForBackend,
 	type ThinkingMode,
 } from "./harness/thinkingProfiles";
 import { validateAttachments, type ImageAttachment } from "./harness/attachments";
@@ -1199,8 +1199,9 @@ app.get("/api/status", async (_request, response) => {
 	 * instead. The manager is only consulted when inference is local.
 	 */
 	const activeEndpoint = endpoints.active();
+	const resolvedEndpoint = resolveEndpoint();
 	const managed = activeEndpoint ? undefined : await managedActiveModel(true);
-	const contextSize = conversationBudget(resolveEndpoint(), managed?.recommendedContext || Number(process.env.LOCAL_LLM_CONTEXT_SIZE || 8192));
+	const contextSize = conversationBudget(resolvedEndpoint, managed?.recommendedContext || Number(process.env.LOCAL_LLM_CONTEXT_SIZE || 8192));
 	response.set("Cache-Control", "no-store").json({
 		instanceId,
 		model: activeEndpoint?.model || managed?.id || config.localLlmModel || "runtime-unavailable",
@@ -1223,7 +1224,8 @@ app.get("/api/status", async (_request, response) => {
 		/* The companion remindme-vault editor's URL, if configured — lets the
 		 * console deep-link a note into that add-on. Empty means no link shown. */
 		vaultUrl: process.env.VAULT_UI_URL || "",
-		profiles: thinkingProfilesForHardware(os.totalmem(), contextSize),
+		profiles: thinkingProfilesForBackend(os.totalmem(), contextSize, resolvedEndpoint),
+		remoteInference: resolvedEndpoint.openaiCompat,
 		hardware: {
 			architecture: process.arch,
 			cpuCores: os.cpus().length,
@@ -1288,9 +1290,10 @@ app.post("/api/chat", async (request, response) => {
 	const thinkingMode = getThinkingProfile(
 		typeof request.body?.thinkingMode === "string"
 			? request.body.thinkingMode
-			: "fast",
+			: "none",
 		os.totalmem(),
 		Number(process.env.LOCAL_LLM_CONTEXT_SIZE || 8192),
+		resolveEndpoint(),
 	).id;
 	if (!prompt) {
 		response.status(400).json({ error: "message is required" });
@@ -1932,7 +1935,7 @@ async function runTaskPrompt(prompt: string): Promise<string> {
 		}
 	};
 	const mode = getThinkingProfile(
-		"balanced",
+		"low",
 		os.totalmem(),
 		Number(process.env.LOCAL_LLM_CONTEXT_SIZE || 8192),
 	).id;

@@ -1,4 +1,8 @@
 function harness() {
+	const savedProfile = localStorage.getItem("remindme.profile") || "none";
+	const effortAliases = { fast: "none", balanced: "low", deep: "medium", research: "high" };
+	const savedEffort = Object.prototype.hasOwnProperty.call(effortAliases, savedProfile) ? effortAliases[savedProfile] : savedProfile;
+	if (savedEffort !== savedProfile) localStorage.setItem("remindme.profile", savedEffort);
 	return {
 		messages: [],
 		conversations: [],
@@ -10,35 +14,36 @@ function harness() {
 		visionEnabled: false,
 		thinkingProfiles: [
 			{
-				id: "fast",
-				name: "Fast",
+				id: "none",
+				name: "None",
 				reasoningBudget: 0,
-				answerReserve: 512,
+				answerReserve: 1024,
 				description: "No visible reasoning.",
 				estimatedMaxSeconds: 0,
 				recommended: false,
 			},
 			{
-				id: "balanced",
-				name: "Balanced",
-				reasoningBudget: 384,
-				answerReserve: 768,
+				id: "low",
+				name: "Low",
+				reasoningBudget: 512,
+				answerReserve: 1536,
 				description: "Short bounded reasoning.",
-				estimatedMaxSeconds: 55,
+				estimatedMaxSeconds: 74,
 				recommended: true,
 			},
 			{
-				id: "deep",
-				name: "Deep",
-				reasoningBudget: 1024,
-				answerReserve: 1024,
+				id: "medium",
+				name: "Medium",
+				reasoningBudget: 2048,
+				answerReserve: 2048,
 				description: "Longer reasoning for difficult questions.",
-				estimatedMaxSeconds: 147,
+				estimatedMaxSeconds: 293,
 				recommended: false,
 			},
 		],
-		thinking: localStorage.getItem("remindme.profile") || "fast",
-		profile: localStorage.getItem("remindme.profile") || "fast",
+		thinking: savedEffort,
+		profile: savedEffort,
+		remoteInference: false,
 		busy: false,
 		/* In-chat activity row: shows the turn is alive during the dead air
 		 * before the first phase event, which on a Pi can be many seconds. */
@@ -264,12 +269,14 @@ function harness() {
 					this.modelBadge =
 						d.modelName || d.model || "No model";
 					this.visionEnabled = Boolean(d.vision);
+					this.remoteInference = Boolean(d.remoteInference);
 					if (Array.isArray(d.profiles) && d.profiles.length) {
 						this.thinkingProfiles = d.profiles;
 						if (!d.profiles.some((preset) => preset.id === this.thinking)) {
 							this.thinking =
-								d.profiles.find((preset) => preset.recommended)?.id || "fast";
+								d.profiles.find((preset) => preset.recommended)?.id || d.profiles[0].id;
 							this.profile = this.thinking;
+							localStorage.setItem("remindme.profile", this.thinking);
 						}
 					}
 					if (d.hardware)

@@ -293,8 +293,8 @@ async function speak(
 	contextSize: number,
 	action: Decision["action"],
 ): Promise<void> {
-	const profile = getThinkingProfile(input.thinkingMode, os.totalmem(), contextSize);
-	const thinking = input.thinkingMode !== "fast";
+	const profile = getThinkingProfile(input.thinkingMode, os.totalmem(), contextSize, endpoint);
+	const thinking = profile.id !== "none";
 	/*
 	 * Results go before the question and the instruction into the system
 	 * prompt: small models continue whatever came last, so the last line
@@ -326,6 +326,7 @@ async function speak(
 			maxTokens: profile.maxTokens,
 			thinking,
 			reasoningBudget: profile.reasoningBudget,
+			effort: profile.id,
 			model,
 			signal: input.signal,
 		},

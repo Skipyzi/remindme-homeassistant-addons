@@ -6,8 +6,25 @@ import test from "node:test";
 import { decide, streamText } from "../src/agent/llm";
 import { EndpointStore } from "../src/harness/endpoints";
 import { modelEvents, responsesBody, responseText, strictDecisionSchema } from "../src/harness/responses";
+import { getThinkingProfile } from "../src/harness/thinkingProfiles";
 
 const endpoint = { url: new URL("https://api.openai.com/v1/responses"), model: "gpt-6-luna", headers: { Authorization: "Bearer test-only" }, openaiCompat: true, label: "Luna" };
+
+test("selected effort reaches Responses unchanged, including legacy saved choices", async (context) => {
+	const nativeFetch = globalThis.fetch;
+	context.after(() => { globalThis.fetch = nativeFetch; });
+	let request: Record<string, any> = {};
+	globalThis.fetch = (async (_url, init) => {
+		request = JSON.parse(String(init?.body));
+		return new Response('data: {"type":"response.completed","response":{"status":"completed"}}\n\n');
+	}) as typeof fetch;
+	for (const mode of ["none", "low", "medium", "high", "fast", "balanced", "deep", "research"]) {
+		const profile = getThinkingProfile(mode, 8 * 1_073_741_824, 8192, endpoint);
+		await streamText(endpoint, [], { maxTokens: profile.maxTokens, thinking: profile.id !== "none", effort: profile.id }, { answer() {}, thinking() {} });
+		assert.equal(request.reasoning.effort, profile.id);
+		assert.equal(request.reasoning.summary, profile.id === "none" ? undefined : "auto");
+	}
+});
 
 test("Responses decisions use a strict wrapped union and restore optional fields", async (context) => {
 	const nativeFetch = globalThis.fetch;

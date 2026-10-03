@@ -4,6 +4,7 @@ import { join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import { createInterface } from "node:readline";
 import { normalizePhaseMetrics, type ActiveModelMetadata } from "./modelPhases";
+import { type ReasoningEffort } from "./thinkingProfiles";
 
 function cliEnvironment(): NodeJS.ProcessEnv {
 	const directory = resolve(process.env.CLAUDE_CONFIG_DIR || "./data/claude-auth");
@@ -86,7 +87,7 @@ export interface ClaudeMessage { role: string; content: unknown }
 
 /** Use the genuine Claude client with its own login and token refresh. */
 export async function claudeCompletion(model: string, messages: ClaudeMessage[], options: {
-	schema?: Record<string, unknown>; thinking?: boolean; signal?: AbortSignal; modelMetadata?: ActiveModelMetadata;
+	schema?: Record<string, unknown>; thinking?: boolean; effort?: ReasoningEffort; signal?: AbortSignal; modelMetadata?: ActiveModelMetadata;
 }, handlers: { answer(text: string): void; thinking(text: string): void } = { answer() {}, thinking() {} }) {
 	const started = Date.now();
 	const cwd = await workDirectory();
@@ -94,7 +95,9 @@ export async function claudeCompletion(model: string, messages: ClaudeMessage[],
 	const turns = messages.filter((message) => message.role !== "system");
 	if (turns.some((message) => typeof message.content !== "string")) throw new Error("Claude subscription chat currently accepts text only.");
 	const prompt = turns.length === 1 ? String(turns[0].content) : turns.map((message) => `${message.role}: ${message.content}`).join("\n\n");
-	const args = ["-p", "--model", model, "--output-format", "stream-json", "--verbose", "--include-partial-messages", "--tools", "", "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}', "--disable-slash-commands", "--no-session-persistence", "--setting-sources", "", "--settings", '{"disableAllHooks":true}', "--permission-prompts", "none", "--system-prompt", system, "--effort", options.thinking ? "medium" : "low"];
+	const requestedEffort = options.effort ?? (options.thinking ? "medium" : "low");
+	const effort = requestedEffort === "none" ? "low" : requestedEffort;
+	const args = ["-p", "--model", model, "--output-format", "stream-json", "--verbose", "--include-partial-messages", "--tools", "", "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}', "--disable-slash-commands", "--no-session-persistence", "--setting-sources", "", "--settings", '{"disableAllHooks":true}', "--permission-prompts", "none", "--system-prompt", system, "--effort", effort];
 	if (options.schema) args.push("--json-schema", JSON.stringify(options.schema));
 	const process = cli(args, cwd, options.signal);
 	const timer = setTimeout(() => process.kill(), 180_000);

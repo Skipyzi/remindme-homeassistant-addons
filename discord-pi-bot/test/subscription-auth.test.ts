@@ -185,6 +185,11 @@ if(args[0] === 'auth') {
 	assert.ok(invocation.args.includes("--strict-mcp-config"));
 	assert.ok(invocation.args.includes("--no-session-persistence"));
 	assert.ok(invocation.args.includes('{"disableAllHooks":true}'));
+	for (const effort of ["none", "low", "medium", "high"] as const) {
+		await claudeCompletion("sonnet", [{ role: "user", content: "Hello" }], { effort, thinking: effort !== "none" });
+		const call = JSON.parse(await readFile(join(process.env.CLAUDE_CONFIG_DIR, "invocation.json"), "utf8"));
+		assert.equal(call.args[call.args.indexOf("--effort") + 1], effort === "none" ? "low" : effort);
+	}
 	await assert.rejects(claudeCompletion("fail", [{ role: "user", content: "Hello" }], {}), /could not complete/);
 	await auth.logout();
 	assert.equal((await auth.status()).connected, false);

@@ -1026,7 +1026,7 @@
               </div>
               <div class="compose-meta">
                 <label class="thinking-select"
-                  ><span>Thinking</span>
+                  ><span>Effort</span>
                   <select x-model="thinking">
                     <template x-for="preset in thinkingProfiles" :key="preset.id"
                       ><option :value="preset.id" x-text="preset.name"></option
@@ -1035,7 +1035,7 @@
                 <span x-show="usingChatgptPlan" x-cloak>Using ChatGPT plan · <a href="https://chatgpt.com/settings/usage" target="_blank" rel="noreferrer noopener">Manage usage</a></span>
                 <span
                   class="thinking-hint"
-                  x-text="`${currentThinkingProfile.reasoningBudget} thought · ${currentThinkingProfile.answerReserve} answer tokens${currentThinkingProfile.estimatedMaxSeconds ? ` · up to ${formatDuration(currentThinkingProfile.estimatedMaxSeconds * 1000)}` : ''}`"
+                  x-text="remoteInference ? currentThinkingProfile.description : `${currentThinkingProfile.reasoningBudget} thought · ${currentThinkingProfile.answerReserve} answer tokens${currentThinkingProfile.estimatedMaxSeconds ? ` · up to ${formatDuration(currentThinkingProfile.estimatedMaxSeconds * 1000)}` : ''}`"
                 ></span>
                 <span
                   class="context-label"
@@ -1426,7 +1426,7 @@
           </fieldset>
           <div class="settings-grid">
             <label
-              >Performance profile<select
+              >Reasoning effort<select
                 x-model="profile"
                 @change="thinking=profile"
               >
