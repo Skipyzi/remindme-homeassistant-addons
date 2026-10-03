@@ -12,6 +12,7 @@ test("model manager routes proxy safely", async (context) => {
 	process.env.MODEL_MANAGER_URL = "http://homeassistant:8080/manager/v1";
 	process.env.MODEL_MANAGER_TOKEN_PATH = join(directory, "manager-token");
 	process.env.LOCAL_LLM_MODEL = "configured-fallback-model";
+	process.env.ENDPOINT_DATA_PATH = join(directory, "endpoints.json");
 
 	const pairedToken = "manager-secret-value-that-is-long-enough-123";
 	let pairingAuthorization = "unset";
@@ -56,6 +57,14 @@ test("model manager routes proxy safely", async (context) => {
 		init?: RequestInit,
 	) => {
 		const url = String(input);
+		if (url === "https://cloud.example/v1/chat/completions") {
+			const body = JSON.parse(String(init?.body));
+			assert.equal(body.model, "cloud-luna");
+			if (!body.stream) return Response.json({ choices: [{ message: { content: '{"action":"reply"}' } }] });
+			return new Response('data: {"choices":[{"delta":{"content":"Hello!"}}]}\n\ndata: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":20,"completion_tokens":3}}\n\ndata: [DONE]\n\n');
+		}
+		if (url.endsWith("/states")) return Response.json([]);
+		if (url.endsWith("/template")) return new Response("");
 		if (url === "http://homeassistant:8080/manager/v1/pair") {
 			pairingAuthorization =
 				new Headers(init?.headers).get("authorization") || "";
@@ -263,6 +272,27 @@ test("model manager routes proxy safely", async (context) => {
 			assert.equal(running.modelName, "Qwen3 4B Q4_K_M");
 		},
 	);
+
+	await context.test("cloud chat metrics identify the selected endpoint while a local model is running", async () => {
+		const headers = { "content-type": "application/json" };
+		const endpoint = await nativeFetch(`${baseUrl}/api/endpoints`, { method: "POST", headers, body: JSON.stringify({ name: "Cloud Luna", url: "https://cloud.example/v1/chat/completions", model: "cloud-luna" }) }).then((response) => response.json());
+		assert.ok(endpoint.id);
+		await nativeFetch(`${baseUrl}/api/endpoints/active`, { method: "POST", headers, body: JSON.stringify({ id: endpoint.id }) });
+		try {
+			const response = await nativeFetch(`${baseUrl}/api/chat`, { method: "POST", headers, body: JSON.stringify({ message: "Tell me a joke", thinkingMode: "fast" }) });
+			assert.equal(response.status, 200);
+			const events = (await response.text()).split("\n").filter((line) => line.startsWith("data:")).map((line) => JSON.parse(line.slice(5)));
+			const metrics = events.filter((event) => event.metrics).map((event) => event.metrics);
+			assert.ok(metrics.length > 0);
+			for (const metric of metrics) {
+				assert.equal(metric.modelId, "cloud-luna");
+				assert.equal(metric.modelName, "Cloud Luna");
+			}
+		} finally {
+			await nativeFetch(`${baseUrl}/api/endpoints/active`, { method: "POST", headers, body: JSON.stringify({ id: "" }) });
+			await nativeFetch(`${baseUrl}/api/endpoints/${endpoint.id}`, { method: "DELETE" });
+		}
+	});
 
 	await context.test("Supervisor settings routes are absent", async () => {
 		for (const [path, method] of [

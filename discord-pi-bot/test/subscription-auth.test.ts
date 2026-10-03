@@ -9,6 +9,7 @@ import { ClaudeAuth, claudeCompletion } from "../src/harness/claudeAuth";
 import { modelFetch } from "../src/harness/providerRequests";
 import { EndpointStore } from "../src/harness/endpoints";
 import { streamText } from "../src/agent/llm";
+import { responseText } from "../src/harness/responses";
 
 test("ChatGPT sign-in verifies state, nonce and identity, and protects credentials", async (context) => {
 	const directory = await mkdtemp(join(tmpdir(), "remindme-oauth-"));
@@ -97,17 +98,38 @@ test("subscription inference forces streaming and no storage, and refuses custom
 		const body = JSON.parse(String(init?.body));
 		assert.equal(body.stream, true);
 		assert.equal(body.store, false);
+		assert.equal("max_output_tokens" in body, false);
+		assert.equal("temperature" in body, false);
+		assert.deepEqual(body.input, [{ role: "developer", content: "Keep replies short." }, { role: "user", content: "Hello" }]);
 		assert.equal(init?.redirect, "error");
 		assert.equal((init?.headers as Record<string, string>).Authorization, "Bearer subscription-secret");
-		return new Response('data: {"type":"response.completed","response":{"status":"completed","output":[]}}\n\n');
+		return new Response('data: {"type":"response.output_text.delta","output_index":0,"delta":"Hel"}\n\ndata: {"type":"response.output_text.delta","output_index":0,"delta":"lo"}\n\ndata: {"type":"response.completed","response":{"status":"completed","output":[],"usage":{"output_tokens":2}}}\n\n');
 	}) as typeof fetch;
-	const result = await modelFetch(endpoint, { stream: false, store: true });
-	assert.equal((await result.json()).status, "completed");
+	const result = await modelFetch(endpoint, { stream: false, store: true, max_output_tokens: 32, temperature: 0, input: [{ role: "system", content: "Keep replies short." }, { role: "user", content: "Hello" }] });
+	const completed = await result.json();
+	assert.equal(completed.status, "completed");
+	assert.equal(responseText(completed), "Hello");
+	assert.equal(completed.usage.output_tokens, 2);
 	await assert.rejects(modelFetch({ ...endpoint, url: new URL("https://other.invalid/v1/responses") }, {}), /custom URL/);
 	globalThis.fetch = (async () => new Response('data: {"type":"response.incomplete","response":{}}\n\n')) as typeof fetch;
 	await assert.rejects(streamText(endpoint, [], { maxTokens: 100, thinking: false }, { answer() {}, thinking() {} }), /output limit/);
 	globalThis.fetch = (async () => new Response('data: {"type":"response.output_text.delta","delta":"unfinished"}\n\n')) as typeof fetch;
 	await assert.rejects(modelFetch(endpoint, {}), /before completing/);
+});
+
+test("ChatGPT model discovery preserves provider order and exposes only listed models", async (context) => {
+	context.mock.method(chatgptAuth, "accessToken", async () => "subscription-secret");
+	const nativeFetch = globalThis.fetch;
+	context.after(() => { globalThis.fetch = nativeFetch; });
+	globalThis.fetch = (async (url) => {
+		assert.equal(String(url), "https://api.openai.com/v1/models");
+		return Response.json({ models: [
+			{ slug: "new-model", display_name: "New model", visibility: "list" },
+			{ slug: "internal", display_name: "Internal", visibility: "hide" },
+			{ slug: "existing-model", display_name: "Existing model", visibility: "list" },
+		] });
+	}) as typeof fetch;
+	assert.deepEqual(await chatgptAuth.models(), [{ id: "new-model", name: "New model" }, { id: "existing-model", name: "Existing model" }]);
 });
 
 test("subscription endpoints cannot redirect credentials to a custom host", async (context) => {

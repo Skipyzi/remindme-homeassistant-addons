@@ -1648,6 +1648,8 @@ async function managedActiveModel(fresh = false): Promise<ManagedActiveModel | u
  * model, which is what the requests are sent with.
  */
 async function activeModelMetadata(): Promise<ActiveModelMetadata> {
+	const endpoint = endpoints.active();
+	if (endpoint) return { modelId: resolveEndpoint().model, modelName: endpoint.name };
 	const active = await managedActiveModel();
 	if (active)
 		return {
