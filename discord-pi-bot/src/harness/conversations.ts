@@ -1,5 +1,6 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
+import { randomUUID } from "node:crypto";
 
 export interface ConversationMessage {
 	id: string;
@@ -50,6 +51,7 @@ export function deriveConversationTitle(text: string): string {
 
 export class ConversationStore {
 	private conversations: Conversation[] = [];
+	private writeTail: Promise<void> = Promise.resolve();
 	constructor(
 		private readonly path = process.env.CONVERSATION_DATA_PATH ||
 			"./data/conversations.json",
@@ -143,14 +145,14 @@ export class ConversationStore {
 		await this.persist();
 		return true;
 	}
-	private async persist(): Promise<void> {
-		await mkdir(dirname(this.path), { recursive: true });
-		const temporary = `${this.path}.tmp`;
-		await writeFile(
-			temporary,
-			JSON.stringify(this.conversations, null, 2),
-			"utf8",
-		);
-		await rename(temporary, this.path);
+	private persist(): Promise<void> {
+		const snapshot = JSON.stringify(this.conversations, null, 2);
+		this.writeTail = this.writeTail.catch(() => {}).then(async () => {
+			await mkdir(dirname(this.path), { recursive: true, mode: 0o700 });
+			const temporary = `${this.path}.${randomUUID()}.tmp`;
+			await writeFile(temporary, snapshot, { mode: 0o600 });
+			await rename(temporary, this.path);
+		});
+		return this.writeTail;
 	}
 }

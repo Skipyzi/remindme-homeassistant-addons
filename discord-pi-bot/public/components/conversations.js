@@ -1,5 +1,5 @@
 (function exposeConversations(globalScope) {
-	let saveTimer;
+	const saveTimers = new Map();
 	async function load(app) {
 		const response = await fetch("./api/conversations");
 		app.conversations = response.ok ? await response.json() : [];
@@ -52,16 +52,18 @@
 
 	function save(app) {
 		if (!app.currentConversationId) return;
-		clearTimeout(saveTimer);
-		saveTimer = setTimeout(
+		const conversationId = app.currentConversationId;
+		const messages = JSON.parse(JSON.stringify(app.messages));
+		clearTimeout(saveTimers.get(conversationId));
+		saveTimers.set(conversationId, setTimeout(
 			() =>
 				fetch(
-					`./api/conversations/${encodeURIComponent(app.currentConversationId)}`,
+					`./api/conversations/${encodeURIComponent(conversationId)}`,
 					{
 						method: "PATCH",
 						headers: { "Content-Type": "application/json" },
 						body: JSON.stringify({
-							messages: app.messages.map((message) => ({
+							messages: messages.map((message) => ({
 								id: message.id || message.key,
 								role: message.kind === "user" ? "user" : "assistant",
 								text: message.text || "",
@@ -87,6 +89,7 @@
 									name: message.name,
 									arguments: message.arguments,
 									result: message.result,
+									confirm: message.confirm,
 									items: message.items,
 									cards: message.cards,
 									artifact: message.artifact,
@@ -112,7 +115,7 @@
 					})
 					.catch(() => {}),
 			250,
-		);
+		));
 	}
 	/**
 	 * Remove a conversation. Deleting the open one clears the transcript and

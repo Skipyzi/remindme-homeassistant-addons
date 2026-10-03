@@ -11,17 +11,20 @@
     "dev": "ts-node src/index.ts",
     "lint": "biome check src/",
     "test": "node --test --import tsx test/*.test.ts test/*.test.mjs",
+    "test:agents": "pnpm build && node eval/native-smoke.cjs",
     "eval": "node --import tsx eval/run.mts",
     "format": "biome format --write src/"
   },
   "dependencies": {
     "@anthropic-ai/claude-code": "2.1.288",
     "@earendil-works/pi-coding-agent": "^0.80.6",
+    "@openai/codex": "0.160.0",
     "dayjs": "^1.11.21",
     "discord.js": "^14.26.5",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "jose": "^6.2.12",
+    "opencode-ai": "1.18.34",
     "proper-lockfile": "4.1.2"
   },
   "devDependencies": {

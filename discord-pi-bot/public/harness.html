@@ -32,6 +32,7 @@
     <script defer src="./components/chat-history.js"></script>
     <script defer src="./components/endpoints.js"></script>
     <script defer src="./components/providers.js"></script>
+    <script defer src="./components/agents.js"></script>
     <script defer src="./components/attachments.js"></script>
     <script defer src="./components/model-cookbook.js"></script>
     <script defer src="./app.js"></script>
@@ -71,7 +72,7 @@
             ✕
           </button>
         </div>
-        <button type="button" class="btn primary block" @click="newChat()">
+        <button type="button" class="btn primary block" :disabled="busy" @click="newChat()">
           <span aria-hidden="true">＋</span> New chat
         </button>
         <label class="search-field">
@@ -90,6 +91,7 @@
               ><div class="history-row">
                 <button
                   class="history-open"
+                  :disabled="busy"
                   :class="{active:conversation.id===currentConversationId}"
                   @click="selectConversation(conversation)"
                 >
@@ -1487,6 +1489,30 @@
         <section class="settings-card" @click.outside="modelsOpen=false">
           <button type="button" class="sheet-close" aria-label="Close" @click="modelsOpen=false">✕</button>
           <h2>Inference endpoint</h2>
+          <section class="endpoint-editor" aria-label="Assistant backend">
+            <h3>Assistant backend</h3>
+            <label class="endpoint-field">Run conversations with
+              <select x-model="agentBackend" :disabled="busy" @change="window.RemindMeAgents.select($data)">
+                <template x-for="backend in agentBackends" :key="backend.id"><option :value="backend.id" x-text="backend.label + (backend.available ? '' : ' · sign-in required')"></option></template>
+              </select>
+            </label>
+            <p class="micro" x-text="agentBackends.find(b => b.id === agentBackend)?.detail || ''"></p>
+            <p class="micro">Conversations resume after reloads and restarts. Home actions appear with app receipts and device state checks. Sensitive actions wait for a confirmation card.</p>
+            <div x-show="agentBackend !== 'harness'" x-cloak>
+              <label class="endpoint-field">Model override (optional)
+                <input x-model="agentModel" :placeholder="agentBackend === 'claude' ? 'sonnet' : agentDefaultModel" spellcheck="false" autocomplete="off" />
+              </label>
+              <button class="chip" :disabled="busy" @click="window.RemindMeAgents.save($data)">Save model</button>
+            </div>
+            <p class="endpoint-error" role="status" x-show="agentError" x-text="agentError"></p>
+            <div x-show="agentConfirmations.length" x-cloak>
+              <h3>Pending confirmations</h3>
+              <template x-for="confirm in agentConfirmations" :key="confirm.token">
+                <div class="endpoint-field"><span x-text="confirm.message"></span><button class="chip" @click="window.RemindMeAgents.confirm($data, confirm)">Confirm</button></div>
+              </template>
+            </div>
+            <p class="micro" role="status" x-show="agentConfirmationResult" x-text="agentConfirmationResult"></p>
+          </section>
           <p class="settings-copy">
             Sign in to use cloud inference for web and Discord chat. Chat messages
             and relevant home context are sent to the selected provider.

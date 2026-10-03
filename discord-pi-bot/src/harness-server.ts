@@ -1,6 +1,10 @@
 import "dotenv/config";
 import express, { type Express, type Response } from "express";
 import { randomUUID } from "node:crypto";
+import { join } from "node:path";
+import { AgentRuntime } from "./agent/runtime";
+import { DurablePending, agentDirectory } from "./agent/runtime-store";
+import { verifyAction } from "./agent/tool-gateway";
 import os from "node:os";
 import { resolve } from "node:path";
 import { config } from "./config";
@@ -89,9 +93,9 @@ const port = Number(process.env.HARNESS_PORT || 8090);
 const supervisorToken = process.env.SUPERVISOR_TOKEN || "";
 const homeAssistantUrl = "http://supervisor/core/api";
 const instanceId = randomUUID();
-const pendingReminders = new Map<string, { message: string; at: string }>();
-const pendingActions = new Map<
-	string,
+const startupLoads: Promise<unknown>[] = [];
+const pendingReminders = new DurablePending<{ message: string; at: string }>(join(agentDirectory(), "pending-reminders.json"));
+const pendingActions = new DurablePending<
 	{
 		domain: string;
 		service: string;
@@ -99,17 +103,17 @@ const pendingActions = new Map<
 		serviceData: Record<string, unknown>;
 		destructive: boolean;
 	}
->();
+>(join(agentDirectory(), "pending-actions.json"));
 const conversations = new ConversationStore();
-void conversations.load();
+startupLoads.push(conversations.load());
 const skills = new SkillStore();
-void skills.load();
+startupLoads.push(skills.load());
 const artifacts = new ArtifactStore();
-void artifacts.load();
+startupLoads.push(artifacts.load());
 const mcpServers = new McpServerStore();
-void mcpServers.load();
+startupLoads.push(mcpServers.load());
 const endpoints = new EndpointStore();
-void endpoints.load();
+startupLoads.push(endpoints.load());
 /*
  * The Markdown vault at /share/vault, doubling as the model's editable
  * long-term memory. The companion remindme-vault add-on edits the very same
@@ -121,7 +125,7 @@ void endpoints.load();
  * reminder store poll instead.
  */
 const vault = new VaultStore();
-void vault.load();
+startupLoads.push(vault.load());
 /*
  * Scheduled tasks — standing prompts the harness runs on a cadence. The store
  * and the runner both live here because this process holds the model, the
@@ -129,13 +133,13 @@ void vault.load();
  * as an ordinary one-shot reminder.
  */
 const tasks = new TaskStore();
-void tasks.load();
+startupLoads.push(tasks.load());
 /* The editable base system prompt. Persisted so an edit survives restarts; the
  * capability instructions are always appended on top of it. */
 const persona = new PersonaStore();
 const chatModel = new ChatModelStore();
-void chatModel.load();
-void persona.load();
+startupLoads.push(chatModel.load());
+startupLoads.push(persona.load());
 /*
  * Tracked parcels. TrackingMore registers each number once and polls the carrier
  * itself; a scheduler here refreshes the cached status and pings the owner on a
@@ -143,7 +147,7 @@ void persona.load();
  * configured — every entry point checks config.trackingMoreApiKey first.
  */
 const parcels = new ParcelStore();
-void parcels.load();
+startupLoads.push(parcels.load());
 type Send = (event: string, data: unknown) => void;
 
 /** A filesystem- and link-safe slug from a title. */
@@ -213,6 +217,10 @@ function resolveEndpoint() {
  * this only bounds what the parser will hold in memory to do it.
  */
 app.use(express.json({ limit: "2mb" }));
+const startupReady = Promise.all(startupLoads);
+app.use(async (_request, response, next) => { try { await startupReady; next(); } catch { response.status(503).json({ error: "Assistant stores could not be loaded" }); } });
+const agentRuntime = new AgentRuntime(agentDeps, port);
+agentRuntime.register(app);
 app.use("/api/auth", providerRoutes(endpoints));
 app.get("/api/mcp", (_request, response) => {
 	response.json(mcpServers.list());
@@ -682,6 +690,7 @@ app.patch("/api/conversations/:id", async (request, response) => {
 });
 app.delete("/api/conversations/:id", async (request, response) => {
 	const deleted = await conversations.delete(request.params.id);
+	if (deleted) agentRuntime.store.remove(request.params.id);
 	response.status(deleted ? 204 : 404).end();
 });
 app.post("/api/tokenize", async (request, response) => {
@@ -1097,7 +1106,7 @@ app.post("/api/entities/action", async (request, response) => {
 			request.body?.value,
 		);
 		if (validated.requiresConfirmation) {
-			const token = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+			const token = randomUUID();
 			pendingActions.set(token, validated);
 			response.json({
 				confirmation_required: true,
@@ -1199,13 +1208,16 @@ app.get("/api/status", async (_request, response) => {
 	 * instead. The manager is only consulted when inference is local.
 	 */
 	const activeEndpoint = endpoints.active();
+	const agentSettings = agentRuntime.store.getSettings();
+	const nativeBackend = agentSettings.backend !== "harness";
 	const resolvedEndpoint = resolveEndpoint();
-	const managed = activeEndpoint ? undefined : await managedActiveModel(true);
+	const managed = activeEndpoint || nativeBackend ? undefined : await managedActiveModel(true);
+	const nativeModel = agentSettings.models[agentSettings.backend] || (agentSettings.backend === "claude" ? resolvedEndpoint.authProvider === "claude" ? resolvedEndpoint.model : "sonnet" : resolvedEndpoint.model);
 	const contextSize = conversationBudget(resolvedEndpoint, managed?.recommendedContext || Number(process.env.LOCAL_LLM_CONTEXT_SIZE || 8192));
 	response.set("Cache-Control", "no-store").json({
 		instanceId,
 		model: activeEndpoint?.model || managed?.id || config.localLlmModel || "runtime-unavailable",
-		modelName: activeEndpoint
+		modelName: nativeBackend ? `${agentSettings.backend} · ${nativeModel}` : activeEndpoint
 			? `${activeEndpoint.name} · ${activeEndpoint.model}`
 			: managed
 				? `${managed.family} ${managed.quantization}`.trim()
@@ -1224,8 +1236,8 @@ app.get("/api/status", async (_request, response) => {
 		/* The companion remindme-vault editor's URL, if configured — lets the
 		 * console deep-link a note into that add-on. Empty means no link shown. */
 		vaultUrl: process.env.VAULT_UI_URL || "",
-		profiles: thinkingProfilesForBackend(os.totalmem(), contextSize, resolvedEndpoint),
-		remoteInference: resolvedEndpoint.openaiCompat,
+		profiles: thinkingProfilesForBackend(os.totalmem(), contextSize, nativeBackend ? { ...resolvedEndpoint, model: nativeModel, openaiCompat: true, authProvider: agentSettings.backend === "claude" ? "claude" : resolvedEndpoint.authProvider } : resolvedEndpoint),
+		remoteInference: nativeBackend || resolvedEndpoint.openaiCompat,
 		hardware: {
 			architecture: process.arch,
 			cpuCores: os.cpus().length,
@@ -1242,9 +1254,8 @@ app.get("/", (_request, response) =>
 app.post("/api/confirm", async (request, response) => {
 	const token =
 		typeof request.body?.token === "string" ? request.body.token : "";
-	const reminder = pendingReminders.get(token);
+	const reminder = pendingReminders.take(token);
 	if (reminder) {
-		pendingReminders.delete(token);
 		/*
 		 * The manager schedules by delay, so the absolute time is converted
 		 * here. Delivery is the bot process's job — it owns the Discord client
@@ -1260,26 +1271,41 @@ app.post("/api/confirm", async (request, response) => {
 			process.env.OWNER_ID || "",
 			"",
 		);
-		response.json({
+		const result = {
 			scheduled: true,
 			id: created?.id,
 			message: reminder.message,
 			at: reminder.at,
-		});
+		};
+		agentRuntime.recordConfirmation(token, result);
+		response.json(result);
 		return;
 	}
-	const action = pendingActions.get(token);
+	const action = pendingActions.take(token);
 	if (!action) {
 		response.status(404).json({ error: "Action expired or not found" });
 		return;
 	}
-	pendingActions.delete(token);
-	response.json(
-		await hassRequest(`/services/${action.domain}/${action.service}`, "POST", {
+	try { await hassRequest(`/services/${action.domain}/${action.service}`, "POST", {
 			...action.serviceData,
 			entity_id: action.entityId,
-		}),
-	);
+		});
+	const card = await home?.card(action.entityId);
+	const result = { accepted: true, verification: verifyAction({ ...action, requiresConfirmation: true }, card), cards: card ? [card] : [] };
+	agentRuntime.recordConfirmation(token, result);
+	response.json(result);
+	} catch (error) {
+		const result = { accepted: false, error: error instanceof Error ? error.message : "Home Assistant action failed" };
+		agentRuntime.recordConfirmation(token, result);
+		response.status(502).json(result);
+	}
+});
+
+app.get("/api/confirmations", (_request, response) => {
+	response.json([
+		...pendingActions.list().map(({ token, value }) => ({ confirmation_required: true, token, destructive: value.destructive, message: `Confirm: ${value.service.replace(/_/g, " ")} ${value.entityId}` })),
+		...pendingReminders.list().map(({ token, value }) => ({ confirmation_required: true, token, kind: "reminder", when: value.at, message: `Remind me: ${value.message} (${value.at})` })),
+	]);
 });
 
 app.post("/api/chat", async (request, response) => {
@@ -1287,18 +1313,22 @@ app.post("/api/chat", async (request, response) => {
 		typeof request.body?.message === "string"
 			? request.body.message.trim()
 			: "";
+	const agentSettings = agentRuntime.store.getSettings();
+	const endpoint = resolveEndpoint();
+	const effortBackend = agentSettings.backend === "harness" ? endpoint : { ...endpoint, openaiCompat: true, model: agentSettings.models[agentSettings.backend] || endpoint.model, authProvider: agentSettings.backend === "claude" ? "claude" as const : endpoint.authProvider };
 	const thinkingMode = getThinkingProfile(
 		typeof request.body?.thinkingMode === "string"
 			? request.body.thinkingMode
 			: "none",
 		os.totalmem(),
 		Number(process.env.LOCAL_LLM_CONTEXT_SIZE || 8192),
-		resolveEndpoint(),
+		effortBackend,
 	).id;
 	if (!prompt) {
 		response.status(400).json({ error: "message is required" });
 		return;
 	}
+	if (prompt.length > 20000) { response.status(400).json({ error: "Message is too long; keep it under 20,000 characters" }); return; }
 	response.status(200).set({
 		"Content-Type": "text/event-stream",
 		"Cache-Control": "no-cache",
@@ -1327,6 +1357,7 @@ app.post("/api/chat", async (request, response) => {
 				? request.body.artifactId
 				: "",
 			abort.signal,
+			typeof request.body?.conversationId === "string" ? request.body.conversationId : `request-${randomUUID()}`,
 		);
 		send("complete", {});
 	} catch (error) {
@@ -1461,12 +1492,12 @@ function agentDeps(): TurnDeps {
 		recall: (prompt) => vault.recall(prompt, 5),
 		home,
 		holdAction(action) {
-			const token = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+			const token = randomUUID();
 			pendingActions.set(token, action);
 			return token;
 		},
 		holdReminder(reminder) {
-			const token = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+			const token = randomUUID();
 			pendingReminders.set(token, reminder);
 			return token;
 		},
@@ -1540,10 +1571,10 @@ async function runAgent(
 	history: HistoryTurn[] = [],
 	openArtifactId = "",
 	signal?: AbortSignal,
+	conversationId = `request-${randomUUID()}`,
 ): Promise<void> {
-	await runTurn(
-		{ prompt, thinkingMode, requestId, attachments, history, openArtifactId, signal },
-		agentDeps(),
+	await agentRuntime.run(
+		{ conversationId, prompt, thinkingMode, requestId, attachments, history, openArtifactId, signal },
 		send,
 	);
 }
@@ -1926,7 +1957,7 @@ async function webSearch(query: string) {
  * feeds a collector that keeps the answer events and discards the rest, so a
  * scheduled run reuses exactly the tools and reasoning a chat turn gets.
  */
-async function runTaskPrompt(prompt: string): Promise<string> {
+async function runTaskPrompt(prompt: string, taskId: string): Promise<string> {
 	const answers: string[] = [];
 	const collect: Send = (event, data) => {
 		if (event === "answer") {
@@ -1939,7 +1970,7 @@ async function runTaskPrompt(prompt: string): Promise<string> {
 		os.totalmem(),
 		Number(process.env.LOCAL_LLM_CONTEXT_SIZE || 8192),
 	).id;
-	await runAgent(prompt, mode, collect, `task-${Date.now()}`, [], [], "");
+	await runAgent(prompt, mode, collect, `task-${Date.now()}`, [], [], "", undefined, `task:${taskId}`);
 	// The last answer is the turn's conclusion; earlier ones are pre-tool asides.
 	return answers[answers.length - 1] || "";
 }
@@ -1968,7 +1999,7 @@ async function runTaskNow(task: ScheduledTask): Promise<{
 	const at = new Date();
 	let report: string;
 	try {
-		report = await runTaskPrompt(task.prompt);
+		report = await runTaskPrompt(task.prompt, task.id);
 	} catch (error) {
 		console.error(`Task "${task.name}" failed:`, error);
 		return {

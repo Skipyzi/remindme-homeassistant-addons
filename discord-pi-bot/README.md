@@ -1,10 +1,10 @@
 # RemindMe Discord Bot and Home Terminal
 
-Install this add-on after `local-llama-cpp`. Version 2.3.4 replaces Supervisor-mirrored settings and automatic model activation with a reliable manual model workbench. It retains direct one-time pairing, Discord chat, reminders, Assist tools, Exa search, the Pi bridge, persistent presence data, and local model diagnostics.
+Version 3.1.0 keeps the home chat UI and adds persistent Codex, Claude Code, OpenCode and Pi agent backends with shared Home Assistant tools. Use cloud subscriptions without loading an LLM on the Pi, or choose a local or network model endpoint. Install `local-llama-cpp` when you want inference on the Pi itself. Discord chat, reminders, search, notes, scheduled tasks and the existing Pi webhook remain available.
 
 ## Agent core (3.0)
 
-Version 3.0 replaces the tool-calling loop with an agent core built for small local models. The model no longer receives a tool list and never emits a tool call. Each chat turn goes through up to four steps, and any of them can finish it:
+The **RemindMe** backend retains the 3.0 agent core for small local models. It uses a constrained decision instead of a native tool-calling loop. Each chat turn goes through up to four steps, and any of them can finish it:
 
 1. **Home Assistant first.** Plain device commands and questions ("turn off the kitchen light", "what's the temperature in the office") go to Home Assistant's built-in intent engine (`conversation.home_assistant`). If it handles them, no model runs at all. Requests mentioning locks, doors, the garage, covers, alarms, scenes, scripts or the vacuum never take this path, because Home Assistant would act on them without confirmation.
 2. **One constrained decision.** The model picks a single action (`reply`, `home_control`, `home_status`, `reminder_add`, `web_search`, `memory_recall`, `document_write`, …) by filling in a JSON schema that llama.cpp compiles into a grammar. It cannot produce invalid JSON, invent an action, or name a device that isn't on the shortlist. The shortlist is ranked in code from device names, areas and the previous request.
@@ -191,44 +191,24 @@ low-latency settings. Extended effort levels should come from each backend's
 model capabilities when native agent adapters are added, rather than being
 offered to every endpoint.
 
-## Proposed agent backend architecture
+## Agent backends (3.1.0)
 
-Keep the web UI, Discord and scheduled tasks as clients of one RemindMe server.
-That server should own conversation IDs, backend selection, cancellation,
-approval cards and action receipts. Agent runtimes should own their tool loop
-and model context. This is a proposed migration, not functionality included in
-3.0.7.
+Open **Models → Assistant backend** to choose the runtime. The existing UI, Home Assistant ingress and Tailscale access stay in place. Web chat, the owner's Discord `!chat`, and scheduled prompts use the same server and tools. Other Discord users retain ordinary chat without home tools; the separate `!:` Pi webhook remains available.
 
-| Backend | Integration | Current state |
-|---|---|---|
-| Codex | [`codex app-server`](https://learn.chatgpt.com/docs/app-server), JSON-RPC over local stdio | Proposed; use native threads, streamed events, approvals and model capability discovery. The protocol is experimental, so pin and test the runtime version. |
-| Claude | [Native CLI structured streams and explicit session resume](https://code.claude.com/docs/en/headless) | CLI already bundled; inference is stateless and its own tools are disabled. Persistent agent sessions and HA tools still need implementation. |
-| OpenCode | [`opencode serve`](https://opencode.ai/docs/server/), HTTP session API and event streams | Proposed; suitable for a separately hosted agent worker as well as a local process. |
-| Pi | [TypeScript SDK](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/sdk.md) or [RPC subprocess](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/rpc.md) | SDK already used by the separate Discord bridge; sessions are currently in memory and do not share the web chat's HA tools. |
-| Local or network model | Existing Responses or OpenAI-compatible chat endpoints | Available now; retain the constrained decision pipeline for small models and older servers. |
+| Backend | Session and authentication |
+|---|---|
+| RemindMe | Existing constrained decision pipeline for local, network and API models; server-owned conversation history. |
+| Codex | Pinned `codex app-server` 0.160.0, JSON-RPC dynamic home tools, explicit native thread resume. Uses the existing ChatGPT plan sign-in through the supported Responses provider integration. |
+| Claude Code | Pinned native CLI 2.1.288, persistent UUID sessions and MCP home tools. Uses its existing Claude sign-in. |
+| OpenCode | Pinned native headless runner 1.18.34, persistent SQLite sessions and MCP home tools. Uses the selected RemindMe Responses or chat-completions endpoint. |
+| Pi | Bundled SDK, persistent native session files and custom home tools. Uses the selected RemindMe Responses or chat-completions endpoint. |
 
-The shared HA tool service should reuse `HomeApi`, action validation and the
-existing executor. Expose entity discovery, area lookup, state reads, checked
-service calls and verification through MCP for external runtimes and direct
-custom tools for Pi. Add scene and automation editing as separate tools with
-reviewable proposals. A tool result must distinguish an accepted service call
-from an observed device state; only tool results can create completion cards.
-Pending approvals need durable IDs and must survive reconnects. Never hand a
-worker the Supervisor token or let shell tools bypass the HA service.
+For Codex, sign in with ChatGPT and select an account-listed model first. Claude defaults to `sonnet` unless a Claude endpoint or model override is selected. OpenCode and Pi support ChatGPT plan usage, API credentials, local llama.cpp and network endpoints through the server's credential bridge. A selected Claude subscription endpoint uses the Claude backend; OpenCode and Pi do not copy Claude's credentials. A model override changes the requested model, not account access. Native backends currently accept text; use RemindMe for image attachments and document generation. Local servers must support tool calling for Pi or OpenCode; the RemindMe pipeline remains available for small models and legacy servers.
 
-Persist the mapping from RemindMe conversation ID to backend session ID, plus
-tool receipts and pending approvals, under `/data`. Serialize turns per
-conversation, resume the specific session rather than the latest global one,
-and retain an exportable transcript when switching providers. Share the same
-turn API across web, Discord and scheduled tasks. Agent credentials stay with
-their own runtime; an existing RemindMe login should not be copied into another
-client's credential format. Anthropic's [Agent SDK documentation](https://code.claude.com/docs/en/agent-sdk/overview)
-requires API authentication or prior approval for products offering Claude
-subscription login. Do not assume the SDK or another runtime grants that access.
+The home tool gateway discovers real entities, reads fresh state, validates every scene target before acting, and checks reported device state after accepted service calls. Brightness-only lights reject color settings. Service failures, missing readings and mismatched states are reported separately. Locks, covers, valves and unfamiliar services require a confirmation card; a model cannot submit its own approval. Pending confirmations survive restarts for 30 minutes and are consumed before executing, preventing duplicate sensitive calls. Pending cards from Discord and scheduled runs are available under **Models → Pending confirmations**.
 
-Start with the shared HA tools and durable sessions, then connect one native
-backend end to end before adding the others. Launch only the selected runtime
-and cap concurrent work on the Pi. Workers can also live on a stronger LAN or
-Tailscale machine, behind an authenticated server connection. The Pi then runs
-the UI and HA integration while the worker manages the agent. Model inference
-can be cloud-hosted or served by a user's local hardware in either arrangement.
+Conversation-to-runtime mappings, server-owned transcripts, receipts and approvals live under `/data/agents`; native clients retain their own session files there (Claude sessions stay under `/data/claude-auth`). Conversation IDs are hashed for filenames, and runtime files are private. Cancel revokes the turn's tool capability and stops its worker. Only one agent turn runs at a time on the Pi, with a ten-minute timeout and 24 home-tool calls per turn. Coding tools, shell access, automatic plugins and delegation are disabled. Workers never inherit the Supervisor or Discord token; OpenCode and Pi receive only a short-lived inference capability.
+
+Keep using HA through Tailscale. No second remote-access service or T3 fork is required. For heavier local inference, select an existing OpenAI-compatible model server on your LAN; the agent runtime stays on the Pi. Separately hosted native agent workers, permanent HA scene/automation editing, native image inputs and automatic model catalogs for every backend remain future work.
+
+Run `pnpm test` for the unit and route checks, and `pnpm test:agents` for native Codex/Pi/OpenCode session and tool-call smoke tests against simulated inference and a simulated house. The latter also exercises Claude's adapter with a fixture CLI and the actual MCP bridge, without requiring subscription credentials. These checks do not contact live model services or change real devices.

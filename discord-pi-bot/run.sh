@@ -49,6 +49,7 @@ export CONVERSATION_DATA_PATH=/data/conversations.json
 export ENDPOINT_DATA_PATH=/data/endpoints.json
 export CHATGPT_AUTH_PATH=/data/chatgpt-auth.json
 export CLAUDE_CONFIG_DIR=/data/claude-auth
+export AGENT_DATA_DIR=/data/agents
 # Preserve settings made before endpoints had a persistent path.
 if [ ! -f "$ENDPOINT_DATA_PATH" ] && [ -f /app/data/endpoints.json ]; then
 	cp /app/data/endpoints.json "$ENDPOINT_DATA_PATH"

@@ -7,6 +7,14 @@ function harness() {
 		messages: [],
 		conversations: [],
 		currentConversationId: "",
+		agentBackend: "harness",
+		agentBackends: [],
+		agentModels: {},
+		agentModel: "",
+		agentDefaultModel: "",
+		agentError: "",
+		agentConfirmations: [],
+		agentConfirmationResult: "",
 		conversationSearch: "",
 		draft: "",
 		attachments: [],
@@ -225,7 +233,7 @@ function harness() {
 			for (const panel of ["modelsOpen", "settingsOpen", "skillsOpen", "mcpOpen", "boardOpen"])
 				this.$watch(panel, (open) => {
 					if (open) this.historyOpen = false;
-					if (open && panel === "modelsOpen") window.RemindMeProviders.load(this);
+					if (open && panel === "modelsOpen") { window.RemindMeProviders.load(this); window.RemindMeAgents.load(this); }
 				});
 			window.RemindMeComposer.measure(this, 0);
 			window.RemindMeConversations.load(this).catch(() => {});
@@ -233,6 +241,7 @@ function harness() {
 			this.loadPulse();
 			window.RemindMeModelCookbook.load(this);
 			window.RemindMeEndpoints.load(this);
+			window.RemindMeAgents.load(this);
 			this.startSystemPolling();
 			/*
 			 * The artifact frame reports what happened when it ran. It holds
@@ -414,12 +423,14 @@ function harness() {
 			return message;
 		},
 		async newChat() {
+			if (this.busy) return;
 			this.historyOpen = false;
 			this.loadPulse();
 			await window.RemindMeConversations.create(this);
 			this.$nextTick(() => this.$refs.composerInput?.focus());
 		},
 		selectConversation(conversation) {
+			if (this.busy) return;
 			this.historyOpen = false;
 			return window.RemindMeConversations.select(this, conversation);
 		},
@@ -1405,6 +1416,7 @@ function harness() {
 					signal: this.abortController.signal,
 					body: JSON.stringify({
 						message: text,
+						conversationId: this.currentConversationId,
 						history,
 						// What is on the bench, so "change the footer" has a target.
 						artifactId: this.artifactOpen ? this.currentArtifact?.id || "" : "",
@@ -1413,7 +1425,7 @@ function harness() {
 					}),
 				});
 				if (!r.ok || !r.body)
-					throw new Error("The local model stream did not start.");
+					throw new Error("The assistant stream did not start.");
 				const reader = r.body.getReader(),
 					decoder = new TextDecoder();
 				let buffer = "",
@@ -1568,11 +1580,12 @@ function harness() {
 			});
 			// Say what was actually committed — a reminder set, not a generic
 			// "action applied" that reads the same for every confirmation.
+			const result = await r.json().catch(() => ({}));
 			if (r.ok)
 				message.text =
 					confirm.kind === "reminder"
 						? `Reminder set for ${confirm.when}.`
-						: "Action applied.";
+						: result.verification?.status === "verified" ? "Device state verified." : "Home Assistant accepted the action; the requested state is not yet verified.";
 			else message.text = "Action failed.";
 			message.confirm = null;
 			this.persist();

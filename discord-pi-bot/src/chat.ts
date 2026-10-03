@@ -1,6 +1,7 @@
 import type { Client, Message } from "discord.js";
 import { config } from "./config";
 import { askLocalLlm } from "./localLlm";
+import { askAgent } from "./agent/discord-client";
 
 function splitDiscordMessage(text: string): string[] {
 	const chunks: string[] = [];
@@ -39,7 +40,7 @@ export function setupAIChat(client: Client): void {
 		try {
 			const response =
 				prefix === config.chatPrefix && config.localLlmEnabled
-					? await askLocalLlm(prompt)
+					? message.author.id === config.ownerId ? await askAgent(prompt, message.author.id, message.channel.id) : await askLocalLlm(prompt)
 					: await forwardToPiAgent(prompt, message);
 			const chunks = splitDiscordMessage(response);
 			await thinkingMessage.edit(chunks[0]);
@@ -49,7 +50,7 @@ export function setupAIChat(client: Client): void {
 		} catch (error) {
 			console.error("Pi agent bridge error:", error);
 			await thinkingMessage.edit(
-				"❌ The pi-agent bridge is unavailable right now.",
+				"❌ The assistant is unavailable right now. Check its backend and sign-in in RemindMe.",
 			);
 		}
 	});
