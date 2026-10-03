@@ -2,7 +2,7 @@ import type { ActionContext, ActionName, DocumentKind } from "./actions";
 import { availableActions } from "./actions";
 import { describeCandidate, type Candidate } from "./candidates";
 import type { ChatMessage } from "./llm";
-import type { HistoryTurn } from "../harness/history";
+import { fitHistory, type HistoryTurn } from "../harness/history";
 
 const actionHelp: Record<ActionName, string> = {
 	reply:
@@ -67,16 +67,17 @@ interface DecideInput {
 	openDocument?: ActionContext["openDocument"];
 	mcpTools?: ActionContext["mcpTools"];
 	home?: boolean;
+	historyBudget?: number;
 }
 
 /** The per-request part of the routing prompt: what is on the shortlist, and the ask. */
 export function decideUserMessage(input: DecideInput): string {
 	const lines: string[] = [];
-	const recent = (input.history || []).slice(-4);
+	const recent = input.historyBudget ? fitHistory(input.history || [], input.historyBudget) : (input.history || []).slice(-4);
 	if (recent.length) {
 		lines.push("Earlier:");
 		for (const turn of recent)
-			lines.push(`${turn.role === "user" ? "User" : "Assistant"}: ${clip(turn.content, 600)}`);
+			lines.push(`${turn.role === "user" ? "User" : "Assistant"}: ${input.historyBudget ? turn.content : clip(turn.content, 600)}`);
 		lines.push("");
 	}
 	if (input.home !== false) {

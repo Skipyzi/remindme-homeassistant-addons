@@ -167,7 +167,9 @@ async function homeStatus(
 			? [`${cards[0].name} is ${stateText(cards[0])}.`]
 			: cards.map((card) => `- ${card.name}: ${stateText(card)}`);
 	return {
-		result: cards.map((card) => ({ id: card.entityId, name: card.name, state: stateText(card) })),
+		result: cards.map((card) => ({ id: card.entityId, name: card.name, state: stateText(card),
+			...(card.domain === "light" ? { brightness_percent: card.brightness === undefined ? undefined : Math.round(card.brightness / 255 * 100), rgb_color: card.rgbColor, color_temp_kelvin: card.colorTemperature } : {}),
+		})),
 		cards,
 		answer: lines.join("\n"),
 	};

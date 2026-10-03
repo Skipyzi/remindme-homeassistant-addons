@@ -139,6 +139,8 @@ The bot uses the local model for `!chat` when enabled and the Pi-agent bridge fo
 
 ## Cloud chat with your subscription
 
+Subscription chat uses a 32,768-token application history budget rather than the local model's context setting. Cloud follow-ups resolve the user's intent and device references from recent conversation before selecting actions, so alternatives such as “how about a cyberpunk scene” retain the earlier devices. This adds a routing call to conversational follow-ups. The transcript retains compact device-action receipts and search source links; unsupported claims in earlier assistant prose are not treated as execution evidence. Reports that an action did not work trigger a state read rather than an automatic retry, and the response compares accepted service calls with current readings without inventing a cause.
+
 In **Models**, choose **Continue with ChatGPT** or **Sign in with Claude**.
 Complete the provider's sign-in in your browser, then return to RemindMe.
 For ChatGPT on a remote Pi, the final `127.0.0.1:1455` page may fail to load.

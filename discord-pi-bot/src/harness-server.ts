@@ -20,6 +20,7 @@ import {
 	type EntityAction,
 } from "./harness/entityActions";
 import { ConversationStore } from "./harness/conversations";
+import { conversationBudget } from "./agent/context";
 import { SkillStore, skillPrompt } from "./harness/skills";
 import { DEFAULT_PERSONA, PersonaStore } from "./harness/persona";
 import { ChatModelStore } from "./harness/chatModel";
@@ -1199,9 +1200,7 @@ app.get("/api/status", async (_request, response) => {
 	 */
 	const activeEndpoint = endpoints.active();
 	const managed = activeEndpoint ? undefined : await managedActiveModel(true);
-	const contextSize =
-		managed?.recommendedContext ||
-		Number(process.env.LOCAL_LLM_CONTEXT_SIZE || 8192);
+	const contextSize = conversationBudget(resolveEndpoint(), managed?.recommendedContext || Number(process.env.LOCAL_LLM_CONTEXT_SIZE || 8192));
 	response.set("Cache-Control", "no-store").json({
 		instanceId,
 		model: activeEndpoint?.model || managed?.id || config.localLlmModel || "runtime-unavailable",
@@ -1213,6 +1212,7 @@ app.get("/api/status", async (_request, response) => {
 		/* Whether the manager is driving the endpoint, distinct from whether
 		 * inference works at all. */
 		managed: Boolean(managed),
+		contextSize,
 		capabilities: managed?.capabilities || [],
 		llmUrl:
 			process.env.LOCAL_LLM_URL ||
@@ -1453,7 +1453,7 @@ function agentDeps(): TurnDeps {
 	return {
 		endpoint: resolveEndpoint,
 		activeModel: activeModelMetadata,
-		contextSize: Number(process.env.LOCAL_LLM_CONTEXT_SIZE || 8192),
+		contextSize: conversationBudget(resolveEndpoint(), Number(process.env.LOCAL_LLM_CONTEXT_SIZE || 8192)),
 		systemPrompt: () => persona.get() + skillPrompt(skills.enabled()),
 		recall: (prompt) => vault.recall(prompt, 5),
 		home,

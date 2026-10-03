@@ -20,7 +20,8 @@ import {
 	type DocumentKind,
 	type McpToolRef,
 } from "./actions";
-import { candidatesForTurn, type Candidate } from "./candidates";
+import { candidatesForTurn, findCandidates, type Candidate } from "./candidates";
+import { conversationBudget, resolveFollowup, type ResolvedRequest } from "./context";
 import { execute, type ExecutorDeps } from "./execute";
 import { fastPathEligible, readIntentReply } from "./home";
 import { decide, streamText, type ChatMessage, type ModelEndpoint } from "./llm";
@@ -79,17 +80,19 @@ export async function runTurn(input: TurnInput, deps: TurnDeps, send: Send): Pro
 	const history = input.history || [];
 	const attachments = input.attachments || [];
 	const model = await deps.activeModel();
+	const endpoint = deps.endpoint();
+	const contextSize = conversationBudget(endpoint, deps.contextSize);
 	const openArtifact = input.openArtifactId ? deps.artifacts?.get(input.openArtifactId) : undefined;
 
 	/* 1 ── Home Assistant fast path ─────────────────────────────────── */
-	if (deps.home && !attachments.length && !openArtifact && fastPathEligible(input.prompt)) {
+	if (deps.home && !attachments.length && !openArtifact && !(endpoint.authProvider && history.length) && fastPathEligible(input.prompt)) {
 		const phaseId = createPhaseId(input.requestId, 0);
 		try {
 			const outcome = readIntentReply(await deps.home.converse(input.prompt, input.signal));
 			if (outcome) {
 				send("phase_start", { phaseId, iteration: 0, kind: "tool", state: "active" });
 				send("tool_start", { phaseId, iteration: 0, kind: "tool", state: "active", name: "home_assistant", arguments: { text: input.prompt } });
-				send("tool_complete", { phaseId, iteration: 0, kind: "tool", state: "complete", name: "home_assistant", result: { handled_by: "Home Assistant", speech: outcome.speech, entities: outcome.entityIds } });
+				send("tool_complete", { phaseId, iteration: 0, kind: "tool", state: "complete", name: "home_assistant", result: { handled_by: "Home Assistant", kind: outcome.kind, speech: outcome.speech, entities: outcome.entityIds } });
 				const cards = (
 					await Promise.all(outcome.entityIds.map((id) => deps.home!.card(id)))
 				).filter(Boolean);
@@ -103,10 +106,28 @@ export async function runTurn(input: TurnInput, deps: TurnDeps, send: Send): Pro
 	}
 
 	/* 2 ── Decide ───────────────────────────────────────────────────── */
+	const decidePhase = createPhaseId(input.requestId, 0);
+	if (!attachments.length) send("phase_start", { phaseId: decidePhase, iteration: 0, kind: "tool", state: "active" });
+	let resolved: ResolvedRequest | undefined;
+	if (endpoint.authProvider && deps.home && history.length && !attachments.length && !openArtifact) {
+		try {
+			resolved = await resolveFollowup(endpoint, input.prompt, history, contextSize, model, input.signal);
+		} catch (error) {
+			if (input.signal?.aborted) throw error;
+			console.warn("Follow-up interpretation failed:", error instanceof Error ? error.message : error);
+			send("phase_complete", { phaseId: decidePhase, iteration: 0, kind: "tool", state: "failed" });
+			finishWithAnswer(send, createPhaseId(input.requestId, 1), 1, "I couldn't resolve that follow-up reliably. Please restate what you'd like me to do. No device changes were made.");
+			return;
+		}
+	}
+	const routingPrompt = resolved?.request || input.prompt;
 	let candidates: Candidate[] = [];
 	if (deps.home) {
 		try {
-			candidates = candidatesForTurn(await deps.home.cards(), input.prompt, history);
+			const cards = await deps.home.cards();
+			// The semantic request already resolves references. Merging the
+			// previous generic "light scene" would add unrelated lights again.
+			candidates = resolved ? findCandidates(cards, routingPrompt) : candidatesForTurn(cards, routingPrompt, history);
 		} catch (error) {
 			console.warn("Entity lookup failed:", error instanceof Error ? error.message : error);
 		}
@@ -121,7 +142,7 @@ export async function runTurn(input: TurnInput, deps: TurnDeps, send: Send): Pro
 	}
 	const context: ActionContext = {
 		home: Boolean(deps.home),
-		homeControl: Boolean(deps.home) && looksLikeCommand(input.prompt, history),
+		homeControl: Boolean(deps.home) && (resolved ? resolved.intent === "device_change" : looksLikeCommand(input.prompt, history)),
 		candidates,
 		reminders: deps.features.reminders,
 		web: Boolean(deps.webSearch),
@@ -134,18 +155,16 @@ export async function runTurn(input: TurnInput, deps: TurnDeps, send: Send): Pro
 			: undefined,
 		mcpTools,
 	};
-	const decidePhase = createPhaseId(input.requestId, 0);
 	let decision: Decision = { action: "reply" };
 	let decideMetrics: PhaseMetrics | undefined;
 	/*
 	 * An image is a question about the image; routing it through the
 	 * text-only decision would only lose it.
 	 */
-	if (!attachments.length) {
-		send("phase_start", { phaseId: decidePhase, iteration: 0, kind: "tool", state: "active" });
-		const messages = decideMessages(context, { prompt: input.prompt, candidates, history });
+	if (!attachments.length && !(resolved?.intent === "failure_report" && candidates.length)) {
+		const messages = decideMessages(context, { prompt: routingPrompt, candidates, history, historyBudget: endpoint.authProvider ? Math.min(12_000, Math.floor(contextSize / 2)) : undefined });
 		const attempt = async (includeMcp: boolean) =>
-			decide(deps.endpoint(), messages, decisionSchema(context, { includeMcp }), {
+			decide(endpoint, messages, decisionSchema(context, { includeMcp }), {
 				maxTokens: context.homeControl ? 400 : 200,
 				model,
 				signal: input.signal,
@@ -162,11 +181,28 @@ export async function runTurn(input: TurnInput, deps: TurnDeps, send: Send): Pro
 			}
 			decision = validateDecision(result.value, context);
 			decideMetrics = result.metrics;
+			if (resolved?.metrics) decideMetrics = { ...decideMetrics,
+				inputTokens: decideMetrics.inputTokens + resolved.metrics.inputTokens,
+				outputTokens: decideMetrics.outputTokens + resolved.metrics.outputTokens,
+				totalMs: decideMetrics.totalMs + resolved.metrics.totalMs,
+				firstTokenMs: resolved.metrics.firstTokenMs,
+			};
 		} catch (error) {
 			if (input.signal?.aborted) throw error;
 			// A decision that cannot be made degrades to plain conversation.
 			console.warn("Decision failed; answering directly:", error instanceof Error ? error.message : error);
 		}
+	}
+	if (resolved?.intent === "failure_report" && candidates.length) {
+		// A failure report must inspect real state, rather than ask the model
+		// to guess whether reading it would be useful or silently retry a change.
+		decision = { action: "home_status", targets: candidates.slice(0, 8).map(({ label }) => label) };
+		decideMetrics = resolved.metrics;
+	}
+	if (resolved?.intent === "device_change" && decision.action === "reply") {
+		send("phase_complete", { phaseId: decidePhase, iteration: 0, kind: "tool", state: "complete", metrics: decideMetrics });
+		finishWithAnswer(send, createPhaseId(input.requestId, 1), 1, "I couldn't produce a valid device action for that request, so no devices were changed. Please clarify the devices or settings you want.");
+		return;
 	}
 
 	/* 3 ── Act ──────────────────────────────────────────────────────── */
@@ -188,6 +224,10 @@ export async function runTurn(input: TurnInput, deps: TurnDeps, send: Send): Pro
 			outcome = { result: { error: message }, answer: `That didn't work: ${message}` };
 		}
 		const resultTokens = estimateTokens(JSON.stringify(outcome.result ?? ""));
+		if (resolved?.intent === "failure_report" && decision.action === "home_status") {
+			outcome.facts = `Current device state (read only):\n${JSON.stringify(outcome.result)}\nThe user reports an earlier request did not work. Compare these readings with prior app action receipts and requested settings. A successful service receipt only means Home Assistant accepted the call; it does not prove the physical light changed. Report mismatches or uncertainty instead of concluding it succeeded merely because a receipt exists. Do not invent a cause or retry the change.`;
+			outcome.answer = undefined;
+		}
 		send("tool_complete", {
 			phaseId: decidePhase,
 			iteration: 0,
@@ -215,7 +255,7 @@ export async function runTurn(input: TurnInput, deps: TurnDeps, send: Send): Pro
 	}
 
 	/* 4 ── Speak ────────────────────────────────────────────────────── */
-	await speak(input, deps, send, model, facts, cards);
+	await speak(input, deps, send, model, facts, cards, endpoint, contextSize, decision.action);
 }
 
 function finishWithAnswer(
@@ -249,8 +289,11 @@ async function speak(
 	model: ActiveModelMetadata,
 	facts: string,
 	cards: unknown[],
+	endpoint: ModelEndpoint,
+	contextSize: number,
+	action: Decision["action"],
 ): Promise<void> {
-	const profile = getThinkingProfile(input.thinkingMode, os.totalmem(), deps.contextSize);
+	const profile = getThinkingProfile(input.thinkingMode, os.totalmem(), contextSize);
 	const thinking = input.thinkingMode !== "fast";
 	/*
 	 * Results go before the question and the instruction into the system
@@ -259,6 +302,7 @@ async function speak(
 	 */
 	const systemPrompt =
 		speakerSystemPrompt(deps, input.prompt) +
+		`\nCurrent app execution: selected action ${action}. ${action === "mcp" ? "An external tool ran; only its supplied results establish its effects." : "No device-changing action was executed in this turn."} Prior assistant prose is not execution evidence; use only app action receipts and current device readings. If a previous reply claimed to change something without an app receipt, say that no execution result supports that claim. Do not invent missing buttons, confirmation requirements or app failures. Do not discuss this execution note during ordinary conversation.` +
 		(facts ? " Answer the user's question from the results given with it. Link web sources you rely on." : "");
 	const userText = facts ? `${facts}\n\nQuestion: ${input.prompt}` : input.prompt;
 	const attachments = input.attachments || [];
@@ -270,13 +314,13 @@ async function speak(
 		CONTEXT_SAFETY_MARGIN;
 	const messages: ChatMessage[] = [
 		{ role: "system", content: systemPrompt },
-		...fitHistory(input.history || [], Math.max(0, deps.contextSize - reserved)),
+		...fitHistory(input.history || [], Math.max(0, contextSize - reserved)),
 		{ role: "user", content: userContent(userText, attachments) },
 	];
 	const phaseId = createPhaseId(input.requestId, 1);
 	send("phase_start", { phaseId, iteration: 1, kind: thinking ? "thinking" : "answer", state: "active" });
 	const result = await streamText(
-		deps.endpoint(),
+		endpoint,
 		messages,
 		{
 			maxTokens: profile.maxTokens,

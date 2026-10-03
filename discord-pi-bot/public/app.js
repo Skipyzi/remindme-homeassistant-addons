@@ -379,50 +379,9 @@ function harness() {
 				}));
 			} catch (_) {}
 		},
-		/**
-		 * The transcript in the shape the model reads it: the turns someone
-		 * actually said, oldest first. Tool rows and cards are furniture —
-		 * their contents already reached the model as tool results, and
-		 * replaying them as prose would only invite the model to imitate
-		 * the format instead of using the tools.
-		 *
-		 * The token meter measures this same list, so what the gauge counts
-		 * and what the request carries cannot drift apart.
-		 */
+		/** Replay conversation text, compact action receipts and search sources. */
 		modelHistory() {
-			const turns = [];
-			// A web search's hits are dropped from history like every other
-			// tool row — the fat snippets are a within-turn cost, the +N the
-			// badge shows, and carrying them forward would fill the window in
-			// a search or two. But the titles and URLs are kept, trimmed to
-			// that, and folded into the answer that used them, so a later
-			// "link the sources" has something real to link instead of the
-			// model inventing homepages.
-			let sources = "";
-			for (const message of this.messages) {
-				if (message.kind === "tool" && message.name === "web_search") {
-					const results = message.result?.results;
-					if (Array.isArray(results) && results.length) {
-						const list = results
-							.slice(0, 6)
-							.filter((result) => result?.url)
-							.map(
-								(result, index) =>
-									`${index + 1}. ${result.title || result.url} — ${result.url}`,
-							)
-							.join("\n");
-						if (list) sources = `\n\n[Web search sources:\n${list}]`;
-					}
-					continue;
-				}
-				if (message.kind === "user" && message.text?.trim()) {
-					turns.push({ role: "user", content: message.text });
-				} else if (message.kind === "answer" && message.text?.trim()) {
-					turns.push({ role: "assistant", content: message.text + sources });
-					sources = "";
-				}
-			}
-			return turns;
+			return window.RemindMeChatHistory.fromMessages(this.messages);
 		},
 		/**
 		 * Add a row to the transcript.

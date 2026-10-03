@@ -499,14 +499,18 @@ function deviceCommand(text: string): boolean {
 	);
 }
 
+export function isDeviceCancellation(text: string): boolean {
+	return /^\W*(?:no|nope|nah|cancel|never mind|not now|not yet)\b/i.test(text) ||
+		/\b(?:don['’]?t|do not|never)\s+(?:turn|switch|set|change|create|proceed|do)\b/i.test(text);
+}
+
 export function looksLikeCommand(
 	prompt: string,
 	history: Array<{ role: string; content: string }> = [],
 ): boolean {
 	const text = String(prompt || "").trim();
 	const wordCount = text.split(/\s+/).length;
-	if (/^\W*(?:no|nope|nah|cancel|never mind|not now|not yet)\b/i.test(text)) return false;
-	if (/\b(?:don['’]?t|do not|never)\s+(?:turn|switch|set|change|create|proceed|do)\b/i.test(text)) return false;
+	if (isDeviceCancellation(text)) return false;
 	if (acknowledgementTerms.test(text) && wordCount <= 8) return false;
 	const previous = [...history].reverse().find((turn) => turn.role === "user");
 	if (/^\W*(?:yes|yeah|yep|sure|please do|go ahead|do it|proceed)\W*$/i.test(text)) {

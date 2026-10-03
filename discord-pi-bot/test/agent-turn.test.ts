@@ -4,6 +4,7 @@ import type { Artifact } from "../src/harness/artifacts.ts";
 import type { HassEntity } from "../src/harness/entities.ts";
 import { HomeApi } from "../src/agent/home.ts";
 import { FenceStripper, runTurn, type TurnDeps } from "../src/agent/turn.ts";
+import { chatgptAuth } from "../src/harness/chatgptAuth.ts";
 
 const MODEL_URL = "http://homeassistant:8080/v1/chat/completions";
 
@@ -29,6 +30,7 @@ function harness(options: {
 	intent?: unknown;
 	states?: HassEntity[];
 	serviceFailure?: string;
+	cloud?: boolean;
 }) {
 	const recorded: Recorded = { model: [], services: [], conversation: [] };
 	const decisions = [...(options.decisions || [])];
@@ -54,9 +56,13 @@ function harness(options: {
 		return new Response("not found", { status: 404 });
 	}) as typeof fetch;
 	const modelFetch = (async (input: string | URL | Request, init?: RequestInit) => {
-		if (String(input) !== MODEL_URL) throw new Error(`unexpected fetch ${String(input)}`);
+		if (String(input) !== (options.cloud ? "https://api.openai.com/v1/responses" : MODEL_URL)) throw new Error(`unexpected fetch ${String(input)}`);
 		const body = JSON.parse(String(init?.body));
 		recorded.model.push(body);
+		if (options.cloud) {
+			const text = body.text?.format ? JSON.stringify({ decision: decisions.shift() ?? { action: "reply" } }) : (options.speech ?? "Hello!");
+			return new Response(`data: ${JSON.stringify({ type: "response.output_text.delta", delta: text })}\n\ndata: ${JSON.stringify({ type: "response.completed", response: { status: "completed", output: [], usage: { input_tokens: 20, output_tokens: 10 } } })}\n\n`);
+		}
 		if (!body.stream)
 			return Response.json({ choices: [{ message: { content: JSON.stringify(decisions.shift() ?? { action: "reply" }) } }] });
 		const chunks = (options.speech ?? "Hello!")
@@ -67,7 +73,7 @@ function harness(options: {
 	const artifacts: Artifact[] = [];
 	const held: unknown[] = [];
 	const deps: TurnDeps = {
-		endpoint: () => ({ url: new URL(MODEL_URL), model: "test", headers: {}, openaiCompat: false, label: "test" }),
+		endpoint: () => ({ url: new URL(options.cloud ? "https://api.openai.com/v1/responses" : MODEL_URL), model: "test", headers: {}, openaiCompat: Boolean(options.cloud), label: "test", authProvider: options.cloud ? "chatgpt" : undefined }),
 		activeModel: async () => ({}),
 		contextSize: 8192,
 		systemPrompt: () => "You are a test.",
@@ -205,6 +211,64 @@ test("lighting reports a failed service separately from lights that succeeded", 
 	assert.match(answerOf(h), /Pc Lamp: Home Assistant returned HTTP 503/);
 	const receipt = h.events.find(({ event, data }) => event === "tool_complete" && data.name === "home_lighting")!.data.result as { done: string[] };
 	assert.deepEqual(receipt.done, ["light.paper_lamp", "light.kitchen_counter"]);
+});
+
+test("cloud follow-ups resolve devices beyond the last four messages before applying an alternative", async (context) => {
+	context.mock.method(chatgptAuth, "accessToken", async () => "test-only");
+	const h = harness({ cloud: true, states: sunsetLights, decisions: [
+		{ intent: "device_change", request: "Apply a cyberpunk light scene to Paper Lamp, Pc Lamp and Kitchen Counter." }, sunsetDecision,
+	] });
+	const history = [
+		{ role: "user", content: sunsetRequest }, { role: "assistant", content: "Applied sunset lighting." },
+		{ role: "user", content: "Which lights can change colour?" }, { role: "assistant", content: "The two lamps; the counter can only dim." },
+		{ role: "user", content: "thanks" }, { role: "assistant", content: "You're welcome." },
+	];
+	await run(h, "how about a cyberpunk light scene", { history });
+	assert.equal(h.recorded.services.length, 3);
+	assert.equal(h.recorded.model.length, 2);
+	assert.ok(JSON.stringify(h.recorded.model[0].input).includes(sunsetRequest));
+	assert.ok(JSON.stringify(h.recorded.model[1].input).includes(sunsetRequest));
+});
+
+test("a cloud failure report reads devices and grounds the reply without retrying changes", async (context) => {
+	context.mock.method(chatgptAuth, "accessToken", async () => "test-only");
+	const h = harness({ cloud: true, states: [...sunsetLights, { entity_id: "light.kitchen_bar", state: "on", attributes: { friendly_name: "Kitchen Bar", supported_color_modes: ["color_temp", "xy"] } }], decisions: [
+		{ intent: "failure_report", request: "Inspect Paper Lamp, Pc Lamp and Kitchen Counter after the cyberpunk lighting request did not work." },
+		{ action: "home_status", targets: ["Paper Lamp", "Pc Lamp", "Kitchen Counter"] },
+	] });
+	await run(h, "didnt work", { history: [
+		{ role: "user", content: sunsetRequest }, { role: "assistant", content: "Applied sunset. [App action receipts: sunset succeeded]" },
+		{ role: "user", content: "how about a cyberpunk light scene" }, { role: "assistant", content: "Paper Lamp: set to violet. [No app device-action receipt for this reply.]" },
+	] });
+	assert.equal(h.recorded.services.length, 0);
+	assert.equal(h.recorded.model.length, 2);
+	const speaker = JSON.stringify(h.recorded.model[1].input);
+	assert.match(speaker, /No device-changing action was executed in this turn/);
+	assert.match(speaker, /No app device-action receipt/);
+	assert.match(speaker, /Current device state.*read only/);
+	assert.match(speaker, /Paper Lamp.*state.*off/);
+	const receipt = h.events.find(({ event, data }) => event === "tool_complete" && data.name === "home_status")!.data.result;
+	assert.doesNotMatch(JSON.stringify(receipt), /light.kitchen_bar/);
+});
+
+test("a cloud request without a valid action cannot fall through into a fabricated success", async (context) => {
+	context.mock.method(chatgptAuth, "accessToken", async () => "test-only");
+	const h = harness({ cloud: true, states: sunsetLights, decisions: [
+		{ intent: "device_change", request: "Apply cyberpunk lighting to Paper Lamp." }, { action: "reply" },
+	], speech: "I changed your lights!" });
+	await run(h, "how about cyberpunk", { history: sunsetHistory });
+	assert.equal(h.recorded.services.length, 0);
+	assert.equal(h.recorded.model.length, 2);
+	assert.match(answerOf(h), /no devices were changed/);
+	assert.doesNotMatch(answerOf(h), /I changed your lights/);
+});
+
+test("cloud conversation keeps earlier facts beyond the local model's history budget", async (context) => {
+	context.mock.method(chatgptAuth, "accessToken", async () => "test-only");
+	const h = harness({ cloud: true, decisions: [{ intent: "conversation", request: "What was the project codename?" }, { action: "reply" }] });
+	const fact = "The project codename is ORCHID.";
+	await run(h, "what was its codename?", { history: [{ role: "user", content: fact + " context".repeat(4500) }, { role: "assistant", content: "Understood." }] });
+	assert.ok(JSON.stringify(h.recorded.model[2].input).includes(fact));
 });
 
 test("a knowledge question gets a spoken answer and the model is offered no tools", async () => {
