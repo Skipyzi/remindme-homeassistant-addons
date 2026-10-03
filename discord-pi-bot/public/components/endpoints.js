@@ -27,6 +27,7 @@
 		app.endpointDraft = endpoint
 			? {
 					id: endpoint.id,
+					authProvider: endpoint.authProvider,
 					name: endpoint.name,
 					url: endpoint.url,
 					model: endpoint.model,
@@ -57,6 +58,7 @@
 			url: draft.url,
 			model: draft.model,
 			openaiCompat: draft.openaiCompat,
+			authProvider: draft.authProvider,
 		};
 		// Only send the key when the user actually typed one.
 		if (draft.apiKey) body.apiKey = draft.apiKey;

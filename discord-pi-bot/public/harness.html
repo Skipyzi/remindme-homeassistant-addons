@@ -30,6 +30,7 @@
     <script defer src="./components/entityControls.js"></script>
     <script defer src="./components/conversations.js"></script>
     <script defer src="./components/endpoints.js"></script>
+    <script defer src="./components/providers.js"></script>
     <script defer src="./components/attachments.js"></script>
     <script defer src="./components/model-cookbook.js"></script>
     <script defer src="./app.js"></script>
@@ -1030,6 +1031,7 @@
                       ><option :value="preset.id" x-text="preset.name"></option
                     ></template></select
                 ></label>
+                <span x-show="usingChatgptPlan" x-cloak>Using ChatGPT plan · <a href="https://chatgpt.com/settings/usage" target="_blank" rel="noreferrer noopener">Manage usage</a></span>
                 <span
                   class="thinking-hint"
                   x-text="`${currentThinkingProfile.reasoningBudget} thought · ${currentThinkingProfile.answerReserve} answer tokens${currentThinkingProfile.estimatedMaxSeconds ? ` · up to ${formatDuration(currentThinkingProfile.estimatedMaxSeconds * 1000)}` : ''}`"
@@ -1485,10 +1487,46 @@
           <button type="button" class="sheet-close" aria-label="Close" @click="modelsOpen=false">✕</button>
           <h2>Inference endpoint</h2>
           <p class="settings-copy">
-            Where the model runs. The local llama.cpp is the default; point at
-            a stronger box on your network or an OpenAI-compatible API to run
-            faster than a Pi can.
+            Sign in to use cloud inference for web and Discord chat. Chat messages
+            and relevant home context are sent to the selected provider.
+            You can also choose a model on your network.
           </p>
+          <div class="endpoint-editor" role="dialog" aria-label="ChatGPT plan usage" x-show="chatgptWelcome" x-cloak>
+            <h3>You're using your ChatGPT plan</h3>
+            <p>Eligible requests use your ChatGPT plan when you select it for chat. You can manage this app's usage in <a href="https://chatgpt.com/settings/usage" target="_blank" rel="noreferrer noopener">ChatGPT settings</a>.</p>
+            <button class="chip" @click="dismissChatgptWelcome()">Got it</button>
+          </div>
+          <div class="provider-connections">
+            <template x-for="provider in providers" :key="provider.id">
+              <section class="endpoint-editor provider-connection">
+                <h3 x-text="provider.name"></h3>
+                <p class="micro" x-text="provider.connected ? `Connected ${provider.email}` : 'Subscription sign-in'"></p>
+                <p class="micro" x-show="provider.id==='chatgpt'">Uses ChatGPT plan limits. Choose from the models available to your account. <a href="https://chatgpt.com/settings/usage" target="_blank" rel="noreferrer noopener">Manage usage</a></p>
+                <p class="micro" x-show="provider.id==='claude'">Uses the official Claude client. Your account may require paid usage credits.</p>
+                <button class="chip" :disabled="provider.busy" @click="providerStart(provider)" x-text="provider.id==='chatgpt' ? 'Continue with ChatGPT' : (provider.connected ? 'Sign in again' : 'Sign in with Claude')"></button>
+                <button class="chip" x-show="provider.connected" :disabled="provider.busy" @click="providerLogout(provider)">Disconnect</button>
+                <div x-show="provider.attempt" x-cloak>
+                  <p class="micro" x-text="provider.attempt?.instructions"></p>
+                  <a class="chip" :href="provider.attempt?.url" target="_blank" rel="noreferrer noopener">Continue sign-in</a>
+                  <label class="endpoint-field">
+                    <span x-text="provider.id==='chatgpt' ? 'Final callback URL' : 'Authorization code'"></span>
+                    <input type="password" autocomplete="off" spellcheck="false" x-model="provider.code" @keydown.enter="providerComplete(provider)" />
+                  </label>
+                  <button class="chip" :disabled="provider.busy || !provider.code.trim()" @click="providerComplete(provider)">Finish sign-in</button>
+                  <button class="chip" :disabled="provider.busy" @click="providerCancel(provider)">Cancel</button>
+                </div>
+                <div x-show="provider.connected && provider.models.length" x-cloak>
+                  <label class="endpoint-field">Model
+                    <select x-model="provider.model">
+                      <template x-for="model in provider.models" :key="model.id"><option :value="model.id" x-text="model.name"></option></template>
+                    </select>
+                  </label>
+                  <button class="chip" :disabled="provider.busy || !provider.model" @click="providerUse(provider)">Use for chat</button>
+                </div>
+                <p class="endpoint-error" role="status" x-show="provider.error" x-text="provider.error"></p>
+              </section>
+            </template>
+          </div>
           <div class="endpoint-list">
             <!-- The built-in local model is always the first choice. -->
             <button
@@ -1546,16 +1584,17 @@
                 <label class="endpoint-field"
                   >URL<input
                     x-model="endpointDraft.url"
+                    :readonly="!!endpointDraft.authProvider"
                     placeholder="http://192.168.1.40:8080/v1/chat/completions"
                     spellcheck="false"
                 /></label>
-                <label class="endpoint-field"
+                <label class="endpoint-field" x-show="!endpointDraft.authProvider"
                   >Model<input
                     x-model="endpointDraft.model"
                     placeholder="qwen2.5-7b"
                     spellcheck="false"
                 /></label>
-                <label class="endpoint-field"
+                <label class="endpoint-field" x-show="!endpointDraft.authProvider"
                   >API key
                   <input
                     type="password"
@@ -1564,7 +1603,7 @@
                     :placeholder="endpointDraft.hasKey ? '•••••• (leave blank to keep)' : 'optional'"
                   />
                 </label>
-                <label class="endpoint-toggle">
+                <label class="endpoint-toggle" x-show="!endpointDraft.authProvider">
                   <input type="checkbox" x-model="endpointDraft.openaiCompat" />
                   OpenAI-compatible
                   <small

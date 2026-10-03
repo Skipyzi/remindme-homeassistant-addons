@@ -23,6 +23,8 @@ export interface Endpoint {
 	model: string;
 	/** Sent as `Authorization: Bearer …`; never returned to the client. */
 	apiKey?: string;
+	/** Credentials live in the provider's protected auth store. */
+	authProvider?: "chatgpt" | "claude";
 	/**
 	 * A plain OpenAI-compatible server rejects llama.cpp's reasoning
 	 * parameters, so this decides whether they are sent. Off for llama.cpp,
@@ -50,6 +52,7 @@ export interface ResolvedEndpoint {
 	openaiCompat: boolean;
 	/** A label for the status line: the endpoint's name, or "local". */
 	label: string;
+	authProvider?: "chatgpt" | "claude";
 }
 
 const LOOPBACK = new Set(["localhost", "127.0.0.1", "::1", "[::1]"]);
@@ -139,7 +142,7 @@ export class EndpointStore {
 		await writeFile(
 			temporary,
 			JSON.stringify({ endpoints: this.endpoints, activeId: this.activeId }, null, 2),
-			"utf8",
+			{ encoding: "utf8", mode: 0o600 },
 		);
 		await rename(temporary, this.path);
 	}
@@ -165,6 +168,7 @@ export class EndpointStore {
 	}
 
 	async create(values: Partial<Endpoint>): Promise<SafeEndpoint> {
+		validateSubscriptionEndpoint(values);
 		const now = new Date().toISOString();
 		const endpoint: Endpoint = {
 			id: randomUUID().slice(0, 8),
@@ -172,6 +176,7 @@ export class EndpointStore {
 			url: validateEndpointUrl(String(values.url || "")),
 			model: String(values.model || "").slice(0, 120),
 			apiKey: values.apiKey ? String(values.apiKey) : undefined,
+			authProvider: values.authProvider,
 			openaiCompat: values.openaiCompat !== false,
 			createdAt: now,
 			updatedAt: now,
@@ -184,10 +189,12 @@ export class EndpointStore {
 	async update(id: string, values: Partial<Endpoint>): Promise<SafeEndpoint | undefined> {
 		const endpoint = this.endpoints.find((item) => item.id === id);
 		if (!endpoint) return undefined;
+		validateSubscriptionEndpoint({ ...endpoint, ...values });
 		if (typeof values.name === "string") endpoint.name = values.name.slice(0, 60);
 		if (typeof values.url === "string")
 			endpoint.url = validateEndpointUrl(values.url);
 		if (typeof values.model === "string") endpoint.model = values.model.slice(0, 120);
+		if ("authProvider" in values) endpoint.authProvider = values.authProvider;
 		if (typeof values.openaiCompat === "boolean")
 			endpoint.openaiCompat = values.openaiCompat;
 		/*
@@ -231,6 +238,7 @@ export class EndpointStore {
 	resolve(fallback: { url: string; model: string }): ResolvedEndpoint {
 		const endpoint = this.active();
 		if (endpoint) {
+			validateSubscriptionEndpoint(endpoint);
 			const headers: Record<string, string> = {
 				"Content-Type": "application/json",
 			};
@@ -241,6 +249,7 @@ export class EndpointStore {
 				headers,
 				openaiCompat: endpoint.openaiCompat,
 				label: endpoint.name,
+				authProvider: endpoint.authProvider,
 			};
 		}
 		return {
@@ -251,6 +260,12 @@ export class EndpointStore {
 			label: "local",
 		};
 	}
+}
+
+export function validateSubscriptionEndpoint(values: Partial<Endpoint>) {
+	if (values.authProvider === undefined) return;
+	const url = values.authProvider === "chatgpt" ? "https://api.openai.com/v1/responses" : values.authProvider === "claude" ? "https://api.anthropic.com/v1/messages" : "";
+	if (!url || values.url !== url || values.apiKey) throw new Error("Subscription connections use their provider's fixed URL and stored sign-in.");
 }
 
 /**

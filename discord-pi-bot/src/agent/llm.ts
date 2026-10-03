@@ -6,6 +6,9 @@ import {
 	type ActiveModelMetadata,
 	type PhaseMetrics,
 } from "../harness/modelPhases";
+import { modelEvents, responsesBody, responseText, responseUsage, strictDecisionSchema, unwrapDecision, usesResponses, type ModelResponse } from "../harness/responses";
+import { modelFetch } from "../harness/providerRequests";
+import { claudeCompletion } from "../harness/claudeAuth";
 
 /** Where a request goes. Mirrors `ResolvedEndpoint` without importing the store. */
 export interface ModelEndpoint {
@@ -15,6 +18,7 @@ export interface ModelEndpoint {
 	/** A plain OpenAI-style server: no llama.cpp extension fields. */
 	openaiCompat: boolean;
 	label: string;
+	authProvider?: "chatgpt" | "claude";
 }
 
 export type ChatMessage = { role: "system" | "user" | "assistant"; content: unknown };
@@ -53,8 +57,16 @@ export async function decide(
 	schema: Record<string, unknown>,
 	options: { maxTokens?: number; model?: ActiveModelMetadata; signal?: AbortSignal } = {},
 ): Promise<DecideResult> {
+	if (endpoint.authProvider === "claude") {
+		const result = await claudeCompletion(endpoint.model, messages, { schema: strictDecisionSchema(schema), signal: options.signal, modelMetadata: options.model });
+		return { value: unwrapDecision(result.structured ?? parseJsonLoose(result.text)), raw: result.text, metrics: result.metrics };
+	}
 	const started = Date.now();
-	const body: Record<string, unknown> = {
+	const responses = usesResponses(endpoint.url);
+	const body: Record<string, unknown> = responses ? {
+		...responsesBody(endpoint.model, messages, options.maxTokens ?? 256),
+		text: { format: { type: "json_schema", name: "decision", strict: true, schema: strictDecisionSchema(schema) } },
+	} : {
 		model: endpoint.model,
 		messages,
 		stream: false,
@@ -65,7 +77,7 @@ export async function decide(
 			json_schema: { name: "decision", schema },
 		},
 	};
-	if (!endpoint.openaiCompat) {
+	if (!responses && !endpoint.openaiCompat) {
 		body.chat_template_kwargs = { enable_thinking: false };
 		/*
 		 * Not reasoning_format: "none" — combined with a grammar it fails
@@ -75,28 +87,24 @@ export async function decide(
 		// Keeps the prompt prefix hot in the KV cache between turns.
 		body.cache_prompt = true;
 	}
-	const response = await fetch(endpoint.url, {
-		method: "POST",
-		headers: endpoint.headers,
-		body: JSON.stringify(body),
-		signal: options.signal,
-	});
+	const response = await modelFetch(endpoint, body, options.signal);
 	if (!response.ok)
 		throw new Error(describeEndpointError(endpoint.label, response.status, await response.text()));
-	const data = (await response.json()) as {
+	const data = (await response.json()) as ModelResponse & {
 		choices?: Array<{ message?: { content?: string; reasoning_content?: string } }>;
 		usage?: Record<string, number>;
 		timings?: Record<string, number>;
 	};
+	if (responses && data.status === "incomplete") throw new Error("OpenAI decision exceeded the output limit");
 	const raw = stripReasoningTags(
-		String(data.choices?.[0]?.message?.content ?? ""),
+		responses ? responseText(data) : String(data.choices?.[0]?.message?.content ?? ""),
 	).trim();
 	const elapsed = Date.now() - started;
 	return {
-		value: parseJsonLoose(raw),
+		value: responses ? unwrapDecision(parseJsonLoose(raw)) : parseJsonLoose(raw),
 		raw,
 		metrics: normalizePhaseMetrics(
-			data.usage || {},
+			responses ? responseUsage(data) : data.usage || {},
 			data.timings || {},
 			elapsed,
 			elapsed,
@@ -138,7 +146,7 @@ export function parseJsonLoose(text: string): unknown {
 
 export interface StreamOptions {
 	maxTokens: number;
-	/** Reasoning on/off and its budget; ignored by OpenAI-compatible endpoints. */
+	/** Reasoning on/off. Responses maps the budget to low, medium or high effort. */
 	thinking: boolean;
 	reasoningBudget?: number;
 	model?: ActiveModelMetadata;
@@ -167,14 +175,23 @@ export async function streamText(
 	options: StreamOptions,
 	handlers: StreamHandlers,
 ): Promise<StreamResult> {
+	if (endpoint.authProvider === "claude") {
+		return claudeCompletion(endpoint.model, messages, { thinking: options.thinking, signal: options.signal, modelMetadata: options.model }, handlers);
+	}
 	const started = Date.now();
-	const body: Record<string, unknown> = {
+	const responses = usesResponses(endpoint.url);
+	const effort = !options.thinking ? "none" : (options.reasoningBudget || 0) >= 4096 ? "high" : (options.reasoningBudget || 0) >= 2048 ? "medium" : "low";
+	const body: Record<string, unknown> = responses ? {
+		...responsesBody(endpoint.model, messages, options.maxTokens, true, effort),
+	} : {
 		model: endpoint.model,
 		messages,
 		stream: true,
 		max_tokens: options.maxTokens,
 	};
-	if (!endpoint.openaiCompat) {
+	if (responses && options.thinking)
+		body.reasoning = { ...(body.reasoning as object), summary: "auto" };
+	if (!responses && !endpoint.openaiCompat) {
 		body.chat_template_kwargs = { enable_thinking: options.thinking };
 		body.reasoning_format = options.thinking ? "deepseek" : "none";
 		body.reasoning = options.thinking ? "on" : "off";
@@ -182,16 +199,10 @@ export async function streamText(
 			body.reasoning_budget = options.reasoningBudget;
 		body.cache_prompt = true;
 	}
-	const response = await fetch(endpoint.url, {
-		method: "POST",
-		headers: endpoint.headers,
-		body: JSON.stringify(body),
-		signal: options.signal,
-	});
+	const response = await modelFetch(endpoint, body, options.signal);
 	if (!response.ok)
 		throw new Error(describeEndpointError(endpoint.label, response.status, await response.text()));
 	if (!response.body) throw new Error("The endpoint returned no stream");
-	let buffer = "";
 	let text = "";
 	let thinking = "";
 	let timings: Record<string, number> = {};
@@ -199,49 +210,49 @@ export async function streamText(
 	let firstTokenAt: number | undefined;
 	let finishReason = "";
 	const thinkState = { active: false };
-	for await (const chunk of response.body as unknown as AsyncIterable<Uint8Array>) {
-		buffer += Buffer.from(chunk).toString("utf8");
-		const lines = buffer.split("\n");
-		buffer = lines.pop() || "";
-		for (const line of lines) {
-			if (!line.startsWith("data: ") || line === "data: [DONE]") continue;
-			let payload: {
-				usage?: Record<string, number>;
-				timings?: Record<string, number>;
-				choices?: Array<{
-					delta?: { content?: string; reasoning_content?: string; reasoning?: string };
-					timings?: Record<string, number>;
-					finish_reason?: string | null;
-				}>;
-			};
-			try {
-				payload = JSON.parse(line.slice(6));
-			} catch {
+	let completed = false;
+	for await (let payload of modelEvents(response.body)) {
+		if (responses) {
+			if (payload.type === "error" || payload.type === "response.failed")
+				throw new Error(payload.message || payload.response?.error?.message || "OpenAI stream failed");
+			if (payload.type === "response.completed" || payload.type === "response.incomplete") {
+				if (payload.type === "response.incomplete" && endpoint.authProvider === "chatgpt")
+					throw new Error("ChatGPT reached the output limit before completing the request");
+				completed = true;
+				usage = responseUsage(payload.response);
+				finishReason = payload.type === "response.incomplete" ? "length" : "stop";
 				continue;
 			}
-			const choice = payload.choices?.[0];
-			if (choice?.finish_reason) finishReason = choice.finish_reason;
-			if (payload.timings) timings = { ...timings, ...payload.timings };
-			if (payload.usage) usage = { ...usage, ...payload.usage };
-			if (choice?.timings) timings = { ...timings, ...choice.timings };
-			const delta = choice?.delta;
-			if (!delta) continue;
-			const explicit = reasoningText(delta);
-			const routed = explicit
-				? { reasoning: explicit, answer: stripReasoningTags(delta.content || "") }
-				: routeThinkTags(delta.content || "", thinkState);
-			if (routed.answer) {
-				firstTokenAt ??= Date.now();
-				text += routed.answer;
-				handlers.answer(routed.answer);
-			}
-			if (routed.reasoning && options.thinking) {
-				firstTokenAt ??= Date.now();
-				thinking += routed.reasoning;
-				handlers.thinking(routed.reasoning);
-			}
+			if (payload.type === "response.refusal.delta") throw new Error("OpenAI declined this request");
+			if (payload.type === "response.output_text.delta")
+				payload = { choices: [{ delta: { content: payload.delta } }] };
+			else if (payload.type === "response.reasoning_summary_text.delta")
+				payload = { choices: [{ delta: { reasoning: payload.delta } }] };
+			else continue;
+		}
+		const choice = payload.choices?.[0];
+		if (choice?.finish_reason) finishReason = choice.finish_reason;
+		if (payload.timings) timings = { ...timings, ...payload.timings };
+		if (payload.usage) usage = { ...usage, ...payload.usage };
+		if (choice?.timings) timings = { ...timings, ...choice.timings };
+		const delta = choice?.delta;
+		if (!delta) continue;
+		const explicit = reasoningText(delta);
+		const routed = explicit
+			? { reasoning: explicit, answer: stripReasoningTags(delta.content || "") }
+			: routeThinkTags(delta.content || "", thinkState);
+		if (routed.answer) {
+			firstTokenAt ??= Date.now();
+			text += routed.answer;
+			handlers.answer(routed.answer);
+		}
+		if (routed.reasoning && options.thinking) {
+			firstTokenAt ??= Date.now();
+			thinking += routed.reasoning;
+			handlers.thinking(routed.reasoning);
 		}
 	}
+	if (responses && !completed) throw new Error("OpenAI stream ended before completing the response");
 	const elapsed = Date.now() - started;
 	return {
 		text,
@@ -256,6 +267,7 @@ export async function streamText(
 				options.model,
 			),
 			truncated: finishReason === "length",
+			...(responses ? { thinkingTokens: usage.reasoning_tokens || 0 } : {}),
 		},
 	};
 }

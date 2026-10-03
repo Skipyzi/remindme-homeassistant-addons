@@ -46,6 +46,14 @@ export TRACKINGMORE_API_KEY="$(get_option trackingmore_api_key)"
 # /app inside the image and is lost on every restart and update.
 export REMINDER_DATA_PATH=/data/reminders.json
 export CONVERSATION_DATA_PATH=/data/conversations.json
+export ENDPOINT_DATA_PATH=/data/endpoints.json
+export CHATGPT_AUTH_PATH=/data/chatgpt-auth.json
+export CLAUDE_CONFIG_DIR=/data/claude-auth
+# Preserve settings made before endpoints had a persistent path.
+if [ ! -f "$ENDPOINT_DATA_PATH" ] && [ -f /app/data/endpoints.json ]; then
+	cp /app/data/endpoints.json "$ENDPOINT_DATA_PATH"
+	chmod 600 "$ENDPOINT_DATA_PATH"
+fi
 export SKILL_DATA_PATH=/data/skills.json
 export MCP_DATA_PATH=/data/mcp.json
 export ARTIFACT_DATA_PATH=/data/artifacts.json

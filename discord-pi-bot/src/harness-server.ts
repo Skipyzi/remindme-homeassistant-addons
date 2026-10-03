@@ -45,7 +45,11 @@ import {
 } from "./harness/trackingmore";
 import { readSystemStats } from "./harness/systemStats";
 import { ArtifactStore, toDocument } from "./harness/artifacts";
-import { EndpointStore } from "./harness/endpoints";
+import { modelFetch } from "./harness/providerRequests";
+import { claudeCompletion } from "./harness/claudeAuth";
+import { providerRoutes } from "./harness/providerRoutes";
+import { EndpointStore, validateSubscriptionEndpoint } from "./harness/endpoints";
+import { responsesBody, responseText, usesResponses, type ModelResponse } from "./harness/responses";
 import { readablePage, ReaderError } from "./harness/reader";
 import { describeWhen } from "./harness/reminderParser";
 import {
@@ -208,6 +212,7 @@ function resolveEndpoint() {
  * this only bounds what the parser will hold in memory to do it.
  */
 app.use(express.json({ limit: "2mb" }));
+app.use("/api/auth", providerRoutes(endpoints));
 app.get("/api/mcp", (_request, response) => {
 	response.json(mcpServers.list());
 });
@@ -302,19 +307,21 @@ app.post("/api/endpoints/:id/test", async (request, response) => {
 	const endpoint = endpoints.get(request.params.id);
 	if (!endpoint) return response.status(404).json({ error: "Not found" });
 	try {
+		validateSubscriptionEndpoint(endpoint);
+		const messages = [{ role: "user", content: "Reply with the single word: ok" }];
+		if (endpoint.authProvider === "claude") {
+			const result = await claudeCompletion(endpoint.model, messages, { signal: AbortSignal.timeout(120_000) });
+			if (!result.text.trim()) throw new Error("Claude returned no text");
+			return response.json({ ok: true, reply: result.text.slice(0, 120) });
+		}
 		const headers: Record<string, string> = { "Content-Type": "application/json" };
 		if (endpoint.apiKey) headers.Authorization = `Bearer ${endpoint.apiKey}`;
-		const probe = await fetch(new URL(endpoint.url), {
-			method: "POST",
-			headers,
-			body: JSON.stringify({
+		const probe = await modelFetch({ url: new URL(endpoint.url), headers, authProvider: endpoint.authProvider }, usesResponses(new URL(endpoint.url)) ? responsesBody(endpoint.model, [{ role: "user", content: "Reply with the single word: ok" }], 32) : {
 				model: endpoint.model,
 				messages: [{ role: "user", content: "Reply with the single word: ok" }],
 				max_tokens: 5,
 				stream: false,
-			}),
-			signal: AbortSignal.timeout(15_000),
-		});
+			}, AbortSignal.timeout(endpoint.authProvider ? 120_000 : 15_000));
 		if (!probe.ok) {
 			const detail = (await probe.text()).slice(0, 200);
 			return response.status(502).json({
@@ -322,10 +329,11 @@ app.post("/api/endpoints/:id/test", async (request, response) => {
 				error: `HTTP ${probe.status}: ${detail}`,
 			});
 		}
-		const data = (await probe.json()) as {
+		const data = (await probe.json()) as ModelResponse & {
 			choices?: Array<{ message?: { content?: string } }>;
 		};
-		const reply = data.choices?.[0]?.message?.content;
+		const reply = usesResponses(new URL(endpoint.url)) ? responseText(data) : data.choices?.[0]?.message?.content;
+		if (!reply?.trim()) throw new Error("The endpoint returned no text");
 		response.json({
 			ok: true,
 			reply: typeof reply === "string" ? reply.slice(0, 120) : "(no text)",

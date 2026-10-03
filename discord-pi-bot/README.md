@@ -111,7 +111,7 @@ The token is sent once to the server and stored only in the llama.cpp add-on's p
 - **Qwen3 4B Q4:** higher quality but slower; remains compatible until real Pi acceptance is recorded.
 - **Gemma 3 4B:** text-only in this release. Vision execution and projector management are a separate future subsystem.
 
-This release does not add speech-to-text, text-to-speech, image inference, or cloud/OpenAI composition.
+This release does not add speech-to-text or text-to-speech.
 
 ## Discord presence uptime
 
@@ -133,3 +133,39 @@ Tracking begins when 2.3.2 first starts. Every stopped gap counts as downtime, i
 ## Discord behavior
 
 The bot uses the local model for `!chat` when enabled and the Pi-agent bridge for `!:` requests. Configure the Discord token, owner ID, optional Pi bridge URL, notification target, and Exa key in add-on options.
+
+
+## Cloud chat with your subscription
+
+In **Models**, choose **Continue with ChatGPT** or **Sign in with Claude**.
+Complete the provider's sign-in in your browser, then return to RemindMe.
+For ChatGPT on a remote Pi, the final `127.0.0.1:1455` page may fail to load.
+Copy that page's full address into **Final callback URL**. For Claude, paste
+its displayed authorization code. These values belong in the add-on's form,
+not in chat messages. Choose a model and press **Use for chat**.
+
+Web chat and Discord `!chat` use the same selected endpoint. The separate
+`!:` pi-agent bridge retains its existing configuration. **Disconnect** removes
+the provider's stored login and restores local inference if that provider was active.
+
+ChatGPT uses the official open-source sign-in flow with dynamic client
+registration, PKCE, verified ID tokens, rotating refresh tokens and account-specific
+model discovery. GPT-6 Luna is selected when the account's model list includes it;
+availability depends on the account. All subscription inference uses streamed
+Responses requests with `store: false`. Manage plan usage in
+[ChatGPT settings](https://chatgpt.com/settings/usage).
+
+Claude runs the pinned official Claude client, including its subscription login
+and refresh handling. Claude may require paid usage credits for third-party use.
+The client has no filesystem, shell, MCP, hook or skill tools enabled. RemindMe's
+existing action validation and Home Assistant confirmation cards still control
+home actions. Claude subscription chat currently accepts text only.
+
+Credentials stay in protected files under `/data`, shared by the web and Discord
+processes. ChatGPT refresh operations use a filesystem lock so simultaneous
+requests cannot reuse a rotating refresh token. The browser receives connection
+status and authorization links, never stored access or refresh tokens. Preserve
+`/data` across upgrades and protect add-on backups, which contain these credentials.
+Custom API-key endpoints remain available under **Add endpoint**; an OpenAI API
+endpoint can use `https://api.openai.com/v1/responses` and `gpt-6-luna` with separate
+API billing.

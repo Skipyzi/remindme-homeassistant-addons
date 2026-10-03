@@ -112,6 +112,11 @@ function harness() {
 		endpointError: "",
 		endpointTest: null,
 		endpointBusy: false,
+		chatgptWelcome: false,
+		providers: [
+			{ id: "chatgpt", name: "ChatGPT", connected: false, email: "", pending: false, busy: false, error: "", models: [], model: "", attempt: null, code: "" },
+			{ id: "claude", name: "Claude", connected: false, email: "", pending: false, busy: false, error: "", models: [], model: "", attempt: null, code: "" },
+		],
 		tokenUsage: {
 			exact: false,
 			promptTokens: 0,
@@ -215,6 +220,7 @@ function harness() {
 			for (const panel of ["modelsOpen", "settingsOpen", "skillsOpen", "mcpOpen", "boardOpen"])
 				this.$watch(panel, (open) => {
 					if (open) this.historyOpen = false;
+					if (open && panel === "modelsOpen") window.RemindMeProviders.load(this);
 				});
 			window.RemindMeComposer.measure(this, 0);
 			window.RemindMeConversations.load(this).catch(() => {});
@@ -312,6 +318,13 @@ function harness() {
 			await this.savePersona();
 			this.persona = this.personaDefault;
 		},
+		dismissChatgptWelcome() { this.chatgptWelcome = false; localStorage.setItem("remindme.chatgpt-plan-welcome", "1"); },
+		get usingChatgptPlan() { return this.endpoints.some((endpoint) => endpoint.id === this.endpointActiveId && endpoint.authProvider === "chatgpt"); },
+		providerStart(provider) { return window.RemindMeProviders.start(this, provider); },
+		providerComplete(provider) { return window.RemindMeProviders.complete(this, provider); },
+		providerCancel(provider) { return window.RemindMeProviders.cancel(this, provider); },
+		providerLogout(provider) { return window.RemindMeProviders.logout(this, provider); },
+		providerUse(provider) { return window.RemindMeProviders.use(this, provider); },
 		/* ── Inference endpoints ──────────────────────────────────────── */
 		editEndpoint(endpoint) {
 			window.RemindMeEndpoints.edit(this, endpoint);

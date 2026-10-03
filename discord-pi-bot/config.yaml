@@ -1,7 +1,7 @@
 name: RemindMe Discord Bot
-version: "3.0.2"
+version: "3.0.3"
 slug: remindme_discord_bot
-description: Discord bot with reminders, pi-agent bridge, and local LLM support
+description: Home assistant chat and Discord bot with local, ChatGPT or Claude inference
 arch:
   - aarch64
 startup: application
