@@ -8,6 +8,7 @@ import {
 	describeCommand,
 	joinNames,
 	planCommand,
+	planLightSettings,
 	stateText,
 	type HomeApi,
 } from "./home";
@@ -172,6 +173,38 @@ async function homeStatus(
 	};
 }
 
+async function homeLighting(
+	decision: Extract<Decision, { action: "home_lighting" }>,
+	candidates: Candidate[],
+	deps: ExecutorDeps,
+): Promise<Outcome> {
+	if (!deps.home) return { result: { error: "Home Assistant is not connected" }, answer: "Home Assistant isn't connected to this add-on." };
+	const byLabel = new Map(candidates.map(({ label, card }) => [label, card]));
+	// Validate the whole plan before changing the first light.
+	const plans = decision.lights.map((settings) => {
+		const card = byLabel.get(settings.target);
+		if (!card) throw new Error(`I couldn't find "${settings.target}"`);
+		return { card, settings, plan: planLightSettings(card, settings) };
+	});
+	const done: string[] = [];
+	const problems: string[] = [];
+	const lines: string[] = [];
+	for (const { card, settings, plan } of plans) {
+		try {
+			await deps.home.service(plan);
+			done.push(card.entityId);
+			const values = [settings.brightness === undefined ? "" : `${settings.brightness}% brightness`, settings.color || "", settings.color_temperature === undefined ? "" : `${settings.color_temperature} K`].filter(Boolean);
+			lines.push(`${card.name}: ${plan.service === "turn_off" ? "turned off" : `set to ${values.join(", ")}`}.`);
+		} catch (error) {
+			const problem = `${card.name}: ${error instanceof Error ? error.message : "the call failed"}.`;
+			problems.push(problem);
+			lines.push(problem);
+		}
+	}
+	const cards = (await Promise.all(done.map((id) => deps.home!.card(id)))).filter((card): card is EntityCard => Boolean(card));
+	return { result: { done, problems, settings: decision.lights }, cards, answer: lines.join("\n") };
+}
+
 /** Run one decided action. `document_*` and `reply` are the speaker's, not handled here. */
 export async function execute(
 	decision: Decision,
@@ -181,6 +214,8 @@ export async function execute(
 	switch (decision.action) {
 		case "home_control":
 			return homeControl(decision, candidates, deps);
+		case "home_lighting":
+			return homeLighting(decision, candidates, deps);
 		case "home_status":
 			return homeStatus(decision, candidates, deps);
 		case "reminder_add": {

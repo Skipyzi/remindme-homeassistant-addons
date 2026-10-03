@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { Artifact } from "../src/harness/artifacts.ts";
+import type { HassEntity } from "../src/harness/entities.ts";
 import { HomeApi } from "../src/agent/home.ts";
 import { FenceStripper, runTurn, type TurnDeps } from "../src/agent/turn.ts";
 
@@ -26,10 +27,12 @@ function harness(options: {
 	decisions?: unknown[];
 	speech?: string;
 	intent?: unknown;
+	states?: HassEntity[];
+	serviceFailure?: string;
 }) {
 	const recorded: Recorded = { model: [], services: [], conversation: [] };
 	const decisions = [...(options.decisions || [])];
-	const states = structuredClone(house);
+	const states = structuredClone(options.states || house);
 	const haFetch = (async (input: string | URL, init?: RequestInit) => {
 		const url = String(input);
 		const body = init?.body ? JSON.parse(String(init.body)) : undefined;
@@ -43,6 +46,7 @@ function harness(options: {
 		if (one) return Response.json(states.find((state) => state.entity_id === decodeURIComponent(one[1])));
 		if (url.includes("/services/")) {
 			recorded.services.push({ path: url.split("/api")[1], body });
+			if (body.entity_id === options.serviceFailure) return new Response("offline", { status: 503 });
 			const target = states.find((state) => state.entity_id === body.entity_id);
 			if (target && url.endsWith("/turn_on")) target.state = "on";
 			return Response.json([]);
@@ -140,6 +144,67 @@ test("unlocking waits on a confirm card and calls nothing", async () => {
 	);
 	assert.ok(confirm, "a confirmation row is emitted");
 	assert.equal((confirm!.data.result as { destructive: boolean }).destructive, true);
+});
+
+const sunsetRequest = "Can you, using the available lights paper lamp, PC lamp and kitchen counter create a light scene that resembles a sunset?";
+const sunsetHistory = [
+	{ role: "user" as const, content: sunsetRequest },
+	{ role: "assistant" as const, content: "Shall I proceed with a warm, dim sunset-style setting using the paper lamp, PC lamp, and kitchen counter light?" },
+];
+const sunsetLights: HassEntity[] = [
+	{ entity_id: "light.paper_lamp", state: "off", attributes: { friendly_name: "Paper Lamp", supported_color_modes: ["color_temp", "xy"] } },
+	{ entity_id: "light.pc_lamp", state: "off", attributes: { friendly_name: "Pc Lamp", supported_color_modes: ["color_temp", "xy"] } },
+	{ entity_id: "light.kitchen_counter", state: "off", attributes: { friendly_name: "Kitchen Counter", supported_color_modes: ["brightness"] } },
+];
+const sunsetDecision = { action: "home_lighting", lights: [
+	{ target: "Paper Lamp", brightness: 30, color: "#FF7800", color_temperature: null },
+	{ target: "Pc Lamp", brightness: 20, color: "#FF3800", color_temperature: null },
+	{ target: "Kitchen Counter", brightness: 15, color: null, color_temperature: null },
+] };
+
+test("a sunset lighting request applies separate checked settings to the three named lights", async () => {
+	const h = harness({ states: sunsetLights, decisions: [sunsetDecision] });
+	await run(h, sunsetRequest);
+	assert.deepEqual(h.recorded.services, [
+		{ path: "/services/light/turn_on", body: { entity_id: "light.paper_lamp", brightness: 77, rgb_color: [255, 120, 0] } },
+		{ path: "/services/light/turn_on", body: { entity_id: "light.pc_lamp", brightness: 51, rgb_color: [255, 56, 0] } },
+		{ path: "/services/light/turn_on", body: { entity_id: "light.kitchen_counter", brightness: 38 } },
+	]);
+	assert.equal(h.held.length, 0);
+	assert.equal(h.recorded.model.length, 1);
+	assert.match(answerOf(h), /Paper Lamp: set to 30% brightness, #FF7800/);
+	const messages = JSON.stringify(h.recorded.model[0].messages);
+	assert.match(messages, /Kitchen Counter.*controls: brightness/);
+});
+
+test("yes after the sunset offer retains devices and executes the earlier request", async () => {
+	const h = harness({ states: sunsetLights, decisions: [sunsetDecision] });
+	await run(h, "yes", { history: sunsetHistory });
+	assert.equal(h.recorded.services.length, 3);
+});
+
+test("declining the sunset offer does not expose or execute device changes", async () => {
+	const h = harness({ states: sunsetLights, decisions: [sunsetDecision] });
+	await run(h, "no", { history: sunsetHistory });
+	assert.equal(h.recorded.services.length, 0);
+	assert.ok(!JSON.stringify(h.recorded.model[0].response_format).includes('"home_lighting"'));
+});
+
+test("an unsupported colour on a brightness-only light prevents the whole lighting plan", async () => {
+	const invalid = structuredClone(sunsetDecision);
+	invalid.lights[2].color = "red";
+	const h = harness({ states: sunsetLights, decisions: [invalid] });
+	await run(h, sunsetRequest);
+	assert.equal(h.recorded.services.length, 0);
+	assert.match(answerOf(h), /Kitchen Counter has no RGB color control/);
+});
+
+test("lighting reports a failed service separately from lights that succeeded", async () => {
+	const h = harness({ states: sunsetLights, decisions: [sunsetDecision], serviceFailure: "light.pc_lamp" });
+	await run(h, sunsetRequest);
+	assert.match(answerOf(h), /Pc Lamp: Home Assistant returned HTTP 503/);
+	const receipt = h.events.find(({ event, data }) => event === "tool_complete" && data.name === "home_lighting")!.data.result as { done: string[] };
+	assert.deepEqual(receipt.done, ["light.paper_lamp", "light.kitchen_counter"]);
 });
 
 test("a knowledge question gets a spoken answer and the model is offered no tools", async () => {

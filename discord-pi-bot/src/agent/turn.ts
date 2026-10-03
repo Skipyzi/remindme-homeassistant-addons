@@ -146,7 +146,7 @@ export async function runTurn(input: TurnInput, deps: TurnDeps, send: Send): Pro
 		const messages = decideMessages(context, { prompt: input.prompt, candidates, history });
 		const attempt = async (includeMcp: boolean) =>
 			decide(deps.endpoint(), messages, decisionSchema(context, { includeMcp }), {
-				maxTokens: 200,
+				maxTokens: context.homeControl ? 400 : 200,
 				model,
 				signal: input.signal,
 			});

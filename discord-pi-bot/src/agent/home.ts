@@ -5,7 +5,7 @@ import {
 	type EntityAction,
 	type ValidatedEntityAction,
 } from "../harness/entityActions";
-import type { HomeCommand } from "./actions";
+import type { HomeCommand, LightSetting } from "./actions";
 
 /**
  * Home Assistant, as the agent sees it: states with their areas attached,
@@ -339,6 +339,32 @@ export function planCommand(
 			return custom(card, command === "start" ? "start" : "return_to_base");
 	}
 	throw new Error(`Unsupported command ${command}`);
+}
+
+/** Combine checked brightness and colour settings into one light service call. */
+export function planLightSettings(card: EntityCard, settings: LightSetting): ValidatedEntityAction {
+	if (card.domain !== "light") throw new Error(`${card.name} is not a light`);
+	if (settings.color !== undefined && settings.color_temperature !== undefined)
+		throw new Error(`Choose colour or colour temperature for ${card.name}`);
+	if (settings.brightness === 0 && (settings.color !== undefined || settings.color_temperature !== undefined))
+		throw new Error(`An off light cannot also change colour: ${card.name}`);
+	const plans: ValidatedEntityAction[] = [];
+	if (settings.brightness !== undefined) {
+		if (!Number.isFinite(settings.brightness) || settings.brightness < 0 || settings.brightness > 100)
+			throw new Error(`Brightness must be between 0 and 100 for ${card.name}`);
+		plans.push(planCommand(card, "set_brightness", String(settings.brightness)));
+	}
+	if (settings.color !== undefined) plans.push(planCommand(card, "set_color", settings.color));
+	if (settings.color_temperature !== undefined) {
+		const kelvin = settings.color_temperature;
+		const min = Number(card.attributes.min_color_temp_kelvin ?? 1000);
+		const max = Number(card.attributes.max_color_temp_kelvin ?? 12000);
+		if (!Number.isFinite(kelvin) || kelvin < min || kelvin > max)
+			throw new Error(`Colour temperature must be between ${min} and ${max} K for ${card.name}`);
+		plans.push(validateEntityAction(card, "color_temperature", kelvin));
+	}
+	if (!plans.length) throw new Error(`No lighting settings for ${card.name}`);
+	return { ...plans[0], serviceData: Object.assign({}, ...plans.map((plan) => plan.serviceData)) };
 }
 
 /** How a command reads in a confirmation or a reply: "turn off", "set to 30%". */

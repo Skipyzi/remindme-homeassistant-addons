@@ -93,6 +93,19 @@ test("home_control is absent from the grammar when the request commands nothing"
 	assert.ok(!schema.includes('"home_control"'));
 });
 
+test("lighting scene requests and approval are commands, explanations and refusals are not", () => {
+	const history = [
+		{ role: "user", content: "Create a light scene with the paper lamp that resembles a sunset" },
+		{ role: "assistant", content: "Shall I proceed with those lighting settings?" },
+	];
+	assert.equal(looksLikeCommand(history[0].content), true);
+	assert.equal(looksLikeCommand("yes", history), true);
+	for (const prompt of ["no", "not yet", "cancel", "don't proceed", "thanks", "why?", "Explain how to create a light scene"])
+		assert.equal(looksLikeCommand(prompt, history), false, prompt);
+	assert.equal(looksLikeCommand("yes", [history[0], { role: "assistant", content: "Paper Lamp is on." }]), false);
+	assert.equal(looksLikeCommand("yes"), false);
+});
+
 test("with nothing shortlisted there is no device action to invent a name for", () => {
 	const names = availableActions(context({ candidates: [] }));
 	assert.ok(!names.includes("home_status"));

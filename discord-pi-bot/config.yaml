@@ -1,5 +1,5 @@
 name: RemindMe Discord Bot
-version: "3.0.4"
+version: "3.0.5"
 slug: remindme_discord_bot
 description: Home assistant chat and Discord bot with local, ChatGPT or Claude inference
 arch:

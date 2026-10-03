@@ -42,9 +42,17 @@ export const DOCUMENT_KINDS = [
 ] as const;
 export type DocumentKind = (typeof DOCUMENT_KINDS)[number];
 
+export interface LightSetting {
+	target: string;
+	brightness?: number;
+	color?: string;
+	color_temperature?: number;
+}
+
 export type Decision =
 	| { action: "reply" }
 	| { action: "home_control"; targets: string[]; command: HomeCommand; value?: string }
+	| { action: "home_lighting"; lights: LightSetting[] }
 	| { action: "home_status"; targets: string[] }
 	| { action: "reminder_add"; request: string }
 	| { action: "reminder_list" }
@@ -173,6 +181,8 @@ export function availableActions(context: ActionContext): ActionName[] {
 	const shortlisted = context.home && context.candidates.length > 0;
 	if (shortlisted && context.homeControl && commandsFor(context.candidates).length)
 		names.push("home_control");
+	if (shortlisted && context.homeControl && context.candidates.some(({ card }) => card.domain === "light"))
+		names.push("home_lighting");
 	if (shortlisted) names.push("home_status");
 	if (context.reminders) names.push("reminder_add", "reminder_list");
 	if (context.web) names.push("web_search");
@@ -218,6 +228,19 @@ export function decisionSchema(
 					branch("home_status", { targets: targetsSchema(context.candidates) }, ["targets"]),
 				);
 				break;
+			case "home_lighting": {
+				const lights = context.candidates.filter(({ card }) => card.domain === "light");
+				branches.push(branch("home_lighting", { lights: {
+					type: "array", minItems: 1, maxItems: Math.min(8, lights.length),
+					items: { type: "object", properties: {
+						target: { type: "string", enum: lights.map(({ label }) => label) },
+						brightness: { type: "number", minimum: 0, maximum: 100 },
+						color: shortText(24),
+						color_temperature: { type: "number", minimum: 1000, maximum: 12000 },
+					}, required: ["target"], additionalProperties: false },
+				} }, ["lights"]));
+				break;
+			}
 			case "reminder_add":
 				branches.push(branch("reminder_add", { request: shortText(200) }, ["request"]));
 				break;
@@ -379,6 +402,30 @@ export function validateDecision(value: unknown, context: ActionContext): Decisi
 			const list = targets();
 			return list.length ? { action, targets: list } : reply;
 		}
+		case "home_lighting": {
+			if (!Array.isArray(raw.lights) || !raw.lights.length || raw.lights.length > 8) return reply;
+			const lights: LightSetting[] = [];
+			const seen = new Set<string>();
+			for (const value of raw.lights) {
+				if (!value || typeof value !== "object") return reply;
+				const target = labels.get(stringField(value.target, 80).toLowerCase());
+				if (!target || seen.has(target) || !context.candidates.some((candidate) => candidate.label === target && candidate.card.domain === "light")) return reply;
+				const light: LightSetting = { target };
+				for (const [key, min, max] of [["brightness", 0, 100], ["color_temperature", 1000, 12000]] as const) {
+					if (value[key] == null) continue;
+					if (typeof value[key] !== "number" || !Number.isFinite(value[key]) || value[key] < min || value[key] > max) return reply;
+					light[key] = value[key];
+				}
+				if (value.color != null) {
+					light.color = stringField(value.color, 24);
+					if (!light.color) return reply;
+				}
+				if (Object.keys(light).length === 1 || (light.color !== undefined && light.color_temperature !== undefined)) return reply;
+				seen.add(target);
+				lights.push(light);
+			}
+			return { action, lights };
+		}
 		case "reminder_add": {
 			const request = stringField(raw.request, 200);
 			return request ? { action, request } : reply;
@@ -445,18 +492,32 @@ const commandTerms =
 const acknowledgementTerms =
 	/^\W*(?:ok(?:ay)?|cool|great|perfect|nice|awesome|thanks?|thank you|cheers|brilliant|lovely|good|got it|that(?:'s| is| was)? (?:it|perfect|great|good|right)|it works?|works|worked|that worked)\b/i;
 
+function deviceCommand(text: string): boolean {
+	return commandTerms.test(text) || (
+		/\bcreate\b.*\b(?:light|lighting)\b.*\bscene\b/i.test(text) &&
+		!/\b(?:how to|how (?:can|do)|explain|describe|example|write)\b/i.test(text)
+	);
+}
+
 export function looksLikeCommand(
 	prompt: string,
 	history: Array<{ role: string; content: string }> = [],
 ): boolean {
 	const text = String(prompt || "").trim();
 	const wordCount = text.split(/\s+/).length;
+	if (/^\W*(?:no|nope|nah|cancel|never mind|not now|not yet)\b/i.test(text)) return false;
+	if (/\b(?:don['’]?t|do not|never)\s+(?:turn|switch|set|change|create|proceed|do)\b/i.test(text)) return false;
 	if (acknowledgementTerms.test(text) && wordCount <= 8) return false;
-	if (commandTerms.test(text)) return true;
+	const previous = [...history].reverse().find((turn) => turn.role === "user");
+	if (/^\W*(?:yes|yeah|yep|sure|please do|go ahead|do it|proceed)\W*$/i.test(text)) {
+		const assistant = history[history.length - 1];
+		return Boolean(previous && deviceCommand(previous.content) && assistant?.role === "assistant" &&
+			/\b(?:(?:shall|should|may|can) I|would you like me to|want me to)\b.*\?/i.test(assistant.content));
+	}
+	if (deviceCommand(text)) return true;
 	/*
 	 * "and the floor lamp too", "the other one": short, verbless, and only a
 	 * command because the previous request was one.
 	 */
-	const previous = [...history].reverse().find((turn) => turn.role === "user");
-	return Boolean(previous) && wordCount <= 8 && commandTerms.test(previous!.content);
+	return Boolean(previous) && wordCount <= 8 && !/^(?:why|how|what|when|where|who|explain|describe|write)\b/i.test(text) && deviceCommand(previous!.content);
 }

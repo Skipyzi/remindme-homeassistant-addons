@@ -9,6 +9,8 @@ const actionHelp: Record<ActionName, string> = {
 		"reply: talk, explain, answer from general knowledge, do maths, write short text in the chat, or ask the user a question. The default whenever nothing else is clearly needed.",
 	home_control:
 		'home_control: change devices in the home. targets = names copied from "Devices". command = what to do. value = a number or word when needed, e.g. "30" (percent), "+10", "red", "warm", "21" (degrees), "heat".',
+	home_lighting:
+		'home_lighting: apply a lighting mood or several brightness/colour settings. lights = one entry per requested light, target copied from "Devices", brightness in percent (0 turns off), color as a colour name or #RRGGBB, or color_temperature in kelvin. Use only each light\'s listed controls. A sunset can use dim orange/amber on colour lamps and dim brightness on brightness-only lights. This applies settings now; it does not save a permanent Home Assistant scene.',
 	home_status:
 		'home_status: read the current state of devices from "Devices" (on/off, temperature, open/closed, playing).',
 	reminder_add:
@@ -43,7 +45,9 @@ export function decideSystemPrompt(actions: ActionName[]): string {
 		...actions.map((name) => `- ${actionHelp[name]}`),
 		"",
 		"Rules:",
-		'- Use home_control or home_status only when the request is about devices in the home, and only with names listed under "Devices".',
+		'- Use home_control, home_lighting or home_status only when the request is about devices in the home, and only with names listed under "Devices".',
+		"- An explicit request to set lights or create a lighting scene authorizes the light changes. Use home_lighting for a mood or combined settings; do not ask for approval first. Sensitive device actions receive confirmation cards from the app.",
+		"- Yes after an offer to carry out the user's earlier device request means carry out that request. No, cancellation and thanks do not authorize changes.",
 		"- Greetings, thanks, opinions, general knowledge, maths and writing short texts are reply.",
 		"- A follow-up like \"and the other one\" or \"make it warmer\" refers to the earlier conversation.",
 		"- If unsure, choose reply.",
@@ -72,7 +76,7 @@ export function decideUserMessage(input: DecideInput): string {
 	if (recent.length) {
 		lines.push("Earlier:");
 		for (const turn of recent)
-			lines.push(`${turn.role === "user" ? "User" : "Assistant"}: ${clip(turn.content, 160)}`);
+			lines.push(`${turn.role === "user" ? "User" : "Assistant"}: ${clip(turn.content, 600)}`);
 		lines.push("");
 	}
 	if (input.home !== false) {
@@ -278,7 +282,7 @@ export function decideMessages(context: ActionContext, input: DecideInput): Chat
  * unless a result says so.
  */
 export const SPEAKER_RULES =
-	" Device actions, reminders, searches and notes are carried out by the app, not by you: never claim something was switched, set, saved or looked up unless a result in this conversation says so. Keep answers short unless asked for detail.";
+	" Device actions, reminders, searches and notes are carried out by the app, not by you: never claim something was switched, set, saved or looked up unless a result in this conversation says so. Do not offer to execute a device action later or ask for conversational approval; the app handles actions and confirmation cards. Keep answers short unless asked for detail.";
 
 const kindGuide: Record<DocumentKind, string> = {
 	html: "A complete, self-contained HTML page with inline CSS and JavaScript.",
@@ -326,6 +330,7 @@ export function documentEditMessages(
 const actionParameters: Record<ActionName, string[]> = {
 	reply: [],
 	home_control: ["targets", "command", "value"],
+	home_lighting: ["lights"],
 	home_status: ["targets"],
 	reminder_add: ["request"],
 	reminder_list: [],

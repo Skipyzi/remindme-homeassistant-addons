@@ -37,6 +37,8 @@ SpeakoFlow-Mini is a dictation-cleanup model: it routes well under the grammar, 
 
 ## Console UI (3.0)
 
+Lighting moods such as “create a sunset light scene with the paper lamp, PC lamp and kitchen counter” use `home_lighting` to apply separate brightness and colour settings to each named light. The whole plan is checked against device capabilities before any service call; brightness-only lights receive no colour commands, and service failures are reported per light. These requests apply settings immediately without saving a permanent Home Assistant scene. A “yes” following an offer to perform the user's lighting request retains that request's devices; cancellation and thanks do not authorize changes.
+
 The web console was rebuilt mobile-first in a warmer version of the amber Lucky 38 style:
 
 - **Voice, not capitals:** Fraunces, a soft serif, for the greeting, headings and readings; IBM Plex Sans for reading text; Plex Mono only for code. All three are bundled locally, so nothing is fetched at runtime.

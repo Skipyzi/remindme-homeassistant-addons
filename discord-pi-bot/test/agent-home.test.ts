@@ -5,6 +5,7 @@ import {
 	fastPathEligible,
 	parseAmount,
 	planCommand,
+	planLightSettings,
 	readIntentReply,
 	stateText,
 } from "../src/agent/home.ts";
@@ -31,6 +32,14 @@ test("colour words become RGB, and warmth words become kelvin", () => {
 	assert.equal(planCommand(lamp, "set_color_temperature", "warm").serviceData.color_temp_kelvin, 2700);
 	assert.equal(planCommand(lamp, "set_color_temperature", "warmer").serviceData.color_temp_kelvin, 3300);
 	assert.throws(() => planCommand(lamp, "set_color", "sparkly"));
+});
+
+test("combined light settings enforce capabilities and device temperature limits", () => {
+	const limited = entity("light.pc", "off", { supported_color_modes: ["color_temp", "xy"], min_color_temp_kelvin: 2202, max_color_temp_kelvin: 4000 });
+	assert.deepEqual(planLightSettings(limited, { target: "PC", brightness: 20, color_temperature: 2300 }).serviceData, { brightness: 51, color_temp_kelvin: 2300 });
+	assert.throws(() => planLightSettings(limited, { target: "PC", color_temperature: 2000 }), /2202 and 4000/);
+	assert.throws(() => planLightSettings(limited, { target: "PC", brightness: 0, color: "red" }), /off light/);
+	assert.throws(() => planLightSettings(limited, { target: "PC", color: "red", color_temperature: 2700 }), /colour or colour temperature/);
 });
 
 test("lights, switches, media and climate run directly", () => {

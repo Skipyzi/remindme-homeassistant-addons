@@ -243,6 +243,10 @@ export function describeCandidate(candidate: Candidate): string {
 	if (card.domain === "climate" && card.targetTemperature !== undefined)
 		state = `${card.state}, set to ${card.targetTemperature}°`;
 	bits.push(state);
+	if (card.domain === "light") {
+		const controls = [card.capabilities.brightness ? "brightness" : "", card.capabilities.color ? "RGB colour" : "", card.capabilities.colorTemperature ? `colour temperature ${card.attributes.min_color_temp_kelvin ?? 1000}–${card.attributes.max_color_temp_kelvin ?? 12000} K` : ""].filter(Boolean);
+		bits.push(`controls: ${controls.join("; ") || "on/off only"}`);
+	}
 	return `- ${candidate.label} (${bits.join(", ")})`;
 }
 
