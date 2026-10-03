@@ -27,7 +27,7 @@ async function output(command: string, args: string[], options: { cwd: string; e
 export async function codexAccount<T>(read: (worker: JsonProcess) => Promise<T>): Promise<T> {
 	const worker = new JsonProcess(binary("codex"), ["app-server", "--listen", "stdio://"], { ...await nativeEnvironment("codex"), signal: AbortSignal.timeout(20_000) }, () => {});
 	try {
-		await worker.request("initialize", { clientInfo: { name: "RemindMe Home Assistant", version: "3.1.1" } });
+		await worker.request("initialize", { clientInfo: { name: "RemindMe Home Assistant", title: "RemindMe Home Assistant", version: "3.1.1" } });
 		worker.write({ method: "initialized" });
 		return await read(worker);
 	} finally { worker.stop(); await worker.finished.catch(() => {}); }
@@ -129,6 +129,7 @@ export class NativeAccounts {
 				const consume = (chunk: Buffer) => { login.output = (login.output + chunk.toString()).slice(-128_000); const plain = login.output.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, ""); login.urls = [...new Set(plain.match(/https:\/\/[^\s<>\x1b]+/g) || [])].filter(url => { try { return new URL(url).protocol === "https:"; } catch { return false; } }).slice(-10); };
 				login.child.stdout.on("data", consume); login.child.stderr.on("data", consume);
 			}
+			login.child.stdin.on("error", () => this.finish(login, "The sign-in client stopped accepting input. Start again.\r\n"));
 			login.child.once("error", () => this.finish(login, "The CLI could not start.\r\n"));
 			login.child.once("close", code => { this.finish(login, code === 0 ? "Sign-in process finished. Refresh models to check the account.\r\n" : "Sign-in ended. Start again if the account is still disconnected.\r\n"); });
 			return this.view();
@@ -139,6 +140,7 @@ export class NativeAccounts {
 		if (!login || login.id !== id || !login.running) throw new Error("This sign-in console has expired");
 		if (typeof input !== "string" || input.length > 8192 || input.includes("\0")) throw new Error("Invalid console input");
 		if (login.backend === "claude") { await claudeAuth.complete(id, input); this.finish(login, "Signed in.\r\n"); return; }
+		if (!login.child?.stdin.writable || login.child.stdin.destroyed) throw new Error("The sign-in client stopped accepting input. Start again.");
 		if (login.backend === "pi") { login.child!.stdin.write(JSON.stringify({ input }) + "\n"); login.prompt = undefined; login.options = undefined; }
 		else login.child!.stdin.write(raw ? input : input + "\n");
 	}
