@@ -1,0 +1,92 @@
+title: Version control
+views:
+  - title: Storage
+    path: storage
+    icon: mdi:source-repository
+    cards:
+      - type: markdown
+        title: Forgejo storage
+        content: >-
+          Git history, LFS, packages and other persistent Forgejo data on the Pi.
+          Sizes measure allocated disk space. New measurements arrive every 10 minutes.
+      - type: entities
+        title: Overview
+        show_header_toggle: false
+        entities:
+          - entity: sensor.forgejo_storage_used
+            name: Total Forgejo data
+            icon: mdi:database
+          - entity: sensor.forgejo_repositories
+            name: Git repositories
+            icon: mdi:source-repository
+          - entity: sensor.forgejo_repository_count
+            name: Repositories including wikis
+          - entity: sensor.forgejo_disk_free
+            name: Free space on the Pi's data disk
+            icon: mdi:harddisk
+          - entity: sensor.forgejo_storage_updated
+            name: Last successful measurement
+      - type: gauge
+        name: Pi data disk used by all services
+        entity: sensor.forgejo_disk_used
+        min: 0
+        max: 100
+        needle: true
+        severity:
+          green: 0
+          yellow: 75
+          red: 90
+      - type: entities
+        title: Forgejo breakdown
+        show_header_toggle: false
+        entities:
+          - entity: sensor.forgejo_repositories
+            name: Git repositories
+          - entity: sensor.forgejo_lfs
+            name: Large file storage
+          - entity: sensor.forgejo_database
+            name: Database including journal files
+          - entity: sensor.forgejo_attachments
+            name: Attachments
+          - entity: sensor.forgejo_packages
+            name: Package registry
+          - entity: sensor.forgejo_archives
+            name: Repository archive cache
+          - entity: sensor.forgejo_actions_data
+            name: Actions logs and artifacts
+          - entity: sensor.forgejo_logs
+            name: Server logs
+          - entity: sensor.forgejo_other_data
+            name: Configuration, avatars and other files
+      - type: markdown
+        title: Largest repositories
+        content: |-
+          {% if has_value('sensor.forgejo_storage_used') %}
+          {% set repos = state_attr('sensor.forgejo_storage_used', 'largest_repositories') or [] %}
+          {% if repos %}
+          | Repository | Disk usage |
+          | :--- | ---: |
+          {% for repo in repos %}
+          | {{ repo.name | e }} | {{ (repo.bytes / 1048576) | round(2) }} MiB |
+          {% endfor %}
+          {% else %}
+          No local repositories yet.
+          {% endif %}
+          {% else %}
+          Storage measurements are unavailable. Check that Forgejo is running.
+          {% endif %}
+      - type: history-graph
+        title: Storage growth
+        hours_to_show: 72
+        entities:
+          - entity: sensor.forgejo_storage_used
+            name: Total
+          - entity: sensor.forgejo_repositories
+            name: Git
+          - entity: sensor.forgejo_lfs
+            name: LFS
+      - type: markdown
+        content: >-
+          The Forgejo total covers its persistent add-on data. Container images,
+          separate CI runner workspaces and external storage are outside this total.
+          The disk gauge and free-space reading cover the entire data filesystem.

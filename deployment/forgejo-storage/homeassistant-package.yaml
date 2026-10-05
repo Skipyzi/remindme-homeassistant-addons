@@ -1,0 +1,125 @@
+command_line:
+  - sensor:
+      name: Forgejo storage used
+      unique_id: forgejo_storage_used
+      command: "cat /share/forgejo/storage.json"
+      command_timeout: 10
+      scan_interval: 60
+      unit_of_measurement: MiB
+      device_class: data_size
+      state_class: measurement
+      value_template: >-
+        {{ (value_json.data_bytes / 1048576) | round(2)
+           if value_json.status == 'ok' else none }}
+      availability: >-
+        {{ value_json.status == 'ok' and
+           0 <= as_timestamp(now()) - as_timestamp(value_json.collected_at, 0) < 1800 }}
+      json_attributes:
+        - status
+        - collected_at
+        - repositories_bytes
+        - lfs_bytes
+        - database_bytes
+        - attachments_bytes
+        - packages_bytes
+        - archives_bytes
+        - logs_bytes
+        - actions_bytes
+        - actions_logs_bytes
+        - other_bytes
+        - repository_count
+        - largest_repositories
+        - filesystem
+
+template:
+  - sensor:
+      - name: Forgejo repositories
+        unique_id: forgejo_storage_repositories
+        device_class: data_size
+        state_class: measurement
+        unit_of_measurement: MiB
+        availability: "{{ has_value('sensor.forgejo_storage_used') }}"
+        state: "{{ (state_attr('sensor.forgejo_storage_used', 'repositories_bytes') | float(0) / 1048576) | round(2) }}"
+      - name: Forgejo LFS
+        unique_id: forgejo_storage_lfs
+        device_class: data_size
+        state_class: measurement
+        unit_of_measurement: MiB
+        availability: "{{ has_value('sensor.forgejo_storage_used') }}"
+        state: "{{ (state_attr('sensor.forgejo_storage_used', 'lfs_bytes') | float(0) / 1048576) | round(2) }}"
+      - name: Forgejo database
+        unique_id: forgejo_storage_database
+        device_class: data_size
+        state_class: measurement
+        unit_of_measurement: MiB
+        availability: "{{ has_value('sensor.forgejo_storage_used') }}"
+        state: "{{ (state_attr('sensor.forgejo_storage_used', 'database_bytes') | float(0) / 1048576) | round(2) }}"
+      - name: Forgejo attachments
+        unique_id: forgejo_storage_attachments
+        device_class: data_size
+        state_class: measurement
+        unit_of_measurement: MiB
+        availability: "{{ has_value('sensor.forgejo_storage_used') }}"
+        state: "{{ (state_attr('sensor.forgejo_storage_used', 'attachments_bytes') | float(0) / 1048576) | round(2) }}"
+      - name: Forgejo packages
+        unique_id: forgejo_storage_packages
+        device_class: data_size
+        state_class: measurement
+        unit_of_measurement: MiB
+        availability: "{{ has_value('sensor.forgejo_storage_used') }}"
+        state: "{{ (state_attr('sensor.forgejo_storage_used', 'packages_bytes') | float(0) / 1048576) | round(2) }}"
+      - name: Forgejo archives
+        unique_id: forgejo_storage_archives
+        device_class: data_size
+        state_class: measurement
+        unit_of_measurement: MiB
+        availability: "{{ has_value('sensor.forgejo_storage_used') }}"
+        state: "{{ (state_attr('sensor.forgejo_storage_used', 'archives_bytes') | float(0) / 1048576) | round(2) }}"
+      - name: Forgejo logs
+        unique_id: forgejo_storage_logs
+        device_class: data_size
+        state_class: measurement
+        unit_of_measurement: MiB
+        availability: "{{ has_value('sensor.forgejo_storage_used') }}"
+        state: "{{ (state_attr('sensor.forgejo_storage_used', 'logs_bytes') | float(0) / 1048576) | round(2) }}"
+      - name: Forgejo actions data
+        unique_id: forgejo_storage_actions
+        device_class: data_size
+        state_class: measurement
+        unit_of_measurement: MiB
+        availability: "{{ has_value('sensor.forgejo_storage_used') }}"
+        state: >-
+          {{ ((state_attr('sensor.forgejo_storage_used', 'actions_bytes') | float(0) +
+               state_attr('sensor.forgejo_storage_used', 'actions_logs_bytes') | float(0)) / 1048576) | round(2) }}
+      - name: Forgejo other data
+        unique_id: forgejo_storage_other
+        device_class: data_size
+        state_class: measurement
+        unit_of_measurement: MiB
+        availability: "{{ has_value('sensor.forgejo_storage_used') }}"
+        state: "{{ (state_attr('sensor.forgejo_storage_used', 'other_bytes') | float(0) / 1048576) | round(2) }}"
+      - name: Forgejo repository count
+        unique_id: forgejo_storage_repository_count
+        state_class: measurement
+        icon: mdi:source-repository
+        availability: "{{ has_value('sensor.forgejo_storage_used') }}"
+        state: "{{ state_attr('sensor.forgejo_storage_used', 'repository_count') }}"
+      - name: Forgejo disk free
+        unique_id: forgejo_storage_disk_free
+        device_class: data_size
+        state_class: measurement
+        unit_of_measurement: GiB
+        availability: "{{ has_value('sensor.forgejo_storage_used') }}"
+        state: "{{ ((state_attr('sensor.forgejo_storage_used', 'filesystem') or {}).get('free_bytes', 0) / 1073741824) | round(2) }}"
+      - name: Forgejo disk used
+        unique_id: forgejo_storage_disk_used
+        state_class: measurement
+        unit_of_measurement: '%'
+        icon: mdi:harddisk
+        availability: "{{ has_value('sensor.forgejo_storage_used') }}"
+        state: "{{ (state_attr('sensor.forgejo_storage_used', 'filesystem') or {}).get('used_percent', 0) }}"
+      - name: Forgejo storage updated
+        unique_id: forgejo_storage_updated
+        device_class: timestamp
+        availability: "{{ has_value('sensor.forgejo_storage_used') }}"
+        state: "{{ state_attr('sensor.forgejo_storage_used', 'collected_at') }}"
