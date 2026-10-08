@@ -10,10 +10,15 @@ Imported maps become training data when the worker next starts. Pause and use
 **Sync server cache** to add newly cached maps. Copies remain saved even after
 the server's Redis cache expires.
 
-The app automatically chooses short, consecutive sections of easier maps.
-Circles, sliders and spinners retain their authored positions and timing.
-Practice expands as accuracy improves. The progress chart compares the trained
-model with its original random weights on withheld real maps or time sections.
+The app plays complete training maps in order of difficulty, then cycles through
+them again. It finishes the map even if it misses every object. Accuracy does
+not lock it to a section. Circles, sliders and spinners retain their authored
+positions and timing. Learning updates continue during the run without
+restarting the map. The field shows elapsed time and how many objects have been
+judged. Full maps completed counts attempts since full-map training was added.
+
+Evaluation checks short sections from withheld maps. With only one saved map,
+no independent test accuracy is shown. Add another real map to enable it.
 The model receives four 80 × 64 grayscale images. They include the full
 512 × 384 playfield and a 64 game-pixel margin on every side, at one image pixel
 per eight game pixels. The learner view shows this whole input image.
@@ -23,12 +28,14 @@ state and training steps. The original checkpoints are kept as
 `before-padding.npz` and `initial-before-padding.npz`. Earlier evaluation
 results are archived, and comparisons are recomputed with the expanded view.
 
-Progress saves after each update. Press **Pause training** whenever you need the
+The model and current map position save after each update and on graceful pause.
+Resume continues from the saved position. A checkpoint imported from another
+installation starts a fresh map, while retaining its learned weights. Press **Pause training** whenever you need the
 Pi's resources. Restarting keeps the model; `train_on_start` resumes automatically
 if enabled in app configuration. Pause before importing a checkpoint. Only
 checkpoints trained with the real-beatmap version are accepted.
 
-**Watch an attempt** records the learner on a real section or selected full map.
+**Watch an attempt** records the learner on a complete current map or selected map.
 **Play against it** lets you play the same local map. Move the cursor and use
 Z/X or the mouse. Hold a key while following sliders or rotating on spinners.
 The practice renderer and judge are approximate and have no audio.

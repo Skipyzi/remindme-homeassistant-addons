@@ -14,12 +14,12 @@ and the Z/X key state. A small PPO implementation updates its roughly 65,000
 parameters using judgments from its own actions. Only the environment reads the
 beatmap coordinates and timing; these values never enter the policy.
 
-Training begins with an easy, consecutive section of a real map. It expands
-the selection after ten sufficiently accurate attempts. Sections preserve the
-map's coordinates, timing, difficulty and object types. Boundaries do not cut
-sliders or spinners. Evaluation uses withheld maps when multiple maps exist,
-or withheld time sections with a single map. If no independent section exists,
-the app does not report a test accuracy.
+Training plays complete maps, starting with easier maps and cycling through all
+training maps. It moves on after the final object regardless of accuracy. Small
+PPO updates continue during each map; they never restart the playhead. Pause and
+resume retain the current map, judgments and image stack alongside the model.
+Evaluation uses short sections of withheld maps so checks stay inexpensive.
+With only one map, the app reports no independent test accuracy.
 
 Circles use timing and position judgments. Sliders use their declared curves,
 timing points, velocity changes, repeats and tracking checkpoints. Spinners use
@@ -32,8 +32,8 @@ controls. It defaults to one thread, 25% of one CPU core, and a 512 MB worker
 memory limit. It waits when available host memory is below 768 MB or the Pi is
 above 75°C. These are resource guards, not a hard container CPU quota.
 
-**Watch an attempt** records the saved model on a real training section or a
-selected full map. **Play against it** is a local browser practice challenge.
+**Watch an attempt** records the saved model on a complete current training map or a
+selected map. **Play against it** is a local browser practice challenge.
 Native osu! multiplayer participation and leaderboard submission remain
 unimplemented. The UI states this explicitly.
 

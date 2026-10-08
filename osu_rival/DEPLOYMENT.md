@@ -78,3 +78,38 @@ Verification details are in `validation/pi-observation-padding.json`.
 
 Source backup:
 `/share/osu-rival-maintenance/before-observation-padding-20261009-010709`.
+
+## Complete training maps, 0.2.3
+
+Deployed on 2026-10-09. The six-second curriculum and 65% accuracy gate were
+removed. Each training run contains every authored object in its map. The
+learner cycles through complete training maps in difficulty order, advancing
+after the final judgment regardless of accuracy. PPO still updates every
+512 steps and continues the current run between updates. Active-object lists
+keep judging, rendering and live snapshots bounded by visible objects.
+
+The model checkpoint has a matching private `models/latest-run.json` sidecar
+containing the map position, judgments, slider/spinner state and image stack.
+The sidecar is tied to the checkpoint SHA-256. Graceful pause and restart retain
+the run; importing a checkpoint starts a fresh run. The original model from
+before this change is retained as `before-full-maps.npz`. The loaded library
+has 80 full training maps and 20 withheld maps. Evaluation continues to use
+short sections of withheld maps. With a single map, no independent test
+accuracy is reported.
+
+All 28 tests passed locally and in the pinned Python 3.12 container on actual
+cached beatmaps. The Pi resumed the same map from 17.08 seconds to 25.62 seconds
+after a pause. It then finished all 40 objects in No title [Irre's Beginner]
+and advanced to Leave The Lights On (KROT Remix) [BounceBabe's Easy], with
+120 objects. This verifies full-map traversal, rotation and persistence, not
+improved native osu! ability. The checkpoint retains 30,208 training steps,
+59 updates and one completed full map. The app remains paused, matching its
+state before the update. Validation details are in `validation/pi-full-maps.json`.
+
+Native browser checks verified full-map progress text and desktop/mobile
+layout without horizontal overflow. Deployed HTML and JavaScript match the
+reviewed source. Resource defaults remain 25% of one CPU core and 512 MB;
+the worker used about 185 MB during the Pi verification.
+
+Source backup:
+`/share/osu-rival-maintenance/before-full-maps-20261009-012941`.

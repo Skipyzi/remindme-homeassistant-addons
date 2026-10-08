@@ -1,0 +1,134 @@
+{
+  "before": {
+    "resume": false,
+    "steps": 25600,
+    "updates": 50,
+    "original_checkpoint_sha256": "c39caf019388c67e262b9e55c0d6f48d8abd1af8ba88b283383fbfc6ea970d4f"
+  },
+  "tests_passed": 28,
+  "pinned_container_tests_passed": 28,
+  "first_pause": {
+    "version": "0.2.3",
+    "status": "paused",
+    "steps": 26624,
+    "updates": 52,
+    "completed_maps": 0,
+    "current_map": {
+      "id": "a60619a837a72dc946b3626e",
+      "beatmap_id": 760464,
+      "title": "No title",
+      "difficulty": "Irre's Beginner",
+      "source_sha256": "a60619a837a72dc946b3626ee35d76dd039de415c021e37b90fdf863f4cc86d2",
+      "start_ms": 10317.0
+    },
+    "map_progress": {
+      "time": 17083.33,
+      "end_time": 73886.66666666667,
+      "judged": 9,
+      "object_count": 40
+    },
+    "resources": {
+      "available_memory_mb": 3664,
+      "temperature_c": 50.7,
+      "worker_memory_mb": null
+    },
+    "last_error": null
+  },
+  "original_checkpoint_backup_matches": true,
+  "after_resume": {
+    "version": "0.2.3",
+    "status": "training",
+    "steps": 27136,
+    "updates": 53,
+    "completed_maps": 0,
+    "current_map": {
+      "id": "a60619a837a72dc946b3626e",
+      "beatmap_id": 760464,
+      "title": "No title",
+      "difficulty": "Irre's Beginner",
+      "source_sha256": "a60619a837a72dc946b3626ee35d76dd039de415c021e37b90fdf863f4cc86d2",
+      "start_ms": 10317.0
+    },
+    "map_progress": {
+      "time": 25616.67,
+      "end_time": 73886.66666666667,
+      "judged": 15,
+      "object_count": 40
+    },
+    "resources": {
+      "available_memory_mb": 3691,
+      "temperature_c": 47.4,
+      "worker_memory_mb": 151.3
+    },
+    "last_error": null
+  },
+  "after_first_full_map": {
+    "version": "0.2.3",
+    "status": "training",
+    "steps": 30208,
+    "updates": 59,
+    "completed_maps": 1,
+    "current_map": {
+      "id": "d135b95bf2270c54361a87ba",
+      "beatmap_id": 217251,
+      "title": "Leave The Lights On (KROT Remix)",
+      "difficulty": "BounceBabe's Easy",
+      "source_sha256": "d135b95bf2270c54361a87ba5eabded5f638aca4c8733b7333a4b2100863b8be",
+      "start_ms": 0
+    },
+    "map_progress": {
+      "time": 3133.33,
+      "end_time": 113195.66666666667,
+      "judged": 4,
+      "object_count": 120
+    },
+    "resources": {
+      "available_memory_mb": 3646,
+      "temperature_c": 48.0,
+      "worker_memory_mb": 184.9
+    },
+    "last_error": null
+  },
+  "final": {
+    "version": "0.2.3",
+    "status": "paused",
+    "steps": 30208,
+    "updates": 59,
+    "completed_maps": 1,
+    "current_map": {
+      "id": "d135b95bf2270c54361a87ba",
+      "beatmap_id": 217251,
+      "title": "Leave The Lights On (KROT Remix)",
+      "difficulty": "BounceBabe's Easy",
+      "source_sha256": "d135b95bf2270c54361a87ba5eabded5f638aca4c8733b7333a4b2100863b8be",
+      "start_ms": 0
+    },
+    "map_progress": {
+      "time": 3150.0,
+      "end_time": 113195.66666666667,
+      "judged": 4,
+      "object_count": 120
+    },
+    "resources": {
+      "available_memory_mb": 3647,
+      "temperature_c": 50.1,
+      "worker_memory_mb": null
+    },
+    "last_error": null
+  },
+  "source_backup": "/share/osu-rival-maintenance/before-full-maps-20261009-012941",
+  "parameters": 65477,
+  "optimizer_step": 3813,
+  "original_optimizer_step": 3237,
+  "observation": [
+    4,
+    64,
+    80
+  ],
+  "live_frame": [
+    80,
+    64
+  ],
+  "desktop_and_mobile_no_horizontal_overflow": true,
+  "served_html_and_javascript_match_source": true
+}

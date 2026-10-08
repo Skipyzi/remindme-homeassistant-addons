@@ -1,5 +1,6 @@
 """One interruptible learning process, with CPU and host resource guards."""
 import argparse
+import hashlib
 import io
 import json
 import os
@@ -51,9 +52,9 @@ class Worker:
         self.cpu_start, self.wall_start = time.process_time(), time.monotonic()
         self.completed_watch = ''
         self.state = {'status': 'starting', 'phase': 'Loading the learner', 'updates': 0, 'steps': 0,
-                      'episodes': 0, 'stage': 0, 'history': [], 'baselines': {}, 'promotions': 0,
+                      'episodes': 0, 'completed_maps':0, 'stage': 0, 'history': [], 'baselines': {},
                       'seed': self.seed, 'last_error': None, 'training_source': 'Random initialization and rewards',
-                      'training_format': 'real-beatmap-v1', 'recent_episodes': [],
+                      'training_format': 'real-beatmap-v1', 'training_strategy':'full-maps-v1',
                       'server_play': {'available': False, 'reason': 'Practice only. Native ruleset and multiplayer integration are not available in this release.'}}
         previous_state=read_json(self.directory/'state.json',{})
         if 'map_sync' in previous_state:
@@ -64,13 +65,16 @@ class Worker:
             self.policy,metadata = Policy.load(original)
             if metadata.get('training_format') != 'real-beatmap-v1':
                 raise ValueError('This checkpoint used generated practice. Import a real-beatmap checkpoint or start with a new data directory.')
+            if metadata.get('training_strategy')!='full-maps-v1':
+                backup=self.directory/'models/before-full-maps.npz'
+                if not backup.exists():atomic_bytes(backup,original)
             if metadata.get('migrated_from_observation'):
                 backup=self.directory/'models/before-padding.npz'
                 if not backup.exists():atomic_bytes(backup,original)
                 atomic_json(self.directory/'models/evaluations-before-padding.json',{'history':metadata.get('history',[]),'baselines':metadata.get('baselines',{})})
                 metadata.update(history=[],baselines={})
                 self.state['vision_migration']='Retained trained weights and optimizer; added visible margins'
-            for key in ['updates', 'steps', 'episodes', 'stage', 'history', 'baselines', 'seed']:
+            for key in ['updates', 'steps', 'episodes', 'completed_maps', 'stage', 'history', 'baselines', 'seed']:
                 if key in metadata:
                     self.state[key] = metadata[key]
             self.seed = int(self.state['seed'])
@@ -96,12 +100,19 @@ class Worker:
         self.state['parameters'] = self.policy.parameter_count
         self.state['observation_view']=view()
         self.library = MapLibrary(self.directory/'maps')
-        self.state.update({'map_count':len(self.library.maps),'training_sections':len(self.library.training),
+        self.state.update({'map_count':len(self.library.maps),'training_maps':len(self.library.training),
                            'test_sections':len(self.library.testing),'test_split':self.library.split,
                            'training_source':'Real beatmaps, pixels and rewards; no player replays'})
-        self.state['stage'] = min(self.state['stage'],len(self.library.training)-1)
-        self.env = Environment(seed=int(self.rng.integers(0,2**31)),library=self.library,level=self.state['stage'])
-        self.promotion_streak = 0
+        if not self.library.testing:
+            self.state.update(history=[],baselines={})
+        self.env = Environment(library=self.library)
+        run_path=self.directory/'models/latest-run.json'
+        if latest.exists() and run_path.exists() and run_path.stat().st_size<=4*1024*1024:
+            saved=read_json(run_path,{})
+            if saved.get('checkpoint_sha256')==hashlib.sha256(original).hexdigest():
+                try:self.env.restore_run(saved['run'])
+                except (ValueError,KeyError,TypeError):
+                    self.env=Environment(library=self.library)
         self.guard_state = resources()
 
     def control(self):
@@ -113,15 +124,17 @@ class Worker:
             return
         self.last_publish = now
         self.state.update({'updated_at': time.time(), 'resources': self.guard_state,
-                           'stage_name':self.env.beatmap['title'], 'current_map':self.env.scene()['map'],
-                           'eligible_sections':min(len(self.library.training),self.state['stage']+1),'pid':os.getpid()})
+                           'stage_name':self.env.beatmap['title'], 'current_map':self.env.map_info(),
+                           'map_progress':self.env.progress(),'pid':os.getpid()})
         atomic_json(self.directory/'state.json', self.state)
 
     def checkpoint(self):
-        self.policy.save(self.directory/'models/latest.npz', self.metadata())
+        checkpoint=self.policy.serialize(self.metadata())
+        atomic_bytes(self.directory/'models/latest.npz',checkpoint)
+        atomic_json(self.directory/'models/latest-run.json',{'checkpoint_sha256':hashlib.sha256(checkpoint).hexdigest(),'run':self.env.save_run()})
 
     def metadata(self):
-        return {key: self.state[key] for key in ['updates', 'steps', 'episodes', 'stage', 'history', 'baselines', 'seed']} | {'rng':self.rng.bit_generator.state,'training_format':'real-beatmap-v1'}
+        return {key: self.state[key] for key in ['updates', 'steps', 'episodes', 'completed_maps', 'stage', 'history', 'baselines', 'seed']} | {'rng':self.rng.bit_generator.state,'training_format':'real-beatmap-v1','training_strategy':'full-maps-v1'}
 
     def tick(self):
         if self.stop or (not self.once and not self.control().get('running')):
@@ -172,7 +185,7 @@ class Worker:
         stream = io.BytesIO()
         Image.fromarray(env.frames[-1]).save(stream, format='PNG')
         atomic_bytes(self.directory/'frame.png', stream.getvalue())
-        atomic_json(self.directory/'scene.json', env.scene())
+        atomic_json(self.directory/'scene.json', env.scene(visible_only=True))
 
     def watch(self, request):
         self.state.update({'status': 'watching', 'phase': 'Recording one attempt'})
@@ -186,12 +199,12 @@ class Worker:
             beatmap['id'] = map_id
             env = Environment(seed=seed,beatmap=beatmap)
         else:
-            env = Environment(seed=seed,library=self.library,level=self.state['stage'])
+            env = Environment(seed=seed,beatmap=self.env.beatmap)
         rng = np.random.default_rng(seed+900000)
         start_scene = env.scene()
         frames, events = [], []
         observation = env.observation()
-        # Record the full real-map section, including the final hit window.
+        # Record the complete map, including the final hit window.
         while env.time < env.end_time:
             self.tick()
             latent, key, _, _ = self.policy.sample(observation, rng)
@@ -240,21 +253,15 @@ class Worker:
                 self.state['updates'] += 1
                 self.state['steps'] += result['steps']
                 self.state['episodes'] += len(result['episodes'])
+                self.state['completed_maps'] += len(result['episodes'])
                 self.state['training'] = {key: value for key, value in result.items() if key != 'episodes'}
                 self.checkpoint()
-                self.state['recent_episodes'] = (self.state['recent_episodes']+result['episodes'])[-20:]
-                recent = self.state['recent_episodes']
-                if len(recent)>=10 and np.mean([item['accuracy'] for item in recent])>=.65 and self.state['stage']<len(self.library.training)-1:
-                    self.state['stage'] += 1
-                    self.env.level = self.state['stage']
-                    self.state['promotions'] += 1
-                    self.state['recent_episodes'] = []
                 if self.state['updates']%10 == 0 or self.state['updates']==1:
                     sections = self.library.evaluation_sections()
                     if sections:
                         self.state['phase'] = 'Checking withheld real beatmap sections'
                         self.publish(force=True)
-                        signature = 'observation-v2:'+','.join(f"{beatmap['id']}:{start}:{end}" for beatmap,start,end in sections)
+                        signature = 'full-maps-v1:observation-v2:'+','.join(f"{beatmap['id']}:{start}:{end}" for beatmap,start,end in sections)
                         if signature not in self.state['baselines']:
                             self.state['baselines'][signature] = evaluate(self.initial,sections,tick=self.tick)
                         evaluation = evaluate(self.policy,sections,tick=self.tick)

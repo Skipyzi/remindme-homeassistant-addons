@@ -28,7 +28,8 @@
             <div id="countdown" class="countdown" hidden></div>
           </div>
           <div class="field-footer"><div class="field-legend"><span><i class="rival-dot"></i> Rival</span><span id="human-legend" hidden><i class="human-dot"></i> You</span><span id="attempt-score"></span></div><label class="pixel-toggle"><input id="pixels" type="checkbox"> Learner's view</label></div>
-          <p id="vision-note" class="quiet">The learner sees the full playfield with margins.</p><div class="attempt-controls"><label for="pattern">Beatmap</label><select id="pattern"><option value="current">Current training section</option></select><button id="watch" class="button secondary">Watch an attempt</button><button id="challenge" class="button secondary">Play against it</button></div>
+          <p id="map-progress" class="quiet">Training plays complete maps and moves on after the final object.</p>
+          <p id="vision-note" class="quiet">The learner sees the full playfield with margins.</p><div class="attempt-controls"><label for="pattern">Beatmap</label><select id="pattern"><option value="current">Current training map</option></select><button id="watch" class="button secondary">Watch an attempt</button><button id="challenge" class="button secondary">Play against it</button></div>
           <p id="attempt-note" class="quiet">Practice results stay here. They do not affect your osu! rankings.</p>
         </section>
         <aside class="learning" aria-labelledby="learning-title">
@@ -37,9 +38,9 @@
           <div class="stage-track" id="stage-track" aria-label="Curriculum progress"></div>
           <p class="phase" id="phase">Random weights. No player replays.</p>
           <button id="train" class="button primary">Start training</button>
-          <div class="training-numbers"><div><span id="steps">0</span><small>Practice steps</small></div><div><span id="episodes">0</span><small>Completed attempts</small></div></div>
-          <div class="evaluation"><div><span>Accuracy on withheld maps</span><strong id="accuracy">Awaiting first check</strong></div><div><span>Starting model</span><strong id="baseline">—</strong></div><div><span>Objects hit</span><strong id="hit-rate">—</strong></div><p>Checked on withheld maps or time sections. The model receives pixels only.</p></div>
-          <details class="details"><summary>How it learns</summary><p>Four 80 by 64 images cover the full playfield and a margin around every edge. Its actions choose the cursor position and the two hit keys. Correct hits earn rewards; misses lose rewards.</p><p>The model starts with random weights. It starts with an easy section of a real map and adds sections as its accuracy improves.</p><dl><dt>Model size</dt><dd id="parameters">65,477 parameters</dd><dt>Training data</dt><dd>Real beatmaps and its own attempts</dd><dt>Algorithm</dt><dd>Clipped PPO</dd></dl></details>
+          <div class="training-numbers"><div><span id="steps">0</span><small>Practice steps</small></div><div><span id="episodes">0</span><small>Full maps completed</small></div></div>
+          <div class="evaluation"><div><span>Accuracy on withheld maps</span><strong id="accuracy">Awaiting first check</strong></div><div><span>Starting model</span><strong id="baseline">—</strong></div><div><span>Objects hit</span><strong id="hit-rate">—</strong></div><p>Checked on short sections of withheld maps. The model receives pixels only.</p></div>
+          <details class="details"><summary>How it learns</summary><p>Four 80 by 64 images cover the full playfield and a margin around every edge. Its actions choose the cursor position and the two hit keys. Correct hits earn rewards; misses lose rewards.</p><p>The model starts with random weights. It plays complete real maps, from the first object to the last. Then it moves to the next training map, even when accuracy is low. Learning updates continue during each run.</p><dl><dt>Model size</dt><dd id="parameters">65,477 parameters</dd><dt>Training data</dt><dd>Real beatmaps and its own attempts</dd><dt>Algorithm</dt><dd>Clipped PPO</dd></dl></details>
         </aside>
       </div>
       <section class="progress" aria-labelledby="progress-title"><div class="section-bar"><h2 id="progress-title">What practice changes</h2><span class="chart-legend"><i></i> Learned accuracy <b></b> Starting model</span></div><div class="chart-wrap"><canvas id="chart" width="1100" height="200" aria-label="Accuracy over completed training updates"></canvas><p id="chart-empty">The first evaluation will start this chart.</p></div><p id="chart-note" class="quiet">Each point is a completed evaluation, rather than an estimate from the live attempt.</p></section>
@@ -50,7 +51,7 @@
       <section class="server-readiness" aria-labelledby="server-title"><div><h2 id="server-title">Multiplayer on your osu! server</h2><p>Training uses real maps in a small local renderer. Server matches and leaderboard submissions still need the native osu! judge and multiplayer connection.</p></div><span class="practice-badge">Practice only</span></section>
       <details class="resources details"><summary>Pi resource budget</summary><div class="resource-row"><span id="cpu-budget">One worker, 25% of one CPU core</span><span id="memory">Memory budget: 512 MB</span><span id="temperature">Temperature: —</span></div><p id="resource-note">Training waits when memory is low or the Pi is too warm. Change the limits in the Home Assistant app configuration.</p></details>
     </main>
-    <footer><span>osu! Rival <span id="version">0.2.2</span></span><span>Learning starts with a first attempt.</span></footer>
+    <footer><span>osu! Rival <span id="version">0.2.3</span></span><span>Learning starts with a first attempt.</span></footer>
   </div>
 </body>
 </html>

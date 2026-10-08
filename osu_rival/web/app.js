@@ -5,6 +5,7 @@ let state = {}, pendingAttempt = null, attempt = null, scene = null, mode = 'liv
 let playbackStart = 0, animation = 0, countdownTimer = 0, human = null, pointer = [256, 192], pressed = 0;
 let mouseHeld=0;
 let statusBusy = false, sceneBusy = false, pixels = null, chartSignature = '';
+let playbackJudgments=new Map(),playbackEventIndex=0;
 const fmt = value => Number(value || 0).toLocaleString();
 const percent = value => `${Math.round(Number(value || 0) * 100)}%`;
 async function api(path, data) {
@@ -23,14 +24,14 @@ function displayStatus() {
   const training = state.worker_running && status!=='watching';
   $('train').textContent=training?'Pause training':'Start training';
   $('train').disabled=status==='starting'||status==='watching'||status==='syncing';
-  const stage=state.stage || 0;
   $('stage-number').textContent=`${state.maps?.length || 0} real maps`;
   $('stage-name').textContent=state.current_map?.title || 'Your server’s beatmaps';
   $('stage-description').textContent=state.current_map?.difficulty || 'Start training to copy cached maps automatically.';
   $('stage-track').hidden=true;
   $('phase').textContent=state.phase || 'Random weights. No player replays.';
-  $('steps').textContent=fmt(state.steps); $('episodes').textContent=fmt(state.episodes);
-  $('parameters').textContent=`${fmt(state.parameters)} parameters`; $('version').textContent=state.version || '0.2.2';
+  $('steps').textContent=fmt(state.steps); $('episodes').textContent=fmt(state.completed_maps);
+  $('parameters').textContent=`${fmt(state.parameters)} parameters`; $('version').textContent=state.version || '0.2.3';
+  if(mode==='live')displayMapProgress(state.map_progress);
   const evaluation=state.evaluation || state.history?.at(-1);
   $('accuracy').textContent=evaluation?percent(evaluation.accuracy):'Awaiting first check';
   $('hit-rate').textContent=evaluation?percent(evaluation.hit_rate):'—';
@@ -43,17 +44,21 @@ function displayStatus() {
   $('memory').textContent=`Memory budget: ${state.options?.memory_limit_mb || 512} MB${state.resources?.worker_memory_mb?` (${Math.round(state.resources.worker_memory_mb)} MB used)`:''}`;
   $('temperature').textContent=state.resources?.temperature_c!=null?`Temperature: ${state.resources.temperature_c}°C`:'Temperature: unavailable';
   const current=$('pattern').value;
-  const options=[{value:'current',label:'Current training section'}, ...(state.maps || []).map(item=>({value:`map:${item.id}`,label:`${item.title} [${item.difficulty}]`}))];
+  const options=[{value:'current',label:'Current training map'}, ...(state.maps || []).map(item=>({value:`map:${item.id}`,label:`${item.title} [${item.difficulty}]`}))];
   if (JSON.stringify(options)!==$('pattern').dataset.options) {
     $('pattern').replaceChildren(...options.map(item=>Object.assign(document.createElement('option'),{value:item.value,textContent:item.label})));
     if(options.some(item=>item.value===current)) $('pattern').value=current;
     $('pattern').dataset.options=JSON.stringify(options);
   }
   $('map-note').textContent=`${state.maps?.length || 0} saved real maps. ${state.map_sync?.imported?`${state.map_sync.imported} copied from the server cache. `:''}Circles, sliders and spinners. No player replays.`;
-  $('chart-note').textContent=state.test_split?`Evaluation uses ${state.test_split}. Results use the local training judge.`:'Evaluation will use withheld maps or time sections.';
+  $('chart-note').textContent=state.test_split?`Evaluation: ${state.test_split}. Results use the local training judge.`:'Evaluation uses short sections of withheld maps.';
   $('vision-note').textContent=state.observation_view?`The learner sees ${state.observation_view.width} × ${state.observation_view.height} pixels: the full playfield plus a margin on every side.`:'';
   if (state.last_error) error(state.last_error);
   drawChart();
+}
+function displayMapProgress(value) {
+  const clock=ms=>`${Math.floor(ms/60000)}:${String(Math.floor(ms/1000)%60).padStart(2,'0')}`;
+  $('map-progress').textContent=value?`Full map · ${clock(Math.min(value.time,value.end_time))} / ${clock(value.end_time)} · ${fmt(value.judged)} / ${fmt(value.object_count)} objects judged`:'Training plays complete maps and moves on after the final object.';
 }
 function drawChart() {
   const history=state.history || [], signature=JSON.stringify(history)+chart.clientWidth;
@@ -123,7 +128,7 @@ async function pollScene() {
   if(sceneBusy || document.hidden || mode!=='live' || !state.worker_running)return;sceneBusy=true;
   try{scene=await api('api/scene');if(scene.objects){$('field-empty').hidden=true;$('view-label').textContent='Live exploration';if($('pixels').checked){const response=await fetch(new URL(`api/frame?t=${Date.now()}`,location.href));if(response.ok){pixels=await createImageBitmap(await response.blob());ctx.imageSmoothingEnabled=false;const viewport=fieldViewport(),view=state.observation_view;clearField();
                   const imageScale=viewport.scale/view.scale;
-                  if(pixels.width===view.width&&pixels.height===view.height)ctx.drawImage(pixels,viewport.x-view.offset_x*imageScale,viewport.y-view.offset_y*imageScale,view.width*imageScale,view.height*imageScale);pixels.close();}}else drawScene(scene);$('attempt-score').textContent=`${scene.hits} / ${scene.objects.length} objects`;}}
+                  if(pixels.width===view.width&&pixels.height===view.height)ctx.drawImage(pixels,viewport.x-view.offset_x*imageScale,viewport.y-view.offset_y*imageScale,view.width*imageScale,view.height*imageScale);pixels.close();}}else drawScene(scene);displayMapProgress(scene);$('attempt-score').textContent=`${scene.hits} / ${scene.object_count} objects hit`;}}
   catch{}finally{sceneBusy=false;}
 }
 async function requestAttempt(challenge=false) {
@@ -135,8 +140,9 @@ async function requestAttempt(challenge=false) {
 }
 function playAttempt(challenge=false) {
   stopPlayback();mode=challenge?'challenge':'playback';$('field-empty').hidden=true;$('human-legend').hidden=!challenge;
+  playbackJudgments=new Map();playbackEventIndex=0;
   $('view-label').textContent=challenge?'You and the rival':'Recorded attempt';$('pixels').checked=false;
-  $('attempt-note').textContent=challenge?'Move the cursor over the field and press Z or X, or tap a circle. You and the rival play the same real map section.':`${attempt.title}, recorded after ${fmt(attempt.updates)} training updates. Practice results stay here.`;
+  $('attempt-note').textContent=challenge?'Move the cursor over the field and press Z or X, or tap a circle. You and the rival play the same complete real map.':`${attempt.title}, recorded after ${fmt(attempt.updates)} training updates. Practice results stay here.`;
   if(challenge){human={objects:structuredClone(attempt.scene.objects),points:0,hits:0,keyState:0,windows:attempt.scene.windows,time:0};
     let count=3;$('countdown').textContent=count;$('countdown').hidden=false;drawScene(attempt.scene,0,null,pointer);
     countdownTimer=setInterval(()=>{count--;if(count){$('countdown').textContent=count;}else{clearInterval(countdownTimer);$('countdown').hidden=true;playbackStart=performance.now();animation=requestAnimationFrame(playFrame);}},700);
@@ -147,8 +153,10 @@ function playFrame(now) {
   let index=0;while(index<frames.length-1 && frames[index+1][0]<=time)index++;
   const frame=frames[index];
   if(human){while(human.time<=time){humanStep();human.time+=1000/60;}}
-  const visible={...attempt.scene,objects:human?human.objects:attempt.scene.objects.map(object=>({...object,result:attempt.events.find(event=>event.id===object.id&&event.time<=time)?.result??null}))};
+  while(playbackEventIndex<attempt.events.length&&attempt.events[playbackEventIndex].time<=time){const event=attempt.events[playbackEventIndex++];playbackJudgments.set(event.id,event.result);}
+  const visible={...attempt.scene,objects:human?human.objects:attempt.scene.objects.map(object=>({...object,result:playbackJudgments.get(object.id)??null}))};
   drawScene(visible,time,[frame[1],frame[2]],human?pointer:null);
+  displayMapProgress({...attempt.scene,time,judged:playbackEventIndex});
   $('attempt-score').textContent=human?`You: ${human.hits} / ${attempt.summary.objects}`:`Rival: ${percent(attempt.summary.accuracy)} accuracy`;
   if(time>=frames.at(-1)[0]) {
     if(human){const accuracy=human.points/(300*attempt.summary.objects);$('result-title').textContent=accuracy>attempt.summary.accuracy?'You win.':accuracy<attempt.summary.accuracy?'Rival wins.':'A draw.';$('result-detail').textContent=`You ${percent(accuracy)} accuracy. Rival ${percent(attempt.summary.accuracy)} accuracy.`;$('field-result').hidden=false;}

@@ -214,7 +214,7 @@ def slider_position(obj, time):
 
 
 class MapLibrary:
-    """Consecutive excerpts of real maps, with a fixed withheld map/time split."""
+    """Complete training maps; bounded excerpts of withheld maps for evaluation."""
     def __init__(self, directory):
         self.maps = []
         total_bytes = 0
@@ -235,6 +235,9 @@ class MapLibrary:
         if multiple and not withheld:
             withheld = {self.maps[-1]['id']}
         for beatmap in self.maps:
+            if beatmap['id'] not in withheld or not multiple:
+                self.training.append((beatmap,0,len(beatmap['objects'])))
+                continue
             objects,groups,start = beatmap['objects'],[],0
             # Boundaries never cut a slider/spinner. No coordinates, rhythm,
             # object sizes or authored object types are rewritten.
@@ -247,15 +250,13 @@ class MapLibrary:
             groups.append((start,len(objects)))
             for index,(start,end) in enumerate(groups):
                 descriptor = (beatmap,start,end)
-                test = beatmap['id'] in withheld if multiple else len(groups)>1 and index%5==len(groups[:5])-1
-                (self.testing if test else self.training).append(descriptor)
+                self.testing.append(descriptor)
         if not self.training:
             raise ValueError('Not enough map objects for training')
-        self.split = 'withheld maps' if multiple else 'withheld time sections' if self.testing else 'training sections only; no independent test available'
+        self.split = 'withheld maps' if self.testing else 'no independent test available; add more real maps'
 
-    def choose(self,rng,level=0):
-        eligible = self.training[:max(1,min(len(self.training),int(level)+1))]
-        return eligible[int(rng.integers(len(eligible)))]
+    def choose(self,index=0):
+        return self.training[index%len(self.training)]
 
     def evaluation_sections(self,limit=4):
         source = self.testing

@@ -1,3 +1,10 @@
+## 0.2.3
+
+- Train on complete real maps and cycle through training maps without an accuracy gate.
+- Keep small PPO updates during each map; preserve the playhead, judgments and image stack on pause and resume.
+- Show elapsed map time, judged object counts and completed full maps.
+- Render and judge only active objects to keep full-map runs inexpensive. Evaluation still uses bounded sections from withheld maps.
+
 # 0.2.2
 
 - Expand the learner observation to 80 by 64 pixels, retaining the original field resolution and adding a 64 game-pixel margin on each side.

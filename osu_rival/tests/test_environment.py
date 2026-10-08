@@ -5,7 +5,7 @@ from pathlib import Path
 import unittest
 import numpy as np
 
-from _maps import real_map
+from _maps import real_map,real_maps
 from rival.environment import Environment,FRAME_MS,parse_beatmap
 from rival.beatmaps import slider_position,MapLibrary
 from rival.storage import atomic_json
@@ -98,13 +98,50 @@ class EnvironmentTests(unittest.TestCase):
         env.step((aim(env.objects[0]['x'],env.objects[0]['y']),1))
         self.assertIsNone(scene['objects'][0]['result']);self.assertEqual(env.events[0]['id'],0)
 
-    def test_train_and_test_sections_do_not_share_objects(self):
+    def test_complete_training_maps_do_not_overlap_withheld_maps(self):
         with tempfile.TemporaryDirectory() as directory:
-            atomic_json(Path(directory)/'real.json',self.map);library=MapLibrary(directory)
+            maps=real_maps()
+            for beatmap in maps:atomic_json(Path(directory)/(beatmap['source_sha256']+'.json'),beatmap)
+            library=MapLibrary(directory)
             training={(map['source_sha256'],i) for map,start,end in library.training for i in range(start,end)}
             testing={(map['source_sha256'],i) for map,start,end in library.testing for i in range(start,end)}
             self.assertTrue(training);self.assertTrue(testing);self.assertFalse(training&testing)
-            self.assertEqual(len(training|testing),len(self.map['objects']))
+            self.assertEqual(len(training|testing),sum(len(beatmap['objects']) for beatmap in maps))
+            for beatmap,start,end in library.training:
+                self.assertEqual(start,0);self.assertEqual(end,len(beatmap['objects']))
+
+    def test_single_map_trains_every_object_and_reports_no_independent_test(self):
+        with tempfile.TemporaryDirectory() as directory:
+            atomic_json(Path(directory)/'real.json',self.map);library=MapLibrary(directory)
+            self.assertEqual([(start,end) for _,start,end in library.training],[(0,len(self.map['objects']))])
+            self.assertFalse(library.testing);self.assertIn('no independent test',library.split)
+
+    def test_missed_complete_map_advances_without_an_accuracy_gate(self):
+        with tempfile.TemporaryDirectory() as directory:
+            for beatmap in real_maps():atomic_json(Path(directory)/(beatmap['source_sha256']+'.json'),beatmap)
+            library=MapLibrary(directory);env=Environment(library=library)
+            first=env.beatmap['id'];expected=library.training[1][0]['id']
+            done=False;frames=0
+            while not done:
+                _,_,done=env.step((aim(0,0),0));frames+=1
+            self.assertGreater(frames,600)
+            self.assertEqual(env.summary()['judged'],len(env.beatmap['objects']))
+            self.assertEqual(env.summary()['accuracy'],0)
+            env.reset();self.assertEqual(env.beatmap['id'],expected);self.assertNotEqual(first,expected)
+
+    def test_saved_run_restores_pixels_and_future_judgments_exactly(self):
+        with tempfile.TemporaryDirectory() as directory:
+            atomic_json(Path(directory)/'real.json',self.map);library=MapLibrary(directory)
+            env=Environment(library=library)
+            for _ in range(1500):env.step((aim(256,192),0))
+            self.assertGreater(env.time,20000)
+            resumed=Environment(library=library);resumed.restore_run(env.save_run())
+            self.assertEqual(env.progress(),resumed.progress());self.assertEqual(env.summary(),resumed.summary())
+            np.testing.assert_array_equal(env.observation(),resumed.observation())
+            for _ in range(120):
+                left=env.step((aim(256,192),1));right=resumed.step((aim(256,192),1))
+                np.testing.assert_array_equal(left[0],right[0]);self.assertEqual(left[1:],right[1:])
+            self.assertEqual(env.summary(),resumed.summary())
 
 class ParserTests(unittest.TestCase):
     def test_wrong_mode_and_nonfinite_values_are_rejected(self):

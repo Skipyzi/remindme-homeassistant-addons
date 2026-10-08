@@ -4,6 +4,7 @@ The small training judge supports circles, slider checkpoints and spinners.
 It is not the native lazer judge and never authorizes leaderboard scores.
 """
 from collections import deque
+import base64
 import copy
 import math
 
@@ -17,17 +18,19 @@ FRAME_MS = 1000 / 60
 
 
 class Environment:
-    def __init__(self, seed=42, beatmap=None, section=None, library=None, level=0):
+    def __init__(self, seed=42, beatmap=None, section=None, library=None):
         if beatmap is None and library is None and section is None:
             raise ValueError('A real beatmap is required; there is no generated training fallback')
         self.rng = np.random.default_rng(seed)
-        self.beatmap, self.section, self.library, self.level = beatmap, section, library, level
+        self.beatmap, self.section, self.library = beatmap, section, library
+        self.next_map_index = 0
         self.frames = deque(maxlen=4)
         self.reset()
 
     def reset(self):
         if self.library:
-            self.beatmap,start,end = self.library.choose(self.rng,self.level)
+            self.beatmap,start,end = self.library.choose(self.next_map_index)
+            self.next_map_index += 1
         elif self.section:
             self.beatmap,start,end = self.section
         else:
@@ -50,6 +53,8 @@ class Environment:
         self.last_judgment = None
         self.events = []
         self.end_time = max(obj['end_time'] for obj in self.objects)+self.windows[-1]+FRAME_MS
+        self.active, self.next_object = [],0
+        self.activate()
         self.frames.clear()
         frame = self.render()
         self.frames.extend(frame.copy() for _ in range(4))
@@ -58,6 +63,14 @@ class Environment:
     def observation(self):
         # Map data and the simulator clock never enter the network.
         return np.stack(self.frames)
+
+    def activate(self):
+        # Future objects stay out of the per-frame judge and renderer. Long
+        # sliders remain active until their final judgment.
+        while self.next_object<len(self.objects) and self.objects[self.next_object]['time']<=self.time+self.approach_ms:
+            obj=self.objects[self.next_object]
+            if obj['result'] is None:self.active.append(obj)
+            self.next_object += 1
 
     def step(self, action):
         latent,key_state = action
@@ -69,7 +82,7 @@ class Environment:
         rising = next_keys & ~self.keys
         self.keys, reward = next_keys,0.0
         if rising:
-            for obj in self.objects:
+            for obj in self.active:
                 if obj['result'] is not None or obj['kind']=='spinner' or obj['head'] is not None:
                     continue
                 error = abs(self.time-obj['time'])
@@ -84,7 +97,7 @@ class Environment:
                         reward += .1
                 break
         following_time = self.time+FRAME_MS
-        for obj in self.objects:
+        for obj in self.active:
             if obj['result'] is not None:
                 continue
             kind = obj['kind']
@@ -125,7 +138,9 @@ class Environment:
                     result = 300 if fraction>=1 else 100 if fraction>=.9 else 50 if fraction>=.75 else 0
                     reward += self.judge(obj,result)
         self.time = following_time
-        done = all(obj['result'] is not None for obj in self.objects) or self.time>=self.end_time
+        self.active = [obj for obj in self.active if obj['result'] is None]
+        self.activate()
+        done = sum(self.results.values())==len(self.objects) or self.time>=self.end_time
         self.frames.append(self.render())
         return self.observation(),reward,done
 
@@ -147,17 +162,79 @@ class Environment:
                 'accuracy':self.points/(300*judged) if judged else 0,'points':self.points,'max_combo':self.max_combo,
                 'results':dict(self.results),'components_hit':self.components_hit,'components_missed':self.components_missed}
 
-    def scene(self):
+    def map_info(self):
+        return {'id':self.beatmap.get('id'),'beatmap_id':self.beatmap['beatmap_id'],
+                'title':self.beatmap['title'],'difficulty':self.beatmap['difficulty'],
+                'source_sha256':self.beatmap['source_sha256'],'start_ms':self.origin}
+
+    def progress(self):
+        return {'time':round(self.time,2),'end_time':self.end_time,
+                'judged':sum(self.results.values()),'object_count':len(self.objects)}
+
+    def save_run(self):
+        fields=['result','head','checkpoint_index','components_hit','rotation','last_angle']
+        return {'format':'full-map-run-v1','map_id':self.beatmap.get('id'),
+                'source_sha256':self.beatmap['source_sha256'],'time':self.time,
+                'cursor':self.cursor,'keys':self.keys,'combo':self.combo,'max_combo':self.max_combo,
+                'components_hit':self.components_hit,'components_missed':self.components_missed,
+                'objects':[{key:obj[key] for key in fields} for obj in self.objects],
+                'frames':base64.b64encode(self.observation().tobytes()).decode('ascii')}
+
+    def restore_run(self,data):
+        if data.get('format')!='full-map-run-v1' or not self.library:
+            raise ValueError('Invalid saved map run')
+        index=next((i for i,(beatmap,_,_) in enumerate(self.library.training)
+                    if beatmap['id']==data.get('map_id') and beatmap['source_sha256']==data.get('source_sha256')),None)
+        if index is None:raise ValueError('Saved training map is no longer available')
+        self.next_map_index=index
+        self.reset()
+        clock=data.get('time');cursor=data.get('cursor');keys=data.get('keys')
+        if type(clock) not in (int,float) or not math.isfinite(clock) or not 0<=clock<=self.end_time:
+            raise ValueError('Invalid saved map clock')
+        if not isinstance(cursor,list) or len(cursor)!=2 or any(type(value) not in (int,float) or not math.isfinite(value) or not 0<=value<=limit for value,limit in zip(cursor,[512,384])):
+            raise ValueError('Invalid saved cursor')
+        if type(keys) is not int or not 0<=keys<=3:raise ValueError('Invalid saved keys')
+        states=data.get('objects')
+        if not isinstance(states,list) or len(states)!=len(self.objects):raise ValueError('Invalid saved object states')
+        for obj,saved in zip(self.objects,states):
+            if not isinstance(saved,dict) or set(saved)!=set(['result','head','checkpoint_index','components_hit','rotation','last_angle']):
+                raise ValueError('Invalid saved object state')
+            if any(saved[key] not in (None,0,50,100,300) for key in ['result','head']):raise ValueError('Invalid saved judgment')
+            for key in ['checkpoint_index','components_hit']:
+                limit=len(obj.get('checkpoints',[]))+(key=='components_hit')
+                if type(saved[key]) is not int or not 0<=saved[key]<=limit:raise ValueError('Invalid saved slider progress')
+            for key in ['rotation','last_angle']:
+                value=saved[key]
+                if key=='last_angle' and value is None:continue
+                if type(value) not in (int,float) or not math.isfinite(value) or abs(value)>1e9:raise ValueError('Invalid saved spinner progress')
+        for key in ['combo','max_combo','components_hit','components_missed']:
+            value=data.get(key)
+            if type(value) is not int or not 0<=value<=10**9:raise ValueError('Invalid saved map totals')
+        try:
+            raw=base64.b64decode(data['frames'],validate=True)
+        except (ValueError,KeyError,TypeError):raise ValueError('Invalid saved image stack') from None
+        if len(raw)!=4*HEIGHT*WIDTH:raise ValueError('Invalid saved image stack')
+        for obj,saved in zip(self.objects,states):obj.update(saved)
+        self.results={key:0 for key in ['300','100','50','miss']}
+        for obj in self.objects:
+            if obj['result'] is not None:self.results[str(obj['result']) if obj['result'] else 'miss']+=1
+        self.points=sum(int(key)*count for key,count in self.results.items() if key!='miss')
+        self.time,self.cursor,self.keys=clock,list(cursor),keys
+        for key in ['combo','max_combo','components_hit','components_missed']:setattr(self,key,data[key])
+        self.active,self.next_object=[],0
+        self.activate()
+        self.frames.clear()
+        self.frames.extend(frame.copy() for frame in np.frombuffer(raw,dtype=np.uint8).reshape(4,HEIGHT,WIDTH))
+
+    def scene(self,visible_only=False):
         return {**self.summary(),'object_count':len(self.objects),'time':round(self.time,2),'cursor':self.cursor,'keys':self.keys,'radius':self.radius,
                 'observation_view':view(),'approach_ms':self.approach_ms,'windows':self.windows,'end_time':self.end_time,
-                'objects':copy.deepcopy(self.objects),'last_judgment':self.last_judgment,
-                'map':{'id':self.beatmap.get('id'),'beatmap_id':self.beatmap['beatmap_id'],
-                       'title':self.beatmap['title'],'difficulty':self.beatmap['difficulty'],
-                       'source_sha256':self.beatmap['source_sha256'],'start_ms':self.origin}}
+                'objects':copy.deepcopy(self.active if visible_only else self.objects),'last_judgment':self.last_judgment,
+                'map':self.map_info()}
 
     def render(self):
         image = Image.new('L',(WIDTH,HEIGHT),8); draw = ImageDraw.Draw(image); scale = PIXELS_PER_UNIT
-        for obj in reversed(self.objects):
+        for obj in reversed(self.active):
             until = obj['time']-self.time
             if obj['result'] is not None or until>self.approach_ms:
                 continue

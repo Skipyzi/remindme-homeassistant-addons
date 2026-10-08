@@ -259,7 +259,7 @@ class Controller:
         if metadata.get('migrated_from_observation'):
             metadata.update(history=[],baselines={})
         # A checkpoint is a program state, so validate progress metadata too.
-        for key in ['updates', 'steps', 'episodes', 'stage', 'seed']:
+        for key in ['updates', 'steps', 'episodes', 'completed_maps', 'stage', 'seed']:
             value = metadata.get(key, 0)
             if type(value) is not int or not 0 <= value <= 10**12:
                 raise ValueError('Invalid training progress in checkpoint')
@@ -292,8 +292,10 @@ class Controller:
             if latest.exists():
                 atomic_bytes(self.directory/'models/before-import.npz', latest.read_bytes())
             policy.save(latest, metadata)
+            (self.directory/'models/latest-run.json').unlink(missing_ok=True)
             state = read_json(self.directory/'state.json', {})
-            state.update({key: metadata.get(key, [] if key == 'history' else {} if key == 'baselines' else 0) for key in ['updates', 'steps', 'episodes', 'stage', 'history', 'baselines', 'seed']})
+            state.update({key: metadata.get(key, [] if key == 'history' else {} if key == 'baselines' else 0) for key in ['updates', 'steps', 'episodes', 'completed_maps', 'stage', 'history', 'baselines', 'seed']})
+            state.pop('map_progress',None)
             state.update({'status': 'paused', 'phase': 'Checkpoint imported', 'last_error': None})
             atomic_json(self.directory/'state.json', state)
         return {'parameters': policy.parameter_count, 'updates': metadata.get('updates', 0)}
