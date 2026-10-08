@@ -34,3 +34,17 @@ existing server features were preserved.
 
 Native osu! multiplayer and leaderboard submission remain unimplemented. The
 training judge approximates slider and spinner scoring and is not authoritative.
+
+
+## Practice field scale, 0.2.1
+
+Deployed on 2026-10-09 with a guarded six-file overlay. The active 512 by 384
+playfield now fits inside a padded 16:9 arena. At the same panel width, objects
+appear 40% smaller. Cursor input, playback and the pixel view share the same
+viewport transform. Desktop and mobile browser checks verified field corners
+and an interior cursor position, with no horizontal overflow. The deployed
+HTML, JavaScript and CSS hashes match the checked source. Saved progress was
+retained at 17,408 steps and training remained paused.
+
+Source backup:
+`/share/osu-rival-maintenance/before-field-scale-20261009-005043`.
