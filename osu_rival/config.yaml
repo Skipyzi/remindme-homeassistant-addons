@@ -1,0 +1,33 @@
+name: osu! Rival
+version: "0.2.0"
+slug: osu_rival
+description: A visual reinforcement learner for osu!standard, trained locally from rewards.
+url: https://github.com/skipyzi/remindme-homeassistant-addons/tree/main/osu_rival
+arch:
+  - aarch64
+  - amd64
+startup: application
+boot: manual
+init: false
+ingress: true
+ingress_port: 8099
+panel_title: osu! Rival
+panel_icon: mdi:controller
+panel_admin: true
+watchdog: http://[HOST]:8099/health
+options:
+  beatmap_server_url: "http://local-osu-server:8087"
+  train_on_start: false
+  cpu_budget_percent: 25
+  memory_limit_mb: 512
+  min_available_memory_mb: 768
+  max_temperature_c: 75
+  seed: 42
+schema:
+  beatmap_server_url: url
+  train_on_start: bool
+  cpu_budget_percent: int(5,100)
+  memory_limit_mb: int(192,2048)
+  min_available_memory_mb: int(256,4096)
+  max_temperature_c: int(55,85)
+  seed: int(0,2147483647)

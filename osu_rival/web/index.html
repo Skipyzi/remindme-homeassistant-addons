@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#17203b">
+  <title>osu! Rival</title>
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="style.css">
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <div class="shell">
+    <header class="masthead">
+      <a class="identity" href="./" aria-label="osu! Rival home"><svg viewBox="0 0 48 48" aria-hidden="true"><circle cx="24" cy="24" r="21"/><path d="M17 33V15h9c9 0 9 12 0 12h-9m9 0 7 6"/></svg><span>osu! <strong>Rival</strong></span></a>
+      <span id="status" class="status"><i></i> Ready to learn</span>
+    </header>
+    <div id="error" class="error" role="alert" hidden></div>
+    <main>
+      <div class="intro"><span class="practice-badge">Local training · multiplayer pending</span><h1>A rival, from scratch.</h1><p>It sees the playfield. It tries the controls. Every hit gives it something to learn.</p></div>
+      <div class="workspace">
+        <section class="play-area" aria-labelledby="play-title">
+          <div class="section-bar"><h2 id="play-title">The practice field</h2><span id="view-label">Waiting for its first attempt</span></div>
+          <div class="field-wrap">
+            <canvas id="field" width="768" height="576" aria-label="Live practice field showing the learner's cursor and circles"></canvas>
+            <div id="field-empty" class="field-empty"><svg viewBox="0 0 100 100" aria-hidden="true"><circle cx="50" cy="50" r="43"/><circle cx="50" cy="50" r="25"/><circle cx="50" cy="50" r="3"/></svg><p>Your beatmaps are waiting.</p><span>Start training to watch it explore.</span></div>
+            <div id="field-result" class="field-result" hidden><p id="result-title"></p><span id="result-detail"></span><button id="try-again" class="button secondary">Play again</button></div>
+            <div id="countdown" class="countdown" hidden></div>
+          </div>
+          <div class="field-footer"><div class="field-legend"><span><i class="rival-dot"></i> Rival</span><span id="human-legend" hidden><i class="human-dot"></i> You</span><span id="attempt-score"></span></div><label class="pixel-toggle"><input id="pixels" type="checkbox"> Learner's view</label></div>
+          <div class="attempt-controls"><label for="pattern">Beatmap</label><select id="pattern"><option value="current">Current training section</option></select><button id="watch" class="button secondary">Watch an attempt</button><button id="challenge" class="button secondary">Play against it</button></div>
+          <p id="attempt-note" class="quiet">Practice results stay here. They do not affect your osu! rankings.</p>
+        </section>
+        <aside class="learning" aria-labelledby="learning-title">
+          <div class="learning-heading"><h2 id="learning-title">Learning</h2><span id="stage-number">Real beatmaps</span></div>
+          <h3 id="stage-name">Load your server's maps</h3><p id="stage-description">Circles, sliders and spinners from real .osu files</p>
+          <div class="stage-track" id="stage-track" aria-label="Curriculum progress"></div>
+          <p class="phase" id="phase">Random weights. No player replays.</p>
+          <button id="train" class="button primary">Start training</button>
+          <div class="training-numbers"><div><span id="steps">0</span><small>Practice steps</small></div><div><span id="episodes">0</span><small>Completed attempts</small></div></div>
+          <div class="evaluation"><div><span>Accuracy on withheld maps</span><strong id="accuracy">Awaiting first check</strong></div><div><span>Starting model</span><strong id="baseline">—</strong></div><div><span>Objects hit</span><strong id="hit-rate">—</strong></div><p>Checked on withheld maps or time sections. The model receives pixels only.</p></div>
+          <details class="details"><summary>How it learns</summary><p>Four small images are its entire observation. Its actions choose the cursor position and the two hit keys. Correct hits earn rewards; misses lose rewards.</p><p>The model starts with random weights. It starts with an easy section of a real map and adds sections as its accuracy improves.</p><dl><dt>Model size</dt><dd id="parameters">36,805 parameters</dd><dt>Training data</dt><dd>Real beatmaps and its own attempts</dd><dt>Algorithm</dt><dd>Clipped PPO</dd></dl></details>
+        </aside>
+      </div>
+      <section class="progress" aria-labelledby="progress-title"><div class="section-bar"><h2 id="progress-title">What practice changes</h2><span class="chart-legend"><i></i> Learned accuracy <b></b> Starting model</span></div><div class="chart-wrap"><canvas id="chart" width="1100" height="200" aria-label="Accuracy over completed training updates"></canvas><p id="chart-empty">The first evaluation will start this chart.</p></div><p id="chart-note" class="quiet">Each point is a completed evaluation, rather than an estimate from the live attempt.</p></section>
+      <div class="utility-grid">
+        <section aria-labelledby="saved-title"><h2 id="saved-title">Keep its progress</h2><p>Training saves automatically after each update. Pause and resume without starting over.</p><div class="utility-actions"><a id="download" class="button secondary" href="api/checkpoints/latest.npz" hidden>Download checkpoint</a><label class="button secondary file-button">Import checkpoint<input id="checkpoint-file" type="file" accept=".npz"></label></div><p id="saved-note" class="quiet">No checkpoint saved yet.</p></section>
+        <section aria-labelledby="maps-title"><h2 id="maps-title">Real beatmaps</h2><p>Copy maps already cached by your osu! server, or import an original <code>.osu</code> file. Imported maps join training when it next starts.</p><button id="sync-maps" class="button secondary">Sync server cache</button> <label class="button secondary file-button">Import .osu map<input id="map-file" type="file" accept=".osu"></label><p id="map-note" class="quiet">No player replays. No generated training maps. No upstream map downloads.</p></section>
+      </div>
+      <section class="server-readiness" aria-labelledby="server-title"><div><h2 id="server-title">Multiplayer on your osu! server</h2><p>Training uses real maps in a small local renderer. Server matches and leaderboard submissions still need the native osu! judge and multiplayer connection.</p></div><span class="practice-badge">Practice only</span></section>
+      <details class="resources details"><summary>Pi resource budget</summary><div class="resource-row"><span id="cpu-budget">One worker, 25% of one CPU core</span><span id="memory">Memory budget: 512 MB</span><span id="temperature">Temperature: —</span></div><p id="resource-note">Training waits when memory is low or the Pi is too warm. Change the limits in the Home Assistant app configuration.</p></details>
+    </main>
+    <footer><span>osu! Rival <span id="version">0.2.0</span></span><span>Learning starts with a first attempt.</span></footer>
+  </div>
+</body>
+</html>

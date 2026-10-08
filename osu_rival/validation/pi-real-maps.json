@@ -1,0 +1,28 @@
+{
+  "checked_at": 1791499460.6874044,
+  "deployment": "Pi 5, aarch64, Home Assistant OS",
+  "version": "0.2.0",
+  "source": "real-beatmaps",
+  "maps": 100,
+  "objects": 29159,
+  "counts": {
+    "circle": 16394,
+    "slider": 12667,
+    "spinner": 98
+  },
+  "upstream_requests": 0,
+  "map_import_errors": [],
+  "checkpoint_updates": 10,
+  "checkpoint_steps": 5120,
+  "changed_parameters": 36805,
+  "parameters": 36805,
+  "latest_checkpoint_sha256": "78acce30cb3d1eb42f2de119bd8f3f8a3a6ad9f99782008a72e66cff7ec63ca4",
+  "training_format": "real-beatmap-v1",
+  "resources": {
+    "available_memory_mb": 3717,
+    "temperature_c": 47.4,
+    "worker_memory_mb": 168.1
+  },
+  "scope": "Local training on real beatmaps; native multiplayer and leaderboard integration pending",
+  "learning_claim": "Weights updated and checkpoint resume verified; improved real-map skill is not established."
+}
