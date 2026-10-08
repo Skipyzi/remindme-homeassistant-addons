@@ -1,5 +1,5 @@
 name: osu! Rival
-version: "0.2.0"
+version: "0.2.1"
 slug: osu_rival
 description: A visual reinforcement learner for osu!standard, trained locally from rewards.
 url: https://github.com/skipyzi/remindme-homeassistant-addons/tree/main/osu_rival

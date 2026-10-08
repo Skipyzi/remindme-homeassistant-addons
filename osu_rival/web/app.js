@@ -30,7 +30,7 @@ function displayStatus() {
   $('stage-track').hidden=true;
   $('phase').textContent=state.phase || 'Random weights. No player replays.';
   $('steps').textContent=fmt(state.steps); $('episodes').textContent=fmt(state.episodes);
-  $('parameters').textContent=`${fmt(state.parameters)} parameters`; $('version').textContent=state.version || '0.2.0';
+  $('parameters').textContent=`${fmt(state.parameters)} parameters`; $('version').textContent=state.version || '0.2.1';
   const evaluation=state.evaluation || state.history?.at(-1);
   $('accuracy').textContent=evaluation?percent(evaluation.accuracy):'Awaiting first check';
   $('hit-rate').textContent=evaluation?percent(evaluation.hit_rate):'—';
@@ -74,10 +74,18 @@ function drawChart() {
   }
   c.fillStyle='#afbad3';c.fillText(`Update ${min}`,left,178);c.textAlign='right';c.fillText(`Update ${history.at(-1).update}`,right,178);
 }
+function fieldViewport() {
+  const scale=Math.min(field.width/640,field.height/480);
+  const width=512*scale,height=384*scale;
+  return {scale,width,height,x:(field.width-width)/2,y:(field.height-height)/2};
+}
+function clearField() {
+  ctx.fillStyle='#10182e';ctx.fillRect(0,0,field.width,field.height);
+}
 function drawScene(value, time=value?.time || 0, bot=value?.cursor || [256,192], humanPointer=null) {
   if(!value)return;
-  const scale=field.width/512;
-  ctx.fillStyle='#10182e';ctx.fillRect(0,0,field.width,field.height);
+  const viewport=fieldViewport(),scale=viewport.scale;
+  clearField();ctx.save();ctx.translate(viewport.x,viewport.y);
   ctx.strokeStyle='#1b2743';ctx.lineWidth=1;
   for(let x=32;x<512;x+=32)for(let y=32;y<384;y+=32){ctx.beginPath();ctx.arc(x*scale,y*scale,1,0,Math.PI*2);ctx.stroke();}
   for(const object of [...value.objects].reverse()) {
@@ -102,6 +110,7 @@ function drawScene(value, time=value?.time || 0, bot=value?.cursor || [256,192],
   if(humanPointer)cursor(humanPointer,'#92dec6',7);
   const event=value.last_judgment;
   if(event && time-event.time<300){ctx.font='bold 19px Verdana';ctx.textAlign='center';ctx.fillStyle=event.result?'#f3f4fa':'#f187b8';ctx.fillText(event.result || 'Miss',event.x*scale,event.y*scale);}
+  ctx.restore();
 }
 async function pollStatus() {
   if(statusBusy || document.hidden)return;statusBusy=true;
@@ -110,7 +119,7 @@ async function pollStatus() {
 }
 async function pollScene() {
   if(sceneBusy || document.hidden || mode!=='live' || !state.worker_running)return;sceneBusy=true;
-  try{scene=await api('api/scene');if(scene.objects){$('field-empty').hidden=true;$('view-label').textContent='Live exploration';if($('pixels').checked){const response=await fetch(new URL(`api/frame?t=${Date.now()}`,location.href));if(response.ok){pixels=await createImageBitmap(await response.blob());ctx.imageSmoothingEnabled=false;ctx.drawImage(pixels,0,0,field.width,field.height);pixels.close();}}else drawScene(scene);$('attempt-score').textContent=`${scene.hits} / ${scene.objects.length} objects`;}}
+  try{scene=await api('api/scene');if(scene.objects){$('field-empty').hidden=true;$('view-label').textContent='Live exploration';if($('pixels').checked){const response=await fetch(new URL(`api/frame?t=${Date.now()}`,location.href));if(response.ok){pixels=await createImageBitmap(await response.blob());ctx.imageSmoothingEnabled=false;const viewport=fieldViewport();clearField();ctx.drawImage(pixels,viewport.x,viewport.y,viewport.width,viewport.height);pixels.close();}}else drawScene(scene);$('attempt-score').textContent=`${scene.hits} / ${scene.objects.length} objects`;}}
   catch{}finally{sceneBusy=false;}
 }
 async function requestAttempt(challenge=false) {
@@ -185,7 +194,12 @@ function humanStep() {
     }
   }
 }
-function movePointer(event){const box=field.getBoundingClientRect();pointer=[Math.max(0,Math.min(512,(event.clientX-box.left)/box.width*512)),Math.max(0,Math.min(384,(event.clientY-box.top)/box.height*384))];}
+function movePointer(event){
+  const box=field.getBoundingClientRect(),viewport=fieldViewport();
+  const x=(event.clientX-box.left)/box.width*field.width;
+  const y=(event.clientY-box.top)/box.height*field.height;
+  pointer=[Math.max(0,Math.min(512,(x-viewport.x)/viewport.scale)),Math.max(0,Math.min(384,(y-viewport.y)/viewport.scale))];
+}
 field.addEventListener('pointermove',movePointer);
 field.addEventListener('pointerdown',event=>{movePointer(event);mouseHeld=1;field.setPointerCapture(event.pointerId);});
 field.addEventListener('pointerup',()=>{mouseHeld=0;});field.addEventListener('pointercancel',()=>{mouseHeld=0;});

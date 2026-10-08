@@ -1,3 +1,3 @@
 """A pixel-only learner. Game rules live in the environment, not the policy."""
 
-VERSION = "0.2.0"
+VERSION = "0.2.1"

@@ -22,7 +22,7 @@
         <section class="play-area" aria-labelledby="play-title">
           <div class="section-bar"><h2 id="play-title">The practice field</h2><span id="view-label">Waiting for its first attempt</span></div>
           <div class="field-wrap">
-            <canvas id="field" width="768" height="576" aria-label="Live practice field showing the learner's cursor and circles"></canvas>
+            <canvas id="field" width="960" height="540" aria-label="Live practice field showing the learner's cursor and circles"></canvas>
             <div id="field-empty" class="field-empty"><svg viewBox="0 0 100 100" aria-hidden="true"><circle cx="50" cy="50" r="43"/><circle cx="50" cy="50" r="25"/><circle cx="50" cy="50" r="3"/></svg><p>Your beatmaps are waiting.</p><span>Start training to watch it explore.</span></div>
             <div id="field-result" class="field-result" hidden><p id="result-title"></p><span id="result-detail"></span><button id="try-again" class="button secondary">Play again</button></div>
             <div id="countdown" class="countdown" hidden></div>
@@ -50,7 +50,7 @@
       <section class="server-readiness" aria-labelledby="server-title"><div><h2 id="server-title">Multiplayer on your osu! server</h2><p>Training uses real maps in a small local renderer. Server matches and leaderboard submissions still need the native osu! judge and multiplayer connection.</p></div><span class="practice-badge">Practice only</span></section>
       <details class="resources details"><summary>Pi resource budget</summary><div class="resource-row"><span id="cpu-budget">One worker, 25% of one CPU core</span><span id="memory">Memory budget: 512 MB</span><span id="temperature">Temperature: —</span></div><p id="resource-note">Training waits when memory is low or the Pi is too warm. Change the limits in the Home Assistant app configuration.</p></details>
     </main>
-    <footer><span>osu! Rival <span id="version">0.2.0</span></span><span>Learning starts with a first attempt.</span></footer>
+    <footer><span>osu! Rival <span id="version">0.2.1</span></span><span>Learning starts with a first attempt.</span></footer>
   </div>
 </body>
 </html>
