@@ -48,3 +48,33 @@ retained at 17,408 steps and training remained paused.
 
 Source backup:
 `/share/osu-rival-maintenance/before-field-scale-20261009-005043`.
+
+## Learner observation margin, 0.2.2
+
+Deployed on 2026-10-09. The old 64 by 48 observation covered the playable field
+but clipped graphics crossing its boundaries. The actual learner input is now
+80 by 64, with an eight-image-pixel margin on each side. Its playable field
+retains the same pixel density. The new visible coordinates are -64 to 576
+horizontally and -64 to 448 vertically. Circle and slider bodies in all 100
+cached maps fit within those bounds. Large early approach rings can still
+extend beyond the image.
+
+The checkpoint was migrated by copying its convolution and action/value
+weights and placing the old dense weights in the corresponding central feature
+cells. New surrounding dense weights start at zero. Adam moments and optimizer
+step were retained. The live migrated checkpoint was compared against the
+original: weights and optimizer match exactly after expansion, with 24,576
+training steps and 48 updates retained. Original checkpoints and previous
+evaluation history remain backed up in the private models directory. Comparison
+signatures now include the observation version so earlier best scores are not
+compared with results using the expanded image.
+
+All 25 checks passed locally and in the pinned Python 3.12 container using an
+actual cached beatmap. Native browser checks covered the full image on the Pi,
+desktop/mobile field coordinate mapping and horizontal overflow. Deployed HTML
+and JavaScript match the checked source. Saved attempts completed without
+training updates; the app remains paused, matching its state before deployment.
+Verification details are in `validation/pi-observation-padding.json`.
+
+Source backup:
+`/share/osu-rival-maintenance/before-observation-padding-20261009-010709`.

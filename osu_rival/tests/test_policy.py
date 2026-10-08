@@ -7,7 +7,8 @@ import numpy as np
 
 from rival.environment import Environment
 from _maps import real_map
-from rival.policy import Policy, advantages_and_returns, conv_backward, conv_forward, evaluate, update
+from rival.vision import OBSERVATION_SHAPE,PADDING,FEATURE_HEIGHT,FEATURE_WIDTH,FEATURE_OFFSET
+from rival.policy import Policy, advantages_and_returns, conv_backward, conv_forward, evaluate, update, LEGACY_SHAPES, softmax
 
 
 class PolicyTests(unittest.TestCase):
@@ -36,7 +37,7 @@ class PolicyTests(unittest.TestCase):
     def test_full_ppo_gradient_matches_finite_differences(self):
         rng = np.random.default_rng(5)
         policy = Policy(5)
-        observations=rng.integers(0,256,(4,4,48,64),dtype=np.uint8)
+        observations=rng.integers(0,256,(4,*OBSERVATION_SHAPE),dtype=np.uint8)
         latents=rng.normal(size=(4,2)).astype(np.float32)
         keys=np.array([0,1,2,3])
         mean,probs,_=policy.forward(observations)
@@ -66,6 +67,39 @@ class PolicyTests(unittest.TestCase):
         before=policy.sample(env.observation(),np.random.default_rng(18))
         after=loaded.sample(env.observation(),np.random.default_rng(18))
         np.testing.assert_array_equal(before[0],after[0]);self.assertEqual(before[1:],after[1:])
+
+    def test_legacy_checkpoint_preserves_predictions_and_adam_state(self):
+        rng=np.random.default_rng(7)
+        parameters={name:rng.normal(0,.05,shape).astype(np.float32) for name,shape in LEGACY_SHAPES.items()}
+        parameters['logstd'].fill(-.25)
+        m={name:rng.normal(0,.01,shape).astype(np.float32) for name,shape in LEGACY_SHAPES.items()}
+        v={name:rng.uniform(0,.01,shape).astype(np.float32) for name,shape in LEGACY_SHAPES.items()}
+        metadata={'format':1,'observation':[4,48,64],'optimizer_step':7,'seed':42,'training_format':'real-beatmap-v1'}
+        contents={**parameters,**{'m_'+name:value for name,value in m.items()},**{'v_'+name:value for name,value in v.items()},
+                  'metadata':np.frombuffer(json.dumps(metadata).encode(),dtype=np.uint8)}
+        stream=io.BytesIO();np.savez_compressed(stream,**contents)
+        policy,loaded=Policy.load(stream.getvalue())
+        self.assertEqual(loaded['migrated_from_observation'],[4,48,64]);self.assertEqual(policy.optimizer_step,7)
+        env=Environment(beatmap=real_map());padded=env.observation()
+        original=padded[:,PADDING:PADDING+48,PADDING:PADDING+64][None].astype(np.float32)/255
+        a1=np.maximum(conv_forward(original,parameters['c1w'],parameters['c1b'])[0],0)
+        a2=np.maximum(conv_forward(a1,parameters['c2w'],parameters['c2b'])[0],0)
+        hidden=np.tanh(a2.reshape(1,-1)@parameters['fw']+parameters['fb'])
+        actor=hidden@parameters['aw']+parameters['ab']
+        expected=(actor[:,:2],softmax(actor[:,2:]),(hidden@parameters['vw']+parameters['vb'])[:,0])
+        for before,after in zip(expected,policy.forward(padded)):
+            np.testing.assert_allclose(before,after,atol=2e-6,rtol=2e-5)
+        for source,target in [(parameters,policy.parameters),(m,policy.m),(v,policy.v)]:
+            for name,value in source.items():
+                if name=='fw':
+                    expanded=target[name].reshape(8,FEATURE_HEIGHT,FEATURE_WIDTH,32)
+                    np.testing.assert_array_equal(expanded[:,FEATURE_OFFSET:FEATURE_OFFSET+10,FEATURE_OFFSET:FEATURE_OFFSET+14],value.reshape(8,10,14,32))
+                    outside=expanded.copy();outside[:,FEATURE_OFFSET:FEATURE_OFFSET+10,FEATURE_OFFSET:FEATURE_OFFSET+14]=0
+                    self.assertEqual(np.count_nonzero(outside),0)
+                else:np.testing.assert_array_equal(target[name],value)
+        saved,metadata=Policy.load(policy.serialize(loaded))
+        self.assertNotIn('migrated_from_observation',metadata)
+        np.testing.assert_array_equal(saved.parameters['fw'],policy.parameters['fw'])
 
     def test_untrusted_checkpoint_array_header_is_rejected_before_allocation(self):
         policy=Policy()

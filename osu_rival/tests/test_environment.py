@@ -9,6 +9,7 @@ from _maps import real_map
 from rival.environment import Environment,FRAME_MS,parse_beatmap
 from rival.beatmaps import slider_position,MapLibrary
 from rival.storage import atomic_json
+from rival.vision import PADDING,PIXELS_PER_UNIT
 
 
 def aim(x,y):
@@ -28,7 +29,7 @@ class EnvironmentTests(unittest.TestCase):
 
     def test_observation_is_pixels_and_real_authored_objects_are_retained(self):
         env=Environment(beatmap=self.map)
-        self.assertEqual(env.observation().shape,(4,48,64))
+        self.assertEqual(env.observation().shape,(4,64,80))
         self.assertEqual(env.observation().dtype,np.uint8)
         self.assertEqual(len(env.objects),sum(self.map['counts'].values()))
         self.assertEqual({obj['kind'] for obj in env.objects},{'circle','slider','spinner'})
@@ -70,6 +71,27 @@ class EnvironmentTests(unittest.TestCase):
         self.assertEqual(obj['result'],300)
         idle=self.single('spinner');idle.time=idle.objects[0]['end_time']
         idle.step((aim(256,192),1));self.assertEqual(idle.objects[0]['result'],0)
+
+    def test_circles_at_every_field_corner_have_visible_complete_bodies(self):
+        counts=[]
+        for x,y in [(0,0),(512,0),(0,384),(512,384)]:
+            env=self.single('circle');obj=env.objects[0]
+            obj.update(x=x,y=y);env.radius=54.4;env.time=obj['time']
+            image=env.render()
+            counts.append(int(np.count_nonzero(image==65)))
+            self.assertTrue(np.all(image[0,:]==8));self.assertTrue(np.all(image[-1,:]==8))
+            self.assertTrue(np.all(image[:,0]==8));self.assertTrue(np.all(image[:,-1]==8))
+        # The key indicators can overlap the lower-left circle; all four
+        # bodies must still fit inside the image, with background beyond them.
+        self.assertTrue(all(count>50 for count in counts))
+
+    def test_visible_image_extends_beyond_field_without_reducing_resolution(self):
+        env=self.single('circle');view=env.scene()['observation_view']
+        self.assertEqual(view['scale'],1/8)
+        self.assertEqual(view['world_left'],-64)
+        self.assertEqual(view['world_top'],-64)
+        self.assertEqual(view['world_width'],640)
+        self.assertEqual(view['world_height'],512)
 
     def test_scene_snapshot_does_not_mutate_when_inputs_are_applied(self):
         env=self.single('circle');scene=env.scene();env.time=env.objects[0]['time']

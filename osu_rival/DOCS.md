@@ -14,7 +14,14 @@ The app automatically chooses short, consecutive sections of easier maps.
 Circles, sliders and spinners retain their authored positions and timing.
 Practice expands as accuracy improves. The progress chart compares the trained
 model with its original random weights on withheld real maps or time sections.
-The model receives only four small images, without target coordinates.
+The model receives four 80 × 64 grayscale images. They include the full
+512 × 384 playfield and a 64 game-pixel margin on every side, at one image pixel
+per eight game pixels. The learner view shows this whole input image.
+
+Upgrading from the earlier 64 × 48 input retains trained weights, optimizer
+state and training steps. The original checkpoints are kept as
+`before-padding.npz` and `initial-before-padding.npz`. Earlier evaluation
+results are archived, and comparisons are recomputed with the expanded view.
 
 Progress saves after each update. Press **Pause training** whenever you need the
 Pi's resources. Restarting keeps the model; `train_on_start` resumes automatically

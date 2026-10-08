@@ -21,6 +21,7 @@ from . import VERSION
 from .beatmaps import parse_beatmap
 from .policy import Policy, SHAPES
 from .storage import atomic_bytes, atomic_json, read_json
+from .vision import view
 
 DEFAULTS = {'train_on_start': False, 'cpu_budget_percent': 25, 'memory_limit_mb': 512,
             'min_available_memory_mb':768,'max_temperature_c':75,'seed':42,
@@ -35,6 +36,12 @@ class Controller:
         self.directory.mkdir(parents=True, exist_ok=True)
         for folder in ['models', 'maps']:
             (self.directory/folder).mkdir(exist_ok=True)
+        # A saved frame from an older observation layout cannot be displayed
+        # using the current mapping. The worker replaces it on its next frame.
+        saved_scene=read_json(self.directory/'scene.json',{})
+        if saved_scene and saved_scene.get('observation_view')!=view():
+            (self.directory/'scene.json').unlink(missing_ok=True)
+            (self.directory/'frame.png').unlink(missing_ok=True)
         self.options = {**DEFAULTS, **(options or {})}
         for key, (minimum, maximum) in LIMITS.items():
             value = self.options[key]
@@ -104,9 +111,9 @@ class Controller:
                 state['resources']['worker_memory_mb'] = None
             if running and state.get('status') in [None, 'paused']:
                 state.update({'status': 'starting', 'phase': 'Loading the learner'})
-            state.update({'version': VERSION, 'worker_running': running, 'options': self.options,
+            state.update({'version':VERSION,'observation_view':view(),'worker_running': running, 'options': self.options,
                           'checkpoints': self.checkpoints(),
-                          'maps': self.maps(), 'parameters': state.get('parameters', sum(math.prod(shape) for shape in SHAPES.values())),
+                          'maps': self.maps(), 'parameters': sum(math.prod(shape) for shape in SHAPES.values()),
                           'server_play': {'available': False, 'reason': 'Practice only. Native ruleset and multiplayer integration are not available in this release.'}})
             return state
 
@@ -249,6 +256,8 @@ class Controller:
         policy, metadata = Policy.load(data)
         if metadata.get('training_format')!='real-beatmap-v1':
             raise ValueError('Expected a checkpoint trained on real beatmaps')
+        if metadata.get('migrated_from_observation'):
+            metadata.update(history=[],baselines={})
         # A checkpoint is a program state, so validate progress metadata too.
         for key in ['updates', 'steps', 'episodes', 'stage', 'seed']:
             value = metadata.get(key, 0)

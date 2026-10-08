@@ -9,8 +9,8 @@ already cached by the private osu! server. It makes no upstream requests. You
 can also import an original `.osu` file. All saved maps can participate in
 training after the worker next starts. There is no generated-map fallback.
 
-The model sees four 64 × 48 grayscale frames. It chooses the cursor position
-and the Z/X key state. A small PPO implementation updates its roughly 37,000
+The model sees four 80 × 64 grayscale frames with margins. It chooses the cursor position
+and the Z/X key state. A small PPO implementation updates its roughly 65,000
 parameters using judgments from its own actions. Only the environment reads the
 beatmap coordinates and timing; these values never enter the policy.
 

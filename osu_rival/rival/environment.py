@@ -12,7 +12,7 @@ from PIL import Image, ImageDraw
 
 from .beatmaps import MapLibrary, parse_beatmap, slider_position
 
-WIDTH, HEIGHT = 64, 48
+from .vision import WIDTH,HEIGHT,PADDING,PIXELS_PER_UNIT,view
 FRAME_MS = 1000 / 60
 
 
@@ -149,32 +149,32 @@ class Environment:
 
     def scene(self):
         return {**self.summary(),'object_count':len(self.objects),'time':round(self.time,2),'cursor':self.cursor,'keys':self.keys,'radius':self.radius,
-                'approach_ms':self.approach_ms,'windows':self.windows,'end_time':self.end_time,
+                'observation_view':view(),'approach_ms':self.approach_ms,'windows':self.windows,'end_time':self.end_time,
                 'objects':copy.deepcopy(self.objects),'last_judgment':self.last_judgment,
                 'map':{'id':self.beatmap.get('id'),'beatmap_id':self.beatmap['beatmap_id'],
                        'title':self.beatmap['title'],'difficulty':self.beatmap['difficulty'],
                        'source_sha256':self.beatmap['source_sha256'],'start_ms':self.origin}}
 
     def render(self):
-        image = Image.new('L',(WIDTH,HEIGHT),8); draw = ImageDraw.Draw(image); scale = WIDTH/512
+        image = Image.new('L',(WIDTH,HEIGHT),8); draw = ImageDraw.Draw(image); scale = PIXELS_PER_UNIT
         for obj in reversed(self.objects):
             until = obj['time']-self.time
             if obj['result'] is not None or until>self.approach_ms:
                 continue
-            x,y,r = obj['x']*scale,obj['y']*scale,self.radius*scale
+            x,y,r = obj['x']*scale+PADDING,obj['y']*scale+PADDING,self.radius*scale
             if obj['kind']=='spinner':
                 if self.time>obj['end_time']:
                     continue
                 radius = 17
-                draw.ellipse((32-radius,24-radius,32+radius,24+radius),outline=180,width=2)
+                draw.ellipse((32+PADDING-radius,24+PADDING-radius,32+PADDING+radius,24+PADDING+radius),outline=180,width=2)
                 progress = max(0,min(1,(self.time-obj['time'])/(obj['end_time']-obj['time'])))
-                draw.arc((17,9,47,39),-90,-90+360*progress,fill=240,width=2)
+                draw.arc((17+PADDING,9+PADDING,47+PADDING,39+PADDING),-90,-90+360*progress,fill=240,width=2)
                 continue
             if obj['kind']=='slider':
-                path = [(point[0]*scale,point[1]*scale) for point in obj['path']]
+                path = [(point[0]*scale+PADDING,point[1]*scale+PADDING) for point in obj['path']]
                 draw.line(path,fill=100,width=max(2,round(r*2)),joint='curve')
                 if self.time>=obj['time']:
-                    ball = slider_position(obj,self.time); bx,by = ball[0]*scale,ball[1]*scale
+                    ball = slider_position(obj,self.time); bx,by = ball[0]*scale+PADDING,ball[1]*scale+PADDING
                     draw.ellipse((bx-r,by-r,bx+r,by+r),outline=255,width=2)
             if obj['head'] is None or obj['kind']=='circle':
                 if until < -self.windows[-1]:
@@ -182,10 +182,10 @@ class Environment:
                 draw.ellipse((x-r,y-r,x+r,y+r),fill=65,outline=210,width=1)
                 approach = r*(1+2*max(0,until)/self.approach_ms)
                 draw.ellipse((x-approach,y-approach,x+approach,y+approach),outline=140,width=1)
-        x,y = self.cursor[0]*scale,self.cursor[1]*scale
+        x,y = self.cursor[0]*scale+PADDING,self.cursor[1]*scale+PADDING
         draw.ellipse((x-1,y-1,x+1,y+1),fill=255)
         for key in range(2):
-            draw.rectangle((1+key*4,HEIGHT-3,3+key*4,HEIGHT-1),fill=230 if self.keys&(1<<key) else 30)
+            draw.rectangle((1+key*4+PADDING,45+PADDING,3+key*4+PADDING,47+PADDING),fill=230 if self.keys&(1<<key) else 30)
         return np.asarray(image,dtype=np.uint8).copy()
 
 

@@ -13,14 +13,16 @@ import numpy as np
 from numpy.lib.stride_tricks import sliding_window_view
 
 from .storage import atomic_bytes
+from .vision import OBSERVATION_SHAPE,LEGACY_OBSERVATION_SHAPE,FEATURE_HEIGHT,FEATURE_WIDTH,LEGACY_FEATURE_HEIGHT,LEGACY_FEATURE_WIDTH,FEATURE_OFFSET
 
 SHAPES = {
     'c1w': (4, 4, 5, 5), 'c1b': (4,),
     'c2w': (8, 4, 3, 3), 'c2b': (8,),
-    'fw': (1120, 32), 'fb': (32,),
+    'fw': (8*FEATURE_HEIGHT*FEATURE_WIDTH,32), 'fb': (32,),
     'aw': (32, 6), 'ab': (6,),
     'vw': (32, 1), 'vb': (1,), 'logstd': (2,),
 }
+LEGACY_SHAPES = {**SHAPES,'fw':(8*LEGACY_FEATURE_HEIGHT*LEGACY_FEATURE_WIDTH,32)}
 LOG_2PI = math.log(2 * math.pi)
 
 
@@ -81,8 +83,8 @@ class Policy:
         x = np.asarray(observations, dtype=np.float32) / 255
         if x.ndim == 3:
             x = x[None]
-        if x.shape[1:] != (4, 48, 64):
-            raise ValueError('Expected four 64 by 48 pixel frames')
+        if x.shape[1:] != OBSERVATION_SHAPE:
+            raise ValueError('Expected four padded 80 by 64 pixel frames')
         p = self.parameters
         z1, cc1 = conv_forward(x, p['c1w'], p['c1b'])
         a1 = np.maximum(z1, 0)
@@ -161,8 +163,9 @@ class Policy:
         np.clip(self.parameters['logstd'], -2, 1, out=self.parameters['logstd'])
 
     def serialize(self, metadata):
-        metadata = {**metadata, 'format': 1, 'optimizer_step': self.optimizer_step,
-                    'parameters': self.parameter_count, 'observation': [4, 48, 64]}
+        metadata = {key:value for key,value in metadata.items() if key!='migrated_from_observation'}
+        metadata = {**metadata, 'format': 2, 'optimizer_step': self.optimizer_step,
+                    'parameters': self.parameter_count, 'observation':list(OBSERVATION_SHAPE)}
         values = {**self.parameters, **{'m_'+key: value for key, value in self.m.items()},
                   **{'v_'+key: value for key, value in self.v.items()},
                   'metadata': np.frombuffer(json.dumps(metadata, allow_nan=False).encode(), dtype=np.uint8)}
@@ -199,7 +202,8 @@ class Policy:
                     if item.filename == 'metadata.npy':
                         valid = dtype == np.uint8 and len(shape) == 1 and 0 < shape[0] <= 65536
                     else:
-                        valid = dtype == np.float32 and shape == expected[item.filename]
+                        valid = dtype == np.float32 and (shape == expected[item.filename] or
+                            item.filename in ('fw.npy','m_fw.npy','v_fw.npy') and shape == LEGACY_SHAPES['fw'])
                     if not valid or handle.tell()+math.prod(shape)*dtype.itemsize != item.file_size:
                         raise ValueError('Invalid checkpoint array header')
         policy = cls()
@@ -209,20 +213,33 @@ class Policy:
             metadata = json.loads(values['metadata'].tobytes())
             if not isinstance(metadata,dict):
                 raise ValueError('Invalid checkpoint metadata')
-            if metadata.get('format') != 1 or metadata.get('observation') != [4, 48, 64]:
+            legacy = metadata.get('format')==1 and metadata.get('observation')==list(LEGACY_OBSERVATION_SHAPE)
+            current = metadata.get('format')==2 and metadata.get('observation')==list(OBSERVATION_SHAPE)
+            if not legacy and not current:
                 raise ValueError('Incompatible checkpoint format')
+            source_shapes = LEGACY_SHAPES if legacy else SHAPES
             step = metadata.get('optimizer_step')
             if isinstance(step, bool) or not isinstance(step, int) or not 0 <= step <= 10**12:
                 raise ValueError('Invalid optimizer state')
             policy.optimizer_step = step
-            for name, shape in SHAPES.items():
+            for name, shape in source_shapes.items():
                 for prefix, target in [('', policy.parameters), ('m_', policy.m), ('v_', policy.v)]:
                     array = values[prefix+name]
                     if array.shape != shape or array.dtype != np.float32 or not np.isfinite(array).all():
                         raise ValueError('Invalid checkpoint weights')
                     if prefix == 'v_' and (array < 0).any():
                         raise ValueError('Invalid optimizer variance')
-                    target[name] = array.copy()
+                    if legacy and name=='fw':
+                        expanded = np.zeros((8,FEATURE_HEIGHT,FEATURE_WIDTH,32),np.float32)
+                        expanded[:,FEATURE_OFFSET:FEATURE_OFFSET+LEGACY_FEATURE_HEIGHT,
+                                 FEATURE_OFFSET:FEATURE_OFFSET+LEGACY_FEATURE_WIDTH] = array.reshape(8,LEGACY_FEATURE_HEIGHT,LEGACY_FEATURE_WIDTH,32)
+                        target[name] = expanded.reshape(SHAPES[name])
+                    else:
+                        target[name] = array.copy()
+        if legacy:
+            metadata['migrated_from_observation']=list(LEGACY_OBSERVATION_SHAPE)
+            metadata['format']=2
+            metadata['observation']=list(OBSERVATION_SHAPE)
         if (np.abs(policy.parameters['logstd']) > 10).any():
             raise ValueError('Invalid exploration scale')
         return policy, metadata

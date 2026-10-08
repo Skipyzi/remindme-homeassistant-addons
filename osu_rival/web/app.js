@@ -30,7 +30,7 @@ function displayStatus() {
   $('stage-track').hidden=true;
   $('phase').textContent=state.phase || 'Random weights. No player replays.';
   $('steps').textContent=fmt(state.steps); $('episodes').textContent=fmt(state.episodes);
-  $('parameters').textContent=`${fmt(state.parameters)} parameters`; $('version').textContent=state.version || '0.2.1';
+  $('parameters').textContent=`${fmt(state.parameters)} parameters`; $('version').textContent=state.version || '0.2.2';
   const evaluation=state.evaluation || state.history?.at(-1);
   $('accuracy').textContent=evaluation?percent(evaluation.accuracy):'Awaiting first check';
   $('hit-rate').textContent=evaluation?percent(evaluation.hit_rate):'—';
@@ -51,6 +51,7 @@ function displayStatus() {
   }
   $('map-note').textContent=`${state.maps?.length || 0} saved real maps. ${state.map_sync?.imported?`${state.map_sync.imported} copied from the server cache. `:''}Circles, sliders and spinners. No player replays.`;
   $('chart-note').textContent=state.test_split?`Evaluation uses ${state.test_split}. Results use the local training judge.`:'Evaluation will use withheld maps or time sections.';
+  $('vision-note').textContent=state.observation_view?`The learner sees ${state.observation_view.width} × ${state.observation_view.height} pixels: the full playfield plus a margin on every side.`:'';
   if (state.last_error) error(state.last_error);
   drawChart();
 }
@@ -75,7 +76,8 @@ function drawChart() {
   c.fillStyle='#afbad3';c.fillText(`Update ${min}`,left,178);c.textAlign='right';c.fillText(`Update ${history.at(-1).update}`,right,178);
 }
 function fieldViewport() {
-  const scale=Math.min(field.width/640,field.height/480);
+  const view=state.observation_view || {world_width:640,world_height:512};
+  const scale=Math.min(field.width/view.world_width,field.height/view.world_height);
   const width=512*scale,height=384*scale;
   return {scale,width,height,x:(field.width-width)/2,y:(field.height-height)/2};
 }
@@ -119,7 +121,9 @@ async function pollStatus() {
 }
 async function pollScene() {
   if(sceneBusy || document.hidden || mode!=='live' || !state.worker_running)return;sceneBusy=true;
-  try{scene=await api('api/scene');if(scene.objects){$('field-empty').hidden=true;$('view-label').textContent='Live exploration';if($('pixels').checked){const response=await fetch(new URL(`api/frame?t=${Date.now()}`,location.href));if(response.ok){pixels=await createImageBitmap(await response.blob());ctx.imageSmoothingEnabled=false;const viewport=fieldViewport();clearField();ctx.drawImage(pixels,viewport.x,viewport.y,viewport.width,viewport.height);pixels.close();}}else drawScene(scene);$('attempt-score').textContent=`${scene.hits} / ${scene.objects.length} objects`;}}
+  try{scene=await api('api/scene');if(scene.objects){$('field-empty').hidden=true;$('view-label').textContent='Live exploration';if($('pixels').checked){const response=await fetch(new URL(`api/frame?t=${Date.now()}`,location.href));if(response.ok){pixels=await createImageBitmap(await response.blob());ctx.imageSmoothingEnabled=false;const viewport=fieldViewport(),view=state.observation_view;clearField();
+                  const imageScale=viewport.scale/view.scale;
+                  if(pixels.width===view.width&&pixels.height===view.height)ctx.drawImage(pixels,viewport.x-view.offset_x*imageScale,viewport.y-view.offset_y*imageScale,view.width*imageScale,view.height*imageScale);pixels.close();}}else drawScene(scene);$('attempt-score').textContent=`${scene.hits} / ${scene.objects.length} objects`;}}
   catch{}finally{sceneBusy=false;}
 }
 async function requestAttempt(challenge=false) {

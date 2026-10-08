@@ -15,6 +15,7 @@ from .environment import Environment
 from .beatmaps import MapLibrary
 from .policy import Policy, evaluate, update
 from .storage import atomic_bytes, atomic_json, read_json
+from .vision import view
 
 
 class StopWorker(Exception):
@@ -59,9 +60,16 @@ class Worker:
             self.state['map_sync']=previous_state['map_sync']
         latest = self.directory/'models/latest.npz'
         if latest.exists():
-            self.policy, metadata = Policy.load(latest.read_bytes())
+            original = latest.read_bytes()
+            self.policy,metadata = Policy.load(original)
             if metadata.get('training_format') != 'real-beatmap-v1':
                 raise ValueError('This checkpoint used generated practice. Import a real-beatmap checkpoint or start with a new data directory.')
+            if metadata.get('migrated_from_observation'):
+                backup=self.directory/'models/before-padding.npz'
+                if not backup.exists():atomic_bytes(backup,original)
+                atomic_json(self.directory/'models/evaluations-before-padding.json',{'history':metadata.get('history',[]),'baselines':metadata.get('baselines',{})})
+                metadata.update(history=[],baselines={})
+                self.state['vision_migration']='Retained trained weights and optimizer; added visible margins'
             for key in ['updates', 'steps', 'episodes', 'stage', 'history', 'baselines', 'seed']:
                 if key in metadata:
                     self.state[key] = metadata[key]
@@ -77,10 +85,16 @@ class Worker:
         initial = self.directory/'models/initial.npz'
         if not initial.exists():
             Policy(self.seed).save(initial, {'seed': self.seed, 'updates': 0, 'stage': 0, 'training_format': 'real-beatmap-v1'})
-        self.initial, initial_metadata = Policy.load(initial.read_bytes())
+        original_initial=initial.read_bytes()
+        self.initial,initial_metadata=Policy.load(original_initial)
         if initial_metadata.get('training_format')!='real-beatmap-v1':
             raise ValueError('The initial comparison model belongs to the previous practice format')
+        if initial_metadata.get('migrated_from_observation'):
+            backup=self.directory/'models/initial-before-padding.npz'
+            if not backup.exists():atomic_bytes(backup,original_initial)
+            self.initial.save(initial,initial_metadata)
         self.state['parameters'] = self.policy.parameter_count
+        self.state['observation_view']=view()
         self.library = MapLibrary(self.directory/'maps')
         self.state.update({'map_count':len(self.library.maps),'training_sections':len(self.library.training),
                            'test_sections':len(self.library.testing),'test_split':self.library.split,
@@ -240,7 +254,7 @@ class Worker:
                     if sections:
                         self.state['phase'] = 'Checking withheld real beatmap sections'
                         self.publish(force=True)
-                        signature = ','.join(f"{beatmap['id']}:{start}:{end}" for beatmap,start,end in sections)
+                        signature = 'observation-v2:'+','.join(f"{beatmap['id']}:{start}:{end}" for beatmap,start,end in sections)
                         if signature not in self.state['baselines']:
                             self.state['baselines'][signature] = evaluate(self.initial,sections,tick=self.tick)
                         evaluation = evaluate(self.policy,sections,tick=self.tick)
