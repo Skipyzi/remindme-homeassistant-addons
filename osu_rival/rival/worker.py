@@ -15,6 +15,7 @@ from PIL import Image
 from .environment import Environment
 from .beatmaps import MapLibrary
 from .policy import Policy, evaluate, update
+from .parallel import Trainer
 from .storage import atomic_bytes, atomic_json, read_json
 from .vision import view
 
@@ -114,6 +115,12 @@ class Worker:
                 except (ValueError,KeyError,TypeError):
                     self.env=Environment(library=self.library)
         self.guard_state = resources()
+        # Parallel training (a computer with spare cores): several environments in several processes. The Pi keeps
+        # the original single environment in one throttled thread.
+        self.parallel_envs = max(1, min(64, int(self.options.get('parallel_envs', 1))))
+        self.processes = max(1, min(self.parallel_envs, int(self.options.get('processes', 1))))
+        self.trainer = None
+        self.trail = []
 
     def control(self):
         return read_json(self.directory/'control.json', {})
@@ -179,13 +186,19 @@ class Worker:
 
     def frame(self, env, index=0):
         self.tick()
+        # The cursor's path since the last snapshot lets the live view follow it instead of guessing in between.
+        self.trail.append([round(env.time, 1), round(env.cursor[0], 1), round(env.cursor[1], 1), env.keys])
+        if len(self.trail) > 600:
+            del self.trail[:-600]
         if time.monotonic() - getattr(self, 'last_frame', 0) < .25:
             return
         self.last_frame = time.monotonic()
         stream = io.BytesIO()
         Image.fromarray(env.frames[-1]).save(stream, format='PNG')
         atomic_bytes(self.directory/'frame.png', stream.getvalue())
-        atomic_json(self.directory/'scene.json', env.scene(visible_only=True))
+        trail = [point for point in self.trail if point[0] <= env.time]
+        self.trail = []
+        atomic_json(self.directory/'scene.json', env.scene(visible_only=True) | {'trail': trail})
 
     def watch(self, request):
         self.state.update({'status': 'watching', 'phase': 'Recording one attempt'})
@@ -227,7 +240,7 @@ class Worker:
         signal.signal(signal.SIGINT, lambda *_: setattr(self, 'stop', True))
         try:
             os.nice(10)
-            if hasattr(os, 'sched_getaffinity'):
+            if self.processes == 1 and hasattr(os, 'sched_getaffinity'):
                 available = sorted(os.sched_getaffinity(0))
                 if available:
                     os.sched_setaffinity(0, {available[-1]})
@@ -246,8 +259,18 @@ class Worker:
                     if request['id'] != existing.get('id'):
                         self.watch(request)
                 self.state.update({'status': 'training', 'phase': 'Learning from rewards'})
-                result = update(self.policy, self.env, self.rng, progress=self.frame,
-                                interrupt=lambda: self.stop or not self.control().get('running'))
+                interrupt = lambda: self.stop or not self.control().get('running')
+                if self.parallel_envs > 1:
+                    if self.trainer is None:
+                        self.state['phase'] = f'Starting {self.parallel_envs} environments on {self.processes} cores'
+                        self.publish(force=True)
+                        self.trainer = Trainer(self.policy, self.library, self.directory/'maps', self.parallel_envs,
+                                               self.processes, self.seed + self.state['updates'], first=self.env)
+                        self.state['parallel'] = {'environments': self.parallel_envs, 'processes': self.processes}
+                        self.state['phase'] = 'Learning from rewards'
+                    result = self.trainer.update(self.rng, steps=128, progress=self.frame, interrupt=interrupt)
+                else:
+                    result = update(self.policy, self.env, self.rng, progress=self.frame, interrupt=interrupt)
                 if result is None:
                     break
                 self.state['updates'] += 1
@@ -285,6 +308,9 @@ class Worker:
             traceback.print_exc()
             return
         finally:
+            if self.trainer is not None:
+                self.trainer.close()
+                self.trainer = None
             if self.state['status'] != 'error':
                 self.checkpoint()
                 self.state.update({'status': 'paused', 'phase': 'Ready when you are'})

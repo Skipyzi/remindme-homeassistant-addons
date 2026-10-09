@@ -1,229 +1,493 @@
-'use strict';
-const $ = id => document.getElementById(id);
-const field = $('field'), ctx = field.getContext('2d'), chart = $('chart');
-let state = {}, pendingAttempt = null, attempt = null, scene = null, mode = 'live';
-let playbackStart = 0, animation = 0, countdownTimer = 0, human = null, pointer = [256, 192], pressed = 0;
-let mouseHeld=0;
-let statusBusy = false, sceneBusy = false, pixels = null, chartSignature = '';
-let playbackJudgments=new Map(),playbackEventIndex=0;
-const fmt = value => Number(value || 0).toLocaleString();
-const percent = value => `${Math.round(Number(value || 0) * 100)}%`;
-async function api(path, data) {
-  const response = await fetch(new URL(path, location.href), data === undefined ? {cache:'no-store'} : {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
-  const result = await response.json();
+// osu! Rival web app (Arena layout). One file: the app's security policy only serves app.js, style.css and index.html.
+// osu! Rival front-end core: API calls, status polling, the practice-field renderer, attempt playback and the
+// play-against judge. Layouts import this and only decide where things go. The judge and slider maths match the
+// original app.js so practice results are unchanged.
+export const fmt = value => Number(value || 0).toLocaleString();
+export const percent = (value, digits = 0) => `${(Number(value || 0) * 100).toFixed(digits)}%`;
+export const clock = ms => { const s = Math.max(0, Math.round(ms / 1000)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
+
+export async function api(path, data) {
+  const response = await fetch(new URL(path, location.href), data === undefined ? {cache: 'no-store'}
+    : {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(data)});
+  const result = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(result.error || `Request failed (${response.status})`);
   return result;
 }
-function error(message) {$('error').textContent=message; $('error').hidden=!message;}
-function stopPlayback() {cancelAnimationFrame(animation); clearInterval(countdownTimer); animation=0; human=null; pressed=0; $('countdown').hidden=true; $('human-legend').hidden=true; $('field-result').hidden=true;}
-function displayStatus() {
-  const names = {paused:'Ready to learn',training:'Training',starting:'Starting',watching:'Recording an attempt',resource_pause:'Waiting for the Pi',error:'Needs attention',syncing:'Loading real beatmaps'};
-  const status=state.status || 'paused';
-  $('status').replaceChildren(Object.assign(document.createElement('i'),{}),document.createTextNode(names[status] || status));
-  $('status').className=`status ${['training','watching'].includes(status)?'active':status==='error'||status==='resource_pause'?'warning':''}`;
-  const training = state.worker_running && status!=='watching';
-  $('train').textContent=training?'Pause training':'Start training';
-  $('train').disabled=status==='starting'||status==='watching'||status==='syncing';
-  $('stage-number').textContent=`${state.maps?.length || 0} real maps`;
-  $('stage-name').textContent=state.current_map?.title || 'Your server’s beatmaps';
-  $('stage-description').textContent=state.current_map?.difficulty || 'Start training to copy cached maps automatically.';
-  $('stage-track').hidden=true;
-  $('phase').textContent=state.phase || 'Random weights. No player replays.';
-  $('steps').textContent=fmt(state.steps); $('episodes').textContent=fmt(state.completed_maps);
-  $('parameters').textContent=`${fmt(state.parameters)} parameters`; $('version').textContent=state.version || '0.2.3';
-  if(mode==='live')displayMapProgress(state.map_progress);
-  const evaluation=state.evaluation || state.history?.at(-1);
-  $('accuracy').textContent=evaluation?percent(evaluation.accuracy):'Awaiting first check';
-  $('hit-rate').textContent=evaluation?percent(evaluation.hit_rate):'—';
-  const baseline=Object.values(state.baselines || {}).at(-1);
-  $('baseline').textContent=baseline?percent(baseline.accuracy):'—';
-  const latest=state.checkpoints?.find(item=>item.name==='latest.npz');
-  $('download').hidden=!latest;
-  $('saved-note').textContent=latest?`Last saved ${new Date(latest.modified_at*1000).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}. ${fmt(state.updates)} completed updates.`:'No checkpoint saved yet.';
-  $('cpu-budget').textContent=`One worker, ${state.options?.cpu_budget_percent || 25}% of one CPU core`;
-  $('memory').textContent=`Memory budget: ${state.options?.memory_limit_mb || 512} MB${state.resources?.worker_memory_mb?` (${Math.round(state.resources.worker_memory_mb)} MB used)`:''}`;
-  $('temperature').textContent=state.resources?.temperature_c!=null?`Temperature: ${state.resources.temperature_c}°C`:'Temperature: unavailable';
-  const current=$('pattern').value;
-  const options=[{value:'current',label:'Current training map'}, ...(state.maps || []).map(item=>({value:`map:${item.id}`,label:`${item.title} [${item.difficulty}]`}))];
-  if (JSON.stringify(options)!==$('pattern').dataset.options) {
-    $('pattern').replaceChildren(...options.map(item=>Object.assign(document.createElement('option'),{value:item.value,textContent:item.label})));
-    if(options.some(item=>item.value===current)) $('pattern').value=current;
-    $('pattern').dataset.options=JSON.stringify(options);
+
+export const STATUS = {
+  paused: ['Paused', 'idle'], training: ['Training', 'active'], starting: ['Starting', 'busy'], watching: ['Recording an attempt', 'busy'],
+  resource_pause: ['Waiting for the Pi', 'warn'], error: ['Needs attention', 'warn'], syncing: ['Loading beatmaps', 'busy'],
+};
+export const statusOf = state => STATUS[state.status || 'paused'] || [state.status, 'idle'];
+export const isTraining = state => Boolean(state.worker_running) && state.status !== 'watching';
+export const latestEval = state => state.evaluation || state.history?.at(-1) || null;
+export const baselineOf = state => Object.values(state.baselines || {}).at(-1) || null;
+
+/** Polls /api/status every second while the page is visible and calls `onChange(state)`. */
+export function createStore(onChange, onError) {
+  const store = {state: {}, busy: false};
+  async function refresh() {
+    if (store.busy) return; store.busy = true;
+    try { store.state = await api('api/status'); onChange(store.state); onError?.(''); }
+    catch (error) { onError?.(`Unable to reach the app: ${error.message}`); }
+    finally { store.busy = false; }
   }
-  $('map-note').textContent=`${state.maps?.length || 0} saved real maps. ${state.map_sync?.imported?`${state.map_sync.imported} copied from the server cache. `:''}Circles, sliders and spinners. No player replays.`;
-  $('chart-note').textContent=state.test_split?`Evaluation: ${state.test_split}. Results use the local training judge.`:'Evaluation uses short sections of withheld maps.';
-  $('vision-note').textContent=state.observation_view?`The learner sees ${state.observation_view.width} × ${state.observation_view.height} pixels: the full playfield plus a margin on every side.`:'';
+  store.refresh = refresh;
+  store.toggleTraining = async () => { store.state = await api(`api/training/${isTraining(store.state) ? 'pause' : 'start'}`, {}); onChange(store.state); };
+  store.sync = async () => { await api('api/maps/sync', {}); await refresh(); };
+  store.importMap = async file => {
+    if (file.size > 2 * 1024 * 1024) throw new Error('Choose a .osu file smaller than 2 MB.');
+    const map = await api('api/maps', {text: await file.text()}); await refresh(); return map;
+  };
+  store.importCheckpoint = async file => {
+    if (file.size > 2.9 * 1024 * 1024) throw new Error('Choose a checkpoint smaller than 2.9 MB.');
+    const bytes = new Uint8Array(await file.arrayBuffer()); let text = '';
+    for (let i = 0; i < bytes.length; i += 8192) text += String.fromCharCode(...bytes.subarray(i, i + 8192));
+    await api('api/checkpoints/import', {data: btoa(text)}); await refresh();
+  };
+  /** Asks for a fresh attempt (optionally on a map) and resolves with it once recorded. */
+  store.record = async mapId => {
+    const pending = await api('api/watch', mapId ? {map_id: mapId} : {});
+    for (;;) {
+      await new Promise(r => setTimeout(r, 1000));
+      const attempt = await api('api/attempt');
+      if (attempt.id === pending.id) return attempt;
+    }
+  };
+  refresh(); setInterval(() => { if (!document.hidden) refresh(); }, 1000);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(); });
+  return store;
+}
+
+// ---- the practice field --------------------------------------------------------------------------------------------
+export const FIELD_THEME = {bg: '#0d1326', grid: '#1b2743', object: '#aba5fa', slider: '#aba5fa44', ball: '#f3f4fa', approach: '#aba5fa88',
+  spinner: '#aba5fa', spin: '#92dec6', rival: '#f187b8', human: '#92dec6', text: '#f3f4fa', miss: '#f187b8', edge: '#ffffff10', trail: true};
+
+export function sliderPosition(object, time) {
+  const progress = Math.max(0, Math.min(object.repeats, (time - object.time) / object.span));
+  const repeat = Math.min(object.repeats - 1, Math.floor(progress)); let fraction = progress - repeat;
+  if (repeat % 2) fraction = 1 - fraction;
+  const distance = fraction * object.length;
+  let index = 1; while (index < object.distances.length - 1 && object.distances[index] < distance) index++;
+  if (object.path.length === 1) return object.path[0];
+  fraction = (distance - object.distances[index - 1]) / Math.max(1e-6, object.distances[index] - object.distances[index - 1]);
+  return object.path[index - 1].map((value, axis) => value + fraction * (object.path[index][axis] - value));
+}
+
+/** A canvas that draws the playfield; resizes with its element and draws crisp on high-DPI screens. */
+export function createField(canvas, theme = FIELD_THEME) {
+  const ctx = canvas.getContext('2d');
+  const trail = [];
+  function fit() {
+    const ratio = devicePixelRatio || 1, box = canvas.getBoundingClientRect();
+    const w = Math.max(1, Math.round(box.width * ratio)), h = Math.max(1, Math.round(box.height * ratio));
+    if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
+  }
+  function viewport(view) {
+    const v = view || {world_width: 640, world_height: 512};
+    const scale = Math.min(canvas.width / v.world_width, canvas.height / v.world_height);
+    return {scale, width: 512 * scale, height: 384 * scale, x: (canvas.width - 512 * scale) / 2, y: (canvas.height - 384 * scale) / 2};
+  }
+  function clear() { fit(); ctx.fillStyle = theme.bg; ctx.fillRect(0, 0, canvas.width, canvas.height); }
+  function draw(scene, time = scene?.time || 0, bot = scene?.cursor || [256, 192], human = null) {
+    if (!scene) return;
+    clear();
+    const vp = viewport(scene.observation_view), s = vp.scale, dpr = devicePixelRatio || 1;
+    ctx.save(); ctx.translate(vp.x, vp.y);
+    ctx.strokeStyle = theme.edge; ctx.lineWidth = 1 * dpr; ctx.strokeRect(0, 0, vp.width, vp.height);
+    ctx.fillStyle = theme.grid;
+    for (let x = 32; x < 512; x += 32) for (let y = 32; y < 384; y += 32) { ctx.beginPath(); ctx.arc(x * s, y * s, 1.1 * dpr, 0, Math.PI * 2); ctx.fill(); }
+    for (let k = scene.objects.length - 1; k >= 0; k--) {
+      const object = scene.objects[k];
+      const until = object.time - time;
+      if (object.result !== null || until > scene.approach_ms || time > object.end_time + scene.windows[2]) continue;
+      const x = object.x * s, y = object.y * s, r = scene.radius * s, fade = Math.min(1, 1.4 - until / scene.approach_ms);
+      ctx.globalAlpha = Math.max(.15, fade);
+      if (object.kind === 'spinner') {
+        ctx.strokeStyle = theme.spinner; ctx.lineWidth = 4 * dpr; ctx.beginPath(); ctx.arc(256 * s, 192 * s, 135 * s, 0, Math.PI * 2); ctx.stroke();
+        ctx.strokeStyle = theme.spin; ctx.beginPath();
+        ctx.arc(256 * s, 192 * s, 120 * s, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * Math.max(0, Math.min(1, (time - object.time) / (object.end_time - object.time)))); ctx.stroke();
+        ctx.globalAlpha = 1; continue;
+      }
+      if (object.kind === 'slider') {
+        ctx.strokeStyle = theme.slider; ctx.lineWidth = r * 2; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.beginPath();
+        object.path.forEach((p, i) => i ? ctx.lineTo(p[0] * s, p[1] * s) : ctx.moveTo(p[0] * s, p[1] * s)); ctx.stroke();
+        if (time >= object.time) { const ball = sliderPosition(object, time); ctx.strokeStyle = theme.ball; ctx.lineWidth = 3 * dpr; ctx.beginPath(); ctx.arc(ball[0] * s, ball[1] * s, r, 0, Math.PI * 2); ctx.stroke(); }
+      }
+      if (until >= -scene.windows[2]) {
+        ctx.fillStyle = theme.object + '30'; ctx.strokeStyle = theme.object; ctx.lineWidth = 2.5 * dpr; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+        ctx.strokeStyle = theme.approach; ctx.lineWidth = 2 * dpr; ctx.beginPath(); ctx.arc(x, y, r * (1 + 2 * Math.max(0, until) / scene.approach_ms), 0, Math.PI * 2); ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+    }
+    if (bot && theme.trail) {
+      trail.push([...bot]); if (trail.length > 10) trail.shift();
+      ctx.strokeStyle = theme.rival; ctx.lineCap = 'round';
+      for (let i = 1; i < trail.length; i++) { ctx.globalAlpha = i / trail.length * .5; ctx.lineWidth = (2 + i * .5) * dpr; ctx.beginPath(); ctx.moveTo(trail[i - 1][0] * s, trail[i - 1][1] * s); ctx.lineTo(trail[i][0] * s, trail[i][1] * s); ctx.stroke(); }
+      ctx.globalAlpha = 1;
+    }
+    const cursor = (p, color) => { ctx.fillStyle = color; ctx.beginPath(); ctx.arc(p[0] * s, p[1] * s, 7.5 * dpr, 0, Math.PI * 2); ctx.fill(); ctx.strokeStyle = theme.bg; ctx.lineWidth = 2.5 * dpr; ctx.stroke(); };
+    if (bot) cursor(bot, theme.rival);
+    if (human) cursor(human, theme.human);
+    const event = scene.last_judgment;
+    if (event && time - event.time < 400) {
+      ctx.globalAlpha = 1 - (time - event.time) / 400;
+      ctx.font = `700 ${20 * dpr}px system-ui, sans-serif`; ctx.textAlign = 'center';
+      ctx.fillStyle = event.result ? (event.result === 300 ? theme.human : theme.text) : theme.miss;
+      ctx.fillText(event.result || 'miss', event.x * s, event.y * s - (time - event.time) / 25 * dpr); ctx.globalAlpha = 1;
+    }
+    ctx.restore();
+  }
+  async function drawPixels(view) {
+    const response = await fetch(new URL(`api/frame?t=${Date.now()}`, location.href));
+    if (!response.ok) return false;
+    const bitmap = await createImageBitmap(await response.blob());
+    clear(); ctx.imageSmoothingEnabled = false;
+    const vp = viewport(view), k = vp.scale / view.scale;
+    if (bitmap.width === view.width && bitmap.height === view.height) ctx.drawImage(bitmap, vp.x - view.offset_x * k, vp.y - view.offset_y * k, view.width * k, view.height * k);
+    bitmap.close(); return true;
+  }
+  return {canvas, draw, drawPixels, clear, viewport, resetTrail: () => { trail.length = 0; }};
+}
+
+/** Live view: polls /api/scene while training and draws it (or the learner's pixels). */
+/**
+ * Live view: polls /api/scene while training and animates between snapshots at the screen's frame rate.
+ * Training runs faster than real time and the worker writes a snapshot only every so often, so drawing snapshots as
+ * they arrive looks like a slideshow. The view keeps a short buffer, runs a little behind the newest snapshot (about
+ * one and a half snapshot gaps, measured as they arrive) and moves the field's clock smoothly between them, so the
+ * map plays as a steady fast-forward. If a snapshot carries `trail` ([[time, x, y, keys], …] since the previous
+ * one), the cursor follows that real path; otherwise it glides between the known positions.
+ * `onScene(scene, {speed})` gets the drawn scene and how many times faster than real time the map is passing.
+ */
+export function liveView(field, store, {pixels = () => false, onScene} = {}) {
+  const POLL = 250;
+  let busy = false, on = true, raf = 0, buffer = [], gaps = [], speed = 1;
+  const sameRun = (a, b) => a.map?.id === b.map?.id && a.end_time === b.end_time && b.time >= a.time;
+  const delay = () => { if (!gaps.length) return 600; const sorted = [...gaps].sort((x, y) => x - y); return Math.max(300, Math.min(3000, sorted[sorted.length >> 1] * 1.5)); };
+  async function poll() {
+    if (!on || busy || document.hidden || !store.state.worker_running) return; busy = true;
+    try {
+      const scene = await api('api/scene');
+      if (!scene.objects) return;
+      if (pixels() && store.state.observation_view) { buffer = []; await field.drawPixels(store.state.observation_view); onScene?.(scene, {speed}); return; }
+      const last = buffer.at(-1), now = performance.now();
+      if (last && last.scene.time === scene.time && last.scene.map?.id === scene.map?.id) return;   // nothing new yet
+      if (last && !sameRun(last.scene, scene)) { buffer = []; field.resetTrail(); }
+      else if (last) { gaps.push(now - last.at); if (gaps.length > 8) gaps.shift(); speed = Math.max(.1, (scene.time - last.scene.time) / Math.max(1, now - last.at)); }
+      buffer.push({at: now, scene}); if (buffer.length > 10) buffer.shift();
+      if (!raf) raf = requestAnimationFrame(frame);
+    } catch {} finally { busy = false; }
+  }
+  function cursorAt(a, b, time, f) {
+    const trail = b.scene.trail;
+    if (trail?.length) {
+      let i = 0; while (i < trail.length - 1 && trail[i + 1][0] <= time) i++;
+      const p = trail[i], q = trail[i + 1];
+      if (!q || time <= p[0]) return [[p[1], p[2]], p[3]];
+      const g = (time - p[0]) / Math.max(1e-6, q[0] - p[0]);
+      return [[p[1] + (q[1] - p[1]) * g, p[2] + (q[2] - p[2]) * g], p[3]];
+    }
+    return [[a.scene.cursor[0] + (b.scene.cursor[0] - a.scene.cursor[0]) * f, a.scene.cursor[1] + (b.scene.cursor[1] - a.scene.cursor[1]) * f], f < .5 ? a.scene.keys : b.scene.keys];
+  }
+  function frame(now) {
+    raf = 0;
+    if (!on || pixels() || !buffer.length) return;
+    const show = now - delay();
+    let i = buffer.length - 1; while (i > 0 && buffer[i].at > show) i--;
+    const a = buffer[i], b = buffer[i + 1];
+    let scene = a.scene;
+    if (b && show >= a.at) {
+      const f = Math.min(1, (show - a.at) / Math.max(1, b.at - a.at)), time = a.scene.time + (b.scene.time - a.scene.time) * f;
+      const [cursor, keys] = cursorAt(a, b, time, f);
+      // Objects judged by `time` show their result; objects that came into view by then come from the next snapshot.
+      const later = new Map(b.scene.objects.map(o => [o.id, o])), seen = new Set();
+      const objects = [];
+      for (const o of a.scene.objects) { seen.add(o.id); const n = later.get(o.id); objects.push(n && n.result !== null && n.end_time <= time ? {...o, result: n.result} : o); }
+      for (const o of b.scene.objects) if (!seen.has(o.id) && o.time - b.scene.approach_ms <= time) objects.push({...o, result: o.end_time <= time ? o.result : null});
+      objects.sort((x, y) => x.time - y.time);
+      const judgedBy = (s, t) => s.last_judgment && s.last_judgment.time <= t ? s.last_judgment : null;
+      scene = {...b.scene, time, cursor, keys, objects, last_judgment: judgedBy(b.scene, time) || judgedBy(a.scene, time)};
+    }
+    field.draw(scene); onScene?.(scene, {speed});
+    raf = requestAnimationFrame(frame);
+  }
+  setInterval(poll, POLL);
+  return {pause: () => { on = false; cancelAnimationFrame(raf); raf = 0; buffer = []; gaps = []; }, resume: () => { on = true; field.resetTrail(); }};
+}
+
+/**
+ * Plays a recorded attempt. With `challenge`, the player plays the same section on `field.canvas` (mouse or Z/X) and
+ * `onEnd` gets both results. Returns {stop()}.
+ */
+export function playAttempt(field, attempt, {challenge = false, maps = [], onFrame, onEnd, countdown} = {}) {
+  let raf = 0, start = 0, stopped = false, pointer = [256, 192], pressed = 0, mouse = 0, human = null;
+  const canvas = field.canvas, listeners = [];
+  const on = (target, type, fn, opts) => { target.addEventListener(type, fn, opts); listeners.push([target, type, fn]); };
+  field.resetTrail();
+  if (challenge) {
+    human = {objects: structuredClone(attempt.scene.objects), points: 0, hits: 0, combo: 0, best: 0, keyState: 0, windows: attempt.scene.windows, time: 0};
+    const move = event => {
+      const box = canvas.getBoundingClientRect(), vp = field.viewport(attempt.scene.observation_view);
+      const x = (event.clientX - box.left) / box.width * canvas.width, y = (event.clientY - box.top) / box.height * canvas.height;
+      pointer = [Math.max(0, Math.min(512, (x - vp.x) / vp.scale)), Math.max(0, Math.min(384, (y - vp.y) / vp.scale))];
+    };
+    on(canvas, 'pointermove', move);
+    on(canvas, 'pointerdown', event => { move(event); mouse = 1; canvas.setPointerCapture(event.pointerId); });
+    on(canvas, 'pointerup', () => { mouse = 0; }); on(canvas, 'pointercancel', () => { mouse = 0; });
+    on(document, 'keydown', event => { const k = event.key.toLowerCase(); if (!['z', 'x'].includes(k) || event.repeat || ['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement?.tagName)) return; event.preventDefault(); pressed |= k === 'z' ? 1 : 2; });
+    on(document, 'keyup', event => { const k = event.key.toLowerCase(); if (k === 'z') pressed &= ~1; if (k === 'x') pressed &= ~2; });
+    on(window, 'blur', () => { pressed = mouse = 0; });
+  }
+  const scene = attempt.scene, frames = attempt.frames;
+  function judgeStep() {
+    const keys = pressed | mouse, rising = keys & ~human.keyState, time = human.time, next = time + 1000 / 60;
+    human.keyState = keys;
+    const judge = (object, result) => { object.result = result; human.points += result; if (result) { human.hits++; human.combo++; human.best = Math.max(human.best, human.combo); } else human.combo = 0; human.last = {id: object.id, result, time, x: object.x, y: object.y}; };
+    if (rising) for (const object of human.objects) {
+      if (object.result !== null || object.kind === 'spinner' || object.head !== null) continue;
+      const error = Math.abs(time - object.time);
+      if (error <= human.windows[2] && Math.hypot(pointer[0] - object.x, pointer[1] - object.y) <= scene.radius) {
+        const result = error <= human.windows[0] ? 300 : error <= human.windows[1] ? 100 : 50;
+        if (object.kind === 'circle') judge(object, result); else { object.head = result; object.components_hit++; }
+      }
+      break;
+    }
+    for (const object of human.objects) {
+      if (object.result !== null) continue;
+      if (object.kind === 'circle' && next > object.time + human.windows[2]) judge(object, 0);
+      else if (object.kind === 'slider') {
+        if (object.head === null && next > object.time + human.windows[2]) object.head = 0;
+        while (object.checkpoint_index < object.checkpoints.length && object.checkpoints[object.checkpoint_index] <= next) {
+          const target = sliderPosition(object, object.checkpoints[object.checkpoint_index]);
+          if (keys && Math.hypot(pointer[0] - target[0], pointer[1] - target[1]) <= scene.radius * 2.4) object.components_hit++;
+          object.checkpoint_index++;
+        }
+        if (next >= Math.max(object.end_time, object.time + human.windows[2])) { const f = object.components_hit / (1 + object.checkpoints.length); judge(object, f === 1 ? 300 : f >= .5 ? 100 : f > 0 ? 50 : 0); }
+      } else if (object.kind === 'spinner') {
+        if (time >= object.time && time < object.end_time) {
+          const dx = pointer[0] - 256, dy = pointer[1] - 192, angle = Math.atan2(dy, dx);
+          if (keys && Math.hypot(dx, dy) >= 24) { if (object.last_angle !== null) { const d = Math.abs(((angle - object.last_angle + Math.PI) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2) - Math.PI); object.rotation += Math.min(d, .5); } object.last_angle = angle; } else object.last_angle = null;
+        }
+        if (next >= object.end_time) { const map = maps.find(m => m.id === scene.map?.id), need = Math.max(1, (object.end_time - object.time) / 1000 * (3 + (map?.od ?? 5) * .2)); const f = object.rotation / (2 * Math.PI * need); judge(object, f >= 1 ? 300 : f >= .9 ? 100 : f >= .75 ? 50 : 0); }
+      }
+    }
+  }
+  // Full maps have thousands of frames and hundreds of events: walk them once instead of searching every frame.
+  const events = [...attempt.events].sort((a, b) => a.time - b.time), rival = {points: 0, hits: 0, combo: 0, best: 0, last: null};
+  const shown = human ? null : scene.objects.map(o => ({...o, result: null})), byId = shown && new Map(shown.map(o => [o.id, o]));
+  let fi = 0, ei = 0;
+  function frame(now) {
+    if (stopped) return;
+    const time = now - start;
+    while (fi < frames.length - 1 && frames[fi + 1][0] <= time) fi++;
+    const f = frames[fi];
+    while (ei < events.length && events[ei].time <= time) {
+      const e = events[ei++]; rival.points += e.result; rival.last = e;
+      if (e.result) { rival.hits++; rival.combo++; rival.best = Math.max(rival.best, rival.combo); } else rival.combo = 0;
+      if (byId?.has(e.id)) byId.get(e.id).result = e.result;
+    }
+    if (human) while (human.time <= time) { judgeStep(); human.time += 1000 / 60; }
+    const objects = human ? human.objects : shown;
+    field.draw({...scene, objects, last_judgment: human ? human.last : rival.last}, time, [f[1], f[2]], human ? pointer : null);
+    const total = scene.objects.length;
+    onFrame?.({time, end: frames.at(-1)[0], rival: {...rival, accuracy: rival.points / (300 * total)}, human: human && {points: human.points, hits: human.hits, combo: human.combo, best: human.best, accuracy: human.points / (300 * total)}, total});
+    if (time >= frames.at(-1)[0]) { stop(false); onEnd?.({rival: attempt.summary, human: human && {accuracy: human.points / (300 * total), hits: human.hits, best: human.best}}); return; }
+    raf = requestAnimationFrame(frame);
+  }
+  function stop(clean = true) { stopped = true; cancelAnimationFrame(raf); for (const [t, type, fn] of listeners) t.removeEventListener(type, fn); }
+  const go = () => { start = performance.now(); raf = requestAnimationFrame(frame); };
+  if (challenge && countdown) { field.draw(scene, 0, null, pointer); countdown(go); } else go();
+  return {stop};
+}
+
+/** Accuracy over updates, the learned line against the starting model. */
+export function drawChart(canvas, history, colors = {line: '#f187b8', base: '#afbad3', grid: '#ffffff14', text: '#afbad3', fill: '#f187b822'}, {height = canvas.clientHeight || 200, pad = [36, 14, 14, 26], extra = []} = {}) {
+  const ratio = devicePixelRatio || 1, width = canvas.clientWidth;
+  canvas.width = width * ratio; canvas.height = height * ratio;
+  const c = canvas.getContext('2d'); c.scale(ratio, ratio); c.clearRect(0, 0, width, height);
+  const [left, right, top, bottomPad] = [pad[0], width - pad[1], pad[2], height - pad[3]];
+  c.font = '11px system-ui, sans-serif'; c.fillStyle = colors.text;
+  for (const v of [0, .25, .5, .75, 1]) { const y = bottomPad - v * (bottomPad - top); c.fillText(`${v * 100}%`, 0, y + 4); c.strokeStyle = colors.grid; c.lineWidth = 1; c.beginPath(); c.moveTo(left, y); c.lineTo(right, y); c.stroke(); }
+  if (!history?.length) return false;
+  const min = history[0].update, max = Math.max(min + 1, history.at(-1).update);
+  const x = p => left + (p.update - min) / (max - min) * (right - left), y = v => bottomPad - v * (bottomPad - top);
+  c.beginPath(); history.forEach((p, i) => i ? c.lineTo(x(p), y(p.accuracy)) : c.moveTo(x(p), y(p.accuracy)));
+  c.lineTo(x(history.at(-1)), bottomPad); c.lineTo(x(history[0]), bottomPad); c.closePath(); c.fillStyle = colors.fill; c.fill();
+  for (const [key, color, dashed] of [['baseline', colors.base, true], ...extra.map(([k, c]) => [k, c, false]), ['accuracy', colors.line, false]]) {
+    c.strokeStyle = color; c.lineWidth = dashed ? 1.2 : 2.5; c.setLineDash(dashed ? [5, 5] : []); c.lineJoin = 'round'; c.beginPath();
+    history.forEach((p, i) => i ? c.lineTo(x(p), y(p[key])) : c.moveTo(x(p), y(p[key]))); c.stroke(); c.setLineDash([]);
+  }
+  const last = history.at(-1); c.fillStyle = colors.line; c.beginPath(); c.arc(x(last), y(last.accuracy), 4, 0, Math.PI * 2); c.fill();
+  c.fillStyle = colors.text; c.textAlign = 'left'; c.fillText(`Update ${fmt(min)}`, left, height - 6); c.textAlign = 'right'; c.fillText(`Update ${fmt(last.update)}`, right, height - 6);
+  return true;
+}
+
+// ---- the Arena page ----------------------------------------------------------------------------------------------
+const $ = id => document.getElementById(id);
+const field = createField($('field'));
+let mode = 'live', mapId = null, player = null, lastAttempt = null;
+const error = message => { $('error').textContent = message; $('error').hidden = !message; };
+const store = createStore(render, error);
+const live = liveView(field, store, {pixels: () => $('pixels').checked, onScene: (scene, {speed = 1} = {}) => {
+  if (mode !== 'live') return;
+  $('mode-tag').textContent = speed > 1.5 ? `Live training · ${Math.round(speed)}× speed` : 'Live training';
+  $('empty').hidden = true;
+  $('map-title').textContent = scene.map?.title || 'Training map'; $('map-sub').textContent = `${scene.map?.difficulty || ''} · full map, ${fmt(scene.judged)} of ${fmt(scene.object_count)} objects played`;
+  if (!$('acc')) $('score').innerHTML = '<div class="acc" id="acc">—</div><div class="sub" id="acc-sub"></div>';
+  $('acc').textContent = percent(scene.accuracy); $('acc-sub').textContent = `${fmt(scene.hits)} of ${fmt(scene.judged)} hit · best ${scene.max_combo || 0}×`;
+  mapSkills(scene);
+  $('bar').style.width = `${Math.min(100, scene.time / scene.end_time * 100)}%`; $('time').textContent = `${clock(scene.time)} / ${clock(scene.end_time)}`;
+  const keys = Array.isArray(scene.keys) ? (scene.keys[0] ? 1 : 0) | (scene.keys[1] ? 2 : 0) : Number(scene.keys) || 0; $('k1').classList.toggle('on', Boolean(keys & 1)); $('k2').classList.toggle('on', Boolean(keys & 2));
+  $('aim').textContent = `aim ${Math.round(scene.cursor[0])}, ${Math.round(scene.cursor[1])}`;
+}});
+
+function render(state) {
+  const [label, tone] = statusOf(state);
+  $('status').className = `pill ${tone}`; $('status').lastChild.textContent = label;
+  $('train').textContent = isTraining(state) ? 'Pause training' : 'Start training';
+  $('train').disabled = ['starting', 'watching', 'syncing'].includes(state.status);
+  const r = state.resources || {};
+  $('pi').firstChild.textContent = `${r.temperature_c ?? '—'}°C · ${Math.round(r.worker_memory_mb || 0)} MB`;
+  const ev = latestEval(state), base = baselineOf(state);
+  $('kpi-acc').textContent = ev ? percent(ev.accuracy) : '—'; $('kpi-base').textContent = base ? percent(base.accuracy) : '—';
+  const gain = ev && base ? Math.round((ev.accuracy - base.accuracy) * 100) : null;
+  $('kpi-gain').textContent = gain === null ? '' : `${gain > 0 ? '+' : gain < 0 ? '−' : '±'}${Math.abs(gain)} points`; $('kpi-gain').className = gain > 0 ? 'up' : 'down';
+  $('split').textContent = state.test_split ? `checked on ${state.test_split}` : '';
+  drawChart($('chart'), state.history, undefined, {height: 150, extra: [['hit_rate', '#92dec6']]});
+  $('updates').textContent = fmt(state.updates); $('maps-done').textContent = fmt(state.completed_maps ?? state.episodes); $('steps').textContent = fmt(state.steps); $('hits').textContent = ev ? percent(ev.hit_rate) : '—';
+  $('phase').textContent = state.phase || '';
+  const away = state.remote?.attached, par = state.parallel;
+  $('where').textContent = away ? `On ${away.name}: ${fmt(away.environments)} environments on ${fmt(away.processes)} of ${fmt(away.cores)} cores` : par ? `${fmt(par.environments)} environments on ${fmt(par.processes)} cores` : '';
+  if (away && isTraining(state)) $('status').lastChild.textContent = `Training on ${away.name}`;
+  if (!$('remote-sheet').hidden && $('remote-sheet').classList.contains('open')) drawRemote(state);
+  const saved = state.checkpoints?.find(c => c.name === 'latest.npz');
+  $('download').hidden = !saved; $('saved').textContent = saved ? `Saved ${new Date(saved.modified_at * 1000).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'})}, after every update.` : 'Nothing saved yet.';
+  $('map-count').textContent = `${fmt(state.maps?.length)} saved`;
+  $('sync-note').textContent = state.map_sync?.at ? `Last sync ${new Date(state.map_sync.at * 1000).toLocaleString([], {dateStyle: 'short', timeStyle: 'short'})}.` : '';
+  const o = state.options || {};
+  $('cpu').textContent = `${o.cpu_budget_percent || 25}% of a core`; $('cpu-bar').style.setProperty('--v', `${o.cpu_budget_percent || 25}%`);
+  $('mem').textContent = `${Math.round(r.worker_memory_mb || 0)} of ${o.memory_limit_mb || 512} MB`; $('mem-bar').style.setProperty('--v', `${Math.min(100, (r.worker_memory_mb || 0) / (o.memory_limit_mb || 512) * 100)}%`);
+  $('temp').textContent = r.temperature_c != null ? `${r.temperature_c}°C, pauses at ${o.max_temperature_c || 75}°C` : 'unavailable';
+  $('temp-bar').style.setProperty('--v', `${Math.min(100, (r.temperature_c || 0) / (o.max_temperature_c || 75) * 100)}%`);
+  $('version').textContent = state.version || '';
+  insideModel(state);
   if (state.last_error) error(state.last_error);
-  drawChart();
+  if (mode === 'live' && !state.worker_running) { $('empty').hidden = false; $('score').innerHTML = ''; }
+  drawMaps();
 }
-function displayMapProgress(value) {
-  const clock=ms=>`${Math.floor(ms/60000)}:${String(Math.floor(ms/1000)%60).padStart(2,'0')}`;
-  $('map-progress').textContent=value?`Full map · ${clock(Math.min(value.time,value.end_time))} / ${clock(value.end_time)} · ${fmt(value.judged)} / ${fmt(value.object_count)} objects judged`:'Training plays complete maps and moves on after the final object.';
+
+// map picker
+function drawMaps() {
+  const maps = store.state.maps || [], q = $('search').value.trim().toLowerCase();
+  const list = [{id: null, title: 'The map it is training on', difficulty: store.state.current_map ? `${store.state.current_map.title} [${store.state.current_map.difficulty}]` : 'whatever it is practising now'}, ...maps.filter(m => !q || `${m.title} ${m.artist} ${m.difficulty}`.toLowerCase().includes(q))];
+  const sig = list.map(m => m.id).join() + mapId;
+  if ($('maps').dataset.sig === sig) return; $('maps').dataset.sig = sig;
+  $('maps').innerHTML = list.slice(0, 150).map(m => `<li><button type="button" data-id="${m.id ?? ''}" aria-current="${m.id === mapId}"><b>${esc(m.title)}</b><small>${esc(m.difficulty)}${m.artist ? ` · ${esc(m.artist)}` : ''}</small>${m.objects ? `<em>${fmt(m.objects)} objects<br>AR ${m.ar} · OD ${m.od}</em>` : ''}</button></li>`).join('');
 }
-function drawChart() {
-  const history=state.history || [], signature=JSON.stringify(history)+chart.clientWidth;
-  if(signature===chartSignature)return; chartSignature=signature;
-  const ratio=devicePixelRatio || 1, width=chart.clientWidth, height=180;
-  chart.width=width*ratio; chart.height=height*ratio;
-  const c=chart.getContext('2d'); c.scale(ratio,ratio); c.clearRect(0,0,width,height);
-  const left=35, right=width-12, top=10, bottom=155;
-  c.font='11px Verdana';c.fillStyle='#afbad3';c.lineWidth=1;
-  for(const value of [0,.5,1]) {const y=bottom-value*(bottom-top); c.fillText(`${value*100}%`,0,y+4);c.strokeStyle='#344361';c.beginPath();c.moveTo(left,y);c.lineTo(right,y);c.stroke();}
-  $('chart-empty').hidden=history.length>0;
-  if(!history.length)return;
-  const min=history[0].update, max=Math.max(min+1,history.at(-1).update);
-  const x=point=>left+(point.update-min)/(max-min)*(right-left), y=value=>bottom-value*(bottom-top);
-  for(const [key,color,dashed] of [['baseline','#afbad3',true],['accuracy','#f187b8',false]]) {
-    c.strokeStyle=color;c.lineWidth=dashed?1:2;c.setLineDash(dashed?[5,5]:[]);c.beginPath();
-    history.forEach((point,index)=>{if(index===0||point.stage!==history[index-1].stage)c.moveTo(x(point),y(point[key]));else c.lineTo(x(point),y(point[key]));});c.stroke();c.setLineDash([]);
-    if(!dashed)for(const point of history){c.fillStyle=color;c.beginPath();c.arc(x(point),y(point[key]),2.8,0,Math.PI*2);c.fill();}
+const esc = v => String(v ?? '').replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
+const sheet = open => { $('sheet').classList.toggle('open', open); $('scrim').hidden = !open; if (open) { drawMaps(); $('search').focus(); } };
+$('map-open').onclick = () => sheet(true); $('sheet-close').onclick = $('scrim').onclick = () => sheet(false);
+$('search').oninput = drawMaps;
+$('maps').onclick = event => { const b = event.target.closest('button'); if (!b) return; mapId = b.dataset.id || null; const m = store.state.maps.find(x => x.id === mapId); $('map-name').textContent = m ? `${m.title} [${m.difficulty}]` : 'The map it is training on'; sheet(false); };
+document.addEventListener('keydown', e => { if (e.key === 'Escape') sheet(false); });
+
+// modes
+function setMode(next) {
+  player?.stop(); player = null; mode = next;
+  document.querySelectorAll('.seg button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.mode === next)));
+  for (const id of ['wait', 'count', 'result']) $(id).hidden = true;
+  $('keys').hidden = next !== 'challenge'; $('stage').classList.toggle('playing', next === 'challenge');
+  $('mode-tag').textContent = {live: 'Live training', watch: 'Recorded attempt', challenge: 'You against the rival'}[next];
+  if (next === 'live') { live.resume(); $('score').innerHTML = ''; return; }
+  live.pause(); record(next === 'challenge');
+}
+async function record(challenge) {
+  $('empty').hidden = true; $('wait').hidden = false;
+  $('wait-note').textContent = store.state.worker_running ? 'It finishes the current training update first.' : 'It plays once from its saved model.';
+  try { lastAttempt = await store.record(mapId); if (mode === (challenge ? 'challenge' : 'watch')) start(challenge); }
+  catch (e) { error(e.message); setMode('live'); }
+}
+function start(challenge) {
+  const a = lastAttempt; $('wait').hidden = true; $('result').hidden = true;
+  $('map-title').textContent = a.title; $('map-sub').textContent = `recorded after ${fmt(a.updates)} updates · ${fmt(a.summary.objects)} objects`;
+  $('score').innerHTML = challenge ? '<div class="versus"><div class="r"><small>Rival</small><b id="r-acc">0%</b></div><div class="h"><small>You</small><b id="h-acc">0%</b></div></div>' : '<div class="acc" id="acc">0%</div><div class="sub" id="acc-sub"></div>';
+  player = playAttempt(field, a, {challenge, maps: store.state.maps,
+    countdown: go => { let n = 3; $('count').hidden = false; $('count-n').textContent = n; const t = setInterval(() => { n--; if (n) $('count-n').textContent = n; else { clearInterval(t); $('count').hidden = true; go(); } }, 700); },
+    onFrame: ({time, end, rival, human, total}) => {
+      $('bar').style.width = `${time / end * 100}%`; $('time').textContent = `${clock(time)} / ${clock(end)}`;
+      if (human) { $('r-acc').textContent = percent(rival.accuracy); $('h-acc').textContent = percent(human.accuracy); }
+      else { $('acc').textContent = percent(rival.accuracy); $('acc-sub').textContent = `${rival.hits} / ${total} · ${rival.combo}× combo`; }
+    },
+    onEnd: ({rival, human}) => {
+      if (!human) { $('result-title').textContent = 'Attempt finished'; $('result-grid').innerHTML = `<div class="r"><small>Rival</small><b>${percent(rival.accuracy)}</b><p>${rival.hits} of ${rival.objects} hit</p></div><div><small>Misses</small><b>${rival.results.miss}</b><p>${rival.results['300']} great · ${rival.results['100']} ok</p></div>`; $('again').textContent = 'Watch again'; }
+      else { const win = human.accuracy > rival.accuracy, draw = human.accuracy === rival.accuracy; $('result-title').textContent = draw ? 'A draw' : win ? 'You win' : 'Rival wins';
+        $('result-grid').innerHTML = `<div class="h${win ? ' won' : ''}"><small>You</small><b>${percent(human.accuracy)}</b><p>${human.hits} hit · best ${human.best}×</p></div><div class="r${!win && !draw ? ' won' : ''}"><small>Rival</small><b>${percent(rival.accuracy)}</b><p>${rival.hits} hit · best ${rival.max_combo}×</p></div>`; $('again').textContent = 'Play again'; }
+      $('result').hidden = false;
+    }});
+}
+document.querySelector('.seg').onclick = e => { const b = e.target.closest('button'); if (b) setMode(b.dataset.mode); };
+$('again').onclick = () => start(mode === 'challenge'); $('back-live').onclick = () => setMode('live');
+$('pixels').onchange = () => { if (mode !== 'live') setMode('live'); };
+$('train').onclick = async () => { $('train').disabled = true; try { await store.toggleTraining(); } catch (e) { error(e.message); } finally { $('train').disabled = false; } };
+$('sync').onclick = async () => { try { await store.sync(); } catch (e) { error(e.message); } };
+$('osu').onchange = async e => { const f = e.target.files[0]; if (!f) return; try { const m = await store.importMap(f); $('sync-note').textContent = `Imported ${m.title}.`; } catch (err) { error(err.message); } e.target.value = ''; };
+$('ckpt').onchange = async e => { const f = e.target.files[0]; if (!f) return; try { await store.importCheckpoint(f); $('saved').textContent = 'Model imported.'; } catch (err) { error(err.message); } e.target.value = ''; };
+new ResizeObserver(() => drawChart($('chart'), store.state.history, undefined, {height: 150, extra: [['hit_rate', '#92dec6']]})).observe($('chart'));
+function insideModel(state) {
+  const view = state.observation_view; if (view) $('eye-size').textContent = `${view.width} × ${view.height}`;
+  $('m-params').textContent = `${fmt(state.parameters)} parameters`; $('m-source').textContent = state.training_source || 'Real beatmaps';
+  const done = state.completed_maps ?? 0, pool = state.training_maps ?? state.maps?.length ?? 0, progress = state.map_progress;
+  $('p-done').textContent = fmt(done); $('p-of').textContent = `${done === 1 ? 'map' : 'maps'} played to the end`;
+  $('p-bar').style.setProperty('--v', `${progress?.end_time ? Math.min(100, progress.time / progress.end_time * 100) : 0}%`);
+  const map = state.current_map;
+  $('p-note').textContent = `${map ? `Now on ${map.title} [${map.difficulty}]${progress ? `, ${clock(progress.time)} of ${clock(progress.end_time)}` : ''}. ` : ''}It plays complete maps from ${fmt(pool)} training maps and moves on after the last object. ${state.test_sections ? `${fmt(state.test_sections)} sections of other maps` : 'Some maps'} are kept back to check it fairly.`;
+  const names = {'latest.npz': 'Latest', 'best.npz': 'Best so far', 'initial.npz': 'Starting weights'};
+  $('ckpts').innerHTML = [...(state.checkpoints || [])].sort((a, b) => b.modified_at - a.modified_at).filter(c => names[c.name] || !c.name.includes('before')).map(c => `<li><span>${esc(names[c.name] || c.name)}</span><span>${(c.bytes / 1024).toFixed(0)} KB · ${new Date(c.modified_at * 1000).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'})}</span></li>`).join('') || '<li><span>Nothing saved yet</span></li>';
+}
+// How it is doing on the map it is playing, from the live scene's running totals.
+function mapSkills(scene) {
+  const set = (id, text, v) => { $(id).textContent = text; $(`${id}-b`).style.setProperty('--v', `${Math.max(0, Math.min(100, v * 100))}%`); };
+  $('sk-map').textContent = scene.map ? `${scene.map.title} [${scene.map.difficulty}]` : '';
+  const judged = scene.judged || 0, hits = scene.hits || 0, comp = (scene.components_hit || 0) + (scene.components_missed || 0);
+  set('sk-hit', judged ? percent(hits / judged) : '—', judged ? hits / judged : 0);
+  set('sk-time', hits ? percent(scene.points / (300 * hits)) : '—', hits ? scene.points / (300 * hits) : 0);
+  set('sk-slide', comp ? percent(scene.components_hit / comp) : '—', comp ? scene.components_hit / comp : 0);
+  set('sk-combo', `${scene.max_combo || 0}×`, judged ? (scene.max_combo || 0) / Math.max(1, judged) : 0);
+  const r = scene.results || {}, keys = [['g', '300', 'great'], ['o', '100', 'ok'], ['m', '50', 'meh'], ['x', 'miss', 'miss']], all = keys.reduce((t, [, k]) => t + (r[k] || 0), 0);
+  const sig = keys.map(([, k]) => r[k] || 0).join();
+  if ($('judge').dataset.sig === sig) return; $('judge').dataset.sig = sig;
+  $('judge').replaceChildren(...keys.filter(([, k]) => r[k]).map(([c, k, word]) => {
+    const span = Object.assign(document.createElement('span'), {className: c, title: `${r[k]} ${word}`, textContent: r[k] / all > .07 ? r[k] : ''});
+    span.style.flex = String(r[k]); return span;
+  }));
+}
+// The learner's view refreshes every second while the page is visible; its keys light up with the live field.
+setInterval(() => { if (!document.hidden && store.state.worker_running) $('eye').src = `api/frame?t=${Date.now()}`; }, 1000);
+
+// ---- training on another computer --------------------------------------------------------------------------------
+function drawRemote(state) {
+  const remote = state.remote || {}, host = location.hostname || 'HOME-ASSISTANT', hub = `http://${host}:${remote.port || 8100}`;
+  const sig = JSON.stringify([remote.enabled, remote.attached, remote.token, isTraining(state)]);
+  if ($('remote-body').dataset.sig === sig) return; $('remote-body').dataset.sig = sig;
+  if (!remote.enabled) {
+    $('remote-body').innerHTML = `<p>A faster PC on your network can do the training and send the model back here.</p>
+      <ol><li>In Home Assistant, open this app's <b>Configuration</b> and turn on <b>remote_training</b>.</li><li>Keep port <b>8100</b> mapped under <b>Network</b>.</li><li>Restart the app and come back here for the command.</li></ol>`;
+    return;
   }
-  c.fillStyle='#afbad3';c.fillText(`Update ${min}`,left,178);c.textAlign='right';c.fillText(`Update ${history.at(-1).update}`,right,178);
+  const a = remote.attached, token = remote.token || 'TOKEN';
+  const get = `curl -fsS -H "Authorization: Bearer ${token}" ${hub}/remote/v1/trainer.py -o rival-trainer.py`;
+  const run = `python3 rival-trainer.py --hub ${hub} --token ${token}`;
+  $('remote-body').innerHTML = `<div class="remote-status${a ? ' on' : ''}"><i></i><span>${a ? `<b>${esc(a.name)}</b> is connected: ${fmt(a.environments)} environments on ${fmt(a.processes)} of ${fmt(a.cores)} cores. ${isTraining(state) ? 'It is training now.' : 'Press Start training to train there.'}` : 'No computer connected.'}</span></div>
+    <p>Run these on the PC (Python 3.10 or newer with numpy and Pillow). It downloads this app's trainer, maps and model, takes over training, and sends progress and the live field back here.</p>
+    <div class="cmd"><pre>${esc(get)}</pre><button class="btn" type="button" data-copy="${esc(get)}">Copy</button></div>
+    <div class="cmd"><pre>${esc(run)}</pre><button class="btn" type="button" data-copy="${esc(run)}">Copy</button></div>
+    <p>By default it uses half the PC's cores at low priority; add <code>--processes 4</code> to use fewer. Ctrl+C on the PC stops it, and the latest model is already saved here. Pause, Watch and Play against it keep working from this page.</p>
+    <p class="note">The token protects the hub. Anyone with it can train this model, so keep it to yourself.</p>`;
 }
-function fieldViewport() {
-  const view=state.observation_view || {world_width:640,world_height:512};
-  const scale=Math.min(field.width/view.world_width,field.height/view.world_height);
-  const width=512*scale,height=384*scale;
-  return {scale,width,height,x:(field.width-width)/2,y:(field.height-height)/2};
-}
-function clearField() {
-  ctx.fillStyle='#10182e';ctx.fillRect(0,0,field.width,field.height);
-}
-function drawScene(value, time=value?.time || 0, bot=value?.cursor || [256,192], humanPointer=null) {
-  if(!value)return;
-  const viewport=fieldViewport(),scale=viewport.scale;
-  clearField();ctx.save();ctx.translate(viewport.x,viewport.y);
-  ctx.strokeStyle='#1b2743';ctx.lineWidth=1;
-  for(let x=32;x<512;x+=32)for(let y=32;y<384;y+=32){ctx.beginPath();ctx.arc(x*scale,y*scale,1,0,Math.PI*2);ctx.stroke();}
-  for(const object of [...value.objects].reverse()) {
-    const until=object.time-time;
-    if(object.result!==null||until>value.approach_ms||time>object.end_time+value.windows[2])continue;
-    const x=object.x*scale,y=object.y*scale,r=value.radius*scale;
-    if(object.kind==='spinner') {
-      ctx.strokeStyle='#aba5fa';ctx.lineWidth=4;ctx.beginPath();ctx.arc(256*scale,192*scale,135*scale,0,Math.PI*2);ctx.stroke();
-      ctx.strokeStyle='#92dec6';ctx.beginPath();ctx.arc(256*scale,192*scale,120*scale,-Math.PI/2,-Math.PI/2+Math.PI*2*Math.max(0,Math.min(1,(time-object.time)/(object.end_time-object.time))));ctx.stroke();continue;
-    }
-    if(object.kind==='slider') {
-      ctx.strokeStyle='#aba5fa55';ctx.lineWidth=r*2;ctx.lineCap='round';ctx.lineJoin='round';ctx.beginPath();object.path.forEach((point,index)=>index?ctx.lineTo(point[0]*scale,point[1]*scale):ctx.moveTo(point[0]*scale,point[1]*scale));ctx.stroke();
-      if(time>=object.time){const ball=sliderPosition(object,time);ctx.strokeStyle='#f3f4fa';ctx.lineWidth=3;ctx.beginPath();ctx.arc(ball[0]*scale,ball[1]*scale,r,0,Math.PI*2);ctx.stroke();}
-    }
-    if(until < -value.windows[2])continue;
-    ctx.fillStyle='#aba5fa24';ctx.strokeStyle='#aba5fa';ctx.lineWidth=2;ctx.beginPath();ctx.arc(x,y,r,0,Math.PI*2);ctx.fill();ctx.stroke();
-    const approach=r*(1+2*Math.max(0,until)/value.approach_ms);
-    ctx.strokeStyle='#aba5fa88';ctx.beginPath();ctx.arc(x,y,approach,0,Math.PI*2);ctx.stroke();
-  }
-  function cursor(position,color,radius){ctx.fillStyle=color;ctx.beginPath();ctx.arc(position[0]*scale,position[1]*scale,radius,0,Math.PI*2);ctx.fill();ctx.strokeStyle='#10182e';ctx.lineWidth=2;ctx.stroke();}
-  if(bot)cursor(bot,'#f187b8',7);
-  if(humanPointer)cursor(humanPointer,'#92dec6',7);
-  const event=value.last_judgment;
-  if(event && time-event.time<300){ctx.font='bold 19px Verdana';ctx.textAlign='center';ctx.fillStyle=event.result?'#f3f4fa':'#f187b8';ctx.fillText(event.result || 'Miss',event.x*scale,event.y*scale);}
-  ctx.restore();
-}
-async function pollStatus() {
-  if(statusBusy || document.hidden)return;statusBusy=true;
-  try {state=await api('api/status');displayStatus();if(pendingAttempt){const data=await api('api/attempt');if(data.id===pendingAttempt.id){attempt=data;const challenge=pendingAttempt.challenge;pendingAttempt=null;$('watch').disabled=$('challenge').disabled=false;playAttempt(challenge);}}}
-  catch(e){error(`Unable to reach the app: ${e.message}`);}finally{statusBusy=false;}
-}
-async function pollScene() {
-  if(sceneBusy || document.hidden || mode!=='live' || !state.worker_running)return;sceneBusy=true;
-  try{scene=await api('api/scene');if(scene.objects){$('field-empty').hidden=true;$('view-label').textContent='Live exploration';if($('pixels').checked){const response=await fetch(new URL(`api/frame?t=${Date.now()}`,location.href));if(response.ok){pixels=await createImageBitmap(await response.blob());ctx.imageSmoothingEnabled=false;const viewport=fieldViewport(),view=state.observation_view;clearField();
-                  const imageScale=viewport.scale/view.scale;
-                  if(pixels.width===view.width&&pixels.height===view.height)ctx.drawImage(pixels,viewport.x-view.offset_x*imageScale,viewport.y-view.offset_y*imageScale,view.width*imageScale,view.height*imageScale);pixels.close();}}else drawScene(scene);displayMapProgress(scene);$('attempt-score').textContent=`${scene.hits} / ${scene.object_count} objects hit`;}}
-  catch{}finally{sceneBusy=false;}
-}
-async function requestAttempt(challenge=false) {
-  error('');stopPlayback();mode='waiting';$('watch').disabled=$('challenge').disabled=true;
-  $('view-label').textContent='Recording a fresh attempt';$('attempt-note').textContent=state.worker_running?'The current training update finishes first. Then the learner records an attempt.':'The learner is recording one attempt from its saved weights.';
-  const choice=$('pattern').value,data={};if(choice.startsWith('map:'))data.map_id=choice.slice(4);
-  try{pendingAttempt={...await api('api/watch',data),challenge};}
-  catch(e){error(e.message);mode='live';$('watch').disabled=$('challenge').disabled=false;}
-}
-function playAttempt(challenge=false) {
-  stopPlayback();mode=challenge?'challenge':'playback';$('field-empty').hidden=true;$('human-legend').hidden=!challenge;
-  playbackJudgments=new Map();playbackEventIndex=0;
-  $('view-label').textContent=challenge?'You and the rival':'Recorded attempt';$('pixels').checked=false;
-  $('attempt-note').textContent=challenge?'Move the cursor over the field and press Z or X, or tap a circle. You and the rival play the same complete real map.':`${attempt.title}, recorded after ${fmt(attempt.updates)} training updates. Practice results stay here.`;
-  if(challenge){human={objects:structuredClone(attempt.scene.objects),points:0,hits:0,keyState:0,windows:attempt.scene.windows,time:0};
-    let count=3;$('countdown').textContent=count;$('countdown').hidden=false;drawScene(attempt.scene,0,null,pointer);
-    countdownTimer=setInterval(()=>{count--;if(count){$('countdown').textContent=count;}else{clearInterval(countdownTimer);$('countdown').hidden=true;playbackStart=performance.now();animation=requestAnimationFrame(playFrame);}},700);
-  } else {playbackStart=performance.now();animation=requestAnimationFrame(playFrame);}
-}
-function playFrame(now) {
-  const time=now-playbackStart,frames=attempt.frames;
-  let index=0;while(index<frames.length-1 && frames[index+1][0]<=time)index++;
-  const frame=frames[index];
-  if(human){while(human.time<=time){humanStep();human.time+=1000/60;}}
-  while(playbackEventIndex<attempt.events.length&&attempt.events[playbackEventIndex].time<=time){const event=attempt.events[playbackEventIndex++];playbackJudgments.set(event.id,event.result);}
-  const visible={...attempt.scene,objects:human?human.objects:attempt.scene.objects.map(object=>({...object,result:playbackJudgments.get(object.id)??null}))};
-  drawScene(visible,time,[frame[1],frame[2]],human?pointer:null);
-  displayMapProgress({...attempt.scene,time,judged:playbackEventIndex});
-  $('attempt-score').textContent=human?`You: ${human.hits} / ${attempt.summary.objects}`:`Rival: ${percent(attempt.summary.accuracy)} accuracy`;
-  if(time>=frames.at(-1)[0]) {
-    if(human){const accuracy=human.points/(300*attempt.summary.objects);$('result-title').textContent=accuracy>attempt.summary.accuracy?'You win.':accuracy<attempt.summary.accuracy?'Rival wins.':'A draw.';$('result-detail').textContent=`You ${percent(accuracy)} accuracy. Rival ${percent(attempt.summary.accuracy)} accuracy.`;$('field-result').hidden=false;}
-    $('view-label').textContent=human?'Practice finished':'Attempt finished';return;
-  }
-  animation=requestAnimationFrame(playFrame);
-}
-function sliderPosition(object,time) {
-  const progress=Math.max(0,Math.min(object.repeats,(time-object.time)/object.span));
-  const repeat=Math.min(object.repeats-1,Math.floor(progress));let fraction=progress-repeat;
-  if(repeat%2)fraction=1-fraction;
-  const distance=fraction*object.length;
-  let index=1;while(index<object.distances.length-1&&object.distances[index]<distance)index++;
-  if(object.path.length===1)return object.path[0];
-  fraction=(distance-object.distances[index-1])/Math.max(1e-6,object.distances[index]-object.distances[index-1]);
-  return object.path[index-1].map((value,axis)=>value+fraction*(object.path[index][axis]-value));
-}
-function humanStep() {
-  const keys=pressed|mouseHeld,rising=keys&~human.keyState,time=human.time,next=time+1000/60;
-  human.keyState=keys;
-  function judge(object,result){object.result=result;human.points+=result;if(result)human.hits++;}
-  if(rising)for(const object of human.objects){
-    if(object.result!==null||object.kind==='spinner'||object.head!==null)continue;
-    const error=Math.abs(time-object.time);
-    if(error<=human.windows[2]&&Math.hypot(pointer[0]-object.x,pointer[1]-object.y)<=attempt.scene.radius){
-      const result=error<=human.windows[0]?300:error<=human.windows[1]?100:50;
-      if(object.kind==='circle')judge(object,result);else{object.head=result;object.components_hit++;}
-    }break;
-  }
-  for(const object of human.objects){
-    if(object.result!==null)continue;
-    if(object.kind==='circle'&&next>object.time+human.windows[2])judge(object,0);
-    else if(object.kind==='slider'){
-      if(object.head===null&&next>object.time+human.windows[2])object.head=0;
-      while(object.checkpoint_index<object.checkpoints.length&&object.checkpoints[object.checkpoint_index]<=next){
-        const target=sliderPosition(object,object.checkpoints[object.checkpoint_index]);
-        if(keys&&Math.hypot(pointer[0]-target[0],pointer[1]-target[1])<=attempt.scene.radius*2.4)object.components_hit++;
-        object.checkpoint_index++;
-      }
-      if(next>=Math.max(object.end_time,object.time+human.windows[2])){const fraction=object.components_hit/(1+object.checkpoints.length);judge(object,fraction===1?300:fraction>=.5?100:fraction>0?50:0);}
-    }else if(object.kind==='spinner'){
-      if(time>=object.time&&time<object.end_time){
-        const dx=pointer[0]-256,dy=pointer[1]-192,angle=Math.atan2(dy,dx);
-        if(keys&&Math.hypot(dx,dy)>=24){if(object.last_angle!==null){const delta=Math.abs(((angle-object.last_angle+Math.PI)%(Math.PI*2)+Math.PI*2)%(Math.PI*2)-Math.PI);object.rotation+=Math.min(delta,.5);}object.last_angle=angle;}else object.last_angle=null;
-      }
-      if(next>=object.end_time){const map=state.maps.find(item=>item.id===attempt.scene.map.id),required=Math.max(1,(object.end_time-object.time)/1000*(3+(map?.od??5)*.2));const fraction=object.rotation/(2*Math.PI*required);judge(object,fraction>=1?300:fraction>=.9?100:fraction>=.75?50:0);}
-    }
-  }
-}
-function movePointer(event){
-  const box=field.getBoundingClientRect(),viewport=fieldViewport();
-  const x=(event.clientX-box.left)/box.width*field.width;
-  const y=(event.clientY-box.top)/box.height*field.height;
-  pointer=[Math.max(0,Math.min(512,(x-viewport.x)/viewport.scale)),Math.max(0,Math.min(384,(y-viewport.y)/viewport.scale))];
-}
-field.addEventListener('pointermove',movePointer);
-field.addEventListener('pointerdown',event=>{movePointer(event);mouseHeld=1;field.setPointerCapture(event.pointerId);});
-field.addEventListener('pointerup',()=>{mouseHeld=0;});field.addEventListener('pointercancel',()=>{mouseHeld=0;});
-document.addEventListener('keydown',event=>{if(!human||!['z','x'].includes(event.key.toLowerCase())||event.repeat||['INPUT','SELECT','TEXTAREA'].includes(document.activeElement?.tagName))return;event.preventDefault();pressed|=event.key.toLowerCase()==='z'?1:2;});
-document.addEventListener('keyup',event=>{if(event.key.toLowerCase()==='z')pressed&=~1;if(event.key.toLowerCase()==='x')pressed&=~2;});
-window.addEventListener('blur',()=>{pressed=mouseHeld=0;});
-$('train').addEventListener('click',async()=>{const button=$('train');button.disabled=true;error('');try{const running=state.worker_running && state.status!=='watching';state=await api(`api/training/${running?'pause':'start'}`,{});if(!running){stopPlayback();mode='live';}displayStatus();}catch(e){error(e.message);}finally{button.disabled=false;}});
-$('watch').addEventListener('click',()=>requestAttempt(false));$('challenge').addEventListener('click',()=>requestAttempt(true));$('try-again').addEventListener('click',()=>playAttempt(true));
-$('pixels').addEventListener('change',()=>{if(mode==='playback'||mode==='challenge'){stopPlayback();mode='live';}pollScene();});
-$('sync-maps').addEventListener('click',async()=>{error('');try{await api('api/maps/sync',{});await pollStatus();}catch(e){error(e.message);}});
-$('map-file').addEventListener('change',async event=>{const file=event.target.files[0];if(!file)return;error('');try{if(file.size>2*1024*1024)throw new Error('Choose a .osu file smaller than 2 MB.');const map=await api('api/maps',{text:await file.text()});$('map-note').textContent=`Imported ${map.title}, ${fmt(map.objects)} objects.`;await pollStatus();$('pattern').value=`map:${map.id}`;}catch(e){error(e.message);}finally{event.target.value='';}});
-$('checkpoint-file').addEventListener('change',async event=>{const file=event.target.files[0];if(!file)return;error('');try{if(file.size>2.9*1024*1024)throw new Error('Choose a checkpoint smaller than 2.9 MB.');const bytes=new Uint8Array(await file.arrayBuffer());let text='';for(let start=0;start<bytes.length;start+=8192)text+=String.fromCharCode(...bytes.subarray(start,start+8192));await api('api/checkpoints/import',{data:btoa(text)});await pollStatus();}catch(e){error(e.message);}finally{event.target.value='';}});
-document.addEventListener('visibilitychange',()=>{if(!document.hidden){pollStatus();pollScene();}});
-window.addEventListener('resize',drawChart);
-pollStatus();setInterval(pollStatus,1000);setInterval(pollScene,350);
+const remoteSheet = open => { $('remote-sheet').hidden = false; $('remote-sheet').classList.toggle('open', open); $('scrim').hidden = !open; if (open) { $('remote-body').dataset.sig = ''; drawRemote(store.state); } };
+$('remote-sheet').hidden = false;
+$('remote-open').onclick = () => remoteSheet(true); $('remote-close').onclick = () => remoteSheet(false);
+$('scrim').addEventListener('click', () => remoteSheet(false));
+document.addEventListener('keydown', e => { if (e.key === 'Escape') remoteSheet(false); });
+$('remote-body').addEventListener('click', async e => { const b = e.target.closest('[data-copy]'); if (!b) return; try { await navigator.clipboard.writeText(b.dataset.copy); b.textContent = 'Copied'; } catch { b.textContent = 'Select and copy'; } setTimeout(() => { b.textContent = 'Copy'; }, 1500); });

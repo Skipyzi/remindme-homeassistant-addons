@@ -3,55 +3,95 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#17203b">
+  <meta name="theme-color" content="#0b1020">
   <title>osu! Rival</title>
   <link rel="icon" href="icon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="style.css">
-  <script src="app.js" defer></script>
+  <script type="module" src="app.js"></script>
 </head>
 <body>
-  <div class="shell">
-    <header class="masthead">
-      <a class="identity" href="./" aria-label="osu! Rival home"><svg viewBox="0 0 48 48" aria-hidden="true"><circle cx="24" cy="24" r="21"/><path d="M17 33V15h9c9 0 9 12 0 12h-9m9 0 7 6"/></svg><span>osu! <strong>Rival</strong></span></a>
-      <span id="status" class="status"><i></i> Ready to learn</span>
-    </header>
-    <div id="error" class="error" role="alert" hidden></div>
-    <main>
-      <div class="intro"><span class="practice-badge">Local training · multiplayer pending</span><h1>A rival, from scratch.</h1><p>It sees the playfield. It tries the controls. Every hit gives it something to learn.</p></div>
-      <div class="workspace">
-        <section class="play-area" aria-labelledby="play-title">
-          <div class="section-bar"><h2 id="play-title">The practice field</h2><span id="view-label">Waiting for its first attempt</span></div>
-          <div class="field-wrap">
-            <canvas id="field" width="960" height="540" aria-label="Live practice field showing the learner's cursor and circles"></canvas>
-            <div id="field-empty" class="field-empty"><svg viewBox="0 0 100 100" aria-hidden="true"><circle cx="50" cy="50" r="43"/><circle cx="50" cy="50" r="25"/><circle cx="50" cy="50" r="3"/></svg><p>Your beatmaps are waiting.</p><span>Start training to watch it explore.</span></div>
-            <div id="field-result" class="field-result" hidden><p id="result-title"></p><span id="result-detail"></span><button id="try-again" class="button secondary">Play again</button></div>
-            <div id="countdown" class="countdown" hidden></div>
-          </div>
-          <div class="field-footer"><div class="field-legend"><span><i class="rival-dot"></i> Rival</span><span id="human-legend" hidden><i class="human-dot"></i> You</span><span id="attempt-score"></span></div><label class="pixel-toggle"><input id="pixels" type="checkbox"> Learner's view</label></div>
-          <p id="map-progress" class="quiet">Training plays complete maps and moves on after the final object.</p>
-          <p id="vision-note" class="quiet">The learner sees the full playfield with margins.</p><div class="attempt-controls"><label for="pattern">Beatmap</label><select id="pattern"><option value="current">Current training map</option></select><button id="watch" class="button secondary">Watch an attempt</button><button id="challenge" class="button secondary">Play against it</button></div>
-          <p id="attempt-note" class="quiet">Practice results stay here. They do not affect your osu! rankings.</p>
-        </section>
-        <aside class="learning" aria-labelledby="learning-title">
-          <div class="learning-heading"><h2 id="learning-title">Learning</h2><span id="stage-number">Real beatmaps</span></div>
-          <h3 id="stage-name">Load your server's maps</h3><p id="stage-description">Circles, sliders and spinners from real .osu files</p>
-          <div class="stage-track" id="stage-track" aria-label="Curriculum progress"></div>
-          <p class="phase" id="phase">Random weights. No player replays.</p>
-          <button id="train" class="button primary">Start training</button>
-          <div class="training-numbers"><div><span id="steps">0</span><small>Practice steps</small></div><div><span id="episodes">0</span><small>Full maps completed</small></div></div>
-          <div class="evaluation"><div><span>Accuracy on withheld maps</span><strong id="accuracy">Awaiting first check</strong></div><div><span>Starting model</span><strong id="baseline">—</strong></div><div><span>Objects hit</span><strong id="hit-rate">—</strong></div><p>Checked on short sections of withheld maps. The model receives pixels only.</p></div>
-          <details class="details"><summary>How it learns</summary><p>Four 80 by 64 images cover the full playfield and a margin around every edge. Its actions choose the cursor position and the two hit keys. Correct hits earn rewards; misses lose rewards.</p><p>The model starts with random weights. It plays complete real maps, from the first object to the last. Then it moves to the next training map, even when accuracy is low. Learning updates continue during each run.</p><dl><dt>Model size</dt><dd id="parameters">65,477 parameters</dd><dt>Training data</dt><dd>Real beatmaps and its own attempts</dd><dt>Algorithm</dt><dd>Clipped PPO</dd></dl></details>
-        </aside>
+<header class="top">
+  <div class="brand"><svg viewBox="0 0 48 48" aria-hidden="true"><circle cx="24" cy="24" r="20"/><path class="brand-r" d="M17 33V15h9c9 0 9 12 0 12h-9m9 0 7 6"/></svg><span>osu! <b>Rival</b></span></div>
+  <span class="pill" id="status"><i></i><span>Connecting</span></span>
+  <span class="spacer"></span>
+  <span class="pill" id="pi" title="Pi temperature and the worker's memory"><span>—</span></span>
+  <button class="btn primary" id="train" type="button">Start training</button>
+</header>
+<div class="error" id="error" role="alert" hidden></div>
+<main>
+  <section class="stage" id="stage" aria-label="Practice field">
+    <canvas id="field" aria-label="The practice field"></canvas>
+    <div class="hud">
+      <div class="hud-top">
+        <div class="now"><span class="tag" id="mode-tag">Live training</span><h2 id="map-title">—</h2><p id="map-sub"></p></div>
+        <div class="score" id="score"></div>
       </div>
-      <section class="progress" aria-labelledby="progress-title"><div class="section-bar"><h2 id="progress-title">What practice changes</h2><span class="chart-legend"><i></i> Learned accuracy <b></b> Starting model</span></div><div class="chart-wrap"><canvas id="chart" width="1100" height="200" aria-label="Accuracy over completed training updates"></canvas><p id="chart-empty">The first evaluation will start this chart.</p></div><p id="chart-note" class="quiet">Each point is a completed evaluation, rather than an estimate from the live attempt.</p></section>
-      <div class="utility-grid">
-        <section aria-labelledby="saved-title"><h2 id="saved-title">Keep its progress</h2><p>Training saves automatically after each update. Pause and resume without starting over.</p><div class="utility-actions"><a id="download" class="button secondary" href="api/checkpoints/latest.npz" hidden>Download checkpoint</a><label class="button secondary file-button">Import checkpoint<input id="checkpoint-file" type="file" accept=".npz"></label></div><p id="saved-note" class="quiet">No checkpoint saved yet.</p></section>
-        <section aria-labelledby="maps-title"><h2 id="maps-title">Real beatmaps</h2><p>Copy maps already cached by your osu! server, or import an original <code>.osu</code> file. Imported maps join training when it next starts.</p><button id="sync-maps" class="button secondary">Sync server cache</button> <label class="button secondary file-button">Import .osu map<input id="map-file" type="file" accept=".osu"></label><p id="map-note" class="quiet">No player replays. No generated training maps. No upstream map downloads.</p></section>
-      </div>
-      <section class="server-readiness" aria-labelledby="server-title"><div><h2 id="server-title">Multiplayer on your osu! server</h2><p>Training uses real maps in a small local renderer. Server matches and leaderboard submissions still need the native osu! judge and multiplayer connection.</p></div><span class="practice-badge">Practice only</span></section>
-      <details class="resources details"><summary>Pi resource budget</summary><div class="resource-row"><span id="cpu-budget">One worker, 25% of one CPU core</span><span id="memory">Memory budget: 512 MB</span><span id="temperature">Temperature: —</span></div><p id="resource-note">Training waits when memory is low or the Pi is too warm. Change the limits in the Home Assistant app configuration.</p></details>
-    </main>
-    <footer><span>osu! Rival <span id="version">0.2.3</span></span><span>Learning starts with a first attempt.</span></footer>
+      <div></div>
+      <div class="hud-bottom"><div class="bar"><i id="bar"></i></div><span id="time">0:00</span></div>
+    </div>
+    <div class="overlay" id="empty"><div><div class="empty-orb"></div><h2>Nothing on the field yet</h2><p>Start training to watch it practise, or record an attempt.</p></div></div>
+    <div class="overlay" id="wait" hidden><div><div class="empty-orb"></div><h2>Recording an attempt</h2><p id="wait-note">It finishes the current update first.</p></div></div>
+    <div class="overlay" id="count" hidden><div class="big" id="count-n">3</div></div>
+    <div class="overlay" id="result" hidden><div><h2 id="result-title">Rival wins</h2><div class="result-grid" id="result-grid"></div><div class="row"><button class="btn primary" id="again" type="button">Play again</button><button class="btn" id="back-live" type="button">Back to live</button></div></div></div>
+  </section>
+  <div class="dock">
+    <div class="seg" role="group" aria-label="What to show">
+      <button type="button" data-mode="live" aria-pressed="true">Live</button><button type="button" data-mode="watch" aria-pressed="false">Watch</button><button type="button" data-mode="challenge" aria-pressed="false">Play against it</button>
+    </div>
+    <button class="map-pick" type="button" id="map-open"><span id="map-name">The map it is training on</span><small>Change map</small></button>
+    <label class="toggle"><input type="checkbox" id="pixels"> Learner's view</label>
+    <span class="keys" id="keys" hidden>Move the mouse · <kbd>Z</kbd> <kbd>X</kbd> or click</span>
   </div>
+  <div class="cards">
+    <section class="card">
+      <h3>Accuracy on withheld maps <small id="split"></small></h3>
+      <div class="kpi"><b id="kpi-acc">—</b><span>started at <span id="kpi-base">—</span></span><span class="up" id="kpi-gain"></span></div>
+      <canvas class="chart" id="chart"></canvas>
+      <div class="chart-legend"><span><i class="sw-pink"></i>Accuracy</span><span><i class="sw-mint"></i>Objects hit</span><span><i class="sw-muted"></i>Starting model</span></div>
+    </section>
+    <section class="card">
+      <h3>Training</h3>
+      <div class="stats"><div><small>Updates</small><b id="updates">0</b></div><div><small>Maps finished</small><b id="maps-done">0</b></div><div><small>Steps</small><b id="steps">0</b></div><div><small>Objects hit</small><b id="hits">—</b></div></div>
+      <p class="phase" id="phase"></p>
+      <p class="where" id="where"></p>
+      <div class="row"><a class="btn" id="download" href="api/checkpoints/latest.npz" download>Download model</a><label class="btn ghost file">Import<input type="file" id="ckpt" accept=".npz"></label><button class="btn ghost" id="remote-open" type="button">Train on another computer</button></div>
+      <p class="note" id="saved"></p>
+    </section>
+    <section class="card">
+      <h3>Beatmaps <small id="map-count"></small></h3>
+      <p>Real maps copied from your osu! server's cache, or imported <code>.osu</code> files.</p>
+      <div class="row"><button class="btn" id="sync" type="button">Sync server cache</button><label class="btn ghost file">Import .osu<input type="file" id="osu" accept=".osu"></label></div>
+      <p class="note" id="sync-note"></p>
+      <h3 class="gap">The Pi</h3>
+      <div class="meter"><div><span>CPU budget</span><b id="cpu">25%</b></div><i id="cpu-bar" class="c-violet"></i></div>
+      <div class="meter"><div><span>Memory</span><b id="mem">—</b></div><i id="mem-bar"></i></div>
+      <div class="meter"><div><span>Temperature</span><b id="temp">—</b></div><i id="temp-bar" class="c-amber"></i></div>
+    </section>
+  </div>
+  <section class="inside" aria-labelledby="inside-title"><h2 id="inside-title">Inside the model</h2>
+    <div class="cards">
+      <section class="card"><h3>What it sees and does <small>live</small></h3>
+        <div class="io"><img class="eye" id="eye" alt="The learner's input: a small grayscale picture of the playfield"><div><p class="arrow">Sees <b>4 frames</b> like this, <b id="eye-size">80 × 64</b> pixels each, and chooses where to aim and which keys to hold.</p>
+          <div class="keys-live" aria-label="The keys it is holding"><span class="key" id="k1">Z</span><span class="key" id="k2">X</span><span class="key pos" id="aim">aim —</span></div></div></div>
+        <dl class="facts"><dt>Size</dt><dd id="m-params">—</dd><dt>Learns by</dt><dd>Clipped PPO, from rewards for its own hits</dd><dt>Learned from</dt><dd id="m-source">Real beatmaps</dd></dl></section>
+      <section class="card"><h3>On this map so far <small id="sk-map"></small></h3>
+        <div class="skill"><div><span>Hitting objects</span><b id="sk-hit">—</b></div><small>clicks the object at all</small><i id="sk-hit-b"></i></div>
+        <div class="skill"><div><span>Timing</span><b id="sk-time">—</b></div><small>how close to the beat its hits are</small><i id="sk-time-b" class="c-violet"></i></div>
+        <div class="skill"><div><span>Following sliders</span><b id="sk-slide">—</b></div><small>slider ticks and ends it holds through</small><i id="sk-slide-b" class="c-mint"></i></div>
+        <div class="skill"><div><span>Longest combo</span><b id="sk-combo">—</b></div><small>its best run of hits on this map</small><i id="sk-combo-b" class="c-amber"></i></div>
+        <div class="judge" id="judge" aria-label="Its judgements"></div>
+        <div class="legend"><span><i class="j-g"></i>Great</span><span><i class="j-o"></i>Ok</span><span><i class="j-m"></i>Meh</span><span><i class="j-x"></i>Miss</span></div></section>
+      <section class="card plan"><h3>Practice plan</h3>
+        <div><div class="big"><b id="p-done">—</b><span id="p-of"></span></div><div class="skill"><i id="p-bar" class="c-violet"></i></div><p class="note" id="p-note"></p></div>
+        <div><h3 class="sub">Saved models</h3><ul class="ckpts" id="ckpts"></ul></div></section>
+    </div>
+  </section>
+  <footer>osu! Rival <span id="version"></span> · practice only, nothing is submitted to your server</footer>
+</main>
+<div class="scrim" id="scrim" hidden></div>
+<aside class="sheet" id="remote-sheet" aria-label="Train on another computer"><header><h2>Train on another computer</h2><button class="btn" id="remote-close" type="button">Close</button></header>
+  <div class="remote-body" id="remote-body"></div></aside>
+<aside class="sheet" id="sheet" aria-label="Choose a map"><header><h2>Choose a map</h2><button class="btn" id="sheet-close" type="button">Close</button></header>
+  <input class="search" id="search" type="search" placeholder="Search title, artist or difficulty" aria-label="Search maps"><ul id="maps"></ul></aside>
 </body>
 </html>

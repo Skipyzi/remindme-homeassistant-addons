@@ -1,6 +1,7 @@
 """Ingress web UI and control API. Gameplay training runs in one subprocess."""
 import argparse
 import hashlib
+import hmac
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
@@ -22,12 +23,15 @@ from .beatmaps import parse_beatmap
 from .policy import Policy, SHAPES
 from .storage import atomic_bytes, atomic_json, read_json
 from .vision import view
+from .hub import hub_token
 
 DEFAULTS = {'train_on_start': False, 'cpu_budget_percent': 25, 'memory_limit_mb': 512,
             'min_available_memory_mb':768,'max_temperature_c':75,'seed':42,
-            'beatmap_server_url':'http://local-osu-server:8087'}
+            'beatmap_server_url':'http://local-osu-server:8087','remote_training':False,'remote_token':'','remote_port':8100}
 LIMITS = {'cpu_budget_percent': (5, 100), 'memory_limit_mb': (192, 2048),
-          'min_available_memory_mb': (256, 4096), 'max_temperature_c': (55, 85), 'seed': (0, 2147483647)}
+          'min_available_memory_mb': (256, 4096), 'max_temperature_c': (55, 85), 'seed': (0, 2147483647),
+          'remote_port': (1024, 65535)}
+REMOTE_TIMEOUT = 20   # seconds without contact before a remote trainer counts as gone
 
 
 class Controller:
@@ -55,6 +59,13 @@ class Controller:
         self.sync_cancel = threading.Event()
         if type(self.options['train_on_start']) is not bool:
             raise ValueError('train_on_start must be true or false')
+        if type(self.options['remote_training']) is not bool:
+            raise ValueError('remote_training must be true or false')
+        token = self.options['remote_token']
+        if not isinstance(token, str) or (token and not 24 <= len(token) <= 128):
+            raise ValueError('remote_token must be empty (generated) or 24 to 128 characters')
+        self.remote = None   # the attached remote trainer: name, cores, environments, session, last contact
+        self.remote_token = hub_token(self.directory, token) if self.options['remote_training'] else None
         atomic_json(self.directory/'worker-options.json', self.options)
         self.lock = threading.RLock()
         self.process = None
@@ -103,18 +114,23 @@ class Controller:
     def status(self):
         with self.lock:
             state = read_json(self.directory/'state.json', {})
-            running = bool(self.process and self.process.poll() is None)
+            local = bool(self.process and self.process.poll() is None)
+            remote = self.remote_active()
+            running = local or (remote and read_json(self.directory/'control.json', {}).get('running', False))
             syncing = self.sync_thread is not None and self.sync_thread.is_alive()
             if not running and not syncing and state.get('status') not in ['error']:
                 state.update({'status': 'paused', 'phase': 'Ready when you are'})
-            if not running and state.get('resources'):
+            if not local and not remote and state.get('resources'):
                 state['resources']['worker_memory_mb'] = None
             if running and state.get('status') in [None, 'paused']:
                 state.update({'status': 'starting', 'phase': 'Loading the learner'})
             state.update({'version':VERSION,'observation_view':view(),'worker_running': running, 'options': self.options,
                           'checkpoints': self.checkpoints(),
                           'maps': self.maps(), 'parameters': sum(math.prod(shape) for shape in SHAPES.values()),
-                          'server_play': {'available': False, 'reason': 'Practice only. Native ruleset and multiplayer integration are not available in this release.'}})
+                          'server_play': {'available': False, 'reason': 'Practice only. Native ruleset and multiplayer integration are not available in this release.'},
+                          'remote': {'enabled': self.options['remote_training'], 'port': self.options['remote_port'], 'token': self.remote_token,
+                                     'attached': {key: self.remote[key] for key in ['name', 'cores', 'processes', 'environments', 'since']} if remote else None},
+                          'trainer': 'remote' if remote else 'local'})
             return state
 
     def start(self):
@@ -130,9 +146,11 @@ class Controller:
             control['running'] = True
             atomic_json(self.directory/'control.json', control)
             state = read_json(self.directory/'state.json', {})
-            state.update({'status': 'starting', 'phase': 'Loading the learner', 'last_error': None})
+            remote = self.remote_active()
+            state.update({'status': 'starting', 'phase': f"Starting on {self.remote['name']}" if remote else 'Loading the learner', 'last_error': None})
             atomic_json(self.directory/'state.json', state)
-            self._spawn()
+            if not remote:   # an attached remote trainer starts by itself when it sees running
+                self._spawn()
             return self.status()
 
     def pause(self):
@@ -173,7 +191,7 @@ class Controller:
 
     def sync_maps(self, start_after=False):
         with self.lock:
-            if self.process and self.process.poll() is None:
+            if self.process and self.process.poll() is None or self.remote_training_now():
                 raise ValueError('Pause training before syncing more maps')
             if self.sync_thread and self.sync_thread.is_alive():
                 return self.status()
@@ -237,7 +255,8 @@ class Controller:
             request = {'id':uuid.uuid4().hex,'seed':int.from_bytes(os.urandom(4),'little')%(2**31),'map_id':map_id}
             control['watch'] = request
             atomic_json(self.directory/'control.json',control)
-            self._spawn(watch=not control.get('running'))
+            if not self.remote_active():
+                self._spawn(watch=not control.get('running'))
             return request
 
     def import_map(self, text):
@@ -286,7 +305,7 @@ class Controller:
             except (ValueError, TypeError, KeyError):
                 raise ValueError('Invalid random generator state') from None
         with self.lock:
-            if self.process and self.process.poll() is None:
+            if self.process and self.process.poll() is None or self.remote_training_now():
                 raise ValueError('Pause training before importing a checkpoint')
             latest = self.directory/'models/latest.npz'
             if latest.exists():
@@ -299,6 +318,77 @@ class Controller:
             state.update({'status': 'paused', 'phase': 'Checkpoint imported', 'last_error': None})
             atomic_json(self.directory/'state.json', state)
         return {'parameters': policy.parameter_count, 'updates': metadata.get('updates', 0)}
+
+    # ---- remote training (see hub.py) --------------------------------------------------------------------------
+    def remote_active(self):
+        return bool(self.remote and time.time() - self.remote['seen'] < REMOTE_TIMEOUT)
+
+    def remote_training_now(self):
+        return self.remote_active() and read_json(self.directory/'control.json', {}).get('running', False)
+
+    def remote_owns(self, session):
+        with self.lock:
+            return self.remote_active() and hmac.compare_digest(str(session).encode(), self.remote['session'].encode())
+
+    def remote_hello(self):
+        maps = [{'id': path.stem, 'sha256': hashlib.sha256(path.read_bytes()).hexdigest()} for path in sorted((self.directory/'maps').glob('*.json'))]
+        return {'version': VERSION, 'training_format': 'real-beatmap-v1', 'training_strategy': 'full-maps-v1',
+                'seed': self.options['seed'], 'maps': maps, 'attached': self.remote_active()}
+
+    def remote_attach(self, info):
+        """A trainer takes over. A running local worker stops first (it saves its checkpoint on the way out), so the
+        trainer continues from exactly that model; if training was running it carries on remotely."""
+        name = str(info.get('name', 'another computer'))[:60] or 'another computer'
+        numbers = {key: info.get(key) for key in ['cores', 'processes', 'environments']}
+        if any(type(value) is not int or not 1 <= value <= 1024 for value in numbers.values()):
+            raise ValueError('Invalid trainer size')
+        if info.get('version') != VERSION:
+            raise ValueError(f'The trainer runs version {info.get("version")}; this app runs {VERSION}. Download the trainer again.')
+        with self.lock:
+            if self.remote_active() and info.get('session') != self.remote['session']:
+                raise ValueError(f"{self.remote['name']} is already training this model")
+            if self.process and self.process.poll() is None:
+                control = read_json(self.directory/'control.json', {})
+                running = control.get('running', False)
+                self.process.terminate()
+                try:
+                    self.process.wait(timeout=20)
+                except subprocess.TimeoutExpired:
+                    self.process.kill(); self.process.wait(timeout=3)
+                control['running'] = running
+                atomic_json(self.directory/'control.json', control)
+            session = info.get('session') if self.remote and info.get('session') == self.remote.get('session') else uuid.uuid4().hex
+            since = self.remote['since'] if self.remote and self.remote.get('session') == session else time.time()
+            self.remote = {'name': name, **numbers, 'session': session, 'seen': time.time(), 'since': since}
+            return {'session': session, 'control': read_json(self.directory/'control.json', {}), 'seed': self.options['seed']}
+
+    def remote_detach(self, session):
+        with self.lock:
+            if self.remote and session == self.remote['session']:
+                self.remote = None
+                state = read_json(self.directory/'state.json', {})
+                if state.get('status') not in ('error',):
+                    state.update({'status': 'paused', 'phase': 'The remote trainer disconnected'})
+                    atomic_json(self.directory/'state.json', state)
+            return {'ok': True}
+
+    def remote_control(self):
+        with self.lock:
+            if self.remote:
+                self.remote['seen'] = time.time()
+            return read_json(self.directory/'control.json', {})
+
+    def remote_store(self, name, value):
+        with self.lock:
+            self.remote['seen'] = time.time()
+            if name == 'state.json':
+                previous = read_json(self.directory/'state.json', {})
+                if 'map_sync' in previous:   # the trainer does not sync maps; keep the hub's record
+                    value['map_sync'] = previous['map_sync']
+            if isinstance(value, dict):
+                atomic_json(self.directory/name, value)
+            else:
+                atomic_bytes(self.directory/name, value)
 
     def close(self):
         self.pause()
@@ -436,9 +526,18 @@ def main():
     signal.signal(signal.SIGTERM, stop)
     signal.signal(signal.SIGINT, stop)
     print(f'osu! Rival {VERSION} listening on {args.port}', flush=True)
+    hub = None
+    if controller.options['remote_training']:
+        from .hub import RemoteHandler
+        hub = ThreadingHTTPServer((args.host, controller.options['remote_port']), RemoteHandler)
+        hub.controller, hub.token = controller, controller.remote_token
+        threading.Thread(target=hub.serve_forever, kwargs={'poll_interval': .25}, daemon=True).start()
+        print(f'Remote training hub listening on {controller.options["remote_port"]}', flush=True)
     try:
         server.serve_forever(poll_interval=.25)
     finally:
+        if hub:
+            hub.shutdown(); hub.server_close()
         controller.close()
         server.server_close()
 

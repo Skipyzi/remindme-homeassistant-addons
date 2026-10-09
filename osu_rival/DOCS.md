@@ -43,6 +43,22 @@ The practice renderer and judge are approximate and have no audio.
 These local challenges are not osu! multiplayer matches. Native game connection
 and leaderboard submission are still pending. The app writes no server scores.
 
+## Training on another computer
+
+A faster PC on your network can do the training. In the app configuration, turn on `remote_training` and keep port
+8100 mapped in the app's Network settings. Restart the app, then open **Train on another computer** in the app: it
+shows two commands with your hub token. Run them on the PC (Python 3.10 or newer with numpy and Pillow):
+
+```
+curl -fsS -H "Authorization: Bearer TOKEN" http://HOME-ASSISTANT:8100/remote/v1/trainer.py -o rival-trainer.py
+python3 rival-trainer.py --hub http://HOME-ASSISTANT:8100 --token TOKEN
+```
+
+The trainer downloads the app's own code, maps and latest model, takes over from local training and trains with
+half of the PC's cores at low priority (choose with `--processes N`). Start, Pause and Watch in the app control it,
+and the app shows its live field and progress. Ctrl+C on the PC stops it; the latest model is already saved in the
+app. Set `remote_token` to choose the token yourself, or leave it empty to have one generated and kept.
+
 ## Resource limits
 
 The default worker uses one thread and 25% of one CPU core, with a 512 MB memory

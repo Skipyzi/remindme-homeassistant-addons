@@ -18,19 +18,20 @@ FRAME_MS = 1000 / 60
 
 
 class Environment:
-    def __init__(self, seed=42, beatmap=None, section=None, library=None):
+    def __init__(self, seed=42, beatmap=None, section=None, library=None, map_index=0, map_stride=1):
         if beatmap is None and library is None and section is None:
             raise ValueError('A real beatmap is required; there is no generated training fallback')
         self.rng = np.random.default_rng(seed)
         self.beatmap, self.section, self.library = beatmap, section, library
-        self.next_map_index = 0
+        # Parallel training gives each environment its own maps: start on map `map_index`, then every `map_stride`-th.
+        self.next_map_index, self.map_stride = map_index, map_stride
         self.frames = deque(maxlen=4)
         self.reset()
 
     def reset(self):
         if self.library:
             self.beatmap,start,end = self.library.choose(self.next_map_index)
-            self.next_map_index += 1
+            self.next_map_index += self.map_stride
         elif self.section:
             self.beatmap,start,end = self.section
         else:
