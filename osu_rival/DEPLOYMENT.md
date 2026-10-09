@@ -113,3 +113,38 @@ the worker used about 185 MB during the Pi verification.
 
 Source backup:
 `/share/osu-rival-maintenance/before-full-maps-20261009-012941`.
+
+
+## Workstation training and model library, 0.4.2
+
+The remote-training branch was merged into current main. The Pi remains the
+control and checkpoint hub; the Linux workstation runs eight environments across
+four processes, limited to four CPU cores. Training uses the same 100 cached
+real beatmaps and does not access player replays. The workstation measured about
+1,100 steps per second. This measures throughput, not improvement in gameplay.
+
+The model library can create, select and discard independently saved models.
+Creating or selecting a model pauses training first. Weights, Adam state,
+random state, evaluation and map positions stay with that model. The Pi rejects
+remote uploads for an obsolete model generation. The original model remains
+saved, and creating a fresh model does not replace its progress.
+
+The enabled workstation user service is `osu-rival-trainer.service`. Its private
+data and hub token are under `~/.local/share/osu-rival-trainer`. The service
+connects to the Pi's authenticated port 8100 and follows Start/Pause in ingress.
+Parallel views report each run's actual playfield at rollout boundaries. They
+remain still during optimization and when paused.
+
+All 49 checks passed in the pinned runtime. Live Pi verification confirmed eight
+different cached maps and valid saved positions after pausing during a rollout.
+The Pi and workstation checkpoint hashes match. The original model retains
+57,856 steps and 86 updates, with the original and app left paused. The report
+is in `validation/pi-remote-models.json`.
+
+A pause during the initial 0.4.1 live check exposed an outstanding-reply bug.
+The fix drains worker replies before saving. Current weights and primary map
+position were preserved; six secondary positions were recovered from the last
+valid save, and the overlapping secondary map was reassigned once.
+
+Source backup: `before-parallel-views-20261009-030841` under the maintenance
+directory.

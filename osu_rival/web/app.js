@@ -47,9 +47,11 @@ export function createStore(onChange, onError) {
   };
   /** Asks for a fresh attempt (optionally on a map) and resolves with it once recorded. */
   store.record = async mapId => {
+    const generation=store.state.model_library?.generation;
     const pending = await api('api/watch', mapId ? {map_id: mapId} : {});
     for (;;) {
       await new Promise(r => setTimeout(r, 1000));
+      if(generation!==store.state.model_library?.generation)throw new Error('The model changed. Record a new attempt.');
       const attempt = await api('api/attempt');
       if (attempt.id === pending.id) return attempt;
     }
@@ -326,7 +328,39 @@ export function drawChart(canvas, history, colors = {line: '#f187b8', base: '#af
 // ---- the Arena page ----------------------------------------------------------------------------------------------
 const $ = id => document.getElementById(id);
 const field = createField($('field'));
-let mode = 'live', mapId = null, player = null, lastAttempt = null;
+let mode = 'live', mapId = null, player = null, lastAttempt = null, modelGeneration='';
+const parallelFields=new Map();let parallelStamp=null,parallelBusy=false;
+async function refreshParallel(){
+  if(document.hidden || parallelBusy || !$('parallel-panel').open)return;
+  parallelBusy=true;
+  try{
+    const data=await api('api/runs');
+    if(data.updated_at===parallelStamp)return;
+    parallelStamp=data.updated_at;
+    const runs=data.runs || [],wanted=new Set(runs.map(run=>run.index));
+    for(const [index,tile] of parallelFields)if(!wanted.has(index)){tile.row.remove();parallelFields.delete(index);}
+    $('parallel-count').textContent=runs.length?`${runs.length} runs`:'';
+    if(!runs.length)$('parallel-note').textContent='Start training on the connected PC to see its parallel runs here.';
+    else $('parallel-note').textContent='Each run plays a complete real map. Views refresh after a rollout, then stay still while the model learns.';
+    for(const run of runs){
+      let tile=parallelFields.get(run.index);
+      if(!tile){
+        const row=document.createElement('article');row.className='parallel-run';row.dataset.run=run.index;
+        const heading=document.createElement('h3'),name=document.createElement('p'),canvas=document.createElement('canvas'),progress=document.createElement('p');
+        heading.textContent=`Run ${run.index+1}`;name.className='parallel-map';progress.className='note';canvas.setAttribute('aria-label',`Training playfield for run ${run.index+1}`);
+        row.append(heading,name,canvas,progress);$('parallel-grid').append(row);
+        tile={row,name,progress,field:createField(canvas),map:null};parallelFields.set(run.index,tile);
+      }
+      const scene=run.scene;
+      if(tile.map!==scene.map?.id){tile.field.resetTrail();tile.map=scene.map?.id;}
+      tile.name.textContent=`${scene.map?.title || 'Training map'} [${scene.map?.difficulty || ''}]`;
+      tile.progress.textContent=`${clock(scene.time)} / ${clock(scene.end_time)} · ${fmt(scene.judged)} of ${fmt(scene.object_count)} objects · ${percent(scene.accuracy)}`;
+      tile.field.draw(scene);
+    }
+  }catch(error){$('parallel-note').textContent=error.message;}
+  finally{parallelBusy=false;}
+}
+setInterval(refreshParallel,1000);$('parallel-panel').addEventListener('toggle',refreshParallel);
 const error = message => { $('error').textContent = message; $('error').hidden = !message; };
 const store = createStore(render, error);
 const live = liveView(field, store, {pixels: () => $('pixels').checked, onScene: (scene, {speed = 1} = {}) => {
@@ -343,11 +377,25 @@ const live = liveView(field, store, {pixels: () => $('pixels').checked, onScene:
 }});
 
 function render(state) {
+  const generation=state.model_library?.generation;
+  if(modelGeneration && generation && generation!==modelGeneration){
+    parallelStamp=null;parallelFields.clear();$('parallel-grid').replaceChildren();
+    live.pause();setMode('live');field.clear();lastAttempt=null;
+    $('empty').hidden=false;$('map-title').textContent='—';$('map-sub').textContent='';
+    $('bar').style.width='0%';$('time').textContent='0:00';$('eye').removeAttribute('src');
+  }
+  modelGeneration=generation || modelGeneration;
+  const active=state.model_library?.models?.find(item=>item.active);
+  $('active-model').textContent=active?.name || '';
+  if($('models-sheet').classList.contains('open'))drawModels(state.model_library);
+
   const [label, tone] = statusOf(state);
   $('status').className = `pill ${tone}`; $('status').lastChild.textContent = label;
   $('train').textContent = isTraining(state) ? 'Pause training' : 'Start training';
   $('train').disabled = ['starting', 'watching', 'syncing'].includes(state.status);
   const r = state.resources || {};
+  $('resource-title').textContent=state.remote?.attached?'PC trainer':'The Pi';
+  $('pi').title=state.remote?.attached?'PC temperature and total trainer memory':'Pi temperature and worker memory';
   $('pi').firstChild.textContent = `${r.temperature_c ?? '—'}°C · ${Math.round(r.worker_memory_mb || 0)} MB`;
   const ev = latestEval(state), base = baselineOf(state);
   $('kpi-acc').textContent = ev ? percent(ev.accuracy) : '—'; $('kpi-base').textContent = base ? percent(base.accuracy) : '—';
@@ -359,14 +407,15 @@ function render(state) {
   $('phase').textContent = state.phase || '';
   const away = state.remote?.attached, par = state.parallel;
   $('where').textContent = away ? `On ${away.name}: ${fmt(away.environments)} environments on ${fmt(away.processes)} of ${fmt(away.cores)} cores` : par ? `${fmt(par.environments)} environments on ${fmt(par.processes)} cores` : '';
+  if(state.training?.steps_per_second)$('where').textContent+=` · ${fmt(state.training.steps_per_second)} steps/sec`;
   if (away && isTraining(state)) $('status').lastChild.textContent = `Training on ${away.name}`;
   if (!$('remote-sheet').hidden && $('remote-sheet').classList.contains('open')) drawRemote(state);
   const saved = state.checkpoints?.find(c => c.name === 'latest.npz');
   $('download').hidden = !saved; $('saved').textContent = saved ? `Saved ${new Date(saved.modified_at * 1000).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'})}, after every update.` : 'Nothing saved yet.';
   $('map-count').textContent = `${fmt(state.maps?.length)} saved`;
   $('sync-note').textContent = state.map_sync?.at ? `Last sync ${new Date(state.map_sync.at * 1000).toLocaleString([], {dateStyle: 'short', timeStyle: 'short'})}.` : '';
-  const o = state.options || {};
-  $('cpu').textContent = `${o.cpu_budget_percent || 25}% of a core`; $('cpu-bar').style.setProperty('--v', `${o.cpu_budget_percent || 25}%`);
+  const o = state.remote?.attached?{...state.options,...state.worker_budget}:state.options || {};
+  $('cpu').textContent = `${o.cpu_budget_percent || 25}% per trainer process`; $('cpu-bar').style.setProperty('--v', `${o.cpu_budget_percent || 25}%`);
   $('mem').textContent = `${Math.round(r.worker_memory_mb || 0)} of ${o.memory_limit_mb || 512} MB`; $('mem-bar').style.setProperty('--v', `${Math.min(100, (r.worker_memory_mb || 0) / (o.memory_limit_mb || 512) * 100)}%`);
   $('temp').textContent = r.temperature_c != null ? `${r.temperature_c}°C, pauses at ${o.max_temperature_c || 75}°C` : 'unavailable';
   $('temp-bar').style.setProperty('--v', `${Math.min(100, (r.temperature_c || 0) / (o.max_temperature_c || 75) * 100)}%`);
@@ -476,8 +525,9 @@ function drawRemote(state) {
     return;
   }
   const a = remote.attached, token = remote.token || 'TOKEN';
-  const get = `curl -fsS -H "Authorization: Bearer ${token}" ${hub}/remote/v1/trainer.py -o rival-trainer.py`;
-  const run = `python3 rival-trainer.py --hub ${hub} --token ${token}`;
+  const quote=value=>"'"+String(value).replaceAll("'","'\"'\"'")+"'";
+  const get = `curl -fsS -H ${quote('Authorization: Bearer '+token)} ${quote(hub+'/remote/v1/trainer.py')} -o rival-trainer.py`;
+  const run = `python3 rival-trainer.py --hub ${quote(hub)} --token ${quote(token)}`;
   $('remote-body').innerHTML = `<div class="remote-status${a ? ' on' : ''}"><i></i><span>${a ? `<b>${esc(a.name)}</b> is connected: ${fmt(a.environments)} environments on ${fmt(a.processes)} of ${fmt(a.cores)} cores. ${isTraining(state) ? 'It is training now.' : 'Press Start training to train there.'}` : 'No computer connected.'}</span></div>
     <p>Run these on the PC (Python 3.10 or newer with numpy and Pillow). It downloads this app's trainer, maps and model, takes over training, and sends progress and the live field back here.</p>
     <div class="cmd"><pre>${esc(get)}</pre><button class="btn" type="button" data-copy="${esc(get)}">Copy</button></div>
@@ -491,3 +541,36 @@ $('remote-open').onclick = () => remoteSheet(true); $('remote-close').onclick = 
 $('scrim').addEventListener('click', () => remoteSheet(false));
 document.addEventListener('keydown', e => { if (e.key === 'Escape') remoteSheet(false); });
 $('remote-body').addEventListener('click', async e => { const b = e.target.closest('[data-copy]'); if (!b) return; try { await navigator.clipboard.writeText(b.dataset.copy); b.textContent = 'Copied'; } catch { b.textContent = 'Select and copy'; } setTimeout(() => { b.textContent = 'Copy'; }, 1500); });
+
+let modelAction=false;
+function drawModels(library){
+  const list=$('model-list');list.replaceChildren();
+  for(const item of library?.models || []){
+    const row=document.createElement('li'),label=document.createElement('div');
+    const name=document.createElement('strong');name.textContent=item.name+(item.active?' · Active':'');
+    const detail=document.createElement('p');detail.className='note';detail.textContent=`${fmt(item.steps)} steps · ${fmt(item.updates)} updates`;
+    label.append(name,detail);row.append(label);
+    for(const [action,title] of [['activate',item.active?'Selected':'Use model'],['discard','Discard']]){
+      const button=document.createElement('button');button.className='btn ghost';button.type='button';
+      button.textContent=title;button.dataset.action=action;button.dataset.id=item.id;
+      button.disabled=modelAction || (action==='activate' && item.active);row.append(button);
+    }
+    list.append(row);
+  }
+}
+function modelsSheet(open){
+  $('models-sheet').classList.toggle('open',open);$('scrim').hidden=!open;
+  if(open){sheet(false);remoteSheet(false);$('scrim').hidden=false;drawModels(store.state.model_library);$('model-name').focus();}
+}
+async function manageModel(action,data){
+  if(modelAction)return;modelAction=true;$('models-note').textContent='Saving the current model…';
+  $('new-model-form').querySelector('button').disabled=true;drawModels(store.state.model_library);
+  try{await api(`api/models/${action}`,data);await store.refresh();$('models-note').textContent=action==='new'?'Fresh model ready. Press Start training to begin.':action==='activate'?'Model selected. Its saved progress is ready.':'Model discarded.';$('model-name').value='';}
+  catch(e){$('models-note').textContent=e.message;}
+  finally{modelAction=false;$('new-model-form').querySelector('button').disabled=false;drawModels(store.state.model_library);}
+}
+$('models-open').onclick=()=>modelsSheet(true);$('models-close').onclick=()=>modelsSheet(false);
+$('scrim').addEventListener('click',()=>modelsSheet(false));
+document.addEventListener('keydown',event=>{if(event.key==='Escape')modelsSheet(false);});
+$('new-model-form').addEventListener('submit',event=>{event.preventDefault();manageModel('new',{name:$('model-name').value});});
+$('model-list').addEventListener('click',event=>{const button=event.target.closest('button[data-action]');if(button)manageModel(button.dataset.action,{id:button.dataset.id});});

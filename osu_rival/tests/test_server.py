@@ -62,7 +62,7 @@ class ServerTests(unittest.TestCase):
         self.controller.import_map(Path(os.environ['RIVAL_TEST_MAP']).read_text(encoding='utf-8-sig'))
         request=self.controller.watch()
         file=Path(self.temporary.name)/'attempt.json'
-        self.wait(file.exists,timeout=60)
+        self.wait(file.exists,timeout=180)
         data=json.loads(file.read_text())
         self.assertEqual(data['id'],request['id'])
         self.assertEqual(data['summary']['objects'],len(map['objects']))

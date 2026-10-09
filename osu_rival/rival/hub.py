@@ -22,9 +22,9 @@ from .policy import Policy
 from .storage import atomic_bytes, atomic_json, read_json
 
 API = '/remote/v1'
-READABLE = {'models/latest.npz', 'models/latest-run.json', 'models/initial.npz', 'models/best.json'}
-WRITABLE = {'state.json': 4, 'scene.json': 2, 'frame.png': .0625, 'attempt.json': 8, 'models/latest.npz': 4,
-            'models/latest-run.json': 4, 'models/best.npz': 4, 'models/best.json': .0625}   # name: size limit in MB
+READABLE = {'models/latest.npz', 'models/latest-run.json', 'models/initial.npz','models/best.npz', 'models/best.json'}
+WRITABLE = {'state.json': 4, 'scene.json': 2, 'runs.json': 8, 'frame.png': .0625, 'attempt.json': 8, 'models/latest.npz': 4,
+            'models/latest-run.json': 32, 'models/best.npz': 4, 'models/best.json': .0625}   # name: size limit in MB
 PNG = b'\x89PNG\r\n\x1a\n'
 PACKAGE = Path(__file__).resolve().parent
 
@@ -129,6 +129,8 @@ class RemoteHandler(BaseHTTPRequestHandler):
             if path == f'{API}/hello':
                 return self.send(controller.remote_hello())
             if path == f'{API}/control':
+                if not controller.remote_owns(self.headers.get('X-Rival-Session','')):
+                    return self.send({'error':'Attach the trainer first'},409)
                 return self.send(controller.remote_control())
             if path.startswith(f'{API}/maps/') and path.endswith('.json'):
                 map_id = path.removeprefix(f'{API}/maps/').removesuffix('.json')
@@ -184,7 +186,7 @@ class RemoteHandler(BaseHTTPRequestHandler):
             if not controller.remote_owns(session):
                 return self.send({'error': 'Attach the trainer first'}, 409)
             data = self.body(WRITABLE[name])
-            controller.remote_store(name, validate(name, data))
+            controller.remote_store(name,validate(name,data),self.headers.get('X-Rival-Model',''))
             self.send({'ok': True})
         except (ValueError, TypeError, KeyError, EOFError, zipfile.BadZipFile) as error:
             self.send({'error': str(error)[:300]}, 400)

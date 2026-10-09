@@ -109,3 +109,13 @@ footer { color: var(--faint); font-size: 12.5px; text-align: center; }
 .remote-status { display: flex; gap: 12px; align-items: center; padding: 12px 14px; border-radius: 14px; background: var(--panel-2); }
 .remote-status i { width: 10px; height: 10px; border-radius: 50%; background: var(--faint); flex: none; } .remote-status.on i { background: var(--mint); }
 .token-row { display: flex; gap: 8px; align-items: center; } .token-row code { flex: 1; padding: 8px 12px; border-radius: 10px; background: var(--bg); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; }
+
+#model-name{margin:10px 0 12px;width:100%}.model-list{list-style:none;padding:0;margin:20px 0}.model-list li{display:flex;gap:8px;align-items:center;padding:16px 0;border-top:1px solid var(--line)}.model-list li>div{flex:1;min-width:0;overflow-wrap:anywhere}.model-list .note{margin:6px 0}.model-list .btn{padding:8px 10px;flex-shrink:0}
+#models-sheet .model-list{padding:0;margin:20px 0;overflow:visible}#models-sheet .model-list li{flex-wrap:wrap}#models-sheet .model-list li>div{flex:1 1 100%}#models-sheet .model-list li button{width:auto;display:inline-flex;justify-content:center;padding:8px 12px;text-align:center}
+.parallel-panel{margin:28px 0;padding:20px;border:1px solid var(--edge,#ffffff18);border-radius:16px;background:#11192d}
+.parallel-panel summary{cursor:pointer;font-size:20px;font-weight:650}.parallel-panel summary span{font-size:14px;color:#a6b1cc;margin-left:12px}
+.parallel-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin-top:18px}
+.parallel-run{min-width:0;border:1px solid #ffffff14;border-radius:10px;padding:12px;background:#0d1326}.parallel-run h3{margin:0;font-size:14px;color:#f187b8}
+.parallel-map{font-size:13px;line-height:1.4;min-height:36px;overflow-wrap:anywhere;margin:8px 0}.parallel-run canvas{display:block;width:100%;aspect-ratio:5/4;border-radius:6px}.parallel-run .note{font-size:12px;margin:10px 0 0}
+@media(max-width:1000px){.parallel-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:520px){.parallel-grid{grid-template-columns:1fr}.parallel-panel{padding:14px}}

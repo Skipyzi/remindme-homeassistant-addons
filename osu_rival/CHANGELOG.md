@@ -1,3 +1,28 @@
+# 0.4.2
+
+- Show all parallel training playfields, map names and full-map progress.
+- Offset new runs from the primary map so they start on different cached maps.
+- Drain subprocess replies when pausing mid-rollout so every run can resume.
+
+## 0.4.1
+
+- Wait for the PC's final saved pause before archiving a running model.
+- Reject an incomplete checkpoint/run transfer when creating or switching models.
+
+## 0.4.0
+
+- Add named models: create a fresh model, select saved progress, or discard a model from the panel.
+- Keep weights, optimizer, evaluation history and every full-map run separate for each model. Beatmaps stay shared.
+- Pause and save before switching models; reject uploads from a PC using an earlier model selection.
+
+## 0.3.1
+
+- Preserve every parallel environment and its action generator on pause and resume.
+- Pause the PC on lost hub contact; require its owning session for control heartbeats.
+- Synchronize maps and imported models before restarting a paused PC trainer.
+- Upload saved models before reporting the final paused state.
+- Support a private token file for a managed PC trainer service.
+
 ## 0.3.0
 
 - Train on another computer: turn on `remote_training` and run the trainer on a faster PC (the app shows the

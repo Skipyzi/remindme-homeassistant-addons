@@ -65,10 +65,14 @@ def sample_batch(policy, observations, rng):
 
 class Shard:
     """Some environments, a network bound to the shared weights, and the experience they collected."""
-    def __init__(self, library, indices, count, seed, buffer, slot, first=None):
-        self.envs = [first if (i == 0 and first is not None) else Environment(seed=seed + i, library=library, map_index=i, map_stride=count)
+    def __init__(self, library, indices, count, seed, buffer, slot, first=None, map_offset=0):
+        self.indices=list(indices)
+        self.envs = [first if (i == 0 and first is not None) else Environment(seed=seed + i, library=library, map_index=map_offset+i, map_stride=count)
                      for i in indices]
         for env in self.envs:
+            if env.map_stride != count and env.library:
+                current=next(index for index,(beatmap,_,_) in enumerate(library.training) if beatmap['id']==env.beatmap['id'])
+                env.next_map_index=current+count
             env.map_stride = count
         self.policy = Policy(seed)
         self.weights = bind(self.policy, buffer)
@@ -111,6 +115,18 @@ class Shard:
         adv = self.advantages.astype(np.float64)
         return {'count': total, 'sum': float(adv.sum()), 'squares': float((adv ** 2).sum()), 'reward': float(rewards.sum()), 'episodes': finished}
 
+    def snapshot(self):
+        return {'indices':self.indices,'runs':[env.save_run() for env in self.envs],'rng':self.rng.bit_generator.state}
+
+    def scenes(self):
+        return [{'index':index,'scene':env.scene(visible_only=True)} for index,env in zip(self.indices,self.envs)]
+
+    def restore(self, saved):
+        if saved.get('indices') != self.indices or len(saved.get('runs',[])) != len(self.envs):
+            raise ValueError('Saved parallel layout differs from this trainer')
+        for env,run in zip(self.envs,saved['runs']):env.restore_run(run)
+        self.rng.bit_generator.state=saved['rng']
+
     def normalize(self, mean, std):
         self.normalized = ((self.advantages - mean) / std).astype(np.float32)
 
@@ -130,14 +146,14 @@ class Shard:
         return n, {key: value * n for key, value in metrics.items()}
 
 
-def _serve(connection, name, gradient_name, row, maps_directory, indices, count, seed):
+def _serve(connection, name, gradient_name, row, maps_directory, indices, count, seed, map_offset):
     """Worker process: one shard, driven by the main process over a pipe."""
     os.environ['OPENBLAS_NUM_THREADS'] = '1'
     memory, gradient_memory = shared_memory.SharedMemory(name=name), shared_memory.SharedMemory(name=gradient_name)
     shard = None
     try:
         slot = np.ndarray((PARAMETER_SIZE,), np.float32, buffer=gradient_memory.buf, offset=row * PARAMETER_SIZE * 4)
-        shard = Shard(MapLibrary(maps_directory), indices, count, seed, memory.buf, slot)
+        shard = Shard(MapLibrary(maps_directory), indices, count, seed, memory.buf, slot, map_offset=map_offset)
         connection.send('ready')
         while True:
             command, *args = connection.recv()
@@ -149,6 +165,12 @@ def _serve(connection, name, gradient_name, row, maps_directory, indices, count,
                 shard.epoch(); connection.send(None)
             elif command == 'gradient':
                 connection.send(shard.gradient(*args))
+            elif command == 'snapshot':
+                connection.send(shard.snapshot())
+            elif command == 'scenes':
+                connection.send(shard.scenes())
+            elif command == 'restore':
+                shard.restore(*args); connection.send(None)
             elif command == 'close':
                 return
     finally:
@@ -167,12 +189,13 @@ class Trainer:
         self.gradient_memory = shared_memory.SharedMemory(create=True, size=processes * PARAMETER_SIZE * 4)
         self.gradients = np.ndarray((processes, PARAMETER_SIZE), np.float32, buffer=self.gradient_memory.buf)
         self.publish()
-        self.local = Shard(library, groups[0], count, seed, self.memory.buf, self.gradients[0], first=first)
+        offset=next((index for index,(beatmap,_,_) in enumerate(library.training) if first is not None and beatmap['id']==first.beatmap['id']),0)
+        self.local = Shard(library, groups[0], count, seed, self.memory.buf, self.gradients[0], first=first,map_offset=offset)
         context = mp.get_context('spawn')
         self.workers = []
         for row, group in enumerate(groups[1:], 1):
             parent, child = context.Pipe()
-            process = context.Process(target=_serve, args=(child, self.memory.name, self.gradient_memory.name, row, str(maps_directory), group, count, seed), daemon=True)
+            process = context.Process(target=_serve, args=(child, self.memory.name, self.gradient_memory.name, row, str(maps_directory), group, count, seed, offset), daemon=True)
             process.start(); child.close()
             self.workers.append((process, parent))
         for _, parent in self.workers:
@@ -192,12 +215,40 @@ class Trainer:
     def _all(self, command, *args, local=None):
         for _, parent in self.workers:
             parent.send((command, *args))
-        mine = local() if local else getattr(self.local, command)(*args)
+        try:
+            mine = local() if local else getattr(self.local, command)(*args)
+        except BaseException:
+            # Drain replies before a pause saves runs or issues another command.
+            # Otherwise snapshot() reads the abandoned rollout results as saved runs.
+            for _,parent in self.workers:parent.recv()
+            raise
         return [mine] + [parent.recv() for _, parent in self.workers]
 
-    def update(self, rng, steps=128, epochs=4, minibatch=256, progress=None, interrupt=None):
+    def scenes(self):
+        return sorted([run for shard in self._all('scenes') for run in shard],key=lambda run:run['index'])
+
+    def snapshot(self):
+        return {'count':self.count,'shards':self._all('snapshot')}
+
+    def restore(self, saved):
+        shards=saved.get('shards',[])
+        if saved.get('count') != self.count or len(shards) != len(self.workers)+1:return False
+        if [part.get('indices') for part in shards] != [list(range(self.count))[index::len(shards)] for index in range(len(shards))]:return False
+        # Validate the entire snapshot before sending any commands to the children.
+        for part in shards:
+            candidate=Shard.__new__(Shard)
+            candidate.indices=part['indices'];candidate.rng=np.random.default_rng()
+            candidate.envs=[Environment(library=self.local.envs[0].library,map_stride=self.count) for _ in part['indices']]
+            candidate.restore(part)
+        for (_,parent),part in zip(self.workers,shards[1:]):parent.send(('restore',part))
+        self.local.restore(shards[0])
+        for _,parent in self.workers:parent.recv()
+        return True
+
+    def update(self, rng, steps=128, epochs=4, minibatch=256, progress=None, interrupt=None, views=None):
         self.publish()
         results = self._all('rollout', steps, local=lambda: self.local.rollout(steps, progress, interrupt))
+        if views:views(self.scenes())
         if results[0] is None:
             for result in results[1:]:
                 pass
@@ -245,10 +296,11 @@ class Trainer:
                 parent.send(('close',))
             except (OSError, BrokenPipeError):
                 pass
-        for process, _ in self.workers:
+        for process, parent in self.workers:
             process.join(timeout=3)
             if process.is_alive():
-                process.terminate()
+                process.terminate();process.join(timeout=3)
+            parent.close()
         self.workers = []
         self.local = self.weights = self.gradients = None
         for memory in (self.memory, self.gradient_memory):

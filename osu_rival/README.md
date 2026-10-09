@@ -1,7 +1,7 @@
 # osu! Rival
 
 A small Home Assistant app that learns osu!standard from pixels and rewards on
-real beatmaps. It runs one NumPy worker on a Raspberry Pi 5. Player replays and
+real beatmaps. It runs a NumPy worker on a Raspberry Pi 5 or a paired PC, with multiple processes sharing one model. Player replays and
 pretrained weights are never used.
 
 Press **Start training**. With an empty map library, the app copies `.osu` files

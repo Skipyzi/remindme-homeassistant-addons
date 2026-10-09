@@ -66,10 +66,54 @@ class ParallelTests(unittest.TestCase):
         self.assertGreater(moved, 0)
         self.assertEqual(shared, 0)
 
+    def test_every_parallel_run_and_random_state_survives_resume(self):
+        policy=Policy(3);rng=np.random.default_rng(5)
+        trainer=Trainer(policy,self.library,Path(self.temporary.name)/'maps',4,2,7)
+        resumed=None
+        try:
+            trainer.update(rng,steps=16,minibatch=32,epochs=1)
+            saved=trainer.snapshot();weights=policy.serialize({'training_format':'real-beatmap-v1'})
+            before=[[run['time'] for run in shard['runs']] for shard in saved['shards']]
+            replay_rng=np.random.default_rng();replay_rng.bit_generator.state=rng.bit_generator.state
+            copy,_=Policy.load(weights)
+            resumed=Trainer(copy,self.library,Path(self.temporary.name)/'maps',4,2,999)
+            self.assertTrue(resumed.restore(saved))
+            trainer.update(rng,steps=16,minibatch=32,epochs=1)
+            resumed.update(replay_rng,steps=16,minibatch=32,epochs=1)
+            self.assertEqual(trainer.snapshot(),resumed.snapshot())
+            for shard,old in zip(resumed.snapshot()['shards'],before):
+                self.assertTrue(all(run['time']>t for run,t in zip(shard['runs'],old)))
+            for key in policy.parameters:np.testing.assert_array_equal(policy.parameters[key],copy.parameters[key])
+        finally:
+            if resumed:resumed.close()
+            trainer.close()
+
     def test_each_environment_plays_its_own_maps(self):
         from rival.environment import Environment
         first = [Environment(seed=1, library=self.library, map_index=i, map_stride=3).beatmap['id'] for i in range(3)]
         self.assertEqual(len(set(first)), min(3, len(self.library.training)))
+
+    def test_pause_during_rollout_keeps_process_replies_and_views_in_order(self):
+        trainer=Trainer(Policy(3),self.library,Path(self.temporary.name)/'maps',4,2,7)
+        try:
+            def stop(env,index):raise InterruptedError('pause')
+            with self.assertRaises(InterruptedError):trainer.update(np.random.default_rng(1),steps=16,progress=stop)
+            saved=trainer.snapshot()
+            self.assertTrue(all('indices' in shard and 'runs' in shard for shard in saved['shards']))
+            self.assertTrue(trainer.restore(saved))
+            scenes=trainer.scenes()
+            self.assertEqual([run['index'] for run in scenes],list(range(4)))
+            self.assertTrue(all('objects' in run['scene'] and run['scene']['time']>0 for run in scenes))
+        finally:trainer.close()
+
+    def test_resumed_primary_gets_different_initial_companion_maps(self):
+        from rival.environment import Environment
+        first=Environment(library=self.library,map_index=1)
+        trainer=Trainer(Policy(3),self.library,Path(self.temporary.name)/'maps',2,2,7,first=first)
+        try:
+            ids=[run['scene']['map']['id'] for run in trainer.scenes()]
+            self.assertEqual(len(set(ids)),min(2,len(self.library.training)))
+        finally:trainer.close()
 
 
 class HubTests(unittest.TestCase):
@@ -91,7 +135,7 @@ class HubTests(unittest.TestCase):
 
     def call(self, method, path, data=None, token=None, content_type='application/json'):
         body = json.dumps(data).encode() if isinstance(data, dict) else data
-        headers = {'Authorization': f'Bearer {token or self.controller.remote_token}', 'X-Rival-Session': self.session}
+        headers = {'Authorization': f'Bearer {token or self.controller.remote_token}', 'X-Rival-Session':self.session,'X-Rival-Model':self.controller.models_library.generation}
         if body is not None:
             headers['Content-Type'] = content_type
         request = urllib.request.Request(self.url + path, data=body, method=method, headers=headers)
@@ -129,12 +173,72 @@ class HubTests(unittest.TestCase):
         self.assertEqual(self.call('POST', '/detach', {'session': self.session})[0], 200)
         self.assertEqual(self.controller.status()['trainer'], 'local')
 
+    def test_control_heartbeat_requires_owning_session(self):
+        status,body=self.attach();self.session=json.loads(body)['session']
+        self.assertEqual(self.call('GET','/control')[0],200)
+        self.session='stale-session';before=self.controller.remote['seen']
+        self.assertEqual(self.call('GET','/control')[0],409)
+        self.assertEqual(self.controller.remote['seen'],before)
+
+    def test_disconnected_mirror_stops_local_training(self):
+        from rival.remote import Mirror
+        from rival.storage import atomic_json
+        class LostHub:
+            model_generation=''
+            def request(self,*args,**kwargs):raise OSError('Connection lost')
+        with tempfile.TemporaryDirectory() as directory:
+            atomic_json(Path(directory)/'control.json',{'running':True})
+            mirror=Mirror(LostHub(),directory);mirror.start()
+            try:
+                self.assertTrue(mirror.disconnected.wait(3))
+                deadline=time.monotonic()+1
+                while read_json(Path(directory)/'control.json')['running'] and time.monotonic()<deadline:time.sleep(.01)
+                self.assertFalse(read_json(Path(directory)/'control.json')['running'])
+            finally:mirror.stop.set();mirror.join(timeout=2)
+
     def test_a_different_version_or_second_trainer_is_refused(self):
         self.assertEqual(self.attach(version='0.0.1')[0], 400)
         self.assertEqual(self.attach()[0], 200)
         status, body = self.attach(name='other-pc')
         self.assertEqual(status, 400)
         self.assertIn('already training', json.loads(body)['error'])
+
+    def test_idle_pc_acknowledges_saved_pause_before_model_changes(self):
+        from rival.remote import Hub,Mirror,sync
+        from rival.storage import atomic_json
+        self.controller.manage_model('new',{'name':'Existing model'})
+        state=read_json(Path(self.temporary.name)/'state.json')
+        import os
+        atomic_json(Path(self.temporary.name)/'state.json',state|{'pid':os.getpid()})
+        hub=Hub(self.url.removesuffix('/remote/v1'),self.controller.remote_token)
+        attached=hub.request('POST','/attach',{'name':'test-pc','cores':2,'processes':1,'environments':2,'version':VERSION})
+        hub.session=attached['session']
+        with tempfile.TemporaryDirectory() as directory:
+            sync(hub,directory)
+            mirror=Mirror(hub,directory);mirror.start()
+            try:
+                self.controller.pause(wait_remote=True)
+                pause_id=read_json(Path(self.temporary.name)/'control.json')['pause_id']
+                deadline=time.monotonic()+3
+                while time.monotonic()<deadline and read_json(Path(self.temporary.name)/'state.json',{}).get('pause_id')!=pause_id:time.sleep(.05)
+                self.assertEqual(read_json(Path(self.temporary.name)/'state.json')['pause_id'],pause_id)
+            finally:mirror.stop.set();mirror.join(timeout=5)
+
+    def test_selecting_new_model_clears_old_pc_best_checkpoint(self):
+        from rival.remote import Hub,sync
+        hub=Hub(self.url.removesuffix('/remote/v1'),self.controller.remote_token)
+        attached=hub.request('POST','/attach',{'name':'test-pc','cores':2,'processes':1,'environments':2,'version':VERSION})
+        hub.session=attached['session']
+        with tempfile.TemporaryDirectory() as directory:
+            sync(hub,directory)
+            path=Path(directory)/'models/best.npz';path.write_bytes(b'old model best')
+            self.controller.remote['seen']=0
+            self.controller.manage_model('new',{'name':'Fresh rival'})
+            sync(hub,directory)
+            self.assertFalse(path.exists())
+            _,metadata=Policy.load((Path(directory)/'models/latest.npz').read_bytes())
+            self.assertEqual(metadata['steps'],0)
+            self.assertEqual(hub.model_generation,self.controller.models_library.generation)
 
     def test_remote_training_round_trip(self):
         """Attach, copy maps and model, train one parallel update, pause from the app, and find it on the hub."""

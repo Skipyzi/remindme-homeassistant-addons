@@ -21,6 +21,7 @@ import zipfile
 from . import VERSION
 from .beatmaps import parse_beatmap
 from .policy import Policy, SHAPES
+from .models import Models
 from .storage import atomic_bytes, atomic_json, read_json
 from .vision import view
 from .hub import hub_token
@@ -68,10 +69,12 @@ class Controller:
         self.remote_token = hub_token(self.directory, token) if self.options['remote_training'] else None
         atomic_json(self.directory/'worker-options.json', self.options)
         self.lock = threading.RLock()
+        self.models_library=Models(self.directory,self.options['seed'])
+        self.model_lock=threading.Lock()
         self.process = None
         self.log_handle = None
         self.monitor_stop = threading.Event()
-        atomic_json(self.directory/'control.json', {'running': False})
+        atomic_json(self.directory/'control.json', {'running':False,'model_generation':self.models_library.generation})
         self.monitor = threading.Thread(target=self._monitor, daemon=True)
         self.monitor.start()
         if self.options['train_on_start']:
@@ -120,17 +123,17 @@ class Controller:
             syncing = self.sync_thread is not None and self.sync_thread.is_alive()
             if not running and not syncing and state.get('status') not in ['error']:
                 state.update({'status': 'paused', 'phase': 'Ready when you are'})
-            if not local and not remote and state.get('resources'):
+            if not running and state.get('resources'):
                 state['resources']['worker_memory_mb'] = None
             if running and state.get('status') in [None, 'paused']:
                 state.update({'status': 'starting', 'phase': 'Loading the learner'})
-            state.update({'version':VERSION,'observation_view':view(),'worker_running': running, 'options': self.options,
+            state.update({'version':VERSION,'observation_view':view(),'worker_running': running, 'options':{key:value for key,value in self.options.items() if key!='remote_token'},
                           'checkpoints': self.checkpoints(),
                           'maps': self.maps(), 'parameters': sum(math.prod(shape) for shape in SHAPES.values()),
                           'server_play': {'available': False, 'reason': 'Practice only. Native ruleset and multiplayer integration are not available in this release.'},
                           'remote': {'enabled': self.options['remote_training'], 'port': self.options['remote_port'], 'token': self.remote_token,
                                      'attached': {key: self.remote[key] for key in ['name', 'cores', 'processes', 'environments', 'since']} if remote else None},
-                          'trainer': 'remote' if remote else 'local'})
+                          'trainer': 'remote' if remote else 'local','model_library':self.models_library.status()})
             return state
 
     def start(self):
@@ -153,11 +156,15 @@ class Controller:
                 self._spawn()
             return self.status()
 
-    def pause(self):
+    def pause(self,wait_remote=False):
         with self.lock:
             control = read_json(self.directory/'control.json', {})
             self.sync_cancel.set()
             control['running'] = False
+            control['watch']=None
+            pause_id=control['pause_id']=uuid.uuid4().hex
+            state=read_json(self.directory/'state.json',{})
+            wait=wait_remote and self.remote_active() and (state.get('status') in ('starting','training','watching','resource_pause') or (state.get('pid') and not state.get('pause_id')))
             atomic_json(self.directory/'control.json', control)
             if self.process and self.process.poll() is None:
                 self.process.terminate()
@@ -169,7 +176,27 @@ class Controller:
                     state = read_json(self.directory/'state.json', {})
                     state.update({'status': 'error', 'phase': 'Training stopped', 'last_error': 'Worker did not stop in time. The last completed checkpoint is retained.'})
                     atomic_json(self.directory/'state.json', state)
-            return self.status()
+        if wait:
+            deadline=time.monotonic()+15
+            while time.monotonic()<deadline:
+                state=read_json(self.directory/'state.json',{})
+                if state.get('status')=='paused' and state.get('pause_id')==pause_id:break
+                time.sleep(.1)
+            else:raise ValueError('The PC has not finished pausing. Try again once it reconnects.')
+        return self.status()
+
+    def manage_model(self,action,data):
+        with self.model_lock:
+            if action=='discard' and data.get('id')!=self.models_library.index['active']:
+                with self.lock:return self.models_library.discard(data.get('id'))
+            self.pause(wait_remote=True)
+            with self.lock:
+                if action=='new':result=self.models_library.new(data.get('name'))
+                elif action=='activate':result=self.models_library.activate(data.get('id'))
+                elif action=='discard':result=self.models_library.discard(data.get('id'))
+                else:raise ValueError('Unknown model action')
+                atomic_json(self.directory/'control.json',{'running':False,'model_generation':self.models_library.generation})
+                return result
 
     def checkpoints(self):
         return [{'name': path.name, 'bytes': path.stat().st_size, 'modified_at': path.stat().st_mtime}
@@ -317,6 +344,9 @@ class Controller:
             state.pop('map_progress',None)
             state.update({'status': 'paused', 'phase': 'Checkpoint imported', 'last_error': None})
             atomic_json(self.directory/'state.json', state)
+            self.models_library.index['generation']=uuid.uuid4().hex
+            self.models_library.save()
+            atomic_json(self.directory/'control.json',{'running':False,'model_generation':self.models_library.generation})
         return {'parameters': policy.parameter_count, 'updates': metadata.get('updates', 0)}
 
     # ---- remote training (see hub.py) --------------------------------------------------------------------------
@@ -324,7 +354,7 @@ class Controller:
         return bool(self.remote and time.time() - self.remote['seen'] < REMOTE_TIMEOUT)
 
     def remote_training_now(self):
-        return self.remote_active() and read_json(self.directory/'control.json', {}).get('running', False)
+        return self.remote_active() and (read_json(self.directory/'control.json', {}).get('running',False) or read_json(self.directory/'state.json',{}).get('status') in ('training','watching','starting'))
 
     def remote_owns(self, session):
         with self.lock:
@@ -333,7 +363,7 @@ class Controller:
     def remote_hello(self):
         maps = [{'id': path.stem, 'sha256': hashlib.sha256(path.read_bytes()).hexdigest()} for path in sorted((self.directory/'maps').glob('*.json'))]
         return {'version': VERSION, 'training_format': 'real-beatmap-v1', 'training_strategy': 'full-maps-v1',
-                'seed': self.options['seed'], 'maps': maps, 'attached': self.remote_active()}
+                'seed': self.options['seed'],'model_generation':self.models_library.generation, 'maps': maps, 'attached': self.remote_active()}
 
     def remote_attach(self, info):
         """A trainer takes over. A running local worker stops first (it saves its checkpoint on the way out), so the
@@ -378,8 +408,9 @@ class Controller:
                 self.remote['seen'] = time.time()
             return read_json(self.directory/'control.json', {})
 
-    def remote_store(self, name, value):
+    def remote_store(self, name, value, generation):
         with self.lock:
+            if generation!=self.models_library.generation:raise ValueError('The active model changed. Synchronize the trainer again.')
             self.remote['seen'] = time.time()
             if name == 'state.json':
                 previous = read_json(self.directory/'state.json', {})
@@ -428,6 +459,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send({'status': 'ok', 'version': VERSION})
             if path == '/api/status':
                 return self.send(controller.status())
+            if path == '/api/runs':
+                return self.send(read_json(controller.directory/'runs.json',{'runs':[]}))
             if path in ['/api/scene', '/api/attempt']:
                 name = 'scene.json' if path.endswith('scene') else 'attempt.json'
                 return self.send(read_json(controller.directory/name, {}))
@@ -476,6 +509,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send(controller.start())
             if path == '/api/training/pause':
                 return self.send(controller.pause())
+            if path.startswith('/api/models/'):
+                return self.send(controller.manage_model(path.removeprefix('/api/models/'),data))
             if path == '/api/watch':
                 return self.send(controller.watch(data.get('map_id')), 202)
             if path == '/api/maps/sync':

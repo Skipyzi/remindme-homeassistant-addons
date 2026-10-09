@@ -43,6 +43,20 @@ The practice renderer and judge are approximate and have no audio.
 These local challenges are not osu! multiplayer matches. Native game connection
 and leaderboard submission are still pending. The app writes no server scores.
 
+## Manage models
+
+Open **Models** in the Training card. Give a new model a name and press
+**Create new model**. It starts with fresh random weights and zero training
+steps; your current model is saved first. Press **Use model** to return to its
+weights, optimizer, evaluations and map positions. Training stays paused until
+you press Start. All models use the same saved real beatmaps.
+
+**Discard** deletes the selected model and its snapshots. Discarding the active
+model replaces it with a fresh one. Other models and beatmaps stay available.
+The app holds up to 32 models. Home Assistant backups include the model library.
+The connected PC follows your selection and cannot overwrite it with an older
+model's uploads.
+
 ## Training on another computer
 
 A faster PC on your network can do the training. In the app configuration, turn on `remote_training` and keep port
@@ -55,9 +69,11 @@ python3 rival-trainer.py --hub http://HOME-ASSISTANT:8100 --token TOKEN
 ```
 
 The trainer downloads the app's own code, maps and latest model, takes over from local training and trains with
-half of the PC's cores at low priority (choose with `--processes N`). Start, Pause and Watch in the app control it,
+half of the PC's cores at low priority (choose with `--processes N` and `--environments M`). Start, Pause and Watch in the app control it,
 and the app shows its live field and progress. Ctrl+C on the PC stops it; the latest model is already saved in the
-app. Set `remote_token` to choose the token yourself, or leave it empty to have one generated and kept.
+app. Every parallel run keeps its map position and random state on pause. If the hub connection fails, the PC pauses before reconnecting. Set `remote_token` to choose the token yourself, or leave it empty to have one generated and kept.
+
+A managed worker can use `--token-file /path/to/private-token` so the token is absent from process arguments. The installed workstation service is `osu-rival-trainer.service` under user systemd.
 
 ## Resource limits
 
@@ -68,3 +84,16 @@ and other apps share the Pi.
 
 Errors pause training and appear in the UI. The last completed checkpoint stays
 saved. `beatmap_server_url` defaults to `http://local-osu-server:8087`.
+
+
+## Parallel training views
+
+Open Parallel training to see every run's playfield, real beatmap name, elapsed
+time, judgments and accuracy. The views refresh at rollout boundaries. They
+stay still during optimization and while paused; the main live field updates
+more often. Closing the section stops its polling.
+
+Each new environment starts on a different cached training map when the library
+is large enough. It plays the full map and rotates through its assigned sequence.
+With fewer maps than runs, some runs share a map. All runs learn one selected
+model, and their map positions and random state are saved with it.

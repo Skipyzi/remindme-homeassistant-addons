@@ -50,11 +50,11 @@
       <div class="chart-legend"><span><i class="sw-pink"></i>Accuracy</span><span><i class="sw-mint"></i>Objects hit</span><span><i class="sw-muted"></i>Starting model</span></div>
     </section>
     <section class="card">
-      <h3>Training</h3>
+      <h3>Training <small id="active-model"></small></h3>
       <div class="stats"><div><small>Updates</small><b id="updates">0</b></div><div><small>Maps finished</small><b id="maps-done">0</b></div><div><small>Steps</small><b id="steps">0</b></div><div><small>Objects hit</small><b id="hits">—</b></div></div>
       <p class="phase" id="phase"></p>
       <p class="where" id="where"></p>
-      <div class="row"><a class="btn" id="download" href="api/checkpoints/latest.npz" download>Download model</a><label class="btn ghost file">Import<input type="file" id="ckpt" accept=".npz"></label><button class="btn ghost" id="remote-open" type="button">Train on another computer</button></div>
+      <div class="row"><a class="btn" id="download" href="api/checkpoints/latest.npz" download>Download model</a><label class="btn ghost file">Import<input type="file" id="ckpt" accept=".npz"></label><button class="btn ghost" id="models-open" type="button">Models</button><button class="btn ghost" id="remote-open" type="button">Train on another computer</button></div>
       <p class="note" id="saved"></p>
     </section>
     <section class="card">
@@ -62,12 +62,17 @@
       <p>Real maps copied from your osu! server's cache, or imported <code>.osu</code> files.</p>
       <div class="row"><button class="btn" id="sync" type="button">Sync server cache</button><label class="btn ghost file">Import .osu<input type="file" id="osu" accept=".osu"></label></div>
       <p class="note" id="sync-note"></p>
-      <h3 class="gap">The Pi</h3>
+      <h3 class="gap" id="resource-title">The Pi</h3>
       <div class="meter"><div><span>CPU budget</span><b id="cpu">25%</b></div><i id="cpu-bar" class="c-violet"></i></div>
       <div class="meter"><div><span>Memory</span><b id="mem">—</b></div><i id="mem-bar"></i></div>
       <div class="meter"><div><span>Temperature</span><b id="temp">—</b></div><i id="temp-bar" class="c-amber"></i></div>
     </section>
   </div>
+  <details class="parallel-panel" id="parallel-panel" open>
+    <summary>Parallel training <span id="parallel-count"></span></summary>
+    <p class="note" id="parallel-note">Each run plays a complete real map. Views refresh after a rollout, then stay still while the model learns.</p>
+    <div class="parallel-grid" id="parallel-grid"></div>
+  </details>
   <section class="inside" aria-labelledby="inside-title"><h2 id="inside-title">Inside the model</h2>
     <div class="cards">
       <section class="card"><h3>What it sees and does <small>live</small></h3>
@@ -89,6 +94,11 @@
   <footer>osu! Rival <span id="version"></span> · practice only, nothing is submitted to your server</footer>
 </main>
 <div class="scrim" id="scrim" hidden></div>
+<aside class="sheet" id="models-sheet" aria-label="Manage models"><header><h2>Your models</h2><button class="btn" id="models-close" type="button">Close</button></header>
+  <div class="remote-body"><p>Create a fresh rival, or keep separate models to compare. Creating or switching pauses training. Your beatmaps stay available.</p>
+  <form id="new-model-form"><label for="model-name">New model name</label><input class="search" id="model-name" type="text" maxlength="60" placeholder="My next rival" required><button class="btn primary" type="submit">Create new model</button></form>
+  <p id="models-note" class="note" role="status"></p><ul id="model-list" class="model-list"></ul>
+  <p class="note">Discard deletes that model's saved progress. Discarding the active model starts a fresh one.</p></div></aside>
 <aside class="sheet" id="remote-sheet" aria-label="Train on another computer"><header><h2>Train on another computer</h2><button class="btn" id="remote-close" type="button">Close</button></header>
   <div class="remote-body" id="remote-body"></div></aside>
 <aside class="sheet" id="sheet" aria-label="Choose a map"><header><h2>Choose a map</h2><button class="btn" id="sheet-close" type="button">Close</button></header>

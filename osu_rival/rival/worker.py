@@ -24,7 +24,7 @@ class StopWorker(Exception):
     pass
 
 
-def resources():
+def resources(children=()):
     result = {'available_memory_mb': None, 'temperature_c': None, 'worker_memory_mb': None}
     try:
         for line in Path('/proc/meminfo').read_text().splitlines():
@@ -35,6 +35,11 @@ def resources():
                 result['worker_memory_mb'] = round(int(line.split()[1]) / 1024, 1)
     except OSError:
         pass
+    for pid in children:
+        try:
+            lines=Path(f'/proc/{pid}/status').read_text().splitlines()
+            result['worker_memory_mb'] += next(int(line.split()[1])/1024 for line in lines if line.startswith('VmRSS:'))
+        except (OSError,StopIteration,TypeError):pass
     try:
         result['temperature_c'] = round(int(Path('/sys/class/thermal/thermal_zone0/temp').read_text()) / 1000, 1)
     except (OSError, ValueError):
@@ -107,10 +112,12 @@ class Worker:
         if not self.library.testing:
             self.state.update(history=[],baselines={})
         self.env = Environment(library=self.library)
+        self.parallel_saved=None
         run_path=self.directory/'models/latest-run.json'
-        if latest.exists() and run_path.exists() and run_path.stat().st_size<=4*1024*1024:
+        if latest.exists() and run_path.exists() and run_path.stat().st_size<=32*1024*1024:
             saved=read_json(run_path,{})
             if saved.get('checkpoint_sha256')==hashlib.sha256(original).hexdigest():
+                self.parallel_saved=saved.get('parallel')
                 try:self.env.restore_run(saved['run'])
                 except (ValueError,KeyError,TypeError):
                     self.env=Environment(library=self.library)
@@ -119,6 +126,7 @@ class Worker:
         # the original single environment in one throttled thread.
         self.parallel_envs = max(1, min(64, int(self.options.get('parallel_envs', 1))))
         self.processes = max(1, min(self.parallel_envs, int(self.options.get('processes', 1))))
+        if self.parallel_envs==1:self.parallel_saved=None
         self.trainer = None
         self.trail = []
 
@@ -132,24 +140,28 @@ class Worker:
         self.last_publish = now
         self.state.update({'updated_at': time.time(), 'resources': self.guard_state,
                            'stage_name':self.env.beatmap['title'], 'current_map':self.env.map_info(),
-                           'map_progress':self.env.progress(),'pid':os.getpid()})
+                           'map_progress':self.env.progress(),'pid':os.getpid(),
+                           'worker_budget':{key:self.options.get(key) for key in ['cpu_budget_percent','memory_limit_mb']}})
         atomic_json(self.directory/'state.json', self.state)
 
     def checkpoint(self):
         checkpoint=self.policy.serialize(self.metadata())
         atomic_bytes(self.directory/'models/latest.npz',checkpoint)
-        atomic_json(self.directory/'models/latest-run.json',{'checkpoint_sha256':hashlib.sha256(checkpoint).hexdigest(),'run':self.env.save_run()})
+        parallel=self.trainer.snapshot() if self.trainer is not None else self.parallel_saved
+        self.parallel_saved=parallel
+        atomic_json(self.directory/'models/latest-run.json',{'checkpoint_sha256':hashlib.sha256(checkpoint).hexdigest(),'run':self.env.save_run(),'parallel':parallel})
 
     def metadata(self):
         return {key: self.state[key] for key in ['updates', 'steps', 'episodes', 'completed_maps', 'stage', 'history', 'baselines', 'seed']} | {'rng':self.rng.bit_generator.state,'training_format':'real-beatmap-v1','training_strategy':'full-maps-v1'}
 
     def tick(self):
-        if self.stop or (not self.once and not self.control().get('running')):
+        if self.stop or self.control().get('remote_unavailable') or (self.once and not self.control().get('watch')) or (not self.once and not self.control().get('running')):
             raise StopWorker()
         now = time.monotonic()
         if now-self.last_guard > 1:
             self.last_guard = now
-            self.guard_state = resources()
+            children=[process.pid for process,_ in self.trainer.workers] if self.trainer else []
+            self.guard_state = resources(children)
             reason = None
             if self.guard_state['worker_memory_mb'] and self.guard_state['worker_memory_mb'] > self.options.get('memory_limit_mb', 512):
                 raise MemoryError('Worker exceeded its memory budget. Training is paused; the last checkpoint is retained.')
@@ -161,10 +173,10 @@ class Worker:
                 self.state.update({'status': 'resource_pause', 'phase': reason})
                 self.publish(force=True)
                 while reason:
-                    if self.stop or (not self.once and not self.control().get('running')):
+                    if self.stop or self.control().get('remote_unavailable') or (self.once and not self.control().get('watch')) or (not self.once and not self.control().get('running')):
                         raise StopWorker()
                     time.sleep(.5)
-                    info = resources()
+                    info = resources(children)
                     hot = info['temperature_c'] is not None and info['temperature_c'] >= self.options.get('max_temperature_c', 75)-3
                     low = info['available_memory_mb'] is not None and info['available_memory_mb'] < self.options.get('min_available_memory_mb', 768)+64
                     reason = 'Waiting for the Pi to cool down' if hot else 'Waiting for more available memory' if low else None
@@ -178,7 +190,7 @@ class Worker:
         # Short sleeps keep pause and shutdown responsive. This is a duty-cycle
         # budget for one thread, not a claim of a hard container CPU quota.
         while delay > .002:
-            if self.stop or (not self.once and not self.control().get('running')):
+            if self.stop or self.control().get('remote_unavailable') or (self.once and not self.control().get('watch')) or (not self.once and not self.control().get('running')):
                 raise StopWorker()
             time.sleep(min(delay, .05))
             delay = (time.process_time()-self.cpu_start)/fraction - (time.monotonic()-self.wall_start)
@@ -199,6 +211,9 @@ class Worker:
         trail = [point for point in self.trail if point[0] <= env.time]
         self.trail = []
         atomic_json(self.directory/'scene.json', env.scene(visible_only=True) | {'trail': trail})
+
+    def parallel_views(self,runs):
+        atomic_json(self.directory/'runs.json',{'updated_at':time.time(),'runs':runs})
 
     def watch(self, request):
         self.state.update({'status': 'watching', 'phase': 'Recording one attempt'})
@@ -260,15 +275,19 @@ class Worker:
                         self.watch(request)
                 self.state.update({'status': 'training', 'phase': 'Learning from rewards'})
                 interrupt = lambda: self.stop or not self.control().get('running')
+                started=time.monotonic()
                 if self.parallel_envs > 1:
                     if self.trainer is None:
                         self.state['phase'] = f'Starting {self.parallel_envs} environments on {self.processes} cores'
                         self.publish(force=True)
                         self.trainer = Trainer(self.policy, self.library, self.directory/'maps', self.parallel_envs,
                                                self.processes, self.seed + self.state['updates'], first=self.env)
+                        if self.parallel_saved:
+                            try:self.trainer.restore(self.parallel_saved)
+                            except (ValueError,KeyError,TypeError):pass
                         self.state['parallel'] = {'environments': self.parallel_envs, 'processes': self.processes}
                         self.state['phase'] = 'Learning from rewards'
-                    result = self.trainer.update(self.rng, steps=128, progress=self.frame, interrupt=interrupt)
+                    result = self.trainer.update(self.rng, steps=128, progress=self.frame, interrupt=interrupt,views=self.parallel_views)
                 else:
                     result = update(self.policy, self.env, self.rng, progress=self.frame, interrupt=interrupt)
                 if result is None:
@@ -278,6 +297,7 @@ class Worker:
                 self.state['episodes'] += len(result['episodes'])
                 self.state['completed_maps'] += len(result['episodes'])
                 self.state['training'] = {key: value for key, value in result.items() if key != 'episodes'}
+                self.state['training']['steps_per_second']=round(result['steps']/max(.001,time.monotonic()-started),1)
                 self.checkpoint()
                 if self.state['updates']%10 == 0 or self.state['updates']==1:
                     sections = self.library.evaluation_sections()
@@ -309,6 +329,8 @@ class Worker:
             return
         finally:
             if self.trainer is not None:
+                self.parallel_views(self.trainer.scenes())
+                self.parallel_saved=self.trainer.snapshot()
                 self.trainer.close()
                 self.trainer = None
             if self.state['status'] != 'error':

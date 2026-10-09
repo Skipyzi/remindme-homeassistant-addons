@@ -1,0 +1,86 @@
+{
+  "version": "0.4.2",
+  "status": "paused",
+  "steps": 57856,
+  "updates": 86,
+  "parallel": {
+    "environments": 8,
+    "processes": 4
+  },
+  "training": {
+    "steps": 1024,
+    "reward": -2.4499996304512024,
+    "environments": 8,
+    "processes": 4,
+    "loss": -0.03809082764200866,
+    "policy_loss": -0.01251543330727145,
+    "value_loss": 0.022963011491810903,
+    "entropy": 3.7056903019547462,
+    "approx_kl": 0.005102690221974626,
+    "clip_fraction": 0.043701171875,
+    "steps_per_second": 554.8
+  },
+  "runs": [
+    {
+      "index": 0,
+      "map_id": "d135b95bf2270c54361a87ba",
+      "time": 68833.33333333048
+    },
+    {
+      "index": 4,
+      "map_id": "79f92874c5bd75c76860b85b",
+      "time": 64083.333333329734
+    },
+    {
+      "index": 1,
+      "map_id": "a60619a837a72dc946b3626e",
+      "time": 6400.000000000027
+    },
+    {
+      "index": 5,
+      "map_id": "35e001bbf8365e67f6e06b5e",
+      "time": 59733.33333333037
+    },
+    {
+      "index": 2,
+      "map_id": "44b08ee9af46c072da3c9235",
+      "time": 59733.33333333037
+    },
+    {
+      "index": 6,
+      "map_id": "180bc98897930363a4cca64f",
+      "time": 59733.33333333037
+    },
+    {
+      "index": 3,
+      "map_id": "11762cc2f33359ef2e8e441d",
+      "time": 59733.33333333037
+    },
+    {
+      "index": 7,
+      "map_id": "2b1110c82563659f97264b14",
+      "time": 59733.33333333037
+    }
+  ],
+  "tests_passed": 49,
+  "maps": 100,
+  "remote_attached": true,
+  "models": {
+    "active": "00bb73e51e534613851135acfa89570d",
+    "generation": "fa9757597d6b4ba49188f5b7a8f6bec8",
+    "models": [
+      {
+        "id": "00bb73e51e534613851135acfa89570d",
+        "name": "Original model",
+        "created_at": 1791506770.2745583,
+        "active": true,
+        "steps": 57856,
+        "updates": 86
+      }
+    ]
+  },
+  "pause_snapshot_valid": true,
+  "recovery": "Kept current weights and primary run. Recovered six secondary positions from the last valid checkpoint; moved one overlapping secondary run to an unused real map.",
+  "checkpoint_sha256": "a26f29adb083bddc01b22aa5806b231888190ef8efafb34dc05d0a0bb6e04428",
+  "checkpoint_matches_pc": true
+}
