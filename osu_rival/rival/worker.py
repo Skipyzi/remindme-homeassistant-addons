@@ -17,6 +17,7 @@ from .environment import Environment
 from .beatmaps import MapLibrary
 from .policy import Policy,evaluate_many,update,EVALUATION_REVISION,EVALUATION_SEEDS
 from .rewards import REVISION as REWARD_REVISION
+from .rules import REVISION as SCORING_REVISION
 from .parallel import Trainer
 from .storage import atomic_bytes, atomic_json, read_json
 from .vision import view
@@ -63,7 +64,7 @@ class Worker:
                       'episodes': 0, 'completed_maps':0, 'stage': 0, 'history': [], 'baselines': {},
                       'seed': self.seed, 'last_error': None, 'training_source': 'Random initialization and rewards',
                       'training_format': 'real-beatmap-v1', 'training_strategy':'full-maps-v1',
-                      'server_play': {'available': False, 'reason': 'Practice only. Native ruleset and multiplayer integration are not available in this release.'}}
+                      'server_play': {'available': False, 'reason': 'Practice only. Multiplayer and leaderboard submission are not available in this release.'}}
         previous_state=read_json(self.directory/'state.json',{})
         if 'map_sync' in previous_state:
             self.state['map_sync']=previous_state['map_sync']
@@ -86,7 +87,8 @@ class Worker:
                 if key in metadata:
                     self.state[key] = metadata[key]
             self.seed = int(self.state['seed'])
-            self.state['history'] = self.state['history'][-180:]
+            self.state['history'] = self.state['history'][-150:]
+            self.state['baselines']=dict(list(self.state['baselines'].items())[-16:])
             self.state['stage'] = max(int(self.state['stage']),0)
             self.rng = np.random.default_rng(self.seed)
             if 'rng' in metadata:
@@ -115,6 +117,7 @@ class Worker:
             self.state.update(history=[],baselines={})
         self.env = Environment(library=self.library,reward_feedback=True)
         self.state['reward_feedback']=REWARD_REVISION
+        self.state['scoring_revision']=SCORING_REVISION
         self.parallel_saved=None
         run_path=self.directory/'models/latest-run.json'
         if latest.exists() and run_path.exists() and run_path.stat().st_size<=32*1024*1024:
@@ -161,7 +164,7 @@ class Worker:
         atomic_json(self.directory/'models/latest-run.json',{'checkpoint_sha256':hashlib.sha256(checkpoint).hexdigest(),'run':self.env.save_run(),'parallel':parallel})
 
     def metadata(self):
-        return {key: self.state[key] for key in ['updates', 'steps', 'episodes', 'completed_maps', 'stage', 'history', 'baselines', 'seed']} | {'rng':self.rng.bit_generator.state,'training_format':'real-beatmap-v1','training_strategy':'full-maps-v1','reward_feedback':REWARD_REVISION}
+        return {key: self.state[key] for key in ['updates', 'steps', 'episodes', 'completed_maps', 'stage', 'history', 'baselines', 'seed']} | {'rng':self.rng.bit_generator.state,'training_format':'real-beatmap-v1','training_strategy':'full-maps-v1','reward_feedback':REWARD_REVISION,'scoring_revision':SCORING_REVISION}
 
     def tick(self):
         if self.stop or self.control().get('remote_unavailable') or (self.once and not self.control().get('watch')) or (not self.once and not self.control().get('running')):
@@ -208,7 +211,8 @@ class Worker:
     def frame(self, env, index=0):
         self.tick()
         # The cursor's path since the last snapshot lets the live view follow it instead of guessing in between.
-        self.trail.append([round(env.time, 1), round(env.cursor[0], 1), round(env.cursor[1], 1), env.keys])
+        self.trail.append([round(env.time, 1), round(env.cursor[0], 1), round(env.cursor[1], 1), env.keys,[obj['id'] for obj in env.active if obj.get('tracking')],
+                           [[obj['id'],obj['rotation']] for obj in env.active if obj['kind']=='spinner']])
         if len(self.trail) > 600:
             del self.trail[:-600]
         if time.monotonic() - getattr(self, 'last_frame', 0) < .25:
@@ -230,7 +234,7 @@ class Worker:
         seed = int(request.get('seed', 7123))
         map_id = request.get('map_id')
         if map_id:
-            beatmap = read_json(self.directory/'maps'/f'{map_id}.json')
+            beatmap = next((m for m in self.library.maps if m['id']==map_id),None)
             if beatmap is None:
                 raise ValueError('The selected real beatmap is missing')
             beatmap['id'] = map_id
@@ -247,7 +251,8 @@ class Worker:
             latent, key, _, _ = self.policy.sample(observation, rng)
             action_time = env.time
             observation, _, _ = env.step((latent, key))
-            frames.append([round(action_time, 2), round(env.cursor[0], 2), round(env.cursor[1], 2), key])
+            frames.append([round(action_time, 2), round(env.cursor[0], 2), round(env.cursor[1], 2), key,[obj['id'] for obj in env.active if obj.get('tracking')],
+                           [[obj['id'],obj['rotation']] for obj in env.active if obj['kind']=='spinner']])
             if env.last_judgment and (not events or events[-1] != env.last_judgment):
                 events.append(dict(env.last_judgment))
             self.frame(env)
@@ -317,14 +322,16 @@ class Worker:
                         signature = EVALUATION_REVISION+':'+','.join(map(str,EVALUATION_SEEDS))+':observation-v2:'+','.join(f"{beatmap['id']}:{start}:{end}" for beatmap,start,end in sections)
                         if signature not in self.state['baselines']:
                             self.state['baselines'][signature] = evaluate_many(self.initial,sections,tick=self.tick)
+                            self.state['baselines']=dict(list(self.state['baselines'].items())[-16:])
                         evaluation = evaluate_many(self.policy,sections,tick=self.tick)
                         self.state['evaluation'] = evaluation
                         point = {'update':self.state['updates'],'stage':self.state['stage'],
                                  'hit_rate':evaluation['hit_rate'],'accuracy':evaluation['accuracy'],
                                  'baseline':self.state['baselines'][signature]['accuracy'],
                                  'evaluation_protocol':EVALUATION_REVISION,'objects':evaluation['objects'],
-                                 'unique_objects':evaluation['unique_objects'],'seed_count':evaluation['seed_count']}
-                        self.state['history'] = (self.state['history']+[point])[-180:]
+                                 'unique_objects':evaluation['unique_objects'],'seed_count':evaluation['seed_count'],
+                                 'slider_tracking_hit_rate':evaluation['slider_tracking_hit_rate'],'slider_parts_total':evaluation['slider_parts_total']}
+                        self.state['history'] = (self.state['history']+[point])[-150:]
                         best = read_json(self.directory/'models/best.json',{})
                         if signature != best.get('signature') or evaluation['accuracy']>best.get('accuracy',-1):
                             self.policy.save(self.directory/'models/best.npz',self.metadata())

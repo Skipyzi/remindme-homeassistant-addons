@@ -222,6 +222,9 @@
     "Both variants use the same saved model and authored maps; fresh identical full-map rollout positions.",
     "Raw approximate practice judgments, with aim feedback disabled during evaluation.",
     "Small gain with non-monotonic accuracy; no evidence of strong native osu! ability.",
-    "Experimental checkpoints were not installed into the live model library."
-  ]
+    "Experimental checkpoints were not installed into the live model library.",
+    "Results are historical and do not establish improvement under the later lazer rules."
+  ],
+  "judge_revision": "checkpoint-only practice judge before the lazer port",
+  "source_commit": "e23a52e"
 }

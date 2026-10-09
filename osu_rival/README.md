@@ -21,11 +21,12 @@ resume retain the current map, judgments and image stack alongside the model.
 Evaluation uses short sections of withheld maps so checks stay inexpensive.
 With only one map, the app reports no independent test accuracy.
 
-Circles use timing and position judgments. Sliders use their declared curves,
-timing points, velocity changes, repeats and tracking checkpoints. Spinners use
-held keys and cursor rotation. The lightweight renderer and judge are approximate.
-They do not reproduce native stacking, health, mods, skin graphics or audio.
-Training results cannot authorize leaderboard scores.
+The practice judge ports default osu!lazer timing, input ordering, stacking,
+slider tracking and spinner rotation rules. Slider heads, ticks, repeats and
+tails have separate accuracy and combo judgments. The learner must hold a key
+and follow the moving ball to collect slider parts. Inputs use 60 Hz steps and
+sampled slider curves. Health, mods, skin graphics and audio remain absent.
+Practice accuracy is separate from normalized leaderboard scores and pp.
 
 The app saves after each completed update. Start and Pause are the training
 controls. It defaults to one thread, 25% of one CPU core, and a 512 MB worker
@@ -77,8 +78,20 @@ PYTHONPATH=. OPENBLAS_NUM_THREADS=1 python3 scripts/benchmark_learning.py \
 
 Keep the source checkpoint and map library unchanged between those commands.
 They start equal full-map runs and write reports without replacing saved models.
-The checked 200-update comparison reached 10.3% withheld accuracy with aim
-feedback versus 8.6% with score rewards alone. This is one training seed, scored
+Before the lazer rule port, a 200-update comparison using the earlier practice
+judge reached 10.3% withheld accuracy with aim feedback versus 8.6% with score
+rewards alone. Those numbers do not establish improvement under the new judge. This is one training seed, scored
 with three action seeds on 12 real sections. Improvement was small and not
 monotonic; it does not establish strong native osu! play. Results are in
 `validation/learning-feedback.json`.
+
+Check Python/browser rule agreement on original .osu fixtures, with Node installed:
+
+```sh
+PYTHONPATH=. OPENBLAS_NUM_THREADS=1 python3 scripts/check_rules_parity.py \
+  --maps /path/to/actual-osu-fixtures --report /tmp/lazer-rule-parity.json
+```
+
+These verification actions never become training demonstrations. The rule port
+and remaining differences from the native client are documented in
+`THIRD_PARTY_NOTICES.md`.

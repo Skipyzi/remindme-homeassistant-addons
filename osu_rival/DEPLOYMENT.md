@@ -238,3 +238,47 @@ reattached without changing progress or starting training. The active model
 has no server profile link. Desktop and mobile checks found no horizontal
 overflow and confirmed the separate evaluation series. Details are in
 `validation/pi-learning-feedback.json`.
+
+
+## Default lazer rule ports, 0.7.0
+
+Deployed to `local_osu_rival` and the Linux workstation on 2026-10-09. The
+trainer and browser practice judge now share the ported default lazer input,
+slider, stacking and spinner rules. The live view records actual tracking and
+spin state, and the dashboard reports slider parts held separately from heads.
+
+All 71 pinned-container checks passed using an authored .osu fixture. Python
+and JavaScript matched across three real maps, 20,510 steps, 1,383 judgment
+events and 63 live-view intervals. These are checks of the ports against one
+another and upstream unit vectors, not a full native-client comparison.
+
+The app rebuilt 100 parsed caches from unchanged original .osu files. The PC
+downloaded all 100; their JSON digests match the Pi. The upgrade retained the
+latest checkpoint, initial checkpoint and parallel sidecar byte for byte
+before resuming. Eight saved playheads continued under the new rules. Past
+component accuracy cannot be reconstructed, so scores on maps already in
+progress count only new judgments. Subsequent maps and withheld checks use
+complete new scoring.
+
+Live verification advanced the existing model from 559,616 steps and 577
+updates to 573,952 steps and 591 updates with eight environments on four
+processes. Training is paused. The first new withheld check measured 5.82%
+accuracy against a 5.98% initial baseline, with 11.27% of slider parts held.
+This establishes that the new judge runs and saves; it does not establish
+improved play. Old evaluation records remain preserved but are excluded from
+the current chart. No personal account is linked.
+
+A fresh full-map Watch attempt contained 40 authored objects and 4,434 input
+frames. Replaying those inputs through the browser judge matched all accuracy
+points, the maximum, hits and combo. Watch left both the checkpoint and all
+eight saved training runs unchanged. Desktop and mobile browser checks showed
+no horizontal overflow or app error. Reports are in
+`validation/lazer-rules-parity.json` and `validation/pi-lazer-rules.json`.
+
+Source backup:
+`/share/osu-rival-maintenance/before-lazer-rules-20261009-045420`.
+
+The port targets default unmodified lazer with 60 Hz input and sampled curves.
+Audio, health/failure, mods and authoritative leaderboard scoring remain
+outside this practice app. Upstream source and MIT attribution are included
+in `THIRD_PARTY_NOTICES.md` and the downloadable trainer package.

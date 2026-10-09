@@ -127,3 +127,38 @@ local profile identities only. It does not learn from player replays.
 
 This records the rival's identity for the next multiplayer work. It does not yet
 log in, join rooms or submit scores to the private server.
+
+## Lazer training rules, 0.7.0
+
+The practice environment now ports the default, unmodified osu!lazer input and
+judgment rules. Slider heads use circle timing accuracy. Ticks and repeats each
+carry 30 accuracy points; the tail carries 150. The parent slider does not add
+another 300. Combo increases on each collected part. A missed tick or repeat
+breaks combo, while a missed tail does not.
+
+The cursor must catch the slider ball within its normal radius before tracking
+can use the expanded follow area. Releasing the held key or leaving that area
+loses tracking. Catching the ball again can recover it for later parts.
+The tail can be collected in the last 36 milliseconds after earlier parts
+have been judged; an exact key release at the end is not required. The live
+field shows the follow circle only when tracking is active, and **Slider parts
+held** reports ticks, repeats and tails independently of head hits.
+
+Input ordering, half-millisecond hit-window boundaries, repeated-span tick
+positions, map stacking and spinner direction history also follow the ported
+rules. Rapid spinner direction changes cannot accumulate free rotations.
+
+The upgrade keeps weights and full-map positions. Old parsed caches are backed
+up in `maps-before-lazer` and rebuilt from their unchanged original `.osu`
+files. The old judge did not save enough detail to reconstruct every past
+slider part. For a run already in progress, accuracy and combo restart with
+new judgments while the map clock continues. The next map has a complete new
+score. Withheld evaluation always starts fresh and is comparable only within
+the new series. Record a new Watch attempt before playing against it.
+
+This remains a small port, not the native client. Inputs use 60 Hz steps and
+sampled slider curves; audio, failure/health and mod-specific rules are absent.
+Practice points are accuracy points, not lazer's normalized leaderboard score
+or pp. These limits and the pinned upstream sources are documented in
+`THIRD_PARTY_NOTICES.md`. The previous learning experiment used the older judge
+and does not establish improvement under the new rules.

@@ -25,7 +25,7 @@ SHAPES = {
 }
 LEGACY_SHAPES = {**SHAPES,'fw':(8*LEGACY_FEATURE_HEIGHT*LEGACY_FEATURE_WIDTH,32)}
 LOG_2PI = math.log(2 * math.pi)
-EVALUATION_REVISION='paired-seeds-v2'
+EVALUATION_REVISION='lazer-judgments-v3'
 EVALUATION_SEEDS=(91000,91011,91022)
 
 
@@ -274,10 +274,12 @@ def evaluate(policy, sections, seed=91000, tick=None):
             observation,_,done = env.step((latent,keys))
         results.append(env.summary())
     objects = sum(result['objects'] for result in results)
+    parts=sum(result['slider_parts_total'] for result in results)
+    parts_hit=sum(result['slider_parts_hit'] for result in results)
     return {'episodes':len(sections),'objects':objects,
             'hit_rate':sum(result['hits'] for result in results)/max(1,objects),
-            'accuracy':sum(result['points'] for result in results)/max(1,300*objects),
-            'seed':seed}
+            'accuracy':sum(result['points'] for result in results)/max(1,sum(result['accuracy_max'] for result in results)),
+            'seed':seed,'slider_parts_total':parts,'slider_tracking_hit_rate':parts_hit/max(1,parts),'scoring_revision':'lazer-standard-v1'}
 
 
 def evaluate_many(policy,sections,seeds=EVALUATION_SEEDS,tick=None):
@@ -302,9 +304,12 @@ def evaluate_many(policy,sections,seeds=EVALUATION_SEEDS,tick=None):
                 if not done:following.append((env,rng,seed))
         active=following
     objects=sum(len(env.objects) for env,_,_ in entries)
+    parts=sum(env.summary()['slider_parts_total'] for env,_,_ in entries)
+    parts_hit=sum(env.summary()['slider_parts_hit'] for env,_,_ in entries)
     return {'episodes':len(entries),'objects':objects,'unique_objects':objects//len(seeds),
             'hit_rate':sum(env.summary()['hits'] for env,_,_ in entries)/max(1,objects),
-            'accuracy':sum(env.summary()['points'] for env,_,_ in entries)/max(1,300*objects),
+            'accuracy':sum(env.summary()['points'] for env,_,_ in entries)/max(1,sum(env.summary()['accuracy_max'] for env,_,_ in entries)),
+            'slider_parts_total':parts,'slider_tracking_hit_rate':parts_hit/max(1,parts),'scoring_revision':'lazer-standard-v1',
             'seeds':list(seeds),'seed_count':len(seeds),'protocol':EVALUATION_REVISION}
 
 

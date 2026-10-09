@@ -1,14 +1,17 @@
 """Decode real osu!standard files and retain their authored geometry and timing."""
 import bisect
 import hashlib
+import json
 import math
 from pathlib import Path
 
 import numpy as np
 
-from .storage import read_json
+from .storage import read_json,atomic_json,atomic_bytes
+from .stacking import apply_stacking
 
 MAX_BYTES = 2 * 1024 * 1024
+DECODER_REVISION = 'lazer-ticks-v1'
 
 
 def finite(value):
@@ -90,9 +93,11 @@ def parse_beatmap(text):
         raise ValueError('Beatmap is larger than 2 MB')
     if not text.lstrip('\ufeff').startswith('osu file format v'):
         raise ValueError('Expected an original .osu beatmap file')
+    version=int(text.lstrip('\ufeff').splitlines()[0].rsplit('v',1)[-1])
     section, previous = '', -math.inf
     data = {'title':'Imported map','artist':'','difficulty':'','beatmap_id':0,
-            'cs':5.0,'od':5.0,'ar':5.0,'slider_multiplier':1.4,'tick_rate':1.0,
+            'stack_leniency':.7,'cs':5.0,'od':5.0,'ar':5.0,'slider_multiplier':1.4,'tick_rate':1.0,
+            'decoder_revision':DECODER_REVISION,'file_version':version,
             'objects':[],'counts':{'circle':0,'slider':0,'spinner':0},
             'source_sha256':hashlib.sha256(text.encode()).hexdigest(), 'format':'real-beatmap-v1'}
     timing, raw_objects, has_ar = [], [], False
@@ -106,6 +111,9 @@ def parse_beatmap(text):
             key,value = (part.strip() for part in line.split(':',1))
             if section == '[General]' and key == 'Mode' and int(value) != 0:
                 raise ValueError('Only osu!standard maps are supported')
+            if section=='[General]' and key=='StackLeniency':
+                data['stack_leniency']=finite(value)
+                if not 0<=data['stack_leniency']<=1:raise ValueError('Invalid stack leniency')
             target = {'Title':'title','Artist':'artist','Version':'difficulty','BeatmapID':'beatmap_id'}.get(key)
             if section == '[Metadata]' and target:
                 data[target] = int(value) if target == 'beatmap_id' else value[:200]
@@ -166,18 +174,20 @@ def parse_beatmap(text):
             if not 0 < span*repeats <= 120000:
                 raise ValueError('Slider duration exceeds two minutes')
             path,distances = curve(points,parts[0],length)
-            checkpoints = []
-            tick_interval = beat_length/data['tick_rate']
+            events = []
+            tick_interval = beat_length/data['tick_rate']/(velocity if version<8 else 1)
             for repeat in range(repeats):
                 tick = tick_interval
                 while tick < span-10:
-                    checkpoints.append(start+repeat*span+tick)
+                    events.append((start+repeat*span+(span-tick if repeat%2 else tick),'tick'))
                     tick += tick_interval
-                    if len(checkpoints)>10000:
+                    if len(events)>10000:
                         raise ValueError('Too many slider ticks')
-                checkpoints.append(start+(repeat+1)*span)
+                events.append((start+(repeat+1)*span,'tail' if repeat==repeats-1 else 'repeat'))
+            events.sort()
+            checkpoints=[time for time,_ in events]
             obj.update(kind='slider',path=path,distances=distances,length=length,
-                       repeats=repeats,span=span,end_time=start+span*repeats,checkpoints=checkpoints)
+                       repeats=repeats,span=span,end_time=start+span*repeats,checkpoints=checkpoints,checkpoint_kinds=[kind for _,kind in events])
         elif kind & 8:
             end = finite(fields[5])
             if not 0 < end-start <= 120000:
@@ -193,6 +203,7 @@ def parse_beatmap(text):
     data['duration_ms'] = max(obj['end_time'] for obj in data['objects'])-data['objects'][0]['time']
     if data['duration_ms'] > 20*60*1000:
         raise ValueError('Maximum map length is twenty minutes')
+    apply_stacking(data)
     data['difficulty_order'] = data['od']+data['ar']*.35+len(data['objects'])/max(1,data['duration_ms']/1000)
     return data
 
@@ -213,6 +224,24 @@ def slider_position(obj, time):
     return [path[index-1][axis]+fraction*(path[index][axis]-path[index-1][axis]) for axis in range(2)]
 
 
+def upgrade_cached_maps(directory):
+    """Rebuild parsed caches from unchanged original files before PC downloads."""
+    changed=0
+    directory=Path(directory)
+    for path in directory.glob('*.json'):
+        old=read_json(path,{})
+        if old.get('format')!='real-beatmap-v1' or old.get('decoder_revision')==DECODER_REVISION:continue
+        raw=path.with_suffix('.osu')
+        if not raw.is_file():raise ValueError('Reimport the original .osu file to update slider rules: '+path.stem)
+        decoded=parse_beatmap(raw.read_bytes().decode('utf-8'))
+        if decoded['source_sha256']!=old['source_sha256']:raise ValueError('Saved map source hash changed')
+        if len(json.dumps(decoded).encode())>4*1024*1024:raise ValueError('Expanded beatmap geometry exceeds 4 MB')
+        backup=directory.parent/'maps-before-lazer'/path.name
+        if not backup.exists():atomic_bytes(backup,path.read_bytes())
+        atomic_json(path,decoded);changed+=1
+    return changed
+
+
 class MapLibrary:
     """Complete training maps; bounded excerpts of withheld maps for evaluation."""
     def __init__(self, directory):
@@ -224,6 +253,12 @@ class MapLibrary:
                 raise ValueError('Saved map library exceeds the 64 MB training budget')
             beatmap = read_json(path)
             if beatmap and beatmap.get('format') == 'real-beatmap-v1':
+                if beatmap.get('decoder_revision')!=DECODER_REVISION:
+                    raw=path.with_suffix('.osu')
+                    if not raw.exists():raise ValueError('Reimport the original .osu file to update slider rules: '+path.stem)
+                    updated=parse_beatmap(raw.read_bytes().decode('utf-8'))
+                    if updated['source_sha256']!=beatmap['source_sha256']:raise ValueError('Saved map source hash changed')
+                    beatmap=updated
                 beatmap['id'] = path.stem
                 self.maps.append(beatmap)
         self.maps.sort(key=lambda beatmap:(beatmap['difficulty_order'],beatmap['id']))

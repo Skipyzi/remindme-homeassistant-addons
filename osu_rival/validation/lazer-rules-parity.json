@@ -1,0 +1,146 @@
+{
+  "scoring_revision": "lazer-standard-v1",
+  "seed": 77,
+  "source": "Authored .osu fixtures; verification actions only, not training demonstrations.",
+  "upstream_revision": "7e25f111466f1b5648d86856e5737d852402effe",
+  "cases": [
+    {
+      "map": "136399.osu",
+      "source_sha256": "8271e380e5744ffbb68cd4acc0120ac50952beeb5c6b1daba680e92aafe57aaa",
+      "objects": 290,
+      "steps": 6835,
+      "compared_snapshots": 215,
+      "matched_events": 625,
+      "matched_live_scene_intervals": 21,
+      "summary": {
+        "objects": 290,
+        "judged": 290,
+        "hits": 40,
+        "hit_rate": 0.13793103448275862,
+        "accuracy": 0.2425554953979426,
+        "points": 26880,
+        "accuracy_max": 110820,
+        "score_counts": {
+          "head:300": 1,
+          "tail:150": 153,
+          "circle:0": 120,
+          "head:0": 130,
+          "head:100": 7,
+          "circle:50": 11,
+          "head:50": 15,
+          "circle:100": 4,
+          "repeat:30": 21,
+          "repeat:0": 8,
+          "circle:300": 1,
+          "spinner:300": 1
+        },
+        "scoring_revision": "lazer-standard-v1",
+        "scoring_scope": "whole-map",
+        "max_combo": 5,
+        "slider_parts_hit": 174,
+        "slider_parts_total": 182,
+        "slider_tracking_hit_rate": 0.9560439560439561,
+        "results": {
+          "300": 3,
+          "100": 11,
+          "50": 26,
+          "miss": 250
+        },
+        "components_hit": 197,
+        "components_missed": 138
+      }
+    },
+    {
+      "map": "137199.osu",
+      "source_sha256": "84c9d7ec063ef421393d631c9c30e495109088a848fb328d9e19b3185cbe8f49",
+      "objects": 157,
+      "steps": 6837,
+      "compared_snapshots": 215,
+      "matched_events": 407,
+      "matched_live_scene_intervals": 21,
+      "summary": {
+        "objects": 157,
+        "judged": 157,
+        "hits": 13,
+        "hit_rate": 0.08280254777070063,
+        "accuracy": 0.25980160604629193,
+        "points": 16500,
+        "accuracy_max": 63510,
+        "score_counts": {
+          "head:300": 1,
+          "tail:150": 94,
+          "head:0": 90,
+          "repeat:30": 20,
+          "circle:0": 54,
+          "repeat:0": 5,
+          "head:50": 8,
+          "tick:30": 20,
+          "tail:0": 5,
+          "tick:0": 7,
+          "circle:50": 2,
+          "spinner:100": 1,
+          "spinner:300": 1
+        },
+        "scoring_revision": "lazer-standard-v1",
+        "scoring_scope": "whole-map",
+        "max_combo": 6,
+        "slider_parts_hit": 134,
+        "slider_parts_total": 151,
+        "slider_tracking_hit_rate": 0.8874172185430463,
+        "results": {
+          "300": 2,
+          "100": 1,
+          "50": 10,
+          "miss": 144
+        },
+        "components_hit": 143,
+        "components_missed": 107
+      }
+    },
+    {
+      "map": "137362.osu",
+      "source_sha256": "71b15369ccc2ece47e59be72b328783e2520c684766a24ac82b454960d9ecdc7",
+      "objects": 125,
+      "steps": 6838,
+      "compared_snapshots": 215,
+      "matched_events": 351,
+      "matched_live_scene_intervals": 21,
+      "summary": {
+        "objects": 125,
+        "judged": 125,
+        "hits": 3,
+        "hit_rate": 0.024,
+        "accuracy": 0.27485380116959063,
+        "points": 14100,
+        "accuracy_max": 51300,
+        "score_counts": {
+          "head:300": 1,
+          "tick:30": 37,
+          "tail:150": 77,
+          "circle:0": 45,
+          "head:0": 77,
+          "tick:0": 12,
+          "repeat:30": 18,
+          "spinner:300": 2,
+          "repeat:0": 3,
+          "tail:0": 1
+        },
+        "scoring_revision": "lazer-standard-v1",
+        "scoring_scope": "whole-map",
+        "max_combo": 4,
+        "slider_parts_hit": 132,
+        "slider_parts_total": 148,
+        "slider_tracking_hit_rate": 0.8918918918918919,
+        "results": {
+          "300": 3,
+          "100": 0,
+          "50": 0,
+          "miss": 122
+        },
+        "components_hit": 133,
+        "components_missed": 93
+      }
+    }
+  ],
+  "limits": "Python/JavaScript port parity and upstream unit-vector checks, not an end-to-end native client comparison."
+}

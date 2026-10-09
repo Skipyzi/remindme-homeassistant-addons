@@ -42,6 +42,8 @@ class Controller:
         self.directory.mkdir(parents=True, exist_ok=True)
         for folder in ['models', 'maps']:
             (self.directory/folder).mkdir(exist_ok=True)
+        from .beatmaps import upgrade_cached_maps
+        self.map_rules_upgrade=upgrade_cached_maps(self.directory/'maps')
         # A saved frame from an older observation layout cannot be displayed
         # using the current mapping. The worker replaces it on its next frame.
         saved_scene=read_json(self.directory/'scene.json',{})
@@ -132,7 +134,7 @@ class Controller:
             state.update({'version':VERSION,'observation_view':view(),'worker_running': running, 'options':{key:value for key,value in self.options.items() if key!='remote_token'},
                           'checkpoints': self.checkpoints(),
                           'maps': self.maps(), 'parameters': sum(math.prod(shape) for shape in SHAPES.values()),
-                          'server_play': {'available': False, 'reason': 'Practice only. Native ruleset and multiplayer integration are not available in this release.'},
+                          'server_play': {'available': False, 'reason': 'Practice only. Multiplayer and leaderboard submission are not available in this release.'},
                           'remote': {'enabled': self.options['remote_training'], 'port': self.options['remote_port'], 'token': self.remote_token,
                                      'attached': {key: self.remote[key] for key in ['name', 'cores', 'processes', 'environments', 'since']} if remote else None},
                           'trainer': 'remote' if remote else 'local','model_library':self.models_library.status()})
@@ -482,7 +484,7 @@ class Handler(BaseHTTPRequestHandler):
                 if name not in {item['name'] for item in controller.checkpoints()}:
                     return self.send({'error': 'Checkpoint not found'}, 404)
                 return self.send((controller.directory/'models'/name).read_bytes(), content_type='application/octet-stream', filename=name)
-            if path in ['/', '/index.html', '/app.js', '/style.css', '/icon.svg']:
+            if path in ['/', '/index.html', '/app.js', '/rules.js', '/style.css', '/icon.svg']:
                 name = 'index.html' if path == '/' else path[1:]
                 file = self.server.web/name
                 return self.send(file.read_bytes(), content_type=mimetypes.guess_type(name)[0] or 'application/octet-stream')

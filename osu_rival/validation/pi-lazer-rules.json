@@ -1,0 +1,188 @@
+{
+  "version": "0.7.0",
+  "date": "2026-10-09",
+  "source_backup": "/share/osu-rival-maintenance/before-lazer-rules-20261009-045420",
+  "scoring_revision": "lazer-standard-v1",
+  "validation": {
+    "pinned_container_tests": 71,
+    "real_map_parity_steps": 20510,
+    "matched_judgment_events": 1383,
+    "matched_live_scene_intervals": 63,
+    "native_client_comparison": false
+  },
+  "upgrade": {
+    "latest_weights_byte_exact_before_resume": true,
+    "initial_weights_byte_exact": true,
+    "sidecar_byte_exact_before_resume": true,
+    "before_steps": 559616,
+    "before_updates": 577,
+    "preserved_model_id": "00bb73e51e534613851135acfa89570d",
+    "pc_image_matches_reviewed_python_modules": 16,
+    "rebuilt_real_map_caches": 100,
+    "pc_map_json_matches_pi_digests": true,
+    "personal_profiles_linked": 0
+  },
+  "live": {
+    "status": "paused",
+    "steps": 573952,
+    "updates": 591,
+    "first_rollout": {
+      "steps": 1024,
+      "reward": -22.02238655090332,
+      "environments": 8,
+      "processes": 4,
+      "score_reward": -17.616666666666667,
+      "feedback_reward": -4.4057187328185305,
+      "score_events": 65,
+      "feedback_events": 905,
+      "loss": 0.04445082106394693,
+      "policy_loss": -0.012288521917071193,
+      "value_loss": 0.17692232743138447,
+      "entropy": 3.172182112932205,
+      "approx_kl": 0.0031211223104037344,
+      "clip_fraction": 0.02783203125,
+      "steps_per_second": 471.7
+    },
+    "parallel": {
+      "environments": 8,
+      "processes": 4
+    },
+    "heldout_evaluation": {
+      "update": 578,
+      "stage": 0,
+      "hit_rate": 0.1111111111111111,
+      "accuracy": 0.058212058212058215,
+      "baseline": 0.059771309771309775,
+      "evaluation_protocol": "lazer-judgments-v3",
+      "objects": 486,
+      "unique_objects": 162,
+      "seed_count": 3,
+      "slider_tracking_hit_rate": 0.11274509803921569,
+      "slider_parts_total": 204
+    },
+    "last_error": null,
+    "runs": [
+      {
+        "index": 0,
+        "same_map": false,
+        "before_time": 231333.33333329024,
+        "after_time": 19650.0,
+        "new_revision": "lazer-standard-v1",
+        "scoring_scope": "whole-map"
+      },
+      {
+        "index": 1,
+        "same_map": true,
+        "before_time": 164066.66666666273,
+        "after_time": 196066.6666666441,
+        "new_revision": "lazer-standard-v1",
+        "scoring_scope": "new judgments after rules upgrade"
+      },
+      {
+        "index": 2,
+        "same_map": false,
+        "before_time": 5533.333333333345,
+        "after_time": 1950.0000000000032,
+        "new_revision": "lazer-standard-v1",
+        "scoring_scope": "whole-map"
+      },
+      {
+        "index": 3,
+        "same_map": false,
+        "before_time": 55033.33333333105,
+        "after_time": 8866.666666666702,
+        "new_revision": "lazer-standard-v1",
+        "scoring_scope": "whole-map"
+      },
+      {
+        "index": 4,
+        "same_map": true,
+        "before_time": 27933.333333333936,
+        "after_time": 58216.66666666392,
+        "new_revision": "lazer-standard-v1",
+        "scoring_scope": "new judgments after rules upgrade"
+      },
+      {
+        "index": 5,
+        "same_map": false,
+        "before_time": 168383.33333332688,
+        "after_time": 15983.33333333311,
+        "new_revision": "lazer-standard-v1",
+        "scoring_scope": "whole-map"
+      },
+      {
+        "index": 6,
+        "same_map": true,
+        "before_time": 49849.99999999847,
+        "after_time": 81850.00000000093,
+        "new_revision": "lazer-standard-v1",
+        "scoring_scope": "new judgments after rules upgrade"
+      },
+      {
+        "index": 7,
+        "same_map": false,
+        "before_time": 75583.33333333244,
+        "after_time": 18716.6666666666,
+        "new_revision": "lazer-standard-v1",
+        "scoring_scope": "whole-map"
+      }
+    ]
+  },
+  "watch": {
+    "real_map_id": "a60619a837a72dc946b3626e",
+    "objects": 40,
+    "frames": 4434,
+    "summary": {
+      "objects": 40,
+      "judged": 40,
+      "hits": 7,
+      "hit_rate": 0.175,
+      "accuracy": 0.06018518518518518,
+      "points": 910,
+      "accuracy_max": 15120,
+      "score_counts": {
+        "circle:0": 23,
+        "head:0": 9,
+        "tick:0": 43,
+        "repeat:0": 4,
+        "tail:0": 10,
+        "head:100": 2,
+        "circle:50": 4,
+        "tail:150": 1,
+        "circle:300": 1,
+        "tick:30": 2,
+        "spinner:0": 1
+      },
+      "scoring_revision": "lazer-standard-v1",
+      "scoring_scope": "whole-map",
+      "max_combo": 1,
+      "slider_parts_hit": 3,
+      "slider_parts_total": 60,
+      "slider_tracking_hit_rate": 0.05,
+      "results": {
+        "300": 1,
+        "100": 2,
+        "50": 4,
+        "miss": 33
+      },
+      "components_hit": 5,
+      "components_missed": 66
+    },
+    "python_browser_points_max_hits_combo_match": true,
+    "model_and_parallel_sidecar_unchanged": true
+  },
+  "browser": {
+    "desktop": [
+      1280,
+      800
+    ],
+    "mobile": [
+      390,
+      844
+    ],
+    "horizontal_overflow": false,
+    "error_message": "",
+    "parallel_canvases": 8
+  },
+  "limits": "Default unmodified lazer rule ports, 60 Hz inputs and sampled curves. This validates mechanics and persistence, not improved native play or authoritative leaderboard score."
+}

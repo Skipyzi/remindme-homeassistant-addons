@@ -48,6 +48,8 @@ def package_archive():
     with tarfile.open(fileobj=stream, mode='w:gz') as archive:
         for file in sorted(PACKAGE.glob('*.py')):
             archive.add(file, arcname=f'rival/{file.name}')
+        notice=PACKAGE.parent/'THIRD_PARTY_NOTICES.md'
+        if notice.is_file():archive.add(notice,arcname=notice.name)
     return stream.getvalue()
 
 

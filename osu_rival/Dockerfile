@@ -8,6 +8,7 @@ RUN pip install --no-cache-dir --only-binary=:all: -r requirements.txt \
     && useradd --system --uid 10001 --home-dir /data rival
 COPY rival/ ./rival/
 COPY web/ ./web/
+COPY THIRD_PARTY_NOTICES.md ./THIRD_PARTY_NOTICES.md
 COPY run.sh /run.sh
 RUN chmod 0755 /run.sh
 EXPOSE 8099

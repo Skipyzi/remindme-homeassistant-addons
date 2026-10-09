@@ -44,7 +44,7 @@
   </div>
   <div class="cards">
     <section class="card">
-      <h3>Accuracy on withheld maps <small id="split"></small></h3>
+      <h3>Lazer practice accuracy <small id="split"></small></h3>
       <div class="kpi"><b id="kpi-acc">—</b><span>started at <span id="kpi-base">—</span></span><span class="up" id="kpi-gain"></span></div>
       <canvas class="chart" id="chart"></canvas>
       <div class="chart-legend"><span><i class="sw-pink"></i>Accuracy</span><span><i class="sw-mint"></i>Objects hit</span><span><i class="sw-muted"></i>Starting model</span></div>
@@ -52,7 +52,7 @@
     <section class="card">
       <h3>Training <small id="active-model"></small></h3>
       <p class="note" id="active-profile"></p>
-      <div class="stats"><div><small>Updates</small><b id="updates">0</b></div><div><small>Maps finished</small><b id="maps-done">0</b></div><div><small>Steps</small><b id="steps">0</b></div><div><small>Objects hit</small><b id="hits">—</b></div></div>
+      <div class="stats"><div><small>Updates</small><b id="updates">0</b></div><div><small>Maps finished</small><b id="maps-done">0</b></div><div><small>Steps</small><b id="steps">0</b></div><div><small>Objects hit</small><b id="hits">—</b></div><div><small>Slider parts held</small><b id="slider-hits">—</b></div></div>
       <p class="phase" id="phase"></p>
       <p class="where" id="where"></p>
       <div class="row"><a class="btn" id="download" href="api/checkpoints/latest.npz" download>Download model</a><label class="btn ghost file">Import<input type="file" id="ckpt" accept=".npz"></label><button class="btn ghost" id="models-open" type="button">Models</button><button class="btn ghost" id="remote-open" type="button">Train on another computer</button></div>

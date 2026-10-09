@@ -1,3 +1,5 @@
+import {createJudge,sliderPosition,sceneAt,spinnerProgress,SCORING_REVISION} from './rules.js';
+export {sliderPosition} from './rules.js';
 // osu! Rival web app (Arena layout). One file: the app's security policy only serves app.js, style.css and index.html.
 // osu! Rival front-end core: API calls, status polling, the practice-field renderer, attempt playback and the
 // play-against judge. Layouts import this and only decide where things go. The judge and slider maths match the
@@ -20,11 +22,11 @@ export const STATUS = {
 };
 export const statusOf = state => STATUS[state.status || 'paused'] || [state.status, 'idle'];
 export const isTraining = state => Boolean(state.worker_running) && state.status !== 'watching';
-export const latestEval = state => state.evaluation || state.history?.at(-1) || null;
-export const baselineOf = state => Object.values(state.baselines || {}).at(-1) || null;
+export const latestEval = state => {const ev=state.evaluation || state.history?.at(-1);return ev && (ev.scoring_revision===SCORING_REVISION || ev.evaluation_protocol==='lazer-judgments-v3')?ev:null;};
+export const baselineOf = state => Object.values(state.baselines || {}).filter(ev=>ev.scoring_revision===SCORING_REVISION).at(-1) || null;
 export const evaluationHistory = state => {
   const history = state.history || [], protocol = history.at(-1)?.evaluation_protocol;
-  return history.filter(point => point.evaluation_protocol === protocol);
+  return protocol==='lazer-judgments-v3'?history.filter(point => point.evaluation_protocol === protocol):[];
 };
 
 /** Polls /api/status every second while the page is visible and calls `onChange(state)`. */
@@ -69,17 +71,6 @@ export function createStore(onChange, onError) {
 export const FIELD_THEME = {bg: '#0d1326', grid: '#1b2743', object: '#aba5fa', slider: '#aba5fa44', ball: '#f3f4fa', approach: '#aba5fa88',
   spinner: '#aba5fa', spin: '#92dec6', rival: '#f187b8', human: '#92dec6', text: '#f3f4fa', miss: '#f187b8', edge: '#ffffff10', trail: true};
 
-export function sliderPosition(object, time) {
-  const progress = Math.max(0, Math.min(object.repeats, (time - object.time) / object.span));
-  const repeat = Math.min(object.repeats - 1, Math.floor(progress)); let fraction = progress - repeat;
-  if (repeat % 2) fraction = 1 - fraction;
-  const distance = fraction * object.length;
-  let index = 1; while (index < object.distances.length - 1 && object.distances[index] < distance) index++;
-  if (object.path.length === 1) return object.path[0];
-  fraction = (distance - object.distances[index - 1]) / Math.max(1e-6, object.distances[index] - object.distances[index - 1]);
-  return object.path[index - 1].map((value, axis) => value + fraction * (object.path[index][axis] - value));
-}
-
 /** A canvas that draws the playfield; resizes with its element and draws crisp on high-DPI screens. */
 export function createField(canvas, theme = FIELD_THEME) {
   const ctx = canvas.getContext('2d');
@@ -112,15 +103,16 @@ export function createField(canvas, theme = FIELD_THEME) {
       if (object.kind === 'spinner') {
         ctx.strokeStyle = theme.spinner; ctx.lineWidth = 4 * dpr; ctx.beginPath(); ctx.arc(256 * s, 192 * s, 135 * s, 0, Math.PI * 2); ctx.stroke();
         ctx.strokeStyle = theme.spin; ctx.beginPath();
-        ctx.arc(256 * s, 192 * s, 120 * s, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * Math.max(0, Math.min(1, (time - object.time) / (object.end_time - object.time)))); ctx.stroke();
+        ctx.arc(256 * s, 192 * s, 120 * s, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * Math.max(0,Math.min(1,spinnerProgress(object,scene.od)))); ctx.stroke();
         ctx.globalAlpha = 1; continue;
       }
       if (object.kind === 'slider') {
         ctx.strokeStyle = theme.slider; ctx.lineWidth = r * 2; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.beginPath();
         object.path.forEach((p, i) => i ? ctx.lineTo(p[0] * s, p[1] * s) : ctx.moveTo(p[0] * s, p[1] * s)); ctx.stroke();
-        if (time >= object.time) { const ball = sliderPosition(object, time); ctx.strokeStyle = theme.ball; ctx.lineWidth = 3 * dpr; ctx.beginPath(); ctx.arc(ball[0] * s, ball[1] * s, r, 0, Math.PI * 2); ctx.stroke(); }
+        if (time >= object.time) { const ball = sliderPosition(object, time);
+          if(object.tracking){ctx.strokeStyle=theme.human;ctx.lineWidth=2*dpr;ctx.beginPath();ctx.arc(ball[0]*s,ball[1]*s,r*2.4,0,Math.PI*2);ctx.stroke();} ctx.strokeStyle = theme.ball; ctx.lineWidth = 3 * dpr; ctx.beginPath(); ctx.arc(ball[0] * s, ball[1] * s, r, 0, Math.PI * 2); ctx.stroke(); }
       }
-      if (until >= -scene.windows[2]) {
+      if ((object.kind==='circle' || object.head===null) && until >= -scene.windows[2]) {
         ctx.fillStyle = theme.object + '30'; ctx.strokeStyle = theme.object; ctx.lineWidth = 2.5 * dpr; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
         ctx.strokeStyle = theme.approach; ctx.lineWidth = 2 * dpr; ctx.beginPath(); ctx.arc(x, y, r * (1 + 2 * Math.max(0, until) / scene.approach_ms), 0, Math.PI * 2); ctx.stroke();
       }
@@ -140,7 +132,8 @@ export function createField(canvas, theme = FIELD_THEME) {
       ctx.globalAlpha = 1 - (time - event.time) / 400;
       ctx.font = `700 ${20 * dpr}px system-ui, sans-serif`; ctx.textAlign = 'center';
       ctx.fillStyle = event.result ? (event.result === 300 ? theme.human : theme.text) : theme.miss;
-      ctx.fillText(event.result || 'miss', event.x * s, event.y * s - (time - event.time) / 25 * dpr); ctx.globalAlpha = 1;
+      const marker=event.part==='tick'||event.part==='repeat'?(event.result?'tick':'slider break'):event.part==='tail'?(event.result?'tail':'tail missed'):event.result||'miss';
+      ctx.fillText(marker, event.x * s, event.y * s - (time - event.time) / 25 * dpr); ctx.globalAlpha = 1;
     }
     ctx.restore();
   }
@@ -169,7 +162,7 @@ export function createField(canvas, theme = FIELD_THEME) {
 export function liveView(field, store, {pixels = () => false, onScene} = {}) {
   const POLL = 250;
   let busy = false, on = true, raf = 0, buffer = [], gaps = [], speed = 1;
-  const sameRun = (a, b) => a.map?.id === b.map?.id && a.end_time === b.end_time && b.time >= a.time;
+  const sameRun = (a, b) => a.scoring_revision === b.scoring_revision && a.map?.id === b.map?.id && a.end_time === b.end_time && b.time >= a.time;
   const delay = () => { if (!gaps.length) return 600; const sorted = [...gaps].sort((x, y) => x - y); return Math.max(300, Math.min(3000, sorted[sorted.length >> 1] * 1.5)); };
   async function poll() {
     if (!on || busy || document.hidden || !store.state.worker_running) return; busy = true;
@@ -190,9 +183,9 @@ export function liveView(field, store, {pixels = () => false, onScene} = {}) {
     if (trail?.length) {
       let i = 0; while (i < trail.length - 1 && trail[i + 1][0] <= time) i++;
       const p = trail[i], q = trail[i + 1];
-      if (!q || time <= p[0]) return [[p[1], p[2]], p[3]];
+      if (!q || time <= p[0]) return [[p[1], p[2]], p[3],p[4],p[5]];
       const g = (time - p[0]) / Math.max(1e-6, q[0] - p[0]);
-      return [[p[1] + (q[1] - p[1]) * g, p[2] + (q[2] - p[2]) * g], p[3]];
+      return [[p[1] + (q[1] - p[1]) * g, p[2] + (q[2] - p[2]) * g], p[3],p[4],p[5]];
     }
     return [[a.scene.cursor[0] + (b.scene.cursor[0] - a.scene.cursor[0]) * f, a.scene.cursor[1] + (b.scene.cursor[1] - a.scene.cursor[1]) * f], f < .5 ? a.scene.keys : b.scene.keys];
   }
@@ -205,15 +198,8 @@ export function liveView(field, store, {pixels = () => false, onScene} = {}) {
     let scene = a.scene;
     if (b && show >= a.at) {
       const f = Math.min(1, (show - a.at) / Math.max(1, b.at - a.at)), time = a.scene.time + (b.scene.time - a.scene.time) * f;
-      const [cursor, keys] = cursorAt(a, b, time, f);
-      // Objects judged by `time` show their result; objects that came into view by then come from the next snapshot.
-      const later = new Map(b.scene.objects.map(o => [o.id, o])), seen = new Set();
-      const objects = [];
-      for (const o of a.scene.objects) { seen.add(o.id); const n = later.get(o.id); objects.push(n && n.result !== null && n.end_time <= time ? {...o, result: n.result} : o); }
-      for (const o of b.scene.objects) if (!seen.has(o.id) && o.time - b.scene.approach_ms <= time) objects.push({...o, result: o.end_time <= time ? o.result : null});
-      objects.sort((x, y) => x.time - y.time);
-      const judgedBy = (s, t) => s.last_judgment && s.last_judgment.time <= t ? s.last_judgment : null;
-      scene = {...b.scene, time, cursor, keys, objects, last_judgment: judgedBy(b.scene, time) || judgedBy(a.scene, time)};
+      const [cursor, keys,tracking,spins] = cursorAt(a, b, time, f);
+      scene=sceneAt(a.scene,b.scene,time,cursor,keys,tracking,spins);
     }
     field.draw(scene); onScene?.(scene, {speed});
     raf = requestAnimationFrame(frame);
@@ -232,7 +218,7 @@ export function playAttempt(field, attempt, {challenge = false, maps = [], onFra
   const on = (target, type, fn, opts) => { target.addEventListener(type, fn, opts); listeners.push([target, type, fn]); };
   field.resetTrail();
   if (challenge) {
-    human = {objects: structuredClone(attempt.scene.objects), points: 0, hits: 0, combo: 0, best: 0, keyState: 0, windows: attempt.scene.windows, time: 0};
+    human = createJudge(attempt.scene);
     const move = event => {
       const box = canvas.getBoundingClientRect(), vp = field.viewport(attempt.scene.observation_view);
       const x = (event.clientX - box.left) / box.width * canvas.width, y = (event.clientY - box.top) / box.height * canvas.height;
@@ -246,41 +232,9 @@ export function playAttempt(field, attempt, {challenge = false, maps = [], onFra
     on(window, 'blur', () => { pressed = mouse = 0; });
   }
   const scene = attempt.scene, frames = attempt.frames;
-  function judgeStep() {
-    const keys = pressed | mouse, rising = keys & ~human.keyState, time = human.time, next = time + 1000 / 60;
-    human.keyState = keys;
-    const judge = (object, result) => { object.result = result; human.points += result; if (result) { human.hits++; human.combo++; human.best = Math.max(human.best, human.combo); } else human.combo = 0; human.last = {id: object.id, result, time, x: object.x, y: object.y}; };
-    if (rising) for (const object of human.objects) {
-      if (object.result !== null || object.kind === 'spinner' || object.head !== null) continue;
-      const error = Math.abs(time - object.time);
-      if (error <= human.windows[2] && Math.hypot(pointer[0] - object.x, pointer[1] - object.y) <= scene.radius) {
-        const result = error <= human.windows[0] ? 300 : error <= human.windows[1] ? 100 : 50;
-        if (object.kind === 'circle') judge(object, result); else { object.head = result; object.components_hit++; }
-      }
-      break;
-    }
-    for (const object of human.objects) {
-      if (object.result !== null) continue;
-      if (object.kind === 'circle' && next > object.time + human.windows[2]) judge(object, 0);
-      else if (object.kind === 'slider') {
-        if (object.head === null && next > object.time + human.windows[2]) object.head = 0;
-        while (object.checkpoint_index < object.checkpoints.length && object.checkpoints[object.checkpoint_index] <= next) {
-          const target = sliderPosition(object, object.checkpoints[object.checkpoint_index]);
-          if (keys && Math.hypot(pointer[0] - target[0], pointer[1] - target[1]) <= scene.radius * 2.4) object.components_hit++;
-          object.checkpoint_index++;
-        }
-        if (next >= Math.max(object.end_time, object.time + human.windows[2])) { const f = object.components_hit / (1 + object.checkpoints.length); judge(object, f === 1 ? 300 : f >= .5 ? 100 : f > 0 ? 50 : 0); }
-      } else if (object.kind === 'spinner') {
-        if (time >= object.time && time < object.end_time) {
-          const dx = pointer[0] - 256, dy = pointer[1] - 192, angle = Math.atan2(dy, dx);
-          if (keys && Math.hypot(dx, dy) >= 24) { if (object.last_angle !== null) { const d = Math.abs(((angle - object.last_angle + Math.PI) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2) - Math.PI); object.rotation += Math.min(d, .5); } object.last_angle = angle; } else object.last_angle = null;
-        }
-        if (next >= object.end_time) { const map = maps.find(m => m.id === scene.map?.id), need = Math.max(1, (object.end_time - object.time) / 1000 * (3 + (map?.od ?? 5) * .2)); const f = object.rotation / (2 * Math.PI * need); judge(object, f >= 1 ? 300 : f >= .9 ? 100 : f >= .75 ? 50 : 0); }
-      }
-    }
-  }
+  function judgeStep() {human.step(pointer,pressed | mouse);}
   // Full maps have thousands of frames and hundreds of events: walk them once instead of searching every frame.
-  const events = [...attempt.events].sort((a, b) => a.time - b.time), rival = {points: 0, hits: 0, combo: 0, best: 0, last: null};
+  const events = [...attempt.events].sort((a, b) => a.time - b.time), rival = {points: 0, accuracyMax: 0, hits: 0, combo: 0, best: 0, last: null};
   const shown = human ? null : scene.objects.map(o => ({...o, result: null})), byId = shown && new Map(shown.map(o => [o.id, o]));
   let fi = 0, ei = 0;
   function frame(now) {
@@ -289,16 +243,21 @@ export function playAttempt(field, attempt, {challenge = false, maps = [], onFra
     while (fi < frames.length - 1 && frames[fi + 1][0] <= time) fi++;
     const f = frames[fi];
     while (ei < events.length && events[ei].time <= time) {
-      const e = events[ei++]; rival.points += e.result; rival.last = e;
-      if (e.result) { rival.hits++; rival.combo++; rival.best = Math.max(rival.best, rival.combo); } else rival.combo = 0;
-      if (byId?.has(e.id)) byId.get(e.id).result = e.result;
+      const e = events[ei++]; rival.points += e.accuracy_points ?? e.result; rival.accuracyMax += e.accuracy_max ?? 300;
+      if(e.part !== 'complete')rival.last = e;
+      if(!e.part || ['circle','spinner','head'].includes(e.part))if(e.result)rival.hits++;
+      if(e.combo_after !== undefined){rival.combo=e.combo_after;rival.best=e.max_combo_after;}
+      else if(e.result){rival.combo++;rival.best=Math.max(rival.best,rival.combo);}else rival.combo=0;
+      if(byId?.has(e.id)){const o=byId.get(e.id);if(e.part==='head')o.head=e.result;if(e.complete !== false)o.result=e.result;}
     }
-    if (human) while (human.time <= time) { judgeStep(); human.time += 1000 / 60; }
+    if (human) while (human.time <= time) judgeStep();
+    if(shown && f[4])for(const object of shown)object.tracking=f[4].includes(object.id);
+    if(shown && f[5])for(const [id,rotation] of f[5])if(byId.has(id))byId.get(id).rotation=rotation;
     const objects = human ? human.objects : shown;
     field.draw({...scene, objects, last_judgment: human ? human.last : rival.last}, time, [f[1], f[2]], human ? pointer : null);
     const total = scene.objects.length;
-    onFrame?.({time, end: frames.at(-1)[0], rival: {...rival, accuracy: rival.points / (300 * total)}, human: human && {points: human.points, hits: human.hits, combo: human.combo, best: human.best, accuracy: human.points / (300 * total)}, total});
-    if (time >= frames.at(-1)[0]) { stop(false); onEnd?.({rival: attempt.summary, human: human && {accuracy: human.points / (300 * total), hits: human.hits, best: human.best}}); return; }
+    onFrame?.({time, end: frames.at(-1)[0], rival: {...rival, accuracy: rival.points / Math.max(1,rival.accuracyMax)}, human: human && {points: human.points, hits: human.hits, combo: human.combo, best: human.best, accuracy: human.points / Math.max(1,human.accuracyMax)}, total});
+    if (time >= frames.at(-1)[0]) { stop(false); onEnd?.({rival: attempt.summary, human: human && {accuracy: human.points / Math.max(1,human.accuracyMax), hits: human.hits, best: human.best}}); return; }
     raf = requestAnimationFrame(frame);
   }
   function stop(clean = true) { stopped = true; cancelAnimationFrame(raf); for (const [t, type, fn] of listeners) t.removeEventListener(type, fn); }
@@ -410,6 +369,7 @@ function render(state) {
   $('split').textContent = ev?.seed_count ? `${fmt(ev.unique_objects)} real objects × ${ev.seed_count} seeds` : state.test_split ? `checked on ${state.test_split}` : '';
   drawChart($('chart'), evaluationHistory(state), undefined, {height: 150, extra: [['hit_rate', '#92dec6']]});
   $('updates').textContent = fmt(state.updates); $('maps-done').textContent = fmt(state.completed_maps ?? state.episodes); $('steps').textContent = fmt(state.steps); $('hits').textContent = ev ? percent(ev.hit_rate) : '—';
+  $('slider-hits').textContent = ev?.slider_parts_total ? percent(ev.slider_tracking_hit_rate) : '—';
   $('phase').textContent = state.phase || '';
   const away = state.remote?.attached, par = state.parallel;
   $('where').textContent = away ? `On ${away.name}: ${fmt(away.environments)} environments on ${fmt(away.processes)} of ${fmt(away.cores)} cores` : par ? `${fmt(par.environments)} environments on ${fmt(par.processes)} cores` : '';

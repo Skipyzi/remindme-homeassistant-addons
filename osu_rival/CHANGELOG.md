@@ -1,3 +1,12 @@
+# 0.7.0
+
+- Port default osu!lazer head timing, slider tracking, key ownership, ticks/repeats, tail leniency and component accuracy/combo rules.
+- Port input ordering, hit-window boundaries, map stacking and signed spinner history.
+- Rebuild parsed caches from unchanged authored maps, retaining backups and saved playheads.
+- Use matching Python/browser judges and recorded tracking states; align live judgments and scores with displayed actions.
+- Show slider parts held separately and start a new evaluation series for the new judge.
+- Retain model weights and optimizer; document the port's scope and upstream MIT attribution.
+
 # 0.6.0
 
 - Give training bounded feedback for aim progress on visible real map objects, alongside existing hit/miss rewards. The model still receives pixels only.
