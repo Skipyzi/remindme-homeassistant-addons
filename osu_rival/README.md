@@ -78,6 +78,28 @@ PYTHONPATH=. OPENBLAS_NUM_THREADS=1 python3 scripts/benchmark_learning.py \
 
 Keep the source checkpoint and map library unchanged between those commands.
 They start equal full-map runs and write reports without replacing saved models.
+
+For a broader comparison with the starting model, run:
+
+```sh
+PYTHONPATH=. OPENBLAS_NUM_THREADS=1 python3 scripts/compare_checkpoints.py \
+  --maps /path/to/saved/maps --current /path/to/copied/latest.npz \
+  --initial /path/to/copied/initial.npz --output /tmp/paired-comparison.json
+```
+
+This samples two additional sections per withheld map and five new matched
+action seeds. It excludes the chart's sections, compares a control with only
+trained output biases, and reports a paired confidence interval by resampling
+whole maps. It reads copied checkpoints and never updates or installs weights.
+
+A frozen model at update 1,627 scored 9.88% on 40 additional sections across
+20 withheld maps and five new seeds, versus 6.09% for its starting model. A
+control using only trained output biases scored 7.70%. The paired map
+bootstrap estimated a gain over the starting model of 2.74 to 4.87 percentage
+points at 95% confidence. This supports modest improvement on this library;
+accuracy remains poor, and one checkpoint does not establish continued gains
+or reliable native play. The report is `validation/paired-learning-20261010.json`.
+
 Before the lazer rule port, a 200-update comparison using the earlier practice
 judge reached 10.3% withheld accuracy with aim feedback versus 8.6% with score
 rewards alone. Those numbers do not establish improvement under the new judge. This is one training seed, scored
