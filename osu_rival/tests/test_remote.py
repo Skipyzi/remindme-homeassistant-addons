@@ -33,6 +33,18 @@ def library_with(directory, count=3):
 
 
 class ParallelTests(unittest.TestCase):
+    def test_aim_feedback_reaches_primary_and_subprocess_runs(self):
+        from rival.environment import Environment
+        first=Environment(library=self.library)
+        trainer=Trainer(Policy(3),self.library,Path(self.temporary.name)/'maps',2,2,7,first=first,reward_feedback=True)
+        try:
+            result=trainer.update(np.random.default_rng(1),steps=64,minibatch=32)
+            self.assertTrue(first.reward_feedback)
+            self.assertGreater(result['feedback_events'],64)
+            self.assertEqual(result['steps'],128)
+            self.assertTrue(np.isfinite(result['feedback_reward']))
+        finally:trainer.close()
+
     def setUp(self):
         real_maps()   # skips without real beatmaps
         self.temporary = tempfile.TemporaryDirectory()

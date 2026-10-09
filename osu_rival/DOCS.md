@@ -17,7 +17,19 @@ positions and timing. Learning updates continue during the run without
 restarting the map. The field shows elapsed time and how many objects have been
 judged. Full maps completed counts attempts since full-map training was added.
 
-Evaluation checks short sections from withheld maps. With only one saved map,
+Training rewards include hit/miss judgments and bounded feedback for moving
+toward visible objects. Object positions are used by the reward judge, never
+passed to the model. The added feedback is discounted potential change, so
+hovering near an object cannot accumulate free return over a complete run.
+Training still plays the original complete maps.
+
+Evaluation checks eight short sections from withheld maps using three fixed
+action seeds every 50 updates. It scores actual hits and misses without aim
+feedback. The first training update after upgrading also refreshes the comparison.
+The chart starts a new series when the evaluation method changes; previous
+results stay saved in the checkpoint. Higher accuracy is not guaranteed by
+more updates: learning is still experimental and current scores remain low.
+With only one saved map,
 no independent test accuracy is shown. Add another real map to enable it.
 The model receives four 80 × 64 grayscale images. They include the full
 512 × 384 playfield and a 64 game-pixel margin on every side, at one image pixel

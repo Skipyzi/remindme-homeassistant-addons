@@ -1,0 +1,118 @@
+{
+  "version": "0.6.0",
+  "status": "paused",
+  "steps": 554496,
+  "updates": 572,
+  "checkpoint_sha256": "e816fb4dc26221212c7126048b626461600b3af9b73af333f88ad46612f9284a",
+  "checkpoint_and_run_match": true,
+  "pi_workstation_checkpoint_match": true,
+  "saved_parallel_runs": 8,
+  "reward_feedback": "aim-progress-v1",
+  "training": {
+    "steps": 1024,
+    "reward": -21.498313784599304,
+    "environments": 8,
+    "processes": 4,
+    "score_reward": -15.758333333333335,
+    "feedback_reward": -5.7399812347199,
+    "score_events": 80,
+    "feedback_events": 1024,
+    "loss": 0.027163283695699647,
+    "policy_loss": -0.016286124853650108,
+    "value_loss": 0.1492075709393248,
+    "entropy": 3.1154382042586803,
+    "approx_kl": 0.0053442094213096425,
+    "clip_fraction": 0.04736328125,
+    "steps_per_second": 1026.1
+  },
+  "evaluation": {
+    "episodes": 24,
+    "objects": 486,
+    "unique_objects": 162,
+    "hit_rate": 0.16872427983539096,
+    "accuracy": 0.0644718792866941,
+    "seeds": [
+      91000,
+      91011,
+      91022
+    ],
+    "seed_count": 3,
+    "protocol": "paired-seeds-v2"
+  },
+  "new_evaluation_series_points": 1,
+  "retained_history_points": 49,
+  "profiles_linked": 0,
+  "tests_passed": 59,
+  "backup": "/share/osu-rival-maintenance/before-learning-feedback-20261009-035935",
+  "limits": "Live check verifies correct training and persistence, not learning improvement after a few updates.",
+  "runs_resumed_without_restart": [
+    {
+      "index": 0,
+      "map_before": "250f02562e2f7d1d9bbb04aa",
+      "map_after": "250f02562e2f7d1d9bbb04aa",
+      "time_before": 188666.6666666484,
+      "time_after": 218533.3333332977,
+      "advanced_to_next_full_map": false
+    },
+    {
+      "index": 1,
+      "map_before": "f5b0a4bf456375f29473305f",
+      "map_after": "f5b0a4bf456375f29473305f",
+      "time_before": 121400.00000001244,
+      "time_after": 151266.66666667018,
+      "advanced_to_next_full_map": false
+    },
+    {
+      "index": 2,
+      "map_before": "11762cc2f33359ef2e8e441d",
+      "map_after": "11762cc2f33359ef2e8e441d",
+      "time_before": 76633.33333333275,
+      "time_after": 106500.0000000081,
+      "advanced_to_next_full_map": false
+    },
+    {
+      "index": 3,
+      "map_before": "f6840086338e88eead2cbb20",
+      "map_after": "f6840086338e88eead2cbb20",
+      "time_before": 12366.666666666575,
+      "time_after": 42233.333333332914,
+      "advanced_to_next_full_map": false
+    },
+    {
+      "index": 4,
+      "map_before": "3adb13852114364bb4dd205d",
+      "map_after": "8165aec8f3457293054a6b4b",
+      "time_before": 99033.33333333927,
+      "time_after": 15133.333333333141,
+      "advanced_to_next_full_map": true
+    },
+    {
+      "index": 5,
+      "map_before": "5cb36cca1ee38a09f30bb8bb",
+      "map_after": "5cb36cca1ee38a09f30bb8bb",
+      "time_before": 125716.66666668036,
+      "time_after": 155583.33333333433,
+      "advanced_to_next_full_map": false
+    },
+    {
+      "index": 6,
+      "map_before": "55bccd668e088028360a65a9",
+      "map_after": "55bccd668e088028360a65a9",
+      "time_before": 7183.333333333375,
+      "time_after": 37050.000000000335,
+      "advanced_to_next_full_map": false
+    },
+    {
+      "index": 7,
+      "map_before": "995f701242cecb9202342634",
+      "map_after": "995f701242cecb9202342634",
+      "time_before": 32916.6666666676,
+      "time_after": 62783.33333332992,
+      "advanced_to_next_full_map": false
+    }
+  ],
+  "desktop_width": 1280,
+  "mobile_width": 390,
+  "horizontal_overflow": false,
+  "service_restart_retained_paused_progress": true
+}

@@ -22,6 +22,10 @@ export const statusOf = state => STATUS[state.status || 'paused'] || [state.stat
 export const isTraining = state => Boolean(state.worker_running) && state.status !== 'watching';
 export const latestEval = state => state.evaluation || state.history?.at(-1) || null;
 export const baselineOf = state => Object.values(state.baselines || {}).at(-1) || null;
+export const evaluationHistory = state => {
+  const history = state.history || [], protocol = history.at(-1)?.evaluation_protocol;
+  return history.filter(point => point.evaluation_protocol === protocol);
+};
 
 /** Polls /api/status every second while the page is visible and calls `onChange(state)`. */
 export function createStore(onChange, onError) {
@@ -403,8 +407,8 @@ function render(state) {
   $('kpi-acc').textContent = ev ? percent(ev.accuracy) : '—'; $('kpi-base').textContent = base ? percent(base.accuracy) : '—';
   const gain = ev && base ? Math.round((ev.accuracy - base.accuracy) * 100) : null;
   $('kpi-gain').textContent = gain === null ? '' : `${gain > 0 ? '+' : gain < 0 ? '−' : '±'}${Math.abs(gain)} points`; $('kpi-gain').className = gain > 0 ? 'up' : 'down';
-  $('split').textContent = state.test_split ? `checked on ${state.test_split}` : '';
-  drawChart($('chart'), state.history, undefined, {height: 150, extra: [['hit_rate', '#92dec6']]});
+  $('split').textContent = ev?.seed_count ? `${fmt(ev.unique_objects)} real objects × ${ev.seed_count} seeds` : state.test_split ? `checked on ${state.test_split}` : '';
+  drawChart($('chart'), evaluationHistory(state), undefined, {height: 150, extra: [['hit_rate', '#92dec6']]});
   $('updates').textContent = fmt(state.updates); $('maps-done').textContent = fmt(state.completed_maps ?? state.episodes); $('steps').textContent = fmt(state.steps); $('hits').textContent = ev ? percent(ev.hit_rate) : '—';
   $('phase').textContent = state.phase || '';
   const away = state.remote?.attached, par = state.parallel;
@@ -484,7 +488,7 @@ $('train').onclick = async () => { $('train').disabled = true; try { await store
 $('sync').onclick = async () => { try { await store.sync(); } catch (e) { error(e.message); } };
 $('osu').onchange = async e => { const f = e.target.files[0]; if (!f) return; try { const m = await store.importMap(f); $('sync-note').textContent = `Imported ${m.title}.`; } catch (err) { error(err.message); } e.target.value = ''; };
 $('ckpt').onchange = async e => { const f = e.target.files[0]; if (!f) return; try { await store.importCheckpoint(f); $('saved').textContent = 'Model imported.'; } catch (err) { error(err.message); } e.target.value = ''; };
-new ResizeObserver(() => drawChart($('chart'), store.state.history, undefined, {height: 150, extra: [['hit_rate', '#92dec6']]})).observe($('chart'));
+new ResizeObserver(() => drawChart($('chart'), evaluationHistory(store.state), undefined, {height: 150, extra: [['hit_rate', '#92dec6']]})).observe($('chart'));
 function insideModel(state) {
   const view = state.observation_view; if (view) $('eye-size').textContent = `${view.width} × ${view.height}`;
   $('m-params').textContent = `${fmt(state.parameters)} parameters`; $('m-source').textContent = state.training_source || 'Real beatmaps';

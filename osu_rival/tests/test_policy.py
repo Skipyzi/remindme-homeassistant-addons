@@ -8,10 +8,23 @@ import numpy as np
 from rival.environment import Environment
 from _maps import real_map
 from rival.vision import OBSERVATION_SHAPE,PADDING,FEATURE_HEIGHT,FEATURE_WIDTH,FEATURE_OFFSET
-from rival.policy import Policy, advantages_and_returns, conv_backward, conv_forward, evaluate, update, LEGACY_SHAPES, softmax
+from rival.policy import Policy, advantages_and_returns, conv_backward, conv_forward, evaluate, evaluate_many, update, LEGACY_SHAPES, softmax
 
 
 class PolicyTests(unittest.TestCase):
+    def test_batched_evaluation_matches_individual_raw_judgments(self):
+        beatmap=real_map();sections=[(beatmap,0,6000)]
+        policy=Policy(42);seeds=(91000,91011,91022)
+        individual=[evaluate(policy,sections,seed=seed) for seed in seeds]
+        before={key:value.copy() for key,value in policy.parameters.items()}
+        combined=evaluate_many(policy,sections,seeds)
+        self.assertEqual(combined['objects'],sum(result['objects'] for result in individual))
+        self.assertEqual(combined['episodes'],3)
+        self.assertEqual(combined['unique_objects'],individual[0]['objects'])
+        for key in ('accuracy','hit_rate'):
+            self.assertAlmostEqual(combined[key],float(np.mean([result[key] for result in individual])))
+        for key,value in before.items():np.testing.assert_array_equal(value,policy.parameters[key])
+
     def test_gae_does_not_bootstrap_across_episode_boundaries(self):
         advantages, returns = advantages_and_returns(np.array([1.,2.],np.float32),np.array([.4,.5],np.float32),[True,True],999)
         np.testing.assert_allclose(returns,[1,2])

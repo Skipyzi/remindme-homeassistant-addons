@@ -192,3 +192,49 @@ The workstation service remains attached and the app is paused. Details are in
 `validation/pi-bot-profiles.json`.
 
 Source backup: `before-pi-run-preservation-20261009-032414`.
+
+## Learning feedback and broader evaluation, 0.6.0
+
+The screenshot's checkpoint contained 541,184 steps and 559 updates. Its weights
+and Adam state had changed, but withheld accuracy remained weak. A paired offline
+comparison started both variants from that exact checkpoint and identical fresh
+whole-map runs, using eight environments across four processes on the same 80
+training maps. No player replays or generated maps were used.
+
+After 200 updates and 204,800 steps each, score rewards alone reached 8.57%
+accuracy; bounded aim-progress feedback reached 10.30%. Evaluation used 12 real
+withheld sections, 199 objects with each of three fixed action seeds. This is
+one training seed, not three independent training replications. At 100 updates
+the feedback variant was 10.78%, so improvement was not monotonic. The results
+support a small experimental gain, not strong native osu! ability. The full
+report is `validation/learning-feedback.json`. Experimental checkpoints were
+not installed into the model library.
+
+Training now adds discounted potential change from the cursor's distance to
+visible unfinished objects. Actual hit/miss judging is unchanged. Positions
+stay in the reward engine; the policy receives the same four pixel frames.
+Tests verify identical pixels and judgments for the same actions, and that
+hovering cannot earn extra discounted return through a complete missed run.
+
+The app now evaluates eight withheld sections with three fixed seeds every
+50 updates, plus the first update after changing evaluation methods. Evaluation
+uses raw judgments without aim feedback. The chart displays only results from
+the latest evaluation method while retaining earlier points in the checkpoint.
+The live expanded comparison gave 6.45% accuracy versus its initial model's
+6.38% on 162 objects and 486 judgments. This was after the first new update,
+not the separately trained 200-update experiment.
+
+All 59 tests passed in the pinned runtime with actual cached map fixtures.
+Version 0.6.0 was deployed with a guarded ten-file source overlay. The source
+backup is `before-learning-feedback-20261009-035935` under the Pi maintenance
+directory. The original checkpoint was retained byte for byte through the
+upgrade and separately backed up before live verification.
+
+Live verification ran thirteen complete updates, then paused. The checkpoint
+contains 554,496 steps and 572 updates. Every parallel run was saved; seven
+continued the same maps and one finished and advanced by its configured stride.
+The Pi and workstation checkpoint hashes match. Workstation service restart
+reattached without changing progress or starting training. The active model
+has no server profile link. Desktop and mobile checks found no horizontal
+overflow and confirmed the separate evaluation series. Details are in
+`validation/pi-learning-feedback.json`.

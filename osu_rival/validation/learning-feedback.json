@@ -1,0 +1,227 @@
+{
+  "source": "real authored cached beatmaps only; no replays",
+  "starting_steps": 541184,
+  "starting_updates": 559,
+  "maps": 100,
+  "training_maps": 80,
+  "withheld_maps": 20,
+  "checkpoint_sha256": "989134c2a19e1fb4d1e994533202cf8165858e77f07b049b57c3b7689706e412",
+  "training_seed": 321,
+  "optimizer_seed": 123,
+  "environments": 8,
+  "processes": 4,
+  "rollout_steps_per_environment": 128,
+  "updates_per_variant": 200,
+  "steps_per_variant": 204800,
+  "evaluation_sections": 12,
+  "evaluation_seeds": [
+    91000,
+    91011,
+    91022
+  ],
+  "unique_objects_per_seed": 199,
+  "judgments_per_evaluation": 597,
+  "before": {
+    "initial": [
+      {
+        "episodes": 12,
+        "objects": 199,
+        "hit_rate": 0.18090452261306533,
+        "accuracy": 0.0745393634840871,
+        "seed": 91000
+      },
+      {
+        "episodes": 12,
+        "objects": 199,
+        "hit_rate": 0.1507537688442211,
+        "accuracy": 0.05527638190954774,
+        "seed": 91011
+      },
+      {
+        "episodes": 12,
+        "objects": 199,
+        "hit_rate": 0.1708542713567839,
+        "accuracy": 0.0695142378559464,
+        "seed": 91022
+      }
+    ],
+    "before": [
+      {
+        "episodes": 12,
+        "objects": 199,
+        "hit_rate": 0.19095477386934673,
+        "accuracy": 0.08458961474036851,
+        "seed": 91000
+      },
+      {
+        "episodes": 12,
+        "objects": 199,
+        "hit_rate": 0.21608040201005024,
+        "accuracy": 0.10385259631490787,
+        "seed": 91011
+      },
+      {
+        "episodes": 12,
+        "objects": 199,
+        "hit_rate": 0.18090452261306533,
+        "accuracy": 0.076214405360134,
+        "seed": 91022
+      }
+    ]
+  },
+  "score_only": {
+    "variant": "score-only",
+    "feedback": false,
+    "elapsed_seconds": 330.4213796110125,
+    "history": [
+      {
+        "update": 100,
+        "accuracy": 0.08403126744835288,
+        "hit_rate": 0.19932998324958126,
+        "results": [
+          {
+            "episodes": 12,
+            "objects": 199,
+            "hit_rate": 0.20100502512562815,
+            "accuracy": 0.07956448911222781,
+            "seed": 91000
+          },
+          {
+            "episodes": 12,
+            "objects": 199,
+            "hit_rate": 0.18090452261306533,
+            "accuracy": 0.0829145728643216,
+            "seed": 91011
+          },
+          {
+            "episodes": 12,
+            "objects": 199,
+            "hit_rate": 0.21608040201005024,
+            "accuracy": 0.08961474036850921,
+            "seed": 91022
+          }
+        ]
+      },
+      {
+        "update": 200,
+        "accuracy": 0.08570630932439978,
+        "hit_rate": 0.21105527638190957,
+        "results": [
+          {
+            "episodes": 12,
+            "objects": 199,
+            "hit_rate": 0.18592964824120603,
+            "accuracy": 0.06448911222780569,
+            "seed": 91000
+          },
+          {
+            "episodes": 12,
+            "objects": 199,
+            "hit_rate": 0.22613065326633167,
+            "accuracy": 0.09296482412060302,
+            "seed": 91011
+          },
+          {
+            "episodes": 12,
+            "objects": 199,
+            "hit_rate": 0.22110552763819097,
+            "accuracy": 0.09966499162479062,
+            "seed": 91022
+          }
+        ]
+      }
+    ],
+    "totals": {
+      "score_reward": -1731.2999999999997,
+      "feedback_reward": 0.0,
+      "score_events": 11473,
+      "feedback_events": 0,
+      "steps": 204800
+    },
+    "std": [
+      0.6388562321662903,
+      0.6725842952728271
+    ]
+  },
+  "aim_feedback": {
+    "variant": "progress-feedback",
+    "feedback": true,
+    "elapsed_seconds": 326.92298227301217,
+    "history": [
+      {
+        "update": 100,
+        "accuracy": 0.10776102735901731,
+        "hit_rate": 0.25963149078726966,
+        "results": [
+          {
+            "episodes": 12,
+            "objects": 199,
+            "hit_rate": 0.2613065326633166,
+            "accuracy": 0.10385259631490787,
+            "seed": 91000
+          },
+          {
+            "episodes": 12,
+            "objects": 199,
+            "hit_rate": 0.2914572864321608,
+            "accuracy": 0.13819095477386933,
+            "seed": 91011
+          },
+          {
+            "episodes": 12,
+            "objects": 199,
+            "hit_rate": 0.22613065326633167,
+            "accuracy": 0.0812395309882747,
+            "seed": 91022
+          }
+        ]
+      },
+      {
+        "update": 200,
+        "accuracy": 0.10301507537688442,
+        "hit_rate": 0.2412060301507538,
+        "results": [
+          {
+            "episodes": 12,
+            "objects": 199,
+            "hit_rate": 0.24623115577889448,
+            "accuracy": 0.10887772194304858,
+            "seed": 91000
+          },
+          {
+            "episodes": 12,
+            "objects": 199,
+            "hit_rate": 0.25125628140703515,
+            "accuracy": 0.11474036850921274,
+            "seed": 91011
+          },
+          {
+            "episodes": 12,
+            "objects": 199,
+            "hit_rate": 0.22613065326633167,
+            "accuracy": 0.08542713567839195,
+            "seed": 91022
+          }
+        ]
+      }
+    ],
+    "totals": {
+      "score_reward": -1286.9583333333333,
+      "feedback_reward": -943.5551373925716,
+      "score_events": 11479,
+      "feedback_events": 194172,
+      "steps": 204800
+    },
+    "std": [
+      0.5820196270942688,
+      0.6448500752449036
+    ]
+  },
+  "limitations": [
+    "One training seed; three evaluation action seeds, not three training replications.",
+    "Both variants use the same saved model and authored maps; fresh identical full-map rollout positions.",
+    "Raw approximate practice judgments, with aim feedback disabled during evaluation.",
+    "Small gain with non-monotonic accuracy; no evidence of strong native osu! ability.",
+    "Experimental checkpoints were not installed into the live model library."
+  ]
+}

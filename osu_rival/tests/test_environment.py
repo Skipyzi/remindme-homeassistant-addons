@@ -10,6 +10,7 @@ from rival.environment import Environment,FRAME_MS,parse_beatmap
 from rival.beatmaps import slider_position,MapLibrary
 from rival.storage import atomic_json
 from rival.vision import PADDING,PIXELS_PER_UNIT
+from rival.rewards import DISCOUNT,aim_potential
 
 
 def aim(x,y):
@@ -51,6 +52,35 @@ class EnvironmentTests(unittest.TestCase):
         _,reward,done=env.step((aim(0,0),0))
         self.assertEqual(reward,-.5);self.assertTrue(done)
         self.assertEqual(env.step((aim(0,0),0))[1],0)
+
+    def test_feedback_preserves_actual_judgments_and_pixel_input(self):
+        score=Environment(beatmap=self.map);feedback=Environment(beatmap=self.map,reward_feedback=True)
+        rng=np.random.default_rng(9)
+        for _ in range(128):
+            action=(rng.normal(size=2),int(rng.integers(4)))
+            potential=aim_potential(feedback)
+            a,raw,done=score.step(action);b,shaped,other_done=feedback.step(action)
+            np.testing.assert_array_equal(a,b)
+            self.assertEqual(done,other_done);self.assertEqual(score.summary(),feedback.summary())
+            expected=DISCOUNT*(aim_potential(feedback) if not done else 0)-potential
+            self.assertAlmostEqual(shaped-raw,expected)
+
+    def test_feedback_rewards_aim_progress_without_a_free_game_hit(self):
+        env=self.single('circle');env.reward_feedback=True;obj=env.objects[0]
+        env.cursor=[512 if obj['x']<256 else 0,384 if obj['y']<192 else 0]
+        _,toward,_=env.step((aim(obj['x'],obj['y']),0))
+        self.assertGreater(toward,0);self.assertEqual(env.summary()['hits'],0)
+        _,away,_=env.step((aim(512 if obj['x']<256 else 0,384 if obj['y']<192 else 0),0))
+        self.assertLess(away,0);self.assertEqual(env.summary()['hits'],0)
+
+    def test_feedback_cannot_add_discounted_return_by_hovering_until_a_miss(self):
+        env=self.single('circle');env.reward_feedback=True;initial=aim_potential(env)
+        total=0.0;discount=1.0;done=False
+        while not done:
+            _,_,done=env.step((aim(env.objects[0]['x'],env.objects[0]['y']),0))
+            total+=discount*env.last_reward['feedback'];discount*=DISCOUNT
+        self.assertAlmostEqual(total,-initial,places=7)
+        self.assertEqual(env.summary()['hits'],0);self.assertEqual(env.summary()['results']['miss'],1)
 
     def test_slider_requires_tracking_and_uses_real_timing(self):
         env=self.single('slider');obj=env.objects[0];env.time=obj['time']

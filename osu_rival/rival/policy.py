@@ -13,6 +13,7 @@ import numpy as np
 from numpy.lib.stride_tricks import sliding_window_view
 
 from .storage import atomic_bytes
+from .rewards import DISCOUNT
 from .vision import OBSERVATION_SHAPE,LEGACY_OBSERVATION_SHAPE,FEATURE_HEIGHT,FEATURE_WIDTH,LEGACY_FEATURE_HEIGHT,LEGACY_FEATURE_WIDTH,FEATURE_OFFSET
 
 SHAPES = {
@@ -24,6 +25,8 @@ SHAPES = {
 }
 LEGACY_SHAPES = {**SHAPES,'fw':(8*LEGACY_FEATURE_HEIGHT*LEGACY_FEATURE_WIDTH,32)}
 LOG_2PI = math.log(2 * math.pi)
+EVALUATION_REVISION='paired-seeds-v2'
+EVALUATION_SEEDS=(91000,91011,91022)
 
 
 def softmax(logits):
@@ -245,7 +248,7 @@ class Policy:
         return policy, metadata
 
 
-def advantages_and_returns(rewards, values, dones, bootstrap, gamma=.99, lam=.95):
+def advantages_and_returns(rewards, values, dones, bootstrap, gamma=DISCOUNT, lam=.95):
     advantages = np.zeros(len(rewards), np.float32)
     last = 0.0
     for index in reversed(range(len(rewards))):
@@ -277,9 +280,38 @@ def evaluate(policy, sections, seed=91000, tick=None):
             'seed':seed}
 
 
+def evaluate_many(policy,sections,seeds=EVALUATION_SEEDS,tick=None):
+    """Raw osu! judgments across paired seeds, with batched visual inference."""
+    from .environment import Environment
+    if not seeds:raise ValueError('At least one evaluation seed is required')
+    entries=[(Environment(seed=seed+index,section=section),np.random.default_rng(seed+index+100000),seed)
+             for seed in seeds for index,section in enumerate(sections)]
+    active=list(entries)
+    while active:
+        if tick:tick()
+        # Bound temporary convolution buffers on the Pi as well as on a workstation.
+        following=[]
+        for start in range(0,len(active),8):
+            batch=active[start:start+8]
+            means,probabilities,_=policy.forward(np.stack([env.observation() for env,_,_ in batch]))
+            for row,(env,rng,seed) in enumerate(batch):
+                latent=(means[row]+np.exp(policy.parameters['logstd'])*rng.normal(size=2)).astype(np.float32)
+                probabilities_row=probabilities[row].astype(np.float64);probabilities_row/=probabilities_row.sum()
+                keys=int(rng.choice(4,p=probabilities_row))
+                _,_,done=env.step((latent,keys))
+                if not done:following.append((env,rng,seed))
+        active=following
+    objects=sum(len(env.objects) for env,_,_ in entries)
+    return {'episodes':len(entries),'objects':objects,'unique_objects':objects//len(seeds),
+            'hit_rate':sum(env.summary()['hits'] for env,_,_ in entries)/max(1,objects),
+            'accuracy':sum(env.summary()['points'] for env,_,_ in entries)/max(1,300*objects),
+            'seeds':list(seeds),'seed_count':len(seeds),'protocol':EVALUATION_REVISION}
+
+
 def update(policy, env, rng, steps=512, epochs=4, minibatch=32, progress=None, interrupt=None):
     observations, latents, keys, logps, values, rewards, dones = [], [], [], [], [], [], []
     episodes = []
+    reward_stats={'score_reward':0.0,'feedback_reward':0.0,'score_events':0,'feedback_events':0}
     observation = env.observation()
     for index in range(steps):
         if interrupt and interrupt():
@@ -291,6 +323,8 @@ def update(policy, env, rng, steps=512, epochs=4, minibatch=32, progress=None, i
         logps.append(logp)
         values.append(value)
         observation, reward, done = env.step((latent, key))
+        reward_stats['score_reward']+=env.last_reward['score'];reward_stats['feedback_reward']+=env.last_reward['feedback']
+        reward_stats['score_events']+=int(env.last_reward['score']!=0);reward_stats['feedback_events']+=int(abs(env.last_reward['feedback'])>1e-8)
         rewards.append(reward)
         dones.append(done)
         if progress:
@@ -318,4 +352,4 @@ def update(policy, env, rng, steps=512, epochs=4, minibatch=32, progress=None, i
         if np.mean([item['approx_kl'] for item in stats[-math.ceil(steps/minibatch):]]) > .03:
             break
     metrics = {key: float(np.mean([stat[key] for stat in stats])) for key in stats[0]}
-    return {'steps': steps, 'episodes': episodes, 'reward': float(np.sum(rewards)), **metrics}
+    return {'steps': steps, 'episodes': episodes, 'reward': float(np.sum(rewards)), **reward_stats, **metrics}

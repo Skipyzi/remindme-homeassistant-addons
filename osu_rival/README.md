@@ -67,9 +67,18 @@ python3 -m rival.server --data /tmp/osu-rival --host 127.0.0.1 --port 8099
 The model can be measured only with a library of actual imported maps:
 
 ```sh
-OPENBLAS_NUM_THREADS=1 python3 scripts/benchmark_learning.py --maps /tmp/osu-rival/maps --updates 20
+PYTHONPATH=. OPENBLAS_NUM_THREADS=1 python3 scripts/benchmark_learning.py \
+  --maps /tmp/osu-rival/maps --checkpoint /tmp/osu-rival/models/latest.npz \
+  --updates 200 --output /tmp/score-only.json
+PYTHONPATH=. OPENBLAS_NUM_THREADS=1 python3 scripts/benchmark_learning.py \
+  --maps /tmp/osu-rival/maps --checkpoint /tmp/osu-rival/models/latest.npz \
+  --updates 200 --feedback --output /tmp/aim-feedback.json
 ```
 
-No improvement on full osu! maps has been established yet. A learning run must
-be judged against the saved random model on withheld real maps. Longer training
-may be necessary, and strong play from random initialization is not guaranteed.
+Keep the source checkpoint and map library unchanged between those commands.
+They start equal full-map runs and write reports without replacing saved models.
+The checked 200-update comparison reached 10.3% withheld accuracy with aim
+feedback versus 8.6% with score rewards alone. This is one training seed, scored
+with three action seeds on 12 real sections. Improvement was small and not
+monotonic; it does not establish strong native osu! play. Results are in
+`validation/learning-feedback.json`.

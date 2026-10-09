@@ -65,11 +65,12 @@ def sample_batch(policy, observations, rng):
 
 class Shard:
     """Some environments, a network bound to the shared weights, and the experience they collected."""
-    def __init__(self, library, indices, count, seed, buffer, slot, first=None, map_offset=0):
+    def __init__(self, library, indices, count, seed, buffer, slot, first=None, map_offset=0, reward_feedback=False):
         self.indices=list(indices)
-        self.envs = [first if (i == 0 and first is not None) else Environment(seed=seed + i, library=library, map_index=map_offset+i, map_stride=count)
+        self.envs = [first if (i == 0 and first is not None) else Environment(seed=seed + i, library=library, map_index=map_offset+i, map_stride=count,reward_feedback=reward_feedback)
                      for i in indices]
         for env in self.envs:
+            env.reward_feedback=reward_feedback
             if env.map_stride != count and env.library:
                 current=next(index for index,(beatmap,_,_) in enumerate(library.training) if beatmap['id']==env.beatmap['id'])
                 env.next_map_index=current+count
@@ -88,6 +89,7 @@ class Shard:
         logps = np.empty((steps, n), np.float32); values = np.empty((steps, n), np.float32)
         rewards = np.empty((steps, n), np.float32); dones = np.empty((steps, n), bool)
         finished = []
+        score_reward=feedback_reward=0.0;score_events=feedback_events=0
         for step in range(steps):
             if interrupt and interrupt():
                 return None
@@ -96,6 +98,8 @@ class Shard:
             following = []
             for index, env in enumerate(self.envs):
                 observation, reward, done = env.step((latent[index], int(key[index])))
+                score_reward+=env.last_reward['score'];feedback_reward+=env.last_reward['feedback']
+                score_events+=int(env.last_reward['score']!=0);feedback_events+=int(abs(env.last_reward['feedback'])>1e-8)
                 if done:
                     finished.append(env.summary())
                     observation = env.reset()
@@ -113,7 +117,8 @@ class Shard:
         self.advantages, self.returns = flat(advantages), flat(returns)
         self.order, self.cursor = None, 0
         adv = self.advantages.astype(np.float64)
-        return {'count': total, 'sum': float(adv.sum()), 'squares': float((adv ** 2).sum()), 'reward': float(rewards.sum()), 'episodes': finished}
+        return {'count': total, 'sum': float(adv.sum()), 'squares': float((adv ** 2).sum()), 'reward': float(rewards.sum()), 'episodes': finished,
+                'score_reward':score_reward,'feedback_reward':feedback_reward,'score_events':score_events,'feedback_events':feedback_events}
 
     def snapshot(self):
         return {'indices':self.indices,'runs':[env.save_run() for env in self.envs],'rng':self.rng.bit_generator.state}
@@ -146,14 +151,14 @@ class Shard:
         return n, {key: value * n for key, value in metrics.items()}
 
 
-def _serve(connection, name, gradient_name, row, maps_directory, indices, count, seed, map_offset):
+def _serve(connection, name, gradient_name, row, maps_directory, indices, count, seed, map_offset,reward_feedback):
     """Worker process: one shard, driven by the main process over a pipe."""
     os.environ['OPENBLAS_NUM_THREADS'] = '1'
     memory, gradient_memory = shared_memory.SharedMemory(name=name), shared_memory.SharedMemory(name=gradient_name)
     shard = None
     try:
         slot = np.ndarray((PARAMETER_SIZE,), np.float32, buffer=gradient_memory.buf, offset=row * PARAMETER_SIZE * 4)
-        shard = Shard(MapLibrary(maps_directory), indices, count, seed, memory.buf, slot, map_offset=map_offset)
+        shard = Shard(MapLibrary(maps_directory), indices, count, seed, memory.buf, slot, map_offset=map_offset,reward_feedback=reward_feedback)
         connection.send('ready')
         while True:
             command, *args = connection.recv()
@@ -180,7 +185,7 @@ def _serve(connection, name, gradient_name, row, maps_directory, indices, count,
 
 class Trainer:
     """Parallel PPO over `count` environments in `processes` processes (the main process is one of them)."""
-    def __init__(self, policy, library, maps_directory, count, processes, seed, first=None):
+    def __init__(self, policy, library, maps_directory, count, processes, seed, first=None,reward_feedback=False):
         self.policy, self.count = policy, count
         processes = max(1, min(processes, count))
         groups = [list(range(count))[i::processes] for i in range(processes)]
@@ -190,12 +195,12 @@ class Trainer:
         self.gradients = np.ndarray((processes, PARAMETER_SIZE), np.float32, buffer=self.gradient_memory.buf)
         self.publish()
         offset=next((index for index,(beatmap,_,_) in enumerate(library.training) if first is not None and beatmap['id']==first.beatmap['id']),0)
-        self.local = Shard(library, groups[0], count, seed, self.memory.buf, self.gradients[0], first=first,map_offset=offset)
+        self.local = Shard(library, groups[0], count, seed, self.memory.buf, self.gradients[0], first=first,map_offset=offset,reward_feedback=reward_feedback)
         context = mp.get_context('spawn')
         self.workers = []
         for row, group in enumerate(groups[1:], 1):
             parent, child = context.Pipe()
-            process = context.Process(target=_serve, args=(child, self.memory.name, self.gradient_memory.name, row, str(maps_directory), group, count, seed, offset), daemon=True)
+            process = context.Process(target=_serve, args=(child, self.memory.name, self.gradient_memory.name, row, str(maps_directory), group, count, seed, offset,reward_feedback), daemon=True)
             process.start(); child.close()
             self.workers.append((process, parent))
         for _, parent in self.workers:
@@ -288,7 +293,8 @@ class Trainer:
         episodes = [episode for r in results for episode in r['episodes']]
         metrics = {key: float(np.mean([stat[key] for stat in stats])) for key in stats[0]}
         return {'steps': total, 'episodes': episodes, 'reward': float(sum(r['reward'] for r in results)),
-                'environments': self.count, 'processes': len(self.workers) + 1, **metrics}
+                'environments': self.count, 'processes': len(self.workers) + 1,
+                **{key:sum(r[key] for r in results) for key in ['score_reward','feedback_reward','score_events','feedback_events']},**metrics}
 
     def close(self):
         for process, parent in self.workers:

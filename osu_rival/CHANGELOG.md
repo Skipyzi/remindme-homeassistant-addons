@@ -1,3 +1,10 @@
+# 0.6.0
+
+- Give training bounded feedback for aim progress on visible real map objects, alongside existing hit/miss rewards. The model still receives pixels only.
+- Grade eight withheld sections with three fixed action seeds every 50 updates. Grade gameplay without the training feedback.
+- Keep chart comparisons within the same evaluation method; retain earlier results in the checkpoint.
+- Retain existing weights, optimizer state and saved parallel map positions.
+
 # 0.5.1
 
 - Preserve waiting workstation runs when the Pi trains alone between PC sessions.

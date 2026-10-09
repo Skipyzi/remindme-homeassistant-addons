@@ -15,7 +15,8 @@ from PIL import Image
 
 from .environment import Environment
 from .beatmaps import MapLibrary
-from .policy import Policy, evaluate, update
+from .policy import Policy,evaluate_many,update,EVALUATION_REVISION,EVALUATION_SEEDS
+from .rewards import REVISION as REWARD_REVISION
 from .parallel import Trainer
 from .storage import atomic_bytes, atomic_json, read_json
 from .vision import view
@@ -85,7 +86,7 @@ class Worker:
                 if key in metadata:
                     self.state[key] = metadata[key]
             self.seed = int(self.state['seed'])
-            self.state['history'] = self.state['history'][-300:]
+            self.state['history'] = self.state['history'][-180:]
             self.state['stage'] = max(int(self.state['stage']),0)
             self.rng = np.random.default_rng(self.seed)
             if 'rng' in metadata:
@@ -112,7 +113,8 @@ class Worker:
                            'training_source':'Real beatmaps, pixels and rewards; no player replays'})
         if not self.library.testing:
             self.state.update(history=[],baselines={})
-        self.env = Environment(library=self.library)
+        self.env = Environment(library=self.library,reward_feedback=True)
+        self.state['reward_feedback']=REWARD_REVISION
         self.parallel_saved=None
         run_path=self.directory/'models/latest-run.json'
         if latest.exists() and run_path.exists() and run_path.stat().st_size<=32*1024*1024:
@@ -121,7 +123,7 @@ class Worker:
                 self.parallel_saved=saved.get('parallel')
                 try:self.env.restore_run(saved['run'])
                 except (ValueError,KeyError,TypeError):
-                    self.env=Environment(library=self.library)
+                    self.env=Environment(library=self.library,reward_feedback=True)
         self.guard_state = resources()
         # Parallel training (a computer with spare cores): several environments in several processes. The Pi keeps
         # the original single environment in one throttled thread.
@@ -159,7 +161,7 @@ class Worker:
         atomic_json(self.directory/'models/latest-run.json',{'checkpoint_sha256':hashlib.sha256(checkpoint).hexdigest(),'run':self.env.save_run(),'parallel':parallel})
 
     def metadata(self):
-        return {key: self.state[key] for key in ['updates', 'steps', 'episodes', 'completed_maps', 'stage', 'history', 'baselines', 'seed']} | {'rng':self.rng.bit_generator.state,'training_format':'real-beatmap-v1','training_strategy':'full-maps-v1'}
+        return {key: self.state[key] for key in ['updates', 'steps', 'episodes', 'completed_maps', 'stage', 'history', 'baselines', 'seed']} | {'rng':self.rng.bit_generator.state,'training_format':'real-beatmap-v1','training_strategy':'full-maps-v1','reward_feedback':REWARD_REVISION}
 
     def tick(self):
         if self.stop or self.control().get('remote_unavailable') or (self.once and not self.control().get('watch')) or (not self.once and not self.control().get('running')):
@@ -288,7 +290,7 @@ class Worker:
                         self.state['phase'] = f'Starting {self.parallel_envs} environments on {self.processes} cores'
                         self.publish(force=True)
                         self.trainer = Trainer(self.policy, self.library, self.directory/'maps', self.parallel_envs,
-                                               self.processes, self.seed + self.state['updates'], first=self.env)
+                                               self.processes, self.seed + self.state['updates'], first=self.env,reward_feedback=True)
                         if self.parallel_saved:
                             try:self.trainer.restore(self.parallel_saved)
                             except (ValueError,KeyError,TypeError):pass
@@ -306,20 +308,23 @@ class Worker:
                 self.state['training'] = {key: value for key, value in result.items() if key != 'episodes'}
                 self.state['training']['steps_per_second']=round(result['steps']/max(.001,time.monotonic()-started),1)
                 self.checkpoint()
-                if self.state['updates']%10 == 0 or self.state['updates']==1:
-                    sections = self.library.evaluation_sections()
+                previous=self.state['history'][-1] if self.state['history'] else {}
+                if self.state['updates']%50 == 0 or previous.get('evaluation_protocol')!=EVALUATION_REVISION:
+                    sections = self.library.evaluation_sections(8)
                     if sections:
                         self.state['phase'] = 'Checking withheld real beatmap sections'
                         self.publish(force=True)
-                        signature = 'full-maps-v1:observation-v2:'+','.join(f"{beatmap['id']}:{start}:{end}" for beatmap,start,end in sections)
+                        signature = EVALUATION_REVISION+':'+','.join(map(str,EVALUATION_SEEDS))+':observation-v2:'+','.join(f"{beatmap['id']}:{start}:{end}" for beatmap,start,end in sections)
                         if signature not in self.state['baselines']:
-                            self.state['baselines'][signature] = evaluate(self.initial,sections,tick=self.tick)
-                        evaluation = evaluate(self.policy,sections,tick=self.tick)
+                            self.state['baselines'][signature] = evaluate_many(self.initial,sections,tick=self.tick)
+                        evaluation = evaluate_many(self.policy,sections,tick=self.tick)
                         self.state['evaluation'] = evaluation
                         point = {'update':self.state['updates'],'stage':self.state['stage'],
                                  'hit_rate':evaluation['hit_rate'],'accuracy':evaluation['accuracy'],
-                                 'baseline':self.state['baselines'][signature]['accuracy']}
-                        self.state['history'] = (self.state['history']+[point])[-300:]
+                                 'baseline':self.state['baselines'][signature]['accuracy'],
+                                 'evaluation_protocol':EVALUATION_REVISION,'objects':evaluation['objects'],
+                                 'unique_objects':evaluation['unique_objects'],'seed_count':evaluation['seed_count']}
+                        self.state['history'] = (self.state['history']+[point])[-180:]
                         best = read_json(self.directory/'models/best.json',{})
                         if signature != best.get('signature') or evaluation['accuracy']>best.get('accuracy',-1):
                             self.policy.save(self.directory/'models/best.npz',self.metadata())
