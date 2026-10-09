@@ -1,0 +1,51 @@
+{
+  "actual_pi_checkpoint": true,
+  "real_map_frames": 200,
+  "maximum_prediction_difference_on_same_central_pixels": 3.8743019104003906e-07,
+  "optimizer_step_retained": 3109,
+  "training_steps_retained": 24576,
+  "parameters": 65477,
+  "observation": [
+    4,
+    64,
+    80
+  ],
+  "cached_maps_checked": 100,
+  "body_geometry_bounds": [
+    -59.98205011042232,
+    -46.62638143472008,
+    568.9473115202757,
+    424.96
+  ],
+  "visible_world_bounds": [
+    -64,
+    -64,
+    576,
+    448
+  ],
+  "unit_tests_passed": 25,
+  "pinned_container_tests_passed": 25,
+  "live_version": "0.2.2",
+  "live_steps": 24576,
+  "live_updates": 48,
+  "live_optimizer_step": 3109,
+  "live_observation": [
+    4,
+    64,
+    80
+  ],
+  "live_frame": [
+    80,
+    64
+  ],
+  "live_status": "paused",
+  "live_worker_resources": {
+    "available_memory_mb": 3684,
+    "temperature_c": 49.6,
+    "worker_memory_mb": null
+  },
+  "live_error": null,
+  "live_weights_and_optimizer_preserved_exactly": true,
+  "backup_sha256": "ea1dd69455b8b5a4faa2aac1868694dbe62f99f3cdd22c5593a610f7e06d26cb",
+  "source_backup": "/share/osu-rival-maintenance/before-observation-padding-20261009-010709"
+}
