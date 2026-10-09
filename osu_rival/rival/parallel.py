@@ -135,6 +135,28 @@ class Shard:
     def normalize(self, mean, std):
         self.normalized = ((self.advantages - mean) / std).astype(np.float32)
 
+    def observations(self):
+        return np.stack([env.observation() for env in self.envs])
+
+    def rng_state(self):
+        return self.rng.bit_generator.state
+
+    def set_rng(self, state):
+        self.rng.bit_generator.state = state
+
+    def play(self, latents, keys):
+        observations, rewards, dones, episodes = [], [], [], []
+        stats = dict.fromkeys(['score_reward','feedback_reward','score_events','feedback_events'], 0)
+        for env, latent, key in zip(self.envs, latents, keys):
+            observation, reward, done = env.step((latent, int(key)))
+            stats['score_reward'] += env.last_reward['score']; stats['feedback_reward'] += env.last_reward['feedback']
+            stats['score_events'] += int(env.last_reward['score'] != 0)
+            stats['feedback_events'] += int(abs(env.last_reward['feedback']) > 1e-8)
+            if done:
+                episodes.append(env.summary()); observation = env.reset()
+            observations.append(observation); rewards.append(reward); dones.append(done)
+        return np.stack(observations), rewards, dones, episodes, stats
+
     def epoch(self):
         self.order, self.cursor = self.rng.permutation(len(self.normalized)), 0
 
@@ -168,6 +190,8 @@ def _serve(connection, name, gradient_name, row, maps_directory, indices, count,
                 shard.normalize(*args); connection.send(None)
             elif command == 'epoch':
                 shard.epoch(); connection.send(None)
+            elif command in ('observations', 'rng_state', 'set_rng', 'play'):
+                connection.send(getattr(shard, command)(*args))
             elif command == 'gradient':
                 connection.send(shard.gradient(*args))
             elif command == 'snapshot':
@@ -185,8 +209,9 @@ def _serve(connection, name, gradient_name, row, maps_directory, indices, count,
 
 class Trainer:
     """Parallel PPO over `count` environments in `processes` processes (the main process is one of them)."""
-    def __init__(self, policy, library, maps_directory, count, processes, seed, first=None,reward_feedback=False):
+    def __init__(self, policy, library, maps_directory, count, processes, seed, first=None,reward_feedback=False, device='cpu'):
         self.policy, self.count = policy, count
+        self.device, self.waiting = device, {}
         processes = max(1, min(processes, count))
         groups = [list(range(count))[i::processes] for i in range(processes)]
         self.memory = shared_memory.SharedMemory(create=True, size=PARAMETER_SIZE * 4)
@@ -233,12 +258,31 @@ class Trainer:
         return sorted([run for shard in self._all('scenes') for run in shard],key=lambda run:run['index'])
 
     def snapshot(self):
-        return {'count':self.count,'shards':self._all('snapshot')}
+        saved = {'count':self.count,'shards':self._all('snapshot')}
+        if self.waiting: saved['waiting'] = self.waiting
+        return saved
 
     def restore(self, saved):
         shards=saved.get('shards',[])
-        if saved.get('count') != self.count or len(shards) != len(self.workers)+1:return False
-        if [part.get('indices') for part in shards] != [list(range(self.count))[index::len(shards)] for index in range(len(shards))]:return False
+        groups = [list(range(self.count))[index::len(self.workers)+1] for index in range(len(self.workers)+1)]
+        if saved.get('count') != self.count or [part.get('indices') for part in shards] != groups:
+            runs = {int(index): run for index, run in saved.get('waiting', {}).items()}
+            for part in shards:
+                if len(part.get('indices', [])) != len(part.get('runs', [])):
+                    raise ValueError('Invalid saved parallel runs')
+                runs.update(zip(part['indices'], part['runs']))
+            current = self._all('snapshot')
+            shards = []
+            for group, part in zip(groups, current):
+                restored = []
+                for index, fresh in zip(group, part['runs']):
+                    run = runs.pop(index, fresh).copy()
+                    # Keep this map's position; future maps use the new stride.
+                    restored.append(run)
+                shards.append({**part, 'runs': restored})
+            self.waiting = {str(index): run for index, run in runs.items()}
+        else:
+            self.waiting = saved.get('waiting', {}).copy()
         # Validate the entire snapshot before sending any commands to the children.
         for part in shards:
             candidate=Shard.__new__(Shard)
@@ -252,6 +296,8 @@ class Trainer:
 
     def update(self, rng, steps=128, epochs=4, minibatch=256, progress=None, interrupt=None, views=None):
         self.publish()
+        if self.device == 'gpu':
+            return self.gpu_update(rng, steps, epochs, minibatch, progress, interrupt, views)
         results = self._all('rollout', steps, local=lambda: self.local.rollout(steps, progress, interrupt))
         if views:views(self.scenes())
         if results[0] is None:
@@ -290,6 +336,84 @@ class Trainer:
                 stats.append(metrics)
             if np.mean([item['approx_kl'] for item in stats[-math.ceil(total / minibatch):]]) > .03:
                 break
+        return self.result(results, total, stats)
+
+    def gpu_update(self, rng, steps, epochs, minibatch, progress, interrupt, views):
+        """Batch every run's visual inference on one GPU; CPU shards advance real maps.
+
+        CPU shards keep their action RNGs and playheads when switching devices.
+        Replies are collected before callbacks so a pause cannot corrupt IPC.
+        """
+        from .accelerator import Optimizer
+        optimizer = Optimizer(self.policy)
+        t = optimizer.torch
+        current = np.concatenate(self._all('observations'))
+        states = self._all('rng_state')
+        streams = [np.random.default_rng() for _ in states]
+        for stream, state in zip(streams, states): stream.bit_generator.state = state
+        sizes = [len(self.local.envs)] + [len(range(i, self.count, len(states))) for i in range(1, len(states))]
+        offsets = np.cumsum([0, *sizes])
+        observations = np.empty((steps, self.count, *current.shape[1:]), np.uint8)
+        latents = np.empty((steps, self.count, 2), np.float32)
+        keys = np.empty((steps, self.count), np.int64)
+        logps = np.empty((steps, self.count), np.float32)
+        values = np.empty((steps, self.count), np.float32)
+        rewards = np.empty_like(values); dones = np.empty_like(values, dtype=bool)
+        episodes, totals = [], dict.fromkeys(['score_reward','feedback_reward','score_events','feedback_events'], 0)
+        def inference(pixels):
+            with t.no_grad():
+                means, probabilities, value = optimizer.forward(t.as_tensor(pixels, device='cuda'))
+                return t.cat([means, probabilities, value[:, None]], dim=1).cpu().numpy()
+        try:
+            for step in range(steps):
+                if interrupt and interrupt(): return None
+                output = inference(current)
+                observations[step] = current
+                means, probabilities = output[:, :2], output[:, 2:6]
+                values[step] = output[:, 6]
+                for start, end, stream in zip(offsets[:-1], offsets[1:], streams):
+                    latent = (means[start:end] + np.exp(self.policy.parameters['logstd']) * stream.normal(size=(end-start, 2))).astype(np.float32)
+                    cumulative = np.cumsum(probabilities[start:end].astype(np.float64), axis=1)
+                    cumulative /= cumulative[:, -1:]
+                    key = np.minimum((stream.random(end-start)[:, None] > cumulative).sum(1), 3).astype(np.int64)
+                    latents[step, start:end], keys[step, start:end] = latent, key
+                logps[step] = self.policy.log_probabilities(means, probabilities, latents[step], keys[step])
+                for (_, parent), start, end in zip(self.workers, offsets[1:-1], offsets[2:]):
+                    parent.send(('play', latents[step, start:end], keys[step, start:end]))
+                # _all() cannot send different actions to each shard. Drain all
+                # replies even if a local environment raises, like CPU rollout.
+                try: local = self.local.play(latents[step, :sizes[0]], keys[step, :sizes[0]])
+                except BaseException:
+                    for _, parent in self.workers: parent.recv()
+                    raise
+                played = [local] + [parent.recv() for _, parent in self.workers]
+                current = np.concatenate([part[0] for part in played])
+                rewards[step] = np.concatenate([part[1] for part in played])
+                dones[step] = np.concatenate([part[2] for part in played])
+                for part in played:
+                    episodes.extend(part[3])
+                    for key in totals: totals[key] += part[4][key]
+                if progress: progress(self.shown, step)
+            bootstrap = inference(current)[:, 6]
+            advantages, returns = np.empty_like(values), np.empty_like(values)
+            for index in range(self.count):
+                advantages[:, index], returns[:, index] = advantages_and_returns(rewards[:, index], values[:, index], dones[:, index], float(bootstrap[index]))
+            flat = lambda a: a.reshape((steps*self.count, *a.shape[2:]))
+            normalized = (advantages - advantages.mean(dtype=np.float64)) / max(float(advantages.std(dtype=np.float64)), 1e-6)
+            data = [flat(a) for a in [observations, latents, keys, logps, normalized.astype(np.float32), returns]]
+            if views: views(self.scenes())
+            stats = optimizer.update([data], rng, epochs, max(32, min(minibatch, steps*self.count)), interrupt)
+            self.publish()
+            if stats is None: return None
+            result = {'episodes': episodes, 'reward': float(rewards.sum()), **totals}
+            return self.result([result], steps*self.count, stats)
+        finally:
+            for (_, parent), stream in zip(self.workers, streams[1:]):
+                parent.send(('set_rng', stream.bit_generator.state))
+            self.local.set_rng(streams[0].bit_generator.state)
+            for _, parent in self.workers: parent.recv()
+
+    def result(self, results, total, stats):
         episodes = [episode for r in results for episode in r['episodes']]
         metrics = {key: float(np.mean([stat[key] for stat in stats])) for key in stats[0]}
         return {'steps': total, 'episodes': episodes, 'reward': float(sum(r['reward'] for r in results)),

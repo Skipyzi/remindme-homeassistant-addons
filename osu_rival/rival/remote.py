@@ -186,6 +186,9 @@ def main():
         signal.signal(signal.SIGINT, lambda *_: stop.set())
     our_signals()
     info = {'name': args.name, 'cores': cores, 'processes': processes, 'environments': environments, 'version': VERSION}
+    from .accelerator import capabilities
+    info['gpu'] = capabilities()
+    affinity = os.sched_getaffinity(0) if hasattr(os, 'sched_getaffinity') else None
     from .worker import Worker
     while not stop.is_set():
         try:
@@ -209,6 +212,15 @@ def main():
             while not stop.is_set():
                 if mirror.disconnected.is_set():break
                 control = read_json(directory/'control.json', {})
+                settings = control.get('trainer_settings') or {'processes': processes, 'environments': environments, 'device': 'cpu'}
+                used = max(1, min(settings['processes'], cores, settings['environments']))
+                if settings.get('device') == 'gpu' and not info['gpu']['available']:
+                    atomic_json(directory/'state.json', {'status': 'error', 'phase': 'GPU training unavailable', 'last_error': info['gpu'].get('reason'), 'trainer_settings': settings})
+                    mirror.push(); stop.wait(1); continue
+                options.update(processes=used, parallel_envs=settings['environments'], device=settings['device'],
+                               memory_limit_mb=4096 + 512*used, trainer_settings=settings)
+                atomic_json(directory/'worker-options.json', options)
+                if affinity is not None: os.sched_setaffinity(0, affinity)
                 watch = control.get('watch')
                 if control.get('running'):
                     print('Training. Pause it in the Rival app, or press Ctrl+C here.', flush=True)

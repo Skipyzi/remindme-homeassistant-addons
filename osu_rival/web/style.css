@@ -120,3 +120,11 @@ footer { color: var(--faint); font-size: 12.5px; text-align: center; }
 @media(max-width:1000px){.parallel-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:520px){.parallel-grid{grid-template-columns:1fr}.parallel-panel{padding:14px}}
 .profile-editor{padding:16px;border:1px solid #ffffff20;border-radius:12px;margin:18px 0}.profile-editor label{display:block;margin:12px 0 6px}.profile-editor .row{margin-top:14px}.model-list a,#active-profile a{color:#92dec6}.profile-editor[hidden]{display:none}
+:root .trainer-controls { margin: 14px 0; border-top: 1px solid #ffffff15; padding-top: 12px; }
+.trainer-controls summary { cursor: pointer; font-weight: 600; }
+.trainer-fields { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; margin-top: 14px; }
+.trainer-fields label { display: grid; gap: 6px; font-size: 12px; color: var(--muted,#9ba8c5); }
+.trainer-fields label:last-child { grid-column: 1 / -1; }
+.trainer-fields input,.trainer-fields select { width: 100%; min-width: 0; box-sizing: border-box; color: inherit; background: #0c1123; border: 1px solid #ffffff25; border-radius: 8px; padding: 9px; font: inherit; }
+.trainer-fields input:focus-visible,.trainer-fields select:focus-visible { outline: 2px solid #d6a8ff; outline-offset: 2px; }
+.trainer-controls .note { font-size: 12px; }

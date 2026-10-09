@@ -374,6 +374,8 @@ function render(state) {
   const away = state.remote?.attached, par = state.parallel;
   $('where').textContent = away ? `On ${away.name}: ${fmt(away.environments)} environments on ${fmt(away.processes)} of ${fmt(away.cores)} cores` : par ? `${fmt(par.environments)} environments on ${fmt(par.processes)} cores` : '';
   if(state.training?.steps_per_second)$('where').textContent+=` · ${fmt(state.training.steps_per_second)} steps/sec`;
+  if(state.trainer_settings?.device === 'gpu')$('where').textContent+=' · GPU learning';
+  drawTrainerSettings(state);
   if (away && isTraining(state)) $('status').lastChild.textContent = `Training on ${away.name}`;
   if (!$('remote-sheet').hidden && $('remote-sheet').classList.contains('open')) drawRemote(state);
   const saved = state.checkpoints?.find(c => c.name === 'latest.npz');
@@ -445,6 +447,33 @@ document.querySelector('.seg').onclick = e => { const b = e.target.closest('butt
 $('again').onclick = () => start(mode === 'challenge'); $('back-live').onclick = () => setMode('live');
 $('pixels').onchange = () => { if (mode !== 'live') setMode('live'); };
 $('train').onclick = async () => { $('train').disabled = true; try { await store.toggleTraining(); } catch (e) { error(e.message); } finally { $('train').disabled = false; } };
+
+let trainerDraft = false, trainerLoaded = '';
+function drawTrainerSettings(state) {
+  const remote=state.remote, attached=remote?.attached, settings=remote?.settings || {};
+  $('trainer-controls').hidden=!attached;
+  if(!attached)return;
+  $('trainer-cores').max=Math.min(64, attached.cores);
+  $('trainer-device').querySelector('[value="gpu"]').disabled=!attached.gpu?.available;
+  $('trainer-gpu').textContent=attached.gpu?.available ? `${attached.gpu.name} · ${attached.gpu.runtime}. The model runs on the GPU; map simulations use the CPU.` : `GPU unavailable: ${attached.gpu?.reason || 'Install a GPU runtime on the trainer.'}`;
+  if(!trainerDraft && trainerLoaded!==settings.id) {
+    $('trainer-cores').value=settings.processes ?? attached.processes;
+    $('trainer-runs').value=settings.environments ?? attached.environments;
+    $('trainer-device').value=settings.device || 'cpu'; trainerLoaded=settings.id;
+  }
+  if(!trainerDraft)$('trainer-result').textContent=state.trainer_settings?.id===settings.id ? 'Settings applied' : isTraining(state) ? 'Applying settings…' : 'Applies when training starts';
+}
+$('trainer-form').oninput=()=>{trainerDraft=true; $('trainer-result').textContent='';};
+$('trainer-form').onsubmit=async event=>{
+  event.preventDefault(); $('trainer-apply').disabled=true;
+  try {
+    const processes=Number($('trainer-cores').value), environments=Number($('trainer-runs').value);
+    if(environments<processes)throw new Error('Use at least one parallel run per CPU core.');
+    store.state=await api('api/trainer/settings', {processes, environments, device:$('trainer-device').value});
+    trainerDraft=false; trainerLoaded=''; drawTrainerSettings(store.state);
+  } catch(e) { $('trainer-result').textContent=e.message; }
+  finally { $('trainer-apply').disabled=false; }
+};
 $('sync').onclick = async () => { try { await store.sync(); } catch (e) { error(e.message); } };
 $('osu').onchange = async e => { const f = e.target.files[0]; if (!f) return; try { const m = await store.importMap(f); $('sync-note').textContent = `Imported ${m.title}.`; } catch (err) { error(err.message); } e.target.value = ''; };
 $('ckpt').onchange = async e => { const f = e.target.files[0]; if (!f) return; try { await store.importCheckpoint(f); $('saved').textContent = 'Model imported.'; } catch (err) { error(err.message); } e.target.value = ''; };
@@ -498,7 +527,7 @@ function drawRemote(state) {
     <p>Run these on the PC (Python 3.10 or newer with numpy and Pillow). It downloads this app's trainer, maps and model, takes over training, and sends progress and the live field back here.</p>
     <div class="cmd"><pre>${esc(get)}</pre><button class="btn" type="button" data-copy="${esc(get)}">Copy</button></div>
     <div class="cmd"><pre>${esc(run)}</pre><button class="btn" type="button" data-copy="${esc(run)}">Copy</button></div>
-    <p>By default it uses half the PC's cores at low priority; add <code>--processes 4</code> to use fewer. Ctrl+C on the PC stops it, and the latest model is already saved here. Pause, Watch and Play against it keep working from this page.</p>
+    <p>Once connected, open <b>Trainer settings</b> on the Training card to change CPU cores, parallel runs and GPU learning. Ctrl+C on the PC stops it, and the latest model is already saved here. Pause, Watch and Play against it keep working from this page.</p>
     <p class="note">The token protects the hub. Anyone with it can train this model, so keep it to yourself.</p>`;
 }
 const remoteSheet = open => { $('remote-sheet').hidden = false; $('remote-sheet').classList.toggle('open', open); $('scrim').hidden = !open; if (open) { $('remote-body').dataset.sig = ''; drawRemote(store.state); } };

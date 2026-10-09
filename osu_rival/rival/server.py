@@ -136,7 +136,8 @@ class Controller:
                           'maps': self.maps(), 'parameters': sum(math.prod(shape) for shape in SHAPES.values()),
                           'server_play': {'available': False, 'reason': 'Practice only. Multiplayer and leaderboard submission are not available in this release.'},
                           'remote': {'enabled': self.options['remote_training'], 'port': self.options['remote_port'], 'token': self.remote_token,
-                                     'attached': {key: self.remote[key] for key in ['name', 'cores', 'processes', 'environments', 'since']} if remote else None},
+                                     'attached': {key: self.remote.get(key) for key in ['name', 'cores', 'processes', 'environments', 'since', 'gpu']} if remote else None,
+                                     'settings': read_json(self.directory/'trainer-settings.json', {})},
                           'trainer': 'remote' if remote else 'local','model_library':self.models_library.status()})
             return state
 
@@ -397,8 +398,28 @@ class Controller:
                 atomic_json(self.directory/'control.json', control)
             session = info.get('session') if self.remote and info.get('session') == self.remote.get('session') else uuid.uuid4().hex
             since = self.remote['since'] if self.remote and self.remote.get('session') == session else time.time()
-            self.remote = {'name': name, **numbers, 'session': session, 'seen': time.time(), 'since': since}
-            return {'session': session, 'control': read_json(self.directory/'control.json', {}), 'seed': self.options['seed']}
+            gpu = info.get('gpu', {})
+            if not isinstance(gpu, dict) or type(gpu.get('available', False)) is not bool:
+                raise ValueError('Invalid GPU capabilities')
+            gpu = {'available': gpu.get('available', False), **{k: str(gpu[k])[:240] for k in ['name', 'reason', 'runtime', 'torch'] if k in gpu}}
+            self.remote = {'name': name, **numbers, 'gpu': gpu, 'session': session, 'seen': time.time(), 'since': since}
+            if not (self.directory/'trainer-settings.json').exists():
+                atomic_json(self.directory/'trainer-settings.json', {'processes': numbers['processes'], 'environments': numbers['environments'], 'device': 'cpu', 'id': uuid.uuid4().hex})
+            return {'session': session, 'control': self.remote_control(), 'seed': self.options['seed']}
+
+    def trainer_settings(self, data):
+        with self.lock:
+            if not self.remote_active(): raise ValueError('Connect a PC trainer first')
+            processes, environments, device = data.get('processes'), data.get('environments'), data.get('device')
+            if type(processes) is not int or not 1 <= processes <= min(64, self.remote['cores']):
+                raise ValueError(f"Choose 1 to {min(64, self.remote['cores'])} CPU cores")
+            if type(environments) is not int or not processes <= environments <= 64:
+                raise ValueError('Choose up to 64 parallel runs, with at least one per CPU core')
+            if device not in ('cpu', 'gpu'): raise ValueError('Choose CPU or GPU training')
+            if device == 'gpu' and not self.remote.get('gpu', {}).get('available'):
+                raise ValueError('GPU training is unavailable on the connected computer')
+            atomic_json(self.directory/'trainer-settings.json', {'processes': processes, 'environments': environments, 'device': device, 'id': uuid.uuid4().hex})
+            return self.status()
 
     def remote_detach(self, session):
         with self.lock:
@@ -414,13 +435,18 @@ class Controller:
         with self.lock:
             if self.remote:
                 self.remote['seen'] = time.time()
-            return read_json(self.directory/'control.json', {})
+            return read_json(self.directory/'control.json', {}) | {'trainer_settings': read_json(self.directory/'trainer-settings.json', {})}
 
     def remote_store(self, name, value, generation):
         with self.lock:
             if generation!=self.models_library.generation:raise ValueError('The active model changed. Synchronize the trainer again.')
             self.remote['seen'] = time.time()
             if name == 'state.json':
+                actual = value.get('trainer_settings', {})
+                if actual.get('id') == read_json(self.directory/'trainer-settings.json', {}).get('id'):
+                    for key in ['processes', 'environments']:
+                        if type(actual.get(key)) is int and 1 <= actual[key] <= 64:
+                            self.remote[key] = actual[key]
                 previous = read_json(self.directory/'state.json', {})
                 if 'map_sync' in previous:   # the trainer does not sync maps; keep the hub's record
                     value['map_sync'] = previous['map_sync']
@@ -521,6 +547,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send(controller.start())
             if path == '/api/training/pause':
                 return self.send(controller.pause())
+            if path == '/api/trainer/settings':
+                return self.send(controller.trainer_settings(data))
             if path.startswith('/api/models/'):
                 return self.send(controller.manage_model(path.removeprefix('/api/models/'),data))
             if path == '/api/watch':

@@ -33,6 +33,54 @@ def library_with(directory, count=3):
 
 
 class ParallelTests(unittest.TestCase):
+    def test_gpu_runs_learn_and_pause_keeps_replies_rngs_and_playheads(self):
+        from rival.accelerator import capabilities
+        if not capabilities()['available']: self.skipTest('Optional GPU runtime is not available')
+        policy = Policy(3)
+        trainer = Trainer(policy, self.library, Path(self.temporary.name)/'maps', 2, 2, 7, device='gpu', reward_feedback=True)
+        resumed = None
+        try:
+            result = trainer.update(np.random.default_rng(1), steps=16, epochs=1, minibatch=32)
+            self.assertEqual(result['steps'], 32)
+            self.assertGreater(policy.optimizer_step, 0)
+            self.assertTrue(np.isfinite(result['loss']))
+            before = trainer.snapshot()
+            weights = policy.serialize({})
+            def pause(env, index):
+                if index == 3: raise InterruptedError('pause GPU rollout')
+            with self.assertRaises(InterruptedError):
+                trainer.update(np.random.default_rng(1), steps=16, progress=pause)
+            saved = trainer.snapshot()
+            self.assertEqual(weights, policy.serialize({}))
+            for old, new in zip(before['shards'], saved['shards']):
+                self.assertGreater(new['runs'][0]['time'], old['runs'][0]['time'])
+                self.assertNotEqual(new['rng'], old['rng'])
+            resumed = Trainer(policy, self.library, Path(self.temporary.name)/'maps', 2, 2, 7)
+            self.assertTrue(resumed.restore(saved))
+            self.assertEqual(saved, resumed.snapshot())
+        finally:
+            if resumed: resumed.close()
+            trainer.close()
+
+    def test_changing_cores_and_run_count_keeps_active_and_waiting_maps(self):
+        root = Path(self.temporary.name)
+        policy = Policy(3)
+        trainer = Trainer(policy, self.library, root/'maps', 4, 2, 7)
+        try:
+            trainer.update(np.random.default_rng(1), steps=16, minibatch=32, epochs=1)
+            saved = trainer.snapshot()
+        finally: trainer.close()
+        expected = {i: r for s in saved['shards'] for i, r in zip(s['indices'], s['runs'])}
+        for count, processes in [(4, 1), (2, 2), (4, 2)]:
+            trainer = Trainer(policy, self.library, root/'maps', count, processes, 999)
+            try:
+                self.assertTrue(trainer.restore(saved))
+                saved = trainer.snapshot()
+                actual = {i: r for s in saved['shards'] for i, r in zip(s['indices'], s['runs'])}
+                for i, run in actual.items(): self.assertEqual(run, expected[i])
+                if count == 2: self.assertEqual(set(saved['waiting']), {'2', '3'})
+            finally: trainer.close()
+
     def test_aim_feedback_reaches_primary_and_subprocess_runs(self):
         from rival.environment import Environment
         first=Environment(library=self.library)
@@ -149,6 +197,28 @@ class ParallelTests(unittest.TestCase):
 
 
 class HubTests(unittest.TestCase):
+    def test_resource_settings_are_validated_persisted_and_do_not_pause_or_reset(self):
+        status, body = self.attach()
+        self.session = json.loads(body)['session']
+        from rival.storage import atomic_json
+        root = Path(self.temporary.name)
+        control = read_json(root/'control.json') | {'running': True}
+        atomic_json(root/'control.json', control)
+        generation = self.controller.models_library.generation
+        with self.assertRaises(ValueError): self.controller.trainer_settings({'processes': 17, 'environments': 32, 'device': 'cpu'})
+        with self.assertRaises(ValueError): self.controller.trainer_settings({'processes': True, 'environments': 4, 'device': 'cpu'})
+        with self.assertRaises(ValueError): self.controller.trainer_settings({'processes': 4, 'environments': 2, 'device': 'cpu'})
+        with self.assertRaises(ValueError): self.controller.trainer_settings({'processes': 2, 'environments': 4, 'device': 'gpu'})
+        self.controller.trainer_settings({'processes': 1, 'environments': 4, 'device': 'cpu'})
+        self.assertEqual(read_json(root/'control.json'), control)
+        self.assertEqual(self.controller.models_library.generation, generation)
+        wanted = self.controller.remote_control()['trainer_settings']
+        self.assertEqual((wanted['processes'], wanted['environments']), (1, 4))
+        self.assertEqual(read_json(root/'trainer-settings.json'), wanted)
+        self.controller.remote_store('state.json', {'trainer_settings': wanted}, generation)
+        self.assertEqual(self.controller.status()['remote']['attached']['processes'], 1)
+        atomic_json(root/'control.json', control | {'running': False})
+
     def setUp(self):
         real_maps()
         self.temporary = tempfile.TemporaryDirectory()

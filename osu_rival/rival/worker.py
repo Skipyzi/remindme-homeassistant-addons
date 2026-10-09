@@ -55,6 +55,7 @@ class Worker:
         self.directory = Path(directory)
         self.once = once
         self.options = read_json(self.directory/'worker-options.json', {})
+        self.state_settings = self.options.get('trainer_settings')
         self.seed = int(self.options.get('seed', 42))
         self.stop = False
         self.last_publish = self.last_guard = 0.0
@@ -134,6 +135,11 @@ class Worker:
         self.processes = max(1, min(self.parallel_envs, int(self.options.get('processes', 1))))
         self.trainer = None
         self.trail = []
+        if self.state_settings:
+            self.state['trainer_settings'] = self.state_settings
+
+    def settings_changed(self):
+        return bool(self.state_settings and self.control().get('trainer_settings', {}).get('id') != self.state_settings.get('id'))
 
     def control(self):
         return read_json(self.directory/'control.json', {})
@@ -167,7 +173,7 @@ class Worker:
         return {key: self.state[key] for key in ['updates', 'steps', 'episodes', 'completed_maps', 'stage', 'history', 'baselines', 'seed']} | {'rng':self.rng.bit_generator.state,'training_format':'real-beatmap-v1','training_strategy':'full-maps-v1','reward_feedback':REWARD_REVISION,'scoring_revision':SCORING_REVISION}
 
     def tick(self):
-        if self.stop or self.control().get('remote_unavailable') or (self.once and not self.control().get('watch')) or (not self.once and not self.control().get('running')):
+        if self.stop or self.settings_changed() or self.control().get('remote_unavailable') or (self.once and not self.control().get('watch')) or (not self.once and not self.control().get('running')):
             raise StopWorker()
         now = time.monotonic()
         if now-self.last_guard > 1:
@@ -185,7 +191,7 @@ class Worker:
                 self.state.update({'status': 'resource_pause', 'phase': reason})
                 self.publish(force=True)
                 while reason:
-                    if self.stop or self.control().get('remote_unavailable') or (self.once and not self.control().get('watch')) or (not self.once and not self.control().get('running')):
+                    if self.stop or self.settings_changed() or self.control().get('remote_unavailable') or (self.once and not self.control().get('watch')) or (not self.once and not self.control().get('running')):
                         raise StopWorker()
                     time.sleep(.5)
                     info = resources(children)
@@ -202,7 +208,7 @@ class Worker:
         # Short sleeps keep pause and shutdown responsive. This is a duty-cycle
         # budget for one thread, not a claim of a hard container CPU quota.
         while delay > .002:
-            if self.stop or self.control().get('remote_unavailable') or (self.once and not self.control().get('watch')) or (not self.once and not self.control().get('running')):
+            if self.stop or self.settings_changed() or self.control().get('remote_unavailable') or (self.once and not self.control().get('watch')) or (not self.once and not self.control().get('running')):
                 raise StopWorker()
             time.sleep(min(delay, .05))
             delay = (time.process_time()-self.cpu_start)/fraction - (time.monotonic()-self.wall_start)
@@ -288,14 +294,15 @@ class Worker:
                     if request['id'] != existing.get('id'):
                         self.watch(request)
                 self.state.update({'status': 'training', 'phase': 'Learning from rewards'})
-                interrupt = lambda: self.stop or not self.control().get('running')
+                interrupt = lambda: self.stop or self.settings_changed() or not self.control().get('running')
                 started=time.monotonic()
-                if self.parallel_envs > 1:
+                if self.parallel_envs > 1 or self.state_settings:
                     if self.trainer is None:
                         self.state['phase'] = f'Starting {self.parallel_envs} environments on {self.processes} cores'
                         self.publish(force=True)
                         self.trainer = Trainer(self.policy, self.library, self.directory/'maps', self.parallel_envs,
-                                               self.processes, self.seed + self.state['updates'], first=self.env,reward_feedback=True)
+                                               self.processes, self.seed + self.state['updates'], first=self.env,reward_feedback=True,
+                                               device=self.options.get('device', 'cpu'))
                         if self.parallel_saved:
                             try:self.trainer.restore(self.parallel_saved)
                             except (ValueError,KeyError,TypeError):pass

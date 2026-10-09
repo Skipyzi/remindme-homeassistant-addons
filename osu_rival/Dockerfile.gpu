@@ -1,0 +1,8 @@
+# Same Python and portable model format as the Pi. Optional GPU wheels are
+# mounted read-only at /opt/gpu to avoid copying an 11 GB runtime into layers.
+ARG RIVAL_BASE=localhost/osu-rival:integrated
+FROM ${RIVAL_BASE}
+USER root
+RUN apt-get update && apt-get install -y --no-install-recommends libnuma1 libelf1 libdrm2 \
+    && rm -rf /var/lib/apt/lists/*
+ENV PYTHONPATH=/opt/gpu:/opt/rival

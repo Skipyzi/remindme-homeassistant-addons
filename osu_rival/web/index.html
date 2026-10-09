@@ -55,6 +55,19 @@
       <div class="stats"><div><small>Updates</small><b id="updates">0</b></div><div><small>Maps finished</small><b id="maps-done">0</b></div><div><small>Steps</small><b id="steps">0</b></div><div><small>Objects hit</small><b id="hits">—</b></div><div><small>Slider parts held</small><b id="slider-hits">—</b></div></div>
       <p class="phase" id="phase"></p>
       <p class="where" id="where"></p>
+      <details class="trainer-controls" id="trainer-controls" hidden>
+        <summary>Trainer settings</summary>
+        <form id="trainer-form">
+          <div class="trainer-fields">
+            <label>CPU cores<input id="trainer-cores" type="number" min="1" max="64" required></label>
+            <label>Parallel runs<input id="trainer-runs" type="number" min="1" max="64" required></label>
+            <label>Learn using<select id="trainer-device"><option value="cpu">CPU</option><option value="gpu">GPU</option></select></label>
+          </div>
+          <p class="note" id="trainer-gpu"></p>
+          <p class="note">Changes keep this model and every map position. Runs you turn off wait until you enable them again.</p>
+          <div class="row"><button class="btn" type="submit" id="trainer-apply">Apply settings</button><span class="note" id="trainer-result" role="status" aria-live="polite"></span></div>
+        </form>
+      </details>
       <div class="row"><a class="btn" id="download" href="api/checkpoints/latest.npz" download>Download model</a><label class="btn ghost file">Import<input type="file" id="ckpt" accept=".npz"></label><button class="btn ghost" id="models-open" type="button">Models</button><button class="btn ghost" id="remote-open" type="button">Train on another computer</button></div>
       <p class="note" id="saved"></p>
     </section>
@@ -77,7 +90,7 @@
   <section class="inside" aria-labelledby="inside-title"><h2 id="inside-title">Inside the model</h2>
     <div class="cards">
       <section class="card"><h3>What it sees and does <small>live</small></h3>
-        <div class="io"><img class="eye" id="eye" alt="The learner's input: a small grayscale picture of the playfield"><div><p class="arrow">Sees <b>4 frames</b> like this, <b id="eye-size">80 × 64</b> pixels each, and chooses where to aim and which keys to hold.</p>
+        <div class="io"><img class="eye" id="eye" alt="The learner's input: a small grayscale picture of the playfield"><div><p class="arrow">Sees <b>4 frames</b> like this, <b id="eye-size">80 × 64</b> pixels each, and chooses where to aim and which keys to hold. Acts every 16.7 ms of game time; the four frames show about 50 ms of history.</p>
           <div class="keys-live" aria-label="The keys it is holding"><span class="key" id="k1">Z</span><span class="key" id="k2">X</span><span class="key pos" id="aim">aim —</span></div></div></div>
         <dl class="facts"><dt>Size</dt><dd id="m-params">—</dd><dt>Learns by</dt><dd>Clipped PPO, from rewards for its own hits</dd><dt>Learned from</dt><dd id="m-source">Real beatmaps</dd></dl></section>
       <section class="card"><h3>On this map so far <small id="sk-map"></small></h3>

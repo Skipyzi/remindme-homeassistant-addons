@@ -1,0 +1,126 @@
+{
+  "version": "0.8.0",
+  "date": "2026-10-10",
+  "hardware": {
+    "gpu": "AMD Radeon RX 9070 XT",
+    "pci": "1002:7550 revision c0",
+    "cpu": "AMD Ryzen 7 5800X3D",
+    "logical_cores": 16
+  },
+  "runtime": {
+    "torch": "2.8.0+rocm7.0.2.git245bf6ed",
+    "python": "3.12",
+    "numpy": "2.2.6",
+    "rocm": "7.0.2",
+    "dependencies": {
+      "filelock": "4.1.0",
+      "typing-extensions": "4.16.0",
+      "setuptools": "84.0.0",
+      "sympy": "1.14.0",
+      "networkx": "3.7",
+      "jinja2": "3.1.6",
+      "fsspec": "2026.9.0",
+      "MarkupSafe": "3.0.4",
+      "mpmath": "1.4.1"
+    }
+  },
+  "wheel": {
+    "name": "torch-2.8.0+rocm7.0.2.git245bf6ed-cp312-cp312-linux_x86_64.whl",
+    "sha256": "baa3e7064f56d59905d72ed53b3b0ca8f1fd1567c30c8e7e0149c64b624fb8a4",
+    "bytes": 4646531422
+  },
+  "tests": {
+    "passed": 75,
+    "skipped": 0,
+    "seconds": 111.217,
+    "scope": [
+      "real authored maps",
+      "CPU/GPU forward, loss, gradients and non-zero Adam state parity",
+      "GPU rollout and pause",
+      "changing cores and run count preserves all playheads",
+      "portable checkpoint round trip"
+    ]
+  },
+  "benchmark": {
+    "method": "Alternating CPU/GPU updates, reversing device order each update; one warmup and ten measured updates per device",
+    "checkpoint_updates": 2150,
+    "checkpoint_steps": 2170368,
+    "checkpoint_sha256": "268e395a4858fa4e094e012847782d3a2e150223541b83f0576b880b06e0e10a",
+    "processes": 4,
+    "environments": 8,
+    "steps_per_update": 1024,
+    "optimizer_steps_including_warmup": 176,
+    "background_load": "Workstation had an active game and desktop processes; measurements are not isolated hardware capacity",
+    "cpu_seconds": [
+      0.991562920040451,
+      0.9093189709819853,
+      0.8097685370012186,
+      0.8428344709682278,
+      0.8904188339947723,
+      0.8479630029760301,
+      0.8751398979802616,
+      0.8909504180192016,
+      0.8559281990164891,
+      0.9387690130388364
+    ],
+    "gpu_seconds": [
+      1.0091450560139492,
+      1.0878567759646103,
+      0.8539878129959106,
+      0.9422719220165163,
+      0.9427023060270585,
+      0.9943260729778558,
+      0.9065187370288186,
+      0.9984956980333664,
+      0.9350010830094106,
+      1.0880341389565729
+    ],
+    "cpu_steps_per_second": 1159.9727400226525,
+    "gpu_steps_per_second": 1057.289620636376,
+    "speedup": 0.9114779892290646,
+    "default_device": "cpu",
+    "conclusion": "GPU is functional but about 9% lower throughput in this comparison. Earlier sequential measurements varied, so no general speedup is claimed."
+  },
+  "preservation": {
+    "backup_updates": 2150,
+    "backup_steps": 2170368,
+    "saved_runs": 8,
+    "profile_links": 0,
+    "training_was_running": false
+  },
+  "live": {
+    "version": "0.8.0",
+    "updates": 2250,
+    "steps": 2272768,
+    "worker_running": true,
+    "settings": {
+      "processes": 6,
+      "environments": 8,
+      "device": "cpu",
+      "id": "f40f19581b8940f4bdf8a8849815d732"
+    },
+    "checkpoint_sha256": "7e76298580f4d8c1cfd335382884dd7fb321cdb367cca7ed8556b2775952a56c",
+    "saved_runs": 8,
+    "continued_on_same_map": [],
+    "advanced_to_another_map": [
+      0,
+      4,
+      1,
+      5,
+      2,
+      6,
+      3,
+      7
+    ],
+    "initial_checkpoint_unchanged": true,
+    "profile_links": 0,
+    "browser": {
+      "core_change_2_to_4": true,
+      "gpu_selected_through_keyboard": true,
+      "desktop_overflow": false,
+      "mobile_overflow": false,
+      "mobile_width": 390
+    },
+    "note": "User changed the live settings to six cores and CPU mode during verification. Those settings and running state are preserved."
+  }
+}

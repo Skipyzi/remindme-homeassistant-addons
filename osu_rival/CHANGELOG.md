@@ -1,3 +1,10 @@
+# 0.8.0
+
+- Add CPU core, parallel run and CPU/GPU controls to the Training card.
+- Apply changes without replacing model weights, Adam state or saved maps; retain disabled runs for later.
+- Add optional PyTorch GPU inference and optimization with the existing portable checkpoint format. Real-map simulations remain on the CPU.
+- Explain the four-frame observation and 60 Hz action rate in the interface.
+
 # 0.7.0
 
 - Port default osu!lazer head timing, slider tracking, key ownership, ticks/repeats, tail leniency and component accuracy/combo rules.

@@ -282,3 +282,36 @@ The port targets default unmodified lazer with 60 Hz input and sampled curves.
 Audio, health/failure, mods and authoritative leaderboard scoring remain
 outside this practice app. Upstream source and MIT attribution are included
 in `THIRD_PARTY_NOTICES.md` and the downloadable trainer package.
+
+
+## Workstation controls and optional GPU, 0.8.0
+
+Deployed to the Pi and Linux workstation on 2026-10-10. Trainer settings now
+control CPU process count, parallel run count and CPU/GPU mode through ingress.
+Settings persist separately from models. Reconfiguration checkpoints the
+current model and regrouped runs; disabled runs remain saved for later.
+
+The workstation's Radeon RX 9070 XT runs AMD PyTorch 2.8.0 with ROCm 7.0.2 in
+the rootless trainer container, using the existing host driver. The 11.7 GB
+runtime is mounted read-only outside the image, with device access limited to
+kfd and the render device. Home Assistant protection remains enabled. The
+service ceiling is sixteen logical cores; the selected process count controls
+the workload beneath that ceiling. GPU mode batches inference across runs and
+uses fused Adam, while CPU shards simulate and render authored maps.
+
+All 75 tests passed in Python 3.12, including CPU/GPU numerical parity with
+non-zero optimizer state, GPU training/pause and saved-run preservation across
+core/run count changes. The alternating four-core/eight-run comparison measured
+1,160 steps/s on CPU and 1,057 on GPU. GPU support works, but CPU remains the
+default for this network. The workstation had an active desktop/game workload;
+these values do not measure isolated hardware capacity.
+
+Live ingress checks changed two cores to four during training. The user then
+selected six CPU cores and eight runs; those settings and active training were
+preserved. The model reached 2,272,768 steps and 2,250 updates at the final
+snapshot, with eight valid paired saved runs and the unchanged initial model.
+No model has a profile link. Desktop and 390 px mobile layouts had no horizontal
+overflow. The report is `validation/workstation-gpu.json`.
+
+Source backup:
+`/share/osu-rival-maintenance/before-trainer-resources-20261010-014025`.
