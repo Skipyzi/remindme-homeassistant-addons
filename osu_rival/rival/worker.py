@@ -1,5 +1,6 @@
 """One interruptible learning process, with CPU and host resource guards."""
 import argparse
+import copy
 import hashlib
 import io
 import json
@@ -126,7 +127,6 @@ class Worker:
         # the original single environment in one throttled thread.
         self.parallel_envs = max(1, min(64, int(self.options.get('parallel_envs', 1))))
         self.processes = max(1, min(self.parallel_envs, int(self.options.get('processes', 1))))
-        if self.parallel_envs==1:self.parallel_saved=None
         self.trainer = None
         self.trail = []
 
@@ -148,6 +148,13 @@ class Worker:
         checkpoint=self.policy.serialize(self.metadata())
         atomic_bytes(self.directory/'models/latest.npz',checkpoint)
         parallel=self.trainer.snapshot() if self.trainer is not None else self.parallel_saved
+        if self.trainer is None and parallel:
+            # A Pi-only run advances the primary while the PC's other runs wait.
+            # Keep their positions for the next workstation session.
+            parallel=copy.deepcopy(parallel)
+            for shard in parallel.get('shards',[]):
+                if 0 in shard.get('indices',[]):
+                    shard['runs'][shard['indices'].index(0)]=self.env.save_run()
         self.parallel_saved=parallel
         atomic_json(self.directory/'models/latest-run.json',{'checkpoint_sha256':hashlib.sha256(checkpoint).hexdigest(),'run':self.env.save_run(),'parallel':parallel})
 

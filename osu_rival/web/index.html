@@ -51,6 +51,7 @@
     </section>
     <section class="card">
       <h3>Training <small id="active-model"></small></h3>
+      <p class="note" id="active-profile"></p>
       <div class="stats"><div><small>Updates</small><b id="updates">0</b></div><div><small>Maps finished</small><b id="maps-done">0</b></div><div><small>Steps</small><b id="steps">0</b></div><div><small>Objects hit</small><b id="hits">—</b></div></div>
       <p class="phase" id="phase"></p>
       <p class="where" id="where"></p>
@@ -98,6 +99,13 @@
   <div class="remote-body"><p>Create a fresh rival, or keep separate models to compare. Creating or switching pauses training. Your beatmaps stay available.</p>
   <form id="new-model-form"><label for="model-name">New model name</label><input class="search" id="model-name" type="text" maxlength="60" placeholder="My next rival" required><button class="btn primary" type="submit">Create new model</button></form>
   <p id="models-note" class="note" role="status"></p><ul id="model-list" class="model-list"></ul>
+  <form id="model-profile-form" class="profile-editor" hidden>
+    <h3 id="profile-heading">Link a server profile</h3>
+    <label for="profile-user">Dedicated bot profile</label><select class="search" id="profile-user" required></select>
+    <label for="profile-website">Private-server website</label><input class="search" id="profile-website" type="url" required placeholder="http://homeassistant.local:8087">
+    <div class="row"><button class="btn primary" type="submit">Save profile link</button><button class="btn ghost" id="profile-cancel" type="button">Cancel</button></div>
+    <p class="note">Only dedicated bot profiles can be linked. Multiplayer joining and score submission come next.</p>
+  </form>
   <p class="note">Discard deletes that model's saved progress. Discarding the active model starts a fresh one.</p></div></aside>
 <aside class="sheet" id="remote-sheet" aria-label="Train on another computer"><header><h2>Train on another computer</h2><button class="btn" id="remote-close" type="button">Close</button></header>
   <div class="remote-body" id="remote-body"></div></aside>

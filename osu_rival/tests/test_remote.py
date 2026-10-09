@@ -115,6 +115,26 @@ class ParallelTests(unittest.TestCase):
             self.assertEqual(len(set(ids)),min(2,len(self.library.training)))
         finally:trainer.close()
 
+    def test_pi_only_checkpoint_preserves_waiting_pc_runs(self):
+        from rival.worker import Worker
+        from rival.storage import atomic_json,read_json
+        root=Path(self.temporary.name)
+        atomic_json(root/'worker-options.json',{'parallel_envs':1})
+        worker=Worker(root)
+        trainer=Trainer(worker.policy,self.library,root/'maps',4,2,7,first=worker.env)
+        try:
+            trainer.update(np.random.default_rng(1),steps=8,epochs=1,minibatch=32)
+            worker.parallel_saved=trainer.snapshot();worker.checkpoint()
+            saved=read_json(root/'models/latest-run.json')['parallel']
+        finally:trainer.close()
+        single=Worker(root)
+        single.env.step((np.zeros(2),0));single.checkpoint()
+        following=read_json(root/'models/latest-run.json')['parallel']
+        for before,after in zip(saved['shards'],following['shards']):
+            for index,a,b in zip(before['indices'],before['runs'],after['runs']):
+                if index:self.assertEqual(a,b)
+                else:self.assertGreater(b['time'],a['time'])
+
 
 class HubTests(unittest.TestCase):
     def setUp(self):

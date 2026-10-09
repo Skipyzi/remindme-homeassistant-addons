@@ -39,6 +39,12 @@ class Models:
             entries.append({**item,'active':active,'steps':state.get('steps',0),'updates':state.get('updates',0)})
         return {'active':self.index['active'],'generation':self.generation,'models':entries}
 
+    def profile(self,ident,profile):
+        item=self.find(ident)
+        if profile is None:item.pop('profile',None)
+        else:item['profile']=profile
+        self.save();return self.status()
+
     def snapshot(self):
         latest=self.root/'models/latest.npz'
         run=read_json(self.root/'models/latest-run.json')

@@ -119,3 +119,4 @@ footer { color: var(--faint); font-size: 12.5px; text-align: center; }
 .parallel-map{font-size:13px;line-height:1.4;min-height:36px;overflow-wrap:anywhere;margin:8px 0}.parallel-run canvas{display:block;width:100%;aspect-ratio:5/4;border-radius:6px}.parallel-run .note{font-size:12px;margin:10px 0 0}
 @media(max-width:1000px){.parallel-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:520px){.parallel-grid{grid-template-columns:1fr}.parallel-panel{padding:14px}}
+.profile-editor{padding:16px;border:1px solid #ffffff20;border-radius:12px;margin:18px 0}.profile-editor label{display:block;margin:12px 0 6px}.profile-editor .row{margin-top:14px}.model-list a,#active-profile a{color:#92dec6}.profile-editor[hidden]{display:none}

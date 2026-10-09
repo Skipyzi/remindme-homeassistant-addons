@@ -1,0 +1,65 @@
+{
+  "version": "0.5.1",
+  "status": "paused",
+  "steps": 60928,
+  "updates": 90,
+  "model_count": 1,
+  "linked_models": 0,
+  "eligible_bot_profiles": 0,
+  "regular_accounts_rejected": [
+    400,
+    400
+  ],
+  "profile_requests_leave_training_unchanged": true,
+  "checkpoint_matches_pc": true,
+  "checkpoint_sha256": "ca89a0c5f67117e9f6d057dc8bd7344c6bd52ffae9f7a33175596a6bb0f65727",
+  "remote_attached": true,
+  "parallel": {
+    "environments": 8,
+    "processes": 4
+  },
+  "runs": [
+    {
+      "index": 0,
+      "map_id": "d135b95bf2270c54361a87ba",
+      "time": 96583.33333333855
+    },
+    {
+      "index": 4,
+      "map_id": "35e001bbf8365e67f6e06b5e",
+      "time": 2133.333333333336
+    },
+    {
+      "index": 1,
+      "map_id": "44b08ee9af46c072da3c9235",
+      "time": 2133.333333333336
+    },
+    {
+      "index": 5,
+      "map_id": "180bc98897930363a4cca64f",
+      "time": 2133.333333333336
+    },
+    {
+      "index": 2,
+      "map_id": "11762cc2f33359ef2e8e441d",
+      "time": 2133.333333333336
+    },
+    {
+      "index": 6,
+      "map_id": "2b1110c82563659f97264b14",
+      "time": 2133.333333333336
+    },
+    {
+      "index": 3,
+      "map_id": "79f92874c5bd75c76860b85b",
+      "time": 2133.333333333336
+    },
+    {
+      "index": 7,
+      "map_id": "995f701242cecb9202342634",
+      "time": 2133.333333333336
+    }
+  ],
+  "tests_passed": 54,
+  "server_changes": false
+}

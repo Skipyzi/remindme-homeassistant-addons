@@ -148,3 +148,47 @@ valid save, and the overlapping secondary map was reassigned once.
 
 Source backup: `before-parallel-views-20261009-030841` under the maintenance
 directory.
+
+
+## Dedicated bot profile links, 0.5.0
+
+Models can store a verified dedicated bot account ID, its private server address
+and website profile link. Regular player accounts and the built-in notification
+bot cannot be selected or linked through the API. Profile metadata stays with
+each model across switches and restarts. Linking or unlinking leaves training
+control, weights and the remote model generation unchanged.
+
+The live server currently has two regular player accounts and its notification
+bot, so there are no eligible rival profiles yet. No live model was associated
+with a player account. The local preview association used while checking the
+form was removed. A dedicated bot profile is required before linking on the Pi.
+Account creation, native login, multiplayer joining and authoritative score
+submission remain future work.
+
+All 53 pinned checks passed before the account restriction. The four profile
+checks passed again in the pinned image with the restriction, covering rejection
+of ordinary users, reserved users and unknown IDs, persistence and unchanged
+training state. Native browser checks verified the form and mobile layout.
+
+
+## Pi fallback retains parallel runs, 0.5.1
+
+The Pi trained alone while the workstation service was offline during deployment.
+The primary run and learned weights continued, but the earlier single-run worker
+removed the waiting parallel sidecar. A Pi-only checkpoint now advances the
+primary saved run and keeps every waiting workstation run for its next session.
+A pinned test checks this transition without restarting the secondary maps.
+
+A fresh workstation rollout after deployment creates the current eight-run
+snapshot from the continued model. Earlier primary progress and weights are
+retained. Bot-only profile restrictions remain unchanged.
+
+The final 0.5.1 runtime passed all 54 pinned checks. Live verification confirmed
+eight different map views, eight valid saved runs, matching Pi/workstation
+checkpoint hashes and 60,928 retained steps across 90 updates. Both ordinary
+player accounts received HTTP 400 when a link was attempted; weights, training
+counters and model generation remained unchanged. There are zero linked models.
+The workstation service remains attached and the app is paused. Details are in
+`validation/pi-bot-profiles.json`.
+
+Source backup: `before-pi-run-preservation-20261009-032414`.

@@ -387,6 +387,8 @@ function render(state) {
   modelGeneration=generation || modelGeneration;
   const active=state.model_library?.models?.find(item=>item.active);
   $('active-model').textContent=active?.name || '';
+  $('active-profile').replaceChildren();
+  if(active?.profile){const link=document.createElement('a');link.href=active.profile.url;link.textContent=`Server profile: ${active.profile.username}`;link.target='_blank';link.rel='noopener noreferrer';$('active-profile').append(link);}
   if($('models-sheet').classList.contains('open'))drawModels(state.model_library);
 
   const [label, tone] = statusOf(state);
@@ -543,6 +545,7 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape') remoteSheet(
 $('remote-body').addEventListener('click', async e => { const b = e.target.closest('[data-copy]'); if (!b) return; try { await navigator.clipboard.writeText(b.dataset.copy); b.textContent = 'Copied'; } catch { b.textContent = 'Select and copy'; } setTimeout(() => { b.textContent = 'Copy'; }, 1500); });
 
 let modelAction=false;
+let profileModel=null;
 function drawModels(library){
   const list=$('model-list');list.replaceChildren();
   for(const item of library?.models || []){
@@ -550,11 +553,17 @@ function drawModels(library){
     const name=document.createElement('strong');name.textContent=item.name+(item.active?' · Active':'');
     const detail=document.createElement('p');detail.className='note';detail.textContent=`${fmt(item.steps)} steps · ${fmt(item.updates)} updates`;
     label.append(name,detail);row.append(label);
+    const identity=document.createElement('p');identity.className='note';
+    if(item.profile){const link=document.createElement('a');link.href=item.profile.url;link.textContent=`${item.profile.username} · server profile`;link.target='_blank';link.rel='noopener noreferrer';identity.append(link);}
+    else identity.textContent='No server profile linked';
+    label.append(identity);
     for(const [action,title] of [['activate',item.active?'Selected':'Use model'],['discard','Discard']]){
       const button=document.createElement('button');button.className='btn ghost';button.type='button';
       button.textContent=title;button.dataset.action=action;button.dataset.id=item.id;
       button.disabled=modelAction || (action==='activate' && item.active);row.append(button);
     }
+    const profile=document.createElement('button');profile.className='btn ghost';profile.type='button';profile.textContent=item.profile?'Change profile':'Link profile';profile.dataset.action='edit-profile';profile.dataset.id=item.id;profile.disabled=modelAction;row.append(profile);
+    if(item.profile){const unlink=document.createElement('button');unlink.className='btn ghost';unlink.type='button';unlink.textContent='Unlink';unlink.dataset.action='unlink-profile';unlink.dataset.id=item.id;unlink.disabled=modelAction;row.append(unlink);}
     list.append(row);
   }
 }
@@ -563,9 +572,9 @@ function modelsSheet(open){
   if(open){sheet(false);remoteSheet(false);$('scrim').hidden=false;drawModels(store.state.model_library);$('model-name').focus();}
 }
 async function manageModel(action,data){
-  if(modelAction)return;modelAction=true;$('models-note').textContent='Saving the current model…';
+  if(modelAction)return;modelAction=true;$('models-note').textContent=action==='profile'?'Saving profile link…':'Saving the current model…';
   $('new-model-form').querySelector('button').disabled=true;drawModels(store.state.model_library);
-  try{await api(`api/models/${action}`,data);await store.refresh();$('models-note').textContent=action==='new'?'Fresh model ready. Press Start training to begin.':action==='activate'?'Model selected. Its saved progress is ready.':'Model discarded.';$('model-name').value='';}
+  try{await api(`api/models/${action}`,data);await store.refresh();$('models-note').textContent=action==='profile'?(data.user_id===null?'Profile unlinked.':'Server profile linked.'):action==='new'?'Fresh model ready. Press Start training to begin.':action==='activate'?'Model selected. Its saved progress is ready.':'Model discarded.';$('model-name').value='';if(action==='profile')$('model-profile-form').hidden=true;}
   catch(e){$('models-note').textContent=e.message;}
   finally{modelAction=false;$('new-model-form').querySelector('button').disabled=false;drawModels(store.state.model_library);}
 }
@@ -573,4 +582,26 @@ $('models-open').onclick=()=>modelsSheet(true);$('models-close').onclick=()=>mod
 $('scrim').addEventListener('click',()=>modelsSheet(false));
 document.addEventListener('keydown',event=>{if(event.key==='Escape')modelsSheet(false);});
 $('new-model-form').addEventListener('submit',event=>{event.preventDefault();manageModel('new',{name:$('model-name').value});});
-$('model-list').addEventListener('click',event=>{const button=event.target.closest('button[data-action]');if(button)manageModel(button.dataset.action,{id:button.dataset.id});});
+$('model-list').addEventListener('click',event=>{
+  const button=event.target.closest('button[data-action]');if(!button)return;
+  if(button.dataset.action==='edit-profile')editProfile(button.dataset.id);
+  else if(button.dataset.action==='unlink-profile')manageModel('profile',{id:button.dataset.id,user_id:null});
+  else manageModel(button.dataset.action,{id:button.dataset.id});
+});
+async function editProfile(id){
+  const item=store.state.model_library.models.find(item=>item.id===id);if(!item)return;
+  profileModel=id;$('profile-heading').textContent=`Link ${item.name} to a profile`;$('models-note').textContent='Loading private-server profiles…';
+  $('model-profile-form').hidden=true;
+  try{
+    const data=await api('api/profiles');if(profileModel!==id)return;
+    $('profile-user').replaceChildren();
+    for(const profile of data.profiles){const option=document.createElement('option');option.value=profile.user_id;option.textContent=`${profile.username} · #${profile.user_id}${profile.is_bot?' · bot':''}`;$('profile-user').append(option);}
+    if(!data.profiles.length)throw new Error('No dedicated bot profiles are available yet. Regular player accounts cannot be linked to models.');
+    if(item.profile)$('profile-user').value=item.profile.user_id;
+    const website=new URL(location.href);website.protocol='http:';website.port='8087';website.pathname='/';website.search='';website.hash='';
+    $('profile-website').value=item.profile?.website_url || website.href.replace(/\/$/,'');
+    $('models-note').textContent='';$('model-profile-form').hidden=false;$('model-profile-form').scrollIntoView({block:'nearest'});$('profile-user').focus();
+  }catch(error){$('models-note').textContent=error.message;}
+}
+$('profile-cancel').onclick=()=>{profileModel=null;$('model-profile-form').hidden=true;};
+$('model-profile-form').addEventListener('submit',event=>{event.preventDefault();manageModel('profile',{id:profileModel,user_id:Number($('profile-user').value),website_url:$('profile-website').value});});

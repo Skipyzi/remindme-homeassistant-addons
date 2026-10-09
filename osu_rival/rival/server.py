@@ -22,6 +22,7 @@ from . import VERSION
 from .beatmaps import parse_beatmap
 from .policy import Policy, SHAPES
 from .models import Models
+from .profiles import Profiles
 from .storage import atomic_bytes, atomic_json, read_json
 from .vision import view
 from .hub import hub_token
@@ -71,6 +72,7 @@ class Controller:
         self.lock = threading.RLock()
         self.models_library=Models(self.directory,self.options['seed'])
         self.model_lock=threading.Lock()
+        self.profiles=Profiles(self.options['beatmap_server_url'])
         self.process = None
         self.log_handle = None
         self.monitor_stop = threading.Event()
@@ -187,6 +189,10 @@ class Controller:
 
     def manage_model(self,action,data):
         with self.model_lock:
+            if action=='profile':
+                self.models_library.find(data.get('id'))
+                profile=None if data.get('user_id') is None else self.profiles.resolve(data.get('user_id'),data.get('website_url'))
+                with self.lock:return self.models_library.profile(data.get('id'),profile)
             if action=='discard' and data.get('id')!=self.models_library.index['active']:
                 with self.lock:return self.models_library.discard(data.get('id'))
             self.pause(wait_remote=True)
@@ -461,6 +467,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send(controller.status())
             if path == '/api/runs':
                 return self.send(read_json(controller.directory/'runs.json',{'runs':[]}))
+            if path == '/api/profiles':
+                return self.send({'profiles':controller.profiles.choices()})
             if path in ['/api/scene', '/api/attempt']:
                 name = 'scene.json' if path.endswith('scene') else 'attempt.json'
                 return self.send(read_json(controller.directory/name, {}))
@@ -481,6 +489,8 @@ class Handler(BaseHTTPRequestHandler):
             self.send({'error': 'Not found'}, 404)
         except (BrokenPipeError, ConnectionResetError):
             pass
+        except ValueError as error:
+            self.send({'error':str(error)},502)
         except OSError:
             self.send({'error': 'File is unavailable'}, 404)
 

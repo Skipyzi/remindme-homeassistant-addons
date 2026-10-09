@@ -1,3 +1,13 @@
+# 0.5.1
+
+- Preserve waiting workstation runs when the Pi trains alone between PC sessions.
+
+# 0.5.0
+
+- Link each saved model to an existing dedicated bot profile on the private osu! server.
+- Keep the account ID and profile link with the model across switches and restarts.
+- Show the active model's server profile and allow changing or removing the link.
+
 # 0.4.2
 
 - Show all parallel training playfields, map names and full-map progress.

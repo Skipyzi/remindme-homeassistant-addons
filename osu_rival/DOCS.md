@@ -97,3 +97,21 @@ Each new environment starts on a different cached training map when the library
 is large enough. It plays the full map and rotates through its assigned sequence.
 With fewer maps than runs, some runs share a map. All runs learn one selected
 model, and their map positions and random state are saved with it.
+
+
+## Link models to server profiles
+
+Open Models and choose Link profile for the model you want. Select its dedicated
+bot account from the private server's local users, check the website URL and
+choose Save profile link. The profile link also appears in the Training card.
+Change profile selects another account; Unlink removes the association.
+
+Only accounts marked as bots by the private server can be linked. Regular player
+accounts cannot be selected or linked through the API. The built-in
+notification bot is reserved. Each model retains its own account ID and website
+link when switching or restarting, and fresh models begin without a profile.
+Changing a link does not pause training or change the weights. The app reads
+local profile identities only. It does not learn from player replays.
+
+This records the rival's identity for the next multiplayer work. It does not yet
+log in, join rooms or submit scores to the private server.
