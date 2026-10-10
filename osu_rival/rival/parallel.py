@@ -65,12 +65,11 @@ def sample_batch(policy, observations, rng):
 
 class Shard:
     """Some environments, a network bound to the shared weights, and the experience they collected."""
-    def __init__(self, library, indices, count, seed, buffer, slot, first=None, map_offset=0, reward_feedback=False):
+    def __init__(self, library, indices, count, seed, buffer, slot, first=None, map_offset=0):
         self.indices=list(indices)
-        self.envs = [first if (i == 0 and first is not None) else Environment(seed=seed + i, library=library, map_index=map_offset+i, map_stride=count,reward_feedback=reward_feedback)
+        self.envs = [first if (i == 0 and first is not None) else Environment(seed=seed + i, library=library, map_index=map_offset+i, map_stride=count)
                      for i in indices]
         for env in self.envs:
-            env.reward_feedback=reward_feedback
             if env.map_stride != count and env.library:
                 current=next(index for index,(beatmap,_,_) in enumerate(library.training) if beatmap['id']==env.beatmap['id'])
                 env.next_map_index=current+count
@@ -89,7 +88,7 @@ class Shard:
         logps = np.empty((steps, n), np.float32); values = np.empty((steps, n), np.float32)
         rewards = np.empty((steps, n), np.float32); dones = np.empty((steps, n), bool)
         finished = []
-        score_reward=feedback_reward=0.0;score_events=feedback_events=0
+        score_reward=0.0;score_events=0
         for step in range(steps):
             if interrupt and interrupt():
                 return None
@@ -98,8 +97,8 @@ class Shard:
             following = []
             for index, env in enumerate(self.envs):
                 observation, reward, done = env.step((latent[index], int(key[index])))
-                score_reward+=env.last_reward['score'];feedback_reward+=env.last_reward['feedback']
-                score_events+=int(env.last_reward['score']!=0);feedback_events+=int(abs(env.last_reward['feedback'])>1e-8)
+                score_reward+=env.last_reward['score']
+                score_events+=int(env.last_reward['score']!=0)
                 if done:
                     finished.append(env.summary())
                     observation = env.reset()
@@ -118,13 +117,14 @@ class Shard:
         self.order, self.cursor = None, 0
         adv = self.advantages.astype(np.float64)
         return {'count': total, 'sum': float(adv.sum()), 'squares': float((adv ** 2).sum()), 'reward': float(rewards.sum()), 'episodes': finished,
-                'score_reward':score_reward,'feedback_reward':feedback_reward,'score_events':score_events,'feedback_events':feedback_events}
+                'score_reward':score_reward,'score_events':score_events}
 
     def snapshot(self):
         return {'indices':self.indices,'runs':[env.save_run() for env in self.envs],'rng':self.rng.bit_generator.state}
 
-    def scenes(self):
-        return [{'index':index,'scene':env.scene(visible_only=True)} for index,env in zip(self.indices,self.envs)]
+    def scenes(self, limit=None):
+        return [{'index':index,'scene':env.scene(visible_only=True)} for index,env in zip(self.indices,self.envs)
+                if limit is None or index < limit]
 
     def restore(self, saved):
         if saved.get('indices') != self.indices or len(saved.get('runs',[])) != len(self.envs):
@@ -146,12 +146,11 @@ class Shard:
 
     def play(self, latents, keys):
         observations, rewards, dones, episodes = [], [], [], []
-        stats = dict.fromkeys(['score_reward','feedback_reward','score_events','feedback_events'], 0)
+        stats = dict.fromkeys(['score_reward','score_events'], 0)
         for env, latent, key in zip(self.envs, latents, keys):
             observation, reward, done = env.step((latent, int(key)))
-            stats['score_reward'] += env.last_reward['score']; stats['feedback_reward'] += env.last_reward['feedback']
+            stats['score_reward'] += env.last_reward['score']
             stats['score_events'] += int(env.last_reward['score'] != 0)
-            stats['feedback_events'] += int(abs(env.last_reward['feedback']) > 1e-8)
             if done:
                 episodes.append(env.summary()); observation = env.reset()
             observations.append(observation); rewards.append(reward); dones.append(done)
@@ -173,14 +172,14 @@ class Shard:
         return n, {key: value * n for key, value in metrics.items()}
 
 
-def _serve(connection, name, gradient_name, row, maps_directory, indices, count, seed, map_offset,reward_feedback):
+def _serve(connection, name, gradient_name, row, maps_directory, indices, count, seed, map_offset):
     """Worker process: one shard, driven by the main process over a pipe."""
     os.environ['OPENBLAS_NUM_THREADS'] = '1'
     memory, gradient_memory = shared_memory.SharedMemory(name=name), shared_memory.SharedMemory(name=gradient_name)
     shard = None
     try:
         slot = np.ndarray((PARAMETER_SIZE,), np.float32, buffer=gradient_memory.buf, offset=row * PARAMETER_SIZE * 4)
-        shard = Shard(MapLibrary(maps_directory), indices, count, seed, memory.buf, slot, map_offset=map_offset,reward_feedback=reward_feedback)
+        shard = Shard(MapLibrary(maps_directory), indices, count, seed, memory.buf, slot, map_offset=map_offset)
         connection.send('ready')
         while True:
             command, *args = connection.recv()
@@ -197,7 +196,7 @@ def _serve(connection, name, gradient_name, row, maps_directory, indices, count,
             elif command == 'snapshot':
                 connection.send(shard.snapshot())
             elif command == 'scenes':
-                connection.send(shard.scenes())
+                connection.send(shard.scenes(*args))
             elif command == 'restore':
                 shard.restore(*args); connection.send(None)
             elif command == 'close':
@@ -209,7 +208,7 @@ def _serve(connection, name, gradient_name, row, maps_directory, indices, count,
 
 class Trainer:
     """Parallel PPO over `count` environments in `processes` processes (the main process is one of them)."""
-    def __init__(self, policy, library, maps_directory, count, processes, seed, first=None,reward_feedback=False, device='cpu'):
+    def __init__(self, policy, library, maps_directory, count, processes, seed, first=None, device='cpu'):
         self.policy, self.count = policy, count
         self.device, self.waiting = device, {}
         processes = max(1, min(processes, count))
@@ -220,12 +219,12 @@ class Trainer:
         self.gradients = np.ndarray((processes, PARAMETER_SIZE), np.float32, buffer=self.gradient_memory.buf)
         self.publish()
         offset=next((index for index,(beatmap,_,_) in enumerate(library.training) if first is not None and beatmap['id']==first.beatmap['id']),0)
-        self.local = Shard(library, groups[0], count, seed, self.memory.buf, self.gradients[0], first=first,map_offset=offset,reward_feedback=reward_feedback)
+        self.local = Shard(library, groups[0], count, seed, self.memory.buf, self.gradients[0], first=first,map_offset=offset)
         context = mp.get_context('spawn')
         self.workers = []
         for row, group in enumerate(groups[1:], 1):
             parent, child = context.Pipe()
-            process = context.Process(target=_serve, args=(child, self.memory.name, self.gradient_memory.name, row, str(maps_directory), group, count, seed, offset,reward_feedback), daemon=True)
+            process = context.Process(target=_serve, args=(child, self.memory.name, self.gradient_memory.name, row, str(maps_directory), group, count, seed, offset), daemon=True)
             process.start(); child.close()
             self.workers.append((process, parent))
         for _, parent in self.workers:
@@ -254,8 +253,8 @@ class Trainer:
             raise
         return [mine] + [parent.recv() for _, parent in self.workers]
 
-    def scenes(self):
-        return sorted([run for shard in self._all('scenes') for run in shard],key=lambda run:run['index'])
+    def scenes(self, limit=None):
+        return sorted([run for shard in self._all('scenes', limit) for run in shard],key=lambda run:run['index'])
 
     def snapshot(self):
         saved = {'count':self.count,'shards':self._all('snapshot')}
@@ -294,12 +293,12 @@ class Trainer:
         for _,parent in self.workers:parent.recv()
         return True
 
-    def update(self, rng, steps=128, epochs=4, minibatch=256, progress=None, interrupt=None, views=None):
+    def update(self, rng, steps=128, epochs=4, minibatch=256, progress=None, interrupt=None, views=None, view_limit=None):
         self.publish()
         if self.device == 'gpu':
-            return self.gpu_update(rng, steps, epochs, minibatch, progress, interrupt, views)
+            return self.gpu_update(rng, steps, epochs, minibatch, progress, interrupt, views, view_limit)
         results = self._all('rollout', steps, local=lambda: self.local.rollout(steps, progress, interrupt))
-        if views:views(self.scenes())
+        if views:views(self.scenes(limit=view_limit))
         if results[0] is None:
             for result in results[1:]:
                 pass
@@ -338,7 +337,7 @@ class Trainer:
                 break
         return self.result(results, total, stats)
 
-    def gpu_update(self, rng, steps, epochs, minibatch, progress, interrupt, views):
+    def gpu_update(self, rng, steps, epochs, minibatch, progress, interrupt, views, view_limit):
         """Batch every run's visual inference on one GPU; CPU shards advance real maps.
 
         CPU shards keep their action RNGs and playheads when switching devices.
@@ -359,7 +358,7 @@ class Trainer:
         logps = np.empty((steps, self.count), np.float32)
         values = np.empty((steps, self.count), np.float32)
         rewards = np.empty_like(values); dones = np.empty_like(values, dtype=bool)
-        episodes, totals = [], dict.fromkeys(['score_reward','feedback_reward','score_events','feedback_events'], 0)
+        episodes, totals = [], dict.fromkeys(['score_reward','score_events'], 0)
         def inference(pixels):
             with t.no_grad():
                 means, probabilities, value = optimizer.forward(t.as_tensor(pixels, device='cuda'))
@@ -401,7 +400,7 @@ class Trainer:
             flat = lambda a: a.reshape((steps*self.count, *a.shape[2:]))
             normalized = (advantages - advantages.mean(dtype=np.float64)) / max(float(advantages.std(dtype=np.float64)), 1e-6)
             data = [flat(a) for a in [observations, latents, keys, logps, normalized.astype(np.float32), returns]]
-            if views: views(self.scenes())
+            if views: views(self.scenes(limit=view_limit))
             stats = optimizer.update([data], rng, epochs, max(32, min(minibatch, steps*self.count)), interrupt)
             self.publish()
             if stats is None: return None
@@ -418,7 +417,7 @@ class Trainer:
         metrics = {key: float(np.mean([stat[key] for stat in stats])) for key in stats[0]}
         return {'steps': total, 'episodes': episodes, 'reward': float(sum(r['reward'] for r in results)),
                 'environments': self.count, 'processes': len(self.workers) + 1,
-                **{key:sum(r[key] for r in results) for key in ['score_reward','feedback_reward','score_events','feedback_events']},**metrics}
+                **{key:sum(r[key] for r in results) for key in ['score_reward','score_events']},**metrics}
 
     def close(self):
         for process, parent in self.workers:

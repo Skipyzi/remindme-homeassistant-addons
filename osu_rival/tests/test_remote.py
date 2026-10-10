@@ -37,7 +37,7 @@ class ParallelTests(unittest.TestCase):
         from rival.accelerator import capabilities
         if not capabilities()['available']: self.skipTest('Optional GPU runtime is not available')
         policy = Policy(3)
-        trainer = Trainer(policy, self.library, Path(self.temporary.name)/'maps', 2, 2, 7, device='gpu', reward_feedback=True)
+        trainer = Trainer(policy, self.library, Path(self.temporary.name)/'maps', 2, 2, 7, device='gpu')
         resumed = None
         try:
             result = trainer.update(np.random.default_rng(1), steps=16, epochs=1, minibatch=32)
@@ -81,16 +81,17 @@ class ParallelTests(unittest.TestCase):
                 if count == 2: self.assertEqual(set(saved['waiting']), {'2', '3'})
             finally: trainer.close()
 
-    def test_aim_feedback_reaches_primary_and_subprocess_runs(self):
-        from rival.environment import Environment
-        first=Environment(library=self.library)
-        trainer=Trainer(Policy(3),self.library,Path(self.temporary.name)/'maps',2,2,7,first=first,reward_feedback=True)
+    def test_parallel_runs_reward_only_earned_judgment_points(self):
+        trainer=Trainer(Policy(3),self.library,Path(self.temporary.name)/'maps',2,2,7)
         try:
             result=trainer.update(np.random.default_rng(1),steps=64,minibatch=32)
-            self.assertTrue(first.reward_feedback)
-            self.assertGreater(result['feedback_events'],64)
+            saved=trainer.snapshot()
+            points=sum(run['scoring']['points'] for shard in saved['shards'] for run in shard['runs'])
             self.assertEqual(result['steps'],128)
-            self.assertTrue(np.isfinite(result['feedback_reward']))
+            self.assertAlmostEqual(result['reward'],points/300,places=5)
+            self.assertAlmostEqual(result['reward'],result['score_reward'],places=5)
+            self.assertEqual([r['index'] for r in trainer.scenes(limit=1)],[0])
+            self.assertEqual(len(trainer.scenes()),2)
         finally:trainer.close()
 
     def setUp(self):
@@ -218,6 +219,21 @@ class HubTests(unittest.TestCase):
         self.controller.remote_store('state.json', {'trainer_settings': wanted}, generation)
         self.assertEqual(self.controller.status()['remote']['attached']['processes'], 1)
         atomic_json(root/'control.json', control | {'running': False})
+
+    def test_recommended_setup_replaces_old_tuning_once_and_keeps_manual_choices(self):
+        from rival.storage import atomic_json
+        root=Path(self.temporary.name)
+        atomic_json(root/'trainer-settings.json',{'processes':8,'environments':64,'device':'cpu','id':'old'})
+        self.session=json.loads(self.attach()[1])['session']
+        recommended=self.controller.remote_control()['trainer_settings']
+        self.assertEqual((recommended['processes'],recommended['environments'],recommended['device']),(4,8,'cpu'))
+        self.controller.trainer_settings({'processes':2,'environments':4,'device':'cpu'})
+        manual=self.controller.remote_control()['trainer_settings']
+        self.assertFalse(manual['automatic'])
+        self.attach(session=self.session)
+        self.assertEqual(manual,self.controller.remote_control()['trainer_settings'])
+        self.controller.trainer_settings({'recommended':True})
+        self.assertTrue(self.controller.remote_control()['trainer_settings']['automatic'])
 
     def setUp(self):
         real_maps()

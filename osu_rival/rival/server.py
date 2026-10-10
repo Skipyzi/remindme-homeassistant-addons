@@ -34,6 +34,13 @@ LIMITS = {'cpu_budget_percent': (5, 100), 'memory_limit_mb': (192, 2048),
           'min_available_memory_mb': (256, 4096), 'max_temperature_c': (55, 85), 'seed': (0, 2147483647),
           'remote_port': (1024, 65535)}
 REMOTE_TIMEOUT = 20   # seconds without contact before a remote trainer counts as gone
+TRAINING_RECIPE = 'simple-lazer-v1'
+
+
+def recommended_settings(cores):
+    processes = min(4, max(1, cores // 2))
+    return {'processes': processes, 'environments': processes * 2, 'device': 'cpu',
+            'recipe': TRAINING_RECIPE, 'automatic': True, 'id': uuid.uuid4().hex}
 
 
 class Controller:
@@ -403,13 +410,17 @@ class Controller:
                 raise ValueError('Invalid GPU capabilities')
             gpu = {'available': gpu.get('available', False), **{k: str(gpu[k])[:240] for k in ['name', 'reason', 'runtime', 'torch'] if k in gpu}}
             self.remote = {'name': name, **numbers, 'gpu': gpu, 'session': session, 'seen': time.time(), 'since': since}
-            if not (self.directory/'trainer-settings.json').exists():
-                atomic_json(self.directory/'trainer-settings.json', {'processes': numbers['processes'], 'environments': numbers['environments'], 'device': 'cpu', 'id': uuid.uuid4().hex})
+            settings = read_json(self.directory/'trainer-settings.json', {})
+            if settings.get('recipe') != TRAINING_RECIPE:
+                atomic_json(self.directory/'trainer-settings.json', recommended_settings(numbers['cores']))
             return {'session': session, 'control': self.remote_control(), 'seed': self.options['seed']}
 
     def trainer_settings(self, data):
         with self.lock:
             if not self.remote_active(): raise ValueError('Connect a PC trainer first')
+            if data.get('recommended') is True:
+                atomic_json(self.directory/'trainer-settings.json', recommended_settings(self.remote['cores']))
+                return self.status()
             processes, environments, device = data.get('processes'), data.get('environments'), data.get('device')
             if type(processes) is not int or not 1 <= processes <= min(64, self.remote['cores']):
                 raise ValueError(f"Choose 1 to {min(64, self.remote['cores'])} CPU cores")
@@ -418,7 +429,8 @@ class Controller:
             if device not in ('cpu', 'gpu'): raise ValueError('Choose CPU or GPU training')
             if device == 'gpu' and not self.remote.get('gpu', {}).get('available'):
                 raise ValueError('GPU training is unavailable on the connected computer')
-            atomic_json(self.directory/'trainer-settings.json', {'processes': processes, 'environments': environments, 'device': device, 'id': uuid.uuid4().hex})
+            atomic_json(self.directory/'trainer-settings.json', {'processes': processes, 'environments': environments, 'device': device,
+                                                               'recipe': TRAINING_RECIPE, 'automatic': False, 'id': uuid.uuid4().hex})
             return self.status()
 
     def remote_detach(self, session):

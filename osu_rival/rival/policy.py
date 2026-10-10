@@ -316,7 +316,7 @@ def evaluate_many(policy,sections,seeds=EVALUATION_SEEDS,tick=None):
 def update(policy, env, rng, steps=512, epochs=4, minibatch=32, progress=None, interrupt=None):
     observations, latents, keys, logps, values, rewards, dones = [], [], [], [], [], [], []
     episodes = []
-    reward_stats={'score_reward':0.0,'feedback_reward':0.0,'score_events':0,'feedback_events':0}
+    reward_stats={'score_reward':0.0,'score_events':0}
     observation = env.observation()
     for index in range(steps):
         if interrupt and interrupt():
@@ -328,8 +328,8 @@ def update(policy, env, rng, steps=512, epochs=4, minibatch=32, progress=None, i
         logps.append(logp)
         values.append(value)
         observation, reward, done = env.step((latent, key))
-        reward_stats['score_reward']+=env.last_reward['score'];reward_stats['feedback_reward']+=env.last_reward['feedback']
-        reward_stats['score_events']+=int(env.last_reward['score']!=0);reward_stats['feedback_events']+=int(abs(env.last_reward['feedback'])>1e-8)
+        reward_stats['score_reward']+=env.last_reward['score']
+        reward_stats['score_events']+=int(env.last_reward['score']!=0)
         rewards.append(reward)
         dones.append(done)
         if progress:

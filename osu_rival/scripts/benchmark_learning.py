@@ -1,6 +1,5 @@
-"""Equal-budget feedback comparison on supplied real maps and a saved model.
+"""Measure learning on supplied real maps and a copied model.
 
-Run each variant with identical arguments, adding --feedback for aim progress.
 Does not install experimental weights into the app's model library.
 """
 import argparse
@@ -20,7 +19,6 @@ def main():
     parser.add_argument('--maps',required=True)
     parser.add_argument('--checkpoint',required=True)
     parser.add_argument('--output',required=True)
-    parser.add_argument('--feedback',action='store_true')
     parser.add_argument('--updates',type=int,default=200)
     parser.add_argument('--processes',type=int,default=4)
     parser.add_argument('--environments',type=int,default=8)
@@ -36,9 +34,9 @@ def main():
     policy,metadata=Policy.load(checkpoint)
     if metadata.get('training_format')!='real-beatmap-v1':parser.error('Use a real-beatmap checkpoint')
     sections=library.evaluation_sections(12);seeds=(91000,91011,91022)
-    trainer=Trainer(policy,library,Path(args.maps),args.environments,args.processes,args.seed,reward_feedback=args.feedback)
+    trainer=Trainer(policy,library,Path(args.maps),args.environments,args.processes,args.seed)
     rng=np.random.default_rng(args.optimizer_seed);started=time.monotonic();history=[]
-    totals={key:0 for key in ('score_reward','feedback_reward','score_events','feedback_events','steps')}
+    totals={key:0 for key in ('score_reward','score_events','steps')}
     try:
         for index in range(1,args.updates+1):
             stats=trainer.update(rng,steps=args.rollout_steps)
@@ -49,7 +47,7 @@ def main():
                 history.append({'update':index,'accuracy':float(np.mean([r['accuracy'] for r in results])),
                                 'hit_rate':float(np.mean([r['hit_rate'] for r in results])),'results':results})
     finally:trainer.close()
-    report={'source':'real-beatmaps','feedback':args.feedback,'settings':vars(args),
+    report={'source':'real-beatmaps','settings':vars(args),
             'checkpoint_sha256':hashlib.sha256(checkpoint).hexdigest(),
             'map_hashes':[beatmap['source_sha256'] for beatmap in library.maps],
             'elapsed_seconds':time.monotonic()-started,'history':history,'totals':totals,

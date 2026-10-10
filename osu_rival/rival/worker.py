@@ -22,6 +22,10 @@ from .parallel import Trainer
 from .storage import atomic_bytes, atomic_json, read_json
 from .vision import view
 
+CHECKPOINT_SECONDS = 10
+EVALUATION_STEPS = 250_000
+PREVIEW_RUNS = 8
+
 
 class StopWorker(Exception):
     pass
@@ -58,7 +62,9 @@ class Worker:
         self.state_settings = self.options.get('trainer_settings')
         self.seed = int(self.options.get('seed', 42))
         self.stop = False
-        self.last_publish = self.last_guard = 0.0
+        self.last_publish = self.last_guard = self.last_checkpoint = self.last_views = 0.0
+        self.last_control = -float('inf')
+        self.cached_control = {}
         self.cpu_start, self.wall_start = time.process_time(), time.monotonic()
         self.completed_watch = ''
         self.state = {'status': 'starting', 'phase': 'Loading the learner', 'updates': 0, 'steps': 0,
@@ -84,7 +90,7 @@ class Worker:
                 atomic_json(self.directory/'models/evaluations-before-padding.json',{'history':metadata.get('history',[]),'baselines':metadata.get('baselines',{})})
                 metadata.update(history=[],baselines={})
                 self.state['vision_migration']='Retained trained weights and optimizer; added visible margins'
-            for key in ['updates', 'steps', 'episodes', 'completed_maps', 'stage', 'history', 'baselines', 'seed']:
+            for key in ['updates', 'steps', 'episodes', 'completed_maps', 'stage', 'history', 'baselines', 'seed', 'last_evaluation_steps']:
                 if key in metadata:
                     self.state[key] = metadata[key]
             self.seed = int(self.state['seed'])
@@ -116,7 +122,7 @@ class Worker:
                            'training_source':'Real beatmaps, pixels and rewards; no player replays'})
         if not self.library.testing:
             self.state.update(history=[],baselines={})
-        self.env = Environment(library=self.library,reward_feedback=True)
+        self.env = Environment(library=self.library)
         self.state['reward_feedback']=REWARD_REVISION
         self.state['scoring_revision']=SCORING_REVISION
         self.parallel_saved=None
@@ -127,7 +133,7 @@ class Worker:
                 self.parallel_saved=saved.get('parallel')
                 try:self.env.restore_run(saved['run'])
                 except (ValueError,KeyError,TypeError):
-                    self.env=Environment(library=self.library,reward_feedback=True)
+                    self.env=Environment(library=self.library)
         self.guard_state = resources()
         # Parallel training (a computer with spare cores): several environments in several processes. The Pi keeps
         # the original single environment in one throttled thread.
@@ -137,16 +143,23 @@ class Worker:
         self.trail = []
         if self.state_settings:
             self.state['trainer_settings'] = self.state_settings
+        previous = self.state['history'][-1] if self.state['history'] else {}
+        self.last_evaluation_steps = self.state.get('last_evaluation_steps', previous.get('steps', self.state['steps']))
+        self.state['last_evaluation_steps'] = self.last_evaluation_steps
 
     def settings_changed(self):
         return bool(self.state_settings and self.control().get('trainer_settings', {}).get('id') != self.state_settings.get('id'))
 
     def control(self):
-        return read_json(self.directory/'control.json', {})
+        now = time.monotonic()
+        if now - self.last_control >= .1:
+            self.cached_control = read_json(self.directory/'control.json', {})
+            self.last_control = now
+        return self.cached_control
 
     def publish(self, force=False):
         now = time.monotonic()
-        if not force and now-self.last_publish < .35:
+        if not force and now-self.last_publish < 1:
             return
         self.last_publish = now
         self.state.update({'updated_at': time.time(), 'resources': self.guard_state,
@@ -155,7 +168,10 @@ class Worker:
                            'worker_budget':{key:self.options.get(key) for key in ['cpu_budget_percent','memory_limit_mb']}})
         atomic_json(self.directory/'state.json', self.state)
 
-    def checkpoint(self):
+    def checkpoint(self, force=True):
+        now = time.monotonic()
+        if not force and now - self.last_checkpoint < CHECKPOINT_SECONDS:
+            return
         checkpoint=self.policy.serialize(self.metadata())
         atomic_bytes(self.directory/'models/latest.npz',checkpoint)
         parallel=self.trainer.snapshot() if self.trainer is not None else self.parallel_saved
@@ -168,9 +184,10 @@ class Worker:
                     shard['runs'][shard['indices'].index(0)]=self.env.save_run()
         self.parallel_saved=parallel
         atomic_json(self.directory/'models/latest-run.json',{'checkpoint_sha256':hashlib.sha256(checkpoint).hexdigest(),'run':self.env.save_run(),'parallel':parallel})
+        self.last_checkpoint = now
 
     def metadata(self):
-        return {key: self.state[key] for key in ['updates', 'steps', 'episodes', 'completed_maps', 'stage', 'history', 'baselines', 'seed']} | {'rng':self.rng.bit_generator.state,'training_format':'real-beatmap-v1','training_strategy':'full-maps-v1','reward_feedback':REWARD_REVISION,'scoring_revision':SCORING_REVISION}
+        return {key: self.state[key] for key in ['updates', 'steps', 'episodes', 'completed_maps', 'stage', 'history', 'baselines', 'seed', 'last_evaluation_steps']} | {'rng':self.rng.bit_generator.state,'training_format':'real-beatmap-v1','training_strategy':'full-maps-v1','reward_feedback':REWARD_REVISION,'scoring_revision':SCORING_REVISION}
 
     def tick(self):
         if self.stop or self.settings_changed() or self.control().get('remote_unavailable') or (self.once and not self.control().get('watch')) or (not self.once and not self.control().get('running')):
@@ -232,6 +249,7 @@ class Worker:
         atomic_json(self.directory/'scene.json', env.scene(visible_only=True) | {'trail': trail})
 
     def parallel_views(self,runs):
+        self.last_views = time.monotonic()
         atomic_json(self.directory/'runs.json',{'updated_at':time.time(),'runs':runs})
 
     def watch(self, request):
@@ -301,14 +319,15 @@ class Worker:
                         self.state['phase'] = f'Starting {self.parallel_envs} environments on {self.processes} cores'
                         self.publish(force=True)
                         self.trainer = Trainer(self.policy, self.library, self.directory/'maps', self.parallel_envs,
-                                               self.processes, self.seed + self.state['updates'], first=self.env,reward_feedback=True,
+                                               self.processes, self.seed + self.state['updates'], first=self.env,
                                                device=self.options.get('device', 'cpu'))
                         if self.parallel_saved:
                             try:self.trainer.restore(self.parallel_saved)
                             except (ValueError,KeyError,TypeError):pass
                         self.state['parallel'] = {'environments': self.parallel_envs, 'processes': self.processes}
                         self.state['phase'] = 'Learning from rewards'
-                    result = self.trainer.update(self.rng, steps=128, progress=self.frame, interrupt=interrupt,views=self.parallel_views)
+                    previews = self.parallel_views if time.monotonic() - self.last_views >= 1 else None
+                    result = self.trainer.update(self.rng, steps=128, progress=self.frame, interrupt=interrupt,views=previews,view_limit=PREVIEW_RUNS)
                 else:
                     result = update(self.policy, self.env, self.rng, progress=self.frame, interrupt=interrupt)
                 if result is None:
@@ -319,9 +338,9 @@ class Worker:
                 self.state['completed_maps'] += len(result['episodes'])
                 self.state['training'] = {key: value for key, value in result.items() if key != 'episodes'}
                 self.state['training']['steps_per_second']=round(result['steps']/max(.001,time.monotonic()-started),1)
-                self.checkpoint()
+                self.checkpoint(force=False)
                 previous=self.state['history'][-1] if self.state['history'] else {}
-                if self.state['updates']%50 == 0 or previous.get('evaluation_protocol')!=EVALUATION_REVISION:
+                if self.state['steps'] - self.last_evaluation_steps >= EVALUATION_STEPS or previous.get('evaluation_protocol')!=EVALUATION_REVISION:
                     sections = self.library.evaluation_sections(8)
                     if sections:
                         self.state['phase'] = 'Checking withheld real beatmap sections'
@@ -332,18 +351,20 @@ class Worker:
                             self.state['baselines']=dict(list(self.state['baselines'].items())[-16:])
                         evaluation = evaluate_many(self.policy,sections,tick=self.tick)
                         self.state['evaluation'] = evaluation
-                        point = {'update':self.state['updates'],'stage':self.state['stage'],
+                        point = {'update':self.state['updates'],'steps':self.state['steps'],'stage':self.state['stage'],
                                  'hit_rate':evaluation['hit_rate'],'accuracy':evaluation['accuracy'],
                                  'baseline':self.state['baselines'][signature]['accuracy'],
                                  'evaluation_protocol':EVALUATION_REVISION,'objects':evaluation['objects'],
                                  'unique_objects':evaluation['unique_objects'],'seed_count':evaluation['seed_count'],
                                  'slider_tracking_hit_rate':evaluation['slider_tracking_hit_rate'],'slider_parts_total':evaluation['slider_parts_total']}
                         self.state['history'] = (self.state['history']+[point])[-150:]
+                        self.last_evaluation_steps = self.state['steps']
+                        self.state['last_evaluation_steps'] = self.last_evaluation_steps
                         best = read_json(self.directory/'models/best.json',{})
                         if signature != best.get('signature') or evaluation['accuracy']>best.get('accuracy',-1):
                             self.policy.save(self.directory/'models/best.npz',self.metadata())
                             atomic_json(self.directory/'models/best.json',point|{'signature':signature})
-                    self.checkpoint()
+                    self.checkpoint(force=False)
                 self.publish(force=True)
 
         except StopWorker:
@@ -355,7 +376,7 @@ class Worker:
             return
         finally:
             if self.trainer is not None:
-                self.parallel_views(self.trainer.scenes())
+                self.parallel_views(self.trainer.scenes(limit=PREVIEW_RUNS))
                 self.parallel_saved=self.trainer.snapshot()
                 self.trainer.close()
                 self.trainer = None

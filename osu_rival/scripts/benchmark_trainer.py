@@ -37,7 +37,7 @@ def main():
         for device in devices:
             policy, metadata = Policy.load(Path(args.checkpoint).read_bytes())
             policies[device], streams[device], times[device] = policy, np.random.default_rng(765123), []
-            trainers[device] = Trainer(policy, library, args.maps, args.environments, args.processes, 765123, reward_feedback=True, device=device)
+            trainers[device] = Trainer(policy, library, args.maps, args.environments, args.processes, 765123, device=device)
             if saved: trainers[device].restore(saved)
             initial[device] = policy.optimizer_step
         for index in range(args.updates+1):

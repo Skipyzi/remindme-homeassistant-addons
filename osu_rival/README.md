@@ -28,8 +28,21 @@ and follow the moving ball to collect slider parts. Inputs use 60 Hz steps and
 sampled slider curves. Health, mods, skin graphics and audio remain absent.
 Practice accuracy is separate from normalized leaderboard scores and pp.
 
-The app saves after each completed update. Start and Pause are the training
-controls. It defaults to one thread, 25% of one CPU core, and a 512 MB worker
+Training reward is exactly earned judgment points divided by 300: circles and
+slider heads award 300/100/50, ticks and repeats award 30, tails award 150, and
+misses award zero. There is no aiming-distance bonus, custom miss penalty or
+reward for moving/holding keys without a scoring judgment. This reward uses
+lazer's accuracy judgments; it is not lazer's normalized total score or pp.
+Score-only pixel learning remains difficult, so removing extra feedback does not
+guarantee faster improvement.
+
+Press Start training or Pause training. The app saves every ten seconds between
+updates and always saves on a graceful pause, settings change or shutdown. A crash
+can lose work since the last periodic save. On a paired PC, the recommended setup
+uses up to four CPU cores and two runs per core; this workstation uses four cores
+and eight runs. Advanced settings retain optional resource and GPU overrides.
+Checks use fixed withheld maps and action seeds every 250,000 training frames.
+On the Pi, it defaults to one thread, 25% of one CPU core, and a 512 MB worker
 memory limit. It waits when available host memory is below 768 MB or the Pi is
 above 75°C. These are resource guards, not a hard container CPU quota.
 
@@ -70,14 +83,10 @@ The model can be measured only with a library of actual imported maps:
 ```sh
 PYTHONPATH=. OPENBLAS_NUM_THREADS=1 python3 scripts/benchmark_learning.py \
   --maps /tmp/osu-rival/maps --checkpoint /tmp/osu-rival/models/latest.npz \
-  --updates 200 --output /tmp/score-only.json
-PYTHONPATH=. OPENBLAS_NUM_THREADS=1 python3 scripts/benchmark_learning.py \
-  --maps /tmp/osu-rival/maps --checkpoint /tmp/osu-rival/models/latest.npz \
-  --updates 200 --feedback --output /tmp/aim-feedback.json
+  --updates 200 --output /tmp/judgment-rewards.json
 ```
 
-Keep the source checkpoint and map library unchanged between those commands.
-They start equal full-map runs and write reports without replacing saved models.
+This trains a copied checkpoint and writes a report without replacing saved models.
 
 For a broader comparison with the starting model, run:
 
@@ -121,10 +130,12 @@ and remaining differences from the native client are documented in
 
 ## Workstation resources and GPU learning
 
-Open **Trainer settings** on the Training card after a PC connects. Choose CPU
+The recommended setup is selected automatically when upgrading to 0.9.0.
+It retains all saved models and disabled runs. You can restore it with
+**Use recommended setup**. Open **Advanced settings** on the Training card to override CPU
 cores, parallel runs and CPU or GPU learning, then **Apply settings**. Use at
 least one run per core. Four cores and eight runs remain the default on this
-workstation. Changes save the existing model and all map positions before
+workstation. Up to eight run previews are available in the collapsed Parallel training panel. Changes save the existing model and all map positions before
 recreating the worker. Runs removed from the active set wait in the saved
 sidecar and resume when enabled again. Settings persist separately from models. When CPU shard assignments change,
 action RNG streams are reseeded for the new groups; unchanged layouts retain

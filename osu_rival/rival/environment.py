@@ -14,17 +14,16 @@ from PIL import Image, ImageDraw
 from .beatmaps import MapLibrary, parse_beatmap, slider_position
 
 from .vision import WIDTH,HEIGHT,PADDING,PIXELS_PER_UNIT,view
-from .rewards import DISCOUNT,aim_potential
+from .rewards import judgment_reward
 from .rules import REVISION as SCORING_REVISION,hit_windows,update_tracking,spinner_rotation,spinner_result,spinner_progress,TAIL_LENIENCY
 FRAME_MS = 1000 / 60
 
 
 class Environment:
-    def __init__(self, seed=42, beatmap=None, section=None, library=None, map_index=0, map_stride=1, reward_feedback=False):
+    def __init__(self, seed=42, beatmap=None, section=None, library=None, map_index=0, map_stride=1):
         if beatmap is None and library is None and section is None:
             raise ValueError('A real beatmap is required; there is no generated training fallback')
         self.rng = np.random.default_rng(seed)
-        self.reward_feedback=reward_feedback
         self.beatmap, self.section, self.library = beatmap, section, library
         # Parallel training gives each environment its own maps: start on map `map_index`, then every `map_stride`-th.
         self.next_map_index, self.map_stride = map_index, map_stride
@@ -58,7 +57,7 @@ class Environment:
         self.results = {'300':0,'100':0,'50':0,'miss':0}
         self.last_judgment = None
         self.events = []
-        self.last_reward={'score':0.0,'feedback':0.0}
+        self.last_reward={'score':0.0}
         self.accuracy_points=self.accuracy_max=0
         self.score_counts={}
         self.scoring_scope='whole-map'
@@ -83,7 +82,6 @@ class Environment:
             self.next_object += 1
 
     def step(self, action):
-        potential=aim_potential(self) if self.reward_feedback else 0.0
         latent,key_state = action
         position = np.tanh(np.asarray(latent,dtype=np.float32))
         self.cursor = [float((position[0]+1)*256),float((position[1]+1)*192)]
@@ -168,10 +166,9 @@ class Environment:
         self.active = [obj for obj in self.active if obj['result'] is None]
         self.activate()
         done = sum(self.results.values())==len(self.objects) or self.time>=self.end_time
-        feedback=DISCOUNT*(aim_potential(self) if not done else 0.0)-potential if self.reward_feedback else 0.0
-        self.last_reward={'score':reward,'feedback':feedback}
+        self.last_reward={'score':reward}
         self.frames.append(self.render())
-        return self.observation(),reward+feedback,done
+        return self.observation(),reward,done
 
     def complete(self,obj,result):
         if obj['result'] is not None:raise RuntimeError('An object cannot be judged twice')
@@ -194,7 +191,7 @@ class Environment:
                            'display_time':round(self.time+FRAME_MS,2),'x':x,'y':y,'part':part,'complete':part in ('circle','spinner'),
                            'accuracy_points':result,'accuracy_max':maximum,'combo_after':self.combo,'max_combo_after':self.max_combo}
         self.events.append(dict(self.last_judgment))
-        return result/300 if result else -maximum/600
+        return judgment_reward(result)
 
     def judge(self,obj,result):
         if obj['result'] is not None:raise RuntimeError('An object cannot be judged twice')

@@ -48,6 +48,7 @@
       <div class="kpi"><b id="kpi-acc">—</b><span>started at <span id="kpi-base">—</span></span><span class="up" id="kpi-gain"></span></div>
       <canvas class="chart" id="chart"></canvas>
       <div class="chart-legend"><span><i class="sw-pink"></i>Accuracy</span><span><i class="sw-mint"></i>Objects hit</span><span><i class="sw-muted"></i>Starting model</span></div>
+      <p class="note">Checks every 250,000 training frames on fixed withheld maps and action seeds.</p>
     </section>
     <section class="card">
       <h3>Training <small id="active-model"></small></h3>
@@ -55,8 +56,9 @@
       <div class="stats"><div><small>Updates</small><b id="updates">0</b></div><div><small>Maps finished</small><b id="maps-done">0</b></div><div><small>Steps</small><b id="steps">0</b></div><div><small>Objects hit</small><b id="hits">—</b></div><div><small>Slider parts held</small><b id="slider-hits">—</b></div></div>
       <p class="phase" id="phase"></p>
       <p class="where" id="where"></p>
+      <p class="note">Complete real maps · default lazer judgments · rewards from earned judgment points.</p>
       <details class="trainer-controls" id="trainer-controls" hidden>
-        <summary>Trainer settings</summary>
+        <summary>Advanced settings</summary>
         <form id="trainer-form">
           <div class="trainer-fields">
             <label>CPU cores<input id="trainer-cores" type="number" min="1" max="64" required></label>
@@ -65,7 +67,7 @@
           </div>
           <p class="note" id="trainer-gpu"></p>
           <p class="note">Changes keep this model and every map position. Runs you turn off wait until you enable them again.</p>
-          <div class="row"><button class="btn" type="submit" id="trainer-apply">Apply settings</button><span class="note" id="trainer-result" role="status" aria-live="polite"></span></div>
+          <div class="row"><button class="btn" type="submit" id="trainer-apply">Apply settings</button><button class="btn ghost" type="button" id="trainer-recommended">Use recommended setup</button><span class="note" id="trainer-result" role="status" aria-live="polite"></span></div>
         </form>
       </details>
       <div class="row"><a class="btn" id="download" href="api/checkpoints/latest.npz" download>Download model</a><label class="btn ghost file">Import<input type="file" id="ckpt" accept=".npz"></label><button class="btn ghost" id="models-open" type="button">Models</button><button class="btn ghost" id="remote-open" type="button">Train on another computer</button></div>
@@ -82,7 +84,7 @@
       <div class="meter"><div><span>Temperature</span><b id="temp">—</b></div><i id="temp-bar" class="c-amber"></i></div>
     </section>
   </div>
-  <details class="parallel-panel" id="parallel-panel" open>
+  <details class="parallel-panel" id="parallel-panel">
     <summary>Parallel training <span id="parallel-count"></span></summary>
     <p class="note" id="parallel-note">Each run plays a complete real map. Views refresh after a rollout, then stay still while the model learns.</p>
     <div class="parallel-grid" id="parallel-grid"></div>

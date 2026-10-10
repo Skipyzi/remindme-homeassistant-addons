@@ -315,3 +315,43 @@ overflow. The report is `validation/workstation-gpu.json`.
 
 Source backup:
 `/share/osu-rival-maintenance/before-trainer-resources-20261010-014025`.
+
+
+## Simple lazer training, 0.9.0
+
+Deployed to the Pi and workstation on 2026-10-10. Start and Pause remain the
+main controls. The recommended workstation setup is four CPU cores and eight
+complete-map runs; optional overrides remain under Advanced settings. Upgrading
+replaces previous tuning with this recommendation once. Later manual choices
+persist, and Use recommended setup restores the defaults.
+
+The environment now rewards only earned default lazer judgment points divided
+by 300. Aiming feedback and custom miss penalties were removed. The existing
+ports of timing, key ownership, slider tracking, component accuracy/combo and
+spinner judgments remain in place. This still uses 60 Hz input and sampled
+curves rather than the native client; health, mods and authoritative leaderboard
+scoring remain outside the app.
+
+Checkpoints save every ten seconds between updates and on graceful pause or
+shutdown. Withheld-map checks run every 250,000 training frames; the interval
+survives pauses. Control reads are cached for 100 ms. Optional parallel previews
+are collapsed initially and limited to eight scenes, refreshed at most once per
+second. On copies of the same real-map model, 15 updates wrote three checkpoints
+rather than sixteen. Both versions produced identical learned weights when
+using the same judgment-point rewards. Desktop and other work varied during the
+comparison, so those timings do not establish a throughput improvement.
+
+The 76-check suite passed across CPU and the targeted GPU checks. A follow-up
+save/resume check passed after persisting the evaluation schedule. Browser
+verification covered Start/Pause, eight previews, recommended CPU settings and
+desktop/mobile layout without horizontal overflow.
+
+The original model resumed at 2,411,520 steps and reached 2,430,976 steps during
+verification. Its starting comparison model is byte-for-byte unchanged. All 64
+saved runs remain: eight active runs continued their maps or completed them,
+and the 56 waiting runs are unchanged. The trainer remains paused. No private
+server account or profile association was changed.
+
+Validation: `validation/simple-lazer-20261010.json`. Source backups:
+`/share/osu-rival-maintenance/before-simple-lazer-20261010-020309` and
+`/share/osu-rival-maintenance/before-simple-lazer-20261010-020426`.

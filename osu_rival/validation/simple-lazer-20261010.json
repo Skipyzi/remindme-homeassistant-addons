@@ -1,0 +1,121 @@
+{
+  "version": "0.9.0",
+  "source": "100 real cached beatmaps, no player replays",
+  "reward": "earned default lazer accuracy judgment points / 300; no aim feedback or custom miss penalties",
+  "checks": {
+    "cpu_suite": 76,
+    "cpu_passed": 74,
+    "optional_gpu_checks_passed": 2,
+    "save_cadence_followup_passed": 1
+  },
+  "benchmark": {
+    "starting_checkpoint_sha256": "b2debb73ee5e4ac92cd34f901d08cb7e0280f1913717e74aa3728b9b85189940",
+    "cpu_cores": 4,
+    "environments": 8,
+    "updates_per_run": 15,
+    "steps_per_run": 15360,
+    "order": [
+      "before",
+      "after",
+      "after",
+      "before"
+    ],
+    "before": [
+      {
+        "seconds_after_first_update": 18.604743795993272,
+        "steps_per_second": 770.5561633741718,
+        "counts": {
+          "checkpoints": 16,
+          "scenes": 16
+        },
+        "status": "paused",
+        "steps": 15360,
+        "optimizer_step": 41676,
+        "weights_sha256": "a670711701fcfa9226725eeecf870736ffc9513ab313c3c98e743e5aea5e550d"
+      },
+      {
+        "seconds_after_first_update": 13.703947939968202,
+        "steps_per_second": 1046.121895879974,
+        "counts": {
+          "checkpoints": 16,
+          "scenes": 16
+        },
+        "status": "paused",
+        "steps": 15360,
+        "optimizer_step": 41676,
+        "weights_sha256": "a670711701fcfa9226725eeecf870736ffc9513ab313c3c98e743e5aea5e550d"
+      }
+    ],
+    "after": [
+      {
+        "seconds_after_first_update": 16.540187514037825,
+        "steps_per_second": 866.7374531173175,
+        "counts": {
+          "checkpoints": 3,
+          "scenes": 9
+        },
+        "status": "paused",
+        "steps": 15360,
+        "optimizer_step": 41676,
+        "weights_sha256": "a670711701fcfa9226725eeecf870736ffc9513ab313c3c98e743e5aea5e550d"
+      },
+      {
+        "seconds_after_first_update": 16.716337847989053,
+        "steps_per_second": 857.6041074525541,
+        "counts": {
+          "checkpoints": 3,
+          "scenes": 10
+        },
+        "status": "paused",
+        "steps": 15360,
+        "optimizer_step": 41676,
+        "weights_sha256": "a670711701fcfa9226725eeecf870736ffc9513ab313c3c98e743e5aea5e550d"
+      }
+    ],
+    "weights_identical": true,
+    "conditions": "Copied model and playheads. Both versions use earned judgment points; old aim reward and custom miss penalty disabled for comparison. Scheduled evaluation excluded; first update excluded from timing. Game/desktop and some test activity varied; timings do not establish a speedup. Checkpoint and preview write counts decreased."
+  },
+  "limitations": "Ports of default lazer judgments at 60 Hz with sampled slider curves, not the native client or normalized leaderboard scoring. Removing shaping does not establish faster learning.",
+  "deployment": {
+    "version": "0.9.0",
+    "status": "paused",
+    "updates": 2306,
+    "steps": 2430976,
+    "completed_maps": 393,
+    "trainer_settings": {
+      "processes": 4,
+      "environments": 8,
+      "device": "cpu",
+      "recipe": "simple-lazer-v1",
+      "automatic": true,
+      "id": "93367bcc6220479fa42303f361b33243"
+    },
+    "reward_feedback": "lazer-judgment-points-v1",
+    "scoring_revision": "lazer-standard-v1",
+    "last_evaluation_steps": 2411520,
+    "last_error": null,
+    "active_runs": 8,
+    "waiting_runs": 56,
+    "waiting_unchanged": true,
+    "continued_on_same_map": [
+      0,
+      1
+    ],
+    "advanced_to_next_map": [
+      4,
+      5,
+      2,
+      6,
+      3,
+      7
+    ],
+    "initial_unchanged": true,
+    "checkpoint_sha256": "7cf64817271bf1359387988444c099c29a2b698c4defb77d03d02c5d09ec36fc",
+    "browser": {
+      "mobile_overflow": false,
+      "desktop_overflow": false,
+      "parallel_preview_count": 8,
+      "start_pause_verified": true
+    }
+  }
+}

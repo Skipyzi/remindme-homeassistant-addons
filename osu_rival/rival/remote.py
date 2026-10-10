@@ -5,7 +5,7 @@
 The trainer attaches to the hub, copies its maps and latest model into a local folder and then runs the normal
 worker there, with several environments in several processes. A mirror thread keeps control.json in step with the
 hub (Start, Pause and Watch in the app's UI) and uploads what the worker writes: state, live scene and frame,
-checkpoints and recorded attempts. By default it uses half of this computer's cores at low priority.
+checkpoints and recorded attempts. By default it uses up to four CPU cores at low priority.
 """
 import argparse
 import hashlib
@@ -160,7 +160,7 @@ def main():
     parser.add_argument('--hub', required=True, help='The Rival app hub, for example http://homeassistant.local:8100')
     parser.add_argument('--token', default='', help='The hub token shown in the Rival app')
     parser.add_argument('--token-file', help='Read the hub token from a private file')
-    parser.add_argument('--processes', type=int, default=max(1, cores // 2), help=f'CPU processes to use (default: half of {cores})')
+    parser.add_argument('--processes', type=int, default=min(4, max(1, cores // 2)), help='CPU processes to use (default: up to four)')
     parser.add_argument('--environments', type=int, default=0, help='Environments played at once (default: two per process)')
     parser.add_argument('--data', default=str(Path.home()/'.local/share/osu-rival-trainer'), help='Local working folder')
     parser.add_argument('--name', default=platform.node() or 'another computer', help='Name shown in the Rival app')

@@ -302,9 +302,10 @@ async function refreshParallel(){
     parallelStamp=data.updated_at;
     const runs=data.runs || [],wanted=new Set(runs.map(run=>run.index));
     for(const [index,tile] of parallelFields)if(!wanted.has(index)){tile.row.remove();parallelFields.delete(index);}
-    $('parallel-count').textContent=runs.length?`${runs.length} runs`:'';
+    const total=store.state.parallel?.environments || runs.length;
+    $('parallel-count').textContent=runs.length?`${runs.length} of ${total} runs`:'';
     if(!runs.length)$('parallel-note').textContent='Start training on the connected PC to see its parallel runs here.';
-    else $('parallel-note').textContent='Each run plays a complete real map. Views refresh after a rollout, then stay still while the model learns.';
+    else $('parallel-note').textContent='Each run plays a complete real map. Up to eight previews refresh once per second between rollouts.';
     for(const run of runs){
       let tile=parallelFields.get(run.index);
       if(!tile){
@@ -379,7 +380,7 @@ function render(state) {
   if (away && isTraining(state)) $('status').lastChild.textContent = `Training on ${away.name}`;
   if (!$('remote-sheet').hidden && $('remote-sheet').classList.contains('open')) drawRemote(state);
   const saved = state.checkpoints?.find(c => c.name === 'latest.npz');
-  $('download').hidden = !saved; $('saved').textContent = saved ? `Saved ${new Date(saved.modified_at * 1000).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'})}, after every update.` : 'Nothing saved yet.';
+  $('download').hidden = !saved; $('saved').textContent = saved ? `Saved ${new Date(saved.modified_at * 1000).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'})}. Saves every 10 seconds between updates, and when paused.` : 'Nothing saved yet.';
   $('map-count').textContent = `${fmt(state.maps?.length)} saved`;
   $('sync-note').textContent = state.map_sync?.at ? `Last sync ${new Date(state.map_sync.at * 1000).toLocaleString([], {dateStyle: 'short', timeStyle: 'short'})}.` : '';
   const o = state.remote?.attached?{...state.options,...state.worker_budget}:state.options || {};
@@ -455,7 +456,7 @@ function drawTrainerSettings(state) {
   if(!attached)return;
   $('trainer-cores').max=Math.min(64, attached.cores);
   $('trainer-device').querySelector('[value="gpu"]').disabled=!attached.gpu?.available;
-  $('trainer-gpu').textContent=attached.gpu?.available ? `${attached.gpu.name} · ${attached.gpu.runtime}. The model runs on the GPU; map simulations use the CPU.` : `GPU unavailable: ${attached.gpu?.reason || 'Install a GPU runtime on the trainer.'}`;
+  $('trainer-gpu').textContent=attached.gpu?.available ? `CPU is recommended for this small model. Optional GPU: ${attached.gpu.name} · ${attached.gpu.runtime}.` : 'CPU is recommended for this small model.';
   if(!trainerDraft && trainerLoaded!==settings.id) {
     $('trainer-cores').value=settings.processes ?? attached.processes;
     $('trainer-runs').value=settings.environments ?? attached.environments;
@@ -464,6 +465,14 @@ function drawTrainerSettings(state) {
   if(!trainerDraft)$('trainer-result').textContent=state.trainer_settings?.id===settings.id ? 'Settings applied' : isTraining(state) ? 'Applying settings…' : 'Applies when training starts';
 }
 $('trainer-form').oninput=()=>{trainerDraft=true; $('trainer-result').textContent='';};
+$('trainer-recommended').onclick=async()=>{
+  $('trainer-recommended').disabled=true;
+  try {
+    store.state=await api('api/trainer/settings', {recommended:true});
+    trainerDraft=false; trainerLoaded=''; drawTrainerSettings(store.state);
+  } catch(e) { $('trainer-result').textContent=e.message; }
+  finally { $('trainer-recommended').disabled=false; }
+};
 $('trainer-form').onsubmit=async event=>{
   event.preventDefault(); $('trainer-apply').disabled=true;
   try {

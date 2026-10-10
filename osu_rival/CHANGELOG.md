@@ -1,3 +1,11 @@
+# 0.9.0
+
+- Use only earned default lazer judgment points as rewards; remove aiming feedback and custom miss penalties.
+- Select a recommended CPU setup automatically: up to four cores, two complete-map runs per core. Keep optional overrides under Advanced settings.
+- Save between updates every ten seconds and always on graceful pause/shutdown; check withheld maps every 250,000 training frames.
+- Cache control polling and limit optional parallel previews to eight runs, refreshed at most once per second.
+- Preserve trained weights, Adam state, complete-map positions and all disabled runs during the upgrade.
+
 # 0.8.0
 
 - Add CPU core, parallel run and CPU/GPU controls to the Training card.
