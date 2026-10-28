@@ -12,6 +12,7 @@ import {
 	type HomeApi,
 	type HomeCommand,
 } from "../agent/home";
+import type { Receipt } from "./activity";
 import type { Confirmation, ConfirmationStore } from "./confirmations";
 
 export const DOCUMENT_KINDS = ["markdown", "html", "svg", "code", "glsl", "wgsl", "three", "lua"] as const;
@@ -59,6 +60,19 @@ export interface Effects {
 	cards: Map<string, EntityCard>;
 	confirms: Confirmation[];
 	artifacts: Artifact[];
+	/** What actually changed, one line each, for the ledger. */
+	did: Receipt[];
+}
+
+export function newEffects(): Effects {
+	return { cards: new Map(), confirms: [], artifacts: [], did: [] };
+}
+
+/** A lamp that is on shows in its own colour; one without colour in lamp yellow. */
+function lampColor(card: EntityCard): string | undefined {
+	if (card.domain !== "light" || card.state !== "on") return undefined;
+	const rgb = card.rgbColor;
+	return rgb?.length === 3 ? `rgb(${rgb.map((value) => Math.round(value)).join(",")})` : "#ffd23f";
 }
 
 export interface ToolRun extends ToolOutcome {
@@ -292,7 +306,10 @@ function deviceTools(ctx: ToolContext): AssistantTool[] {
 				}
 				// Read back what actually happened rather than announcing what was asked.
 				const after = (await Promise.all(done.map((id) => home.card(id)))).filter((card): card is EntityCard => Boolean(card));
-				for (const card of after) effects.cards.set(card.entityId, card);
+				for (const card of after) {
+					effects.cards.set(card.entityId, card);
+					effects.did.push({ text: `${card.name}: ${stateText(card)}`, color: lampColor(card) });
+				}
 				return {
 					content: json({
 						done: after.map((card) => ({ name: card.name, state: stateText(card) })),
@@ -406,12 +423,13 @@ function todoTools(home: HomeApi): AssistantTool[] {
 					["list", "item"],
 				),
 			},
-			async run(input) {
+			async run(input, effects) {
 				const target = await resolve(text(input, "list", 80));
 				const item = text(input, "item", 200);
 				const due = text(input, "due_date", 10, false);
 				if (due && !/^\d{4}-\d{2}-\d{2}$/.test(due)) throw new InputError("due_date must be YYYY-MM-DD");
 				await home.callService("todo", "add_item", { entity_id: target.entityId, item, ...(due ? { due_date: due } : {}) });
+				effects.did.push({ text: `Added "${item}" to ${target.name}` });
 				return { content: `Added "${item}" to ${target.name}.` };
 			},
 		},
@@ -421,10 +439,11 @@ function todoTools(home: HomeApi): AssistantTool[] {
 				description: "Mark a to-do item as done. Use the item's exact text from todo_items.",
 				parameters: object({ list: { type: "string" }, item: { type: "string" } }, ["list", "item"]),
 			},
-			async run(input) {
+			async run(input, effects) {
 				const target = await resolve(text(input, "list", 80));
 				const item = text(input, "item", 200);
 				await home.callService("todo", "update_item", { entity_id: target.entityId, item, status: "completed" });
+				effects.did.push({ text: `Marked "${item}" done on ${target.name}` });
 				return { content: `Marked "${item}" done on ${target.name}.` };
 			},
 		},
@@ -448,7 +467,7 @@ function reminderTools(ctx: ToolContext): AssistantTool[] {
 					["message", "at"],
 				),
 			},
-			async run(input) {
+			async run(input, effects) {
 				const message = text(input, "message", 300);
 				const at = new Date(text(input, "at", 40));
 				if (Number.isNaN(at.getTime())) throw new InputError("at must be an ISO 8601 date-time");
@@ -456,6 +475,7 @@ function reminderTools(ctx: ToolContext): AssistantTool[] {
 				if (at.getTime() < now - 60_000) throw new InputError("That time has already passed");
 				if (at.getTime() > now + 366 * 86_400_000) throw new InputError("Reminders can be at most a year ahead");
 				const created = await ctx.reminders.add(message, at);
+				effects.did.push({ text: `Reminder for ${describeWhen(at)}: ${message}` });
 				return { content: `Reminder ${created.id} set for ${describeWhen(at)}: ${message}` };
 			},
 		},
@@ -476,11 +496,11 @@ function reminderTools(ctx: ToolContext): AssistantTool[] {
 				description: "Cancel a reminder by its id from list_reminders.",
 				parameters: object({ id: { type: "string" } }, ["id"]),
 			},
-			async run(input) {
+			async run(input, effects) {
 				const id = text(input, "id", 80);
-				return (await ctx.reminders.cancel(id))
-					? { content: `Cancelled reminder ${id}.` }
-					: { content: `No reminder with id ${id}.`, isError: true };
+				if (!(await ctx.reminders.cancel(id))) return { content: `No reminder with id ${id}.`, isError: true };
+				effects.did.push({ text: "Cancelled a reminder" });
+				return { content: `Cancelled reminder ${id}.` };
 			},
 		},
 	];
@@ -512,12 +532,13 @@ function noteTools(ctx: ToolContext): AssistantTool[] {
 				description: "Remember a fact about the user for later. Only when they ask you to remember something.",
 				parameters: object({ title: { type: "string" }, fact: { type: "string" } }, ["title", "fact"]),
 			},
-			async run(input) {
+			async run(input, effects) {
 				const title = text(input, "title", 80);
 				const note = await vault.write(`memory/user/${slug(title)}`, {
 					body: text(input, "fact", 1_000),
 					frontmatter: { title, type: "user", tags: ["memory"] },
 				});
+				effects.did.push({ text: `Saved a note: ${note.title}` });
 				return { content: `Saved to ${note.path}.`, view: { memory: [{ path: note.path, title: note.title }] } };
 			},
 		},
@@ -566,11 +587,12 @@ function parcelTools(ctx: ToolContext): AssistantTool[] {
 				description: "Start tracking a parcel by its tracking number. Status changes are messaged to the user.",
 				parameters: object({ tracking_number: { type: "string" }, label: { type: "string" } }, ["tracking_number"]),
 			},
-			async run(input) {
+			async run(input, effects) {
 				const number = text(input, "tracking_number", 40).replace(/\s+/g, "");
 				if (!/^[A-Za-z0-9]{6,40}$/.test(number)) throw new InputError("That doesn't look like a tracking number");
 				const result = await parcels.track(number, text(input, "label", 60, false));
 				if ("error" in result) return { content: result.error, isError: true };
+				effects.did.push({ text: `Tracking parcel ${number}` });
 				return { content: result.text, view: { parcels: [result.card] } };
 			},
 		},
@@ -607,6 +629,7 @@ function documentTools(ctx: ToolContext): AssistantTool[] {
 				if (!DOCUMENT_KINDS.includes(kind)) throw new InputError("Unknown document kind");
 				const saved = await artifacts.create({ title: text(input, "title", 80), kind, content: text(input, "content", 400_000) });
 				effects.artifacts.push(saved);
+				effects.did.push({ text: `Wrote a document: ${saved.title}` });
 				return { content: `Saved document ${saved.id}: ${saved.title}`, view: { artifact: { ...saved, content: undefined } } };
 			},
 		},
@@ -622,6 +645,7 @@ function documentTools(ctx: ToolContext): AssistantTool[] {
 				const saved = await artifacts.update(id, { content: text(input, "content", 400_000) });
 				if (!saved) return { content: `No document ${id}.`, isError: true };
 				effects.artifacts.push(saved);
+				effects.did.push({ text: `Updated the document ${saved.title}` });
 				return { content: `Updated ${saved.title}.`, view: { artifact: { ...saved, content: undefined } } };
 			},
 		},

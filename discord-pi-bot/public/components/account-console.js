@@ -20,7 +20,7 @@
  }
  scope.RemindMeAccountConsole = {
   async open(app, backend = 'codex') {
-   app.modelsOpen = false; app.authConsoleBackend = backend;
+   app.settingsOpen = false; app.authConsoleBackend = backend;
    app.authConsoleOpen = true; app.authConsoleError = ''; app.authConsoleInput = '';
    await new Promise(resolve => app.$nextTick(resolve));
    if (!terminal && scope.Terminal) {
@@ -47,6 +47,6 @@
   async key(app, input) { try { render(app, await request('/input', { id: app.authConsole.id, input, raw: true })); } catch (error) { app.authConsoleError = error.message; } },
   async cancel(app) { try { render(app, await request('/cancel', { id: app.authConsole.id })); } catch (error) { app.authConsoleError = error.message; } },
   // Back to the AI panel, which re-reads which sign-ins are connected.
-  async close(app) { app.authConsoleOpen = false; app.authConsoleInput = ''; app.modelsOpen = true; },
+  async close(app) { app.authConsoleOpen = false; app.authConsoleInput = ''; app.settingsTab = 'ai'; app.settingsOpen = true; await app.loadAi(); },
  };
 })(window);

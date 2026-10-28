@@ -58,7 +58,14 @@ It only sees and changes devices through these tools. Each turn sends your recen
 
 ## The console
 
-Open **RemindMe** in the sidebar. The chat, documents, vault, tasks, skills, MCP and Settings panels work as before. Answers show the tokens they used and, for Claude, what they cost.
+Open **RemindMe** in the sidebar. It is one ledger, newest first, with now in the middle:
+
+- **The command line** on top: tell RemindMe what to do, or ask. It keeps the thread like a Discord DM; **New topic** starts over. Pictures work with Claude, OpenAI and ChatGPT.
+- **Waiting on you:** actions that need your tap (locks, doors, scenes), and batteries running out.
+- **The ledger:** what's coming up (reminders, the brief, tonight's bins, your next shift, scheduled tasks), then everything RemindMe answered, changed, sent and failed at, here and on Discord. Changed lamps show in their own colour. Filter it by **Coming up**, **What it did** or **Messages**.
+- **Settings:** the AI and sign-ins, how it talks, skills, connected tools (MCP), scheduled tasks and documents.
+
+The assistant always knows which AI and model are answering, and says so when asked.
 
 ## Data
 

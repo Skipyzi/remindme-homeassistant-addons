@@ -6,12 +6,14 @@ import { Proactive } from "./assistant/proactive";
 import { setAiReadiness } from "./presence";
 import { listReminders } from "./utils/reminderManager";
 import {
+	activity,
 	aiSettings,
 	assistant,
 	confirmations,
 	home,
 	parcelSummary,
 	setBriefSender,
+	setPlannedSends,
 	startHarness,
 } from "./harness-server";
 
@@ -28,12 +30,20 @@ async function main() {
 	const chats = new DiscordChats();
 	await chats.load();
 	const ownerId = process.env.OWNER_ID || "";
-	const messenger = startBot({ assistant, chats, confirmations, home, ownerId });
+	const messenger = startBot({ assistant, chats, confirmations, home, ownerId, activity });
 
 	const proactive = new Proactive({
 		assistant,
 		home,
-		notify: async (text) => (messenger ? messenger.send(text) : false),
+		notify: async (text, what) => {
+			const sent = messenger ? await messenger.send(text) : false;
+			activity.add(
+				sent
+					? { kind: "sent", channel: what === "brief" ? "brief" : "nudge", text }
+					: { kind: "failed", channel: what === "brief" ? "brief" : "nudge", text: `Couldn't send this on Discord: ${text}` },
+			);
+			return sent;
+		},
 		reminders: () => listReminders(ownerId),
 		parcels: parcelSummary,
 		options: {
@@ -47,6 +57,7 @@ async function main() {
 	if (messenger) {
 		proactive.start();
 		setBriefSender(() => proactive.sendBrief());
+		setPlannedSends(() => proactive.upcoming());
 	} else console.log("No Discord bot: the morning brief and nudges are off.");
 }
 

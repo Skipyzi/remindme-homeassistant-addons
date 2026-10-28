@@ -20,7 +20,7 @@ export interface ProactiveDeps {
 	assistant: Assistant;
 	home?: HomeApi;
 	/** Message the owner on Discord. False when it could not be sent. */
-	notify(text: string): Promise<boolean>;
+	notify(text: string, what: "brief" | "bins" | "battery"): Promise<boolean>;
 	reminders(): Promise<Array<{ message: string; time: Date }>>;
 	parcels?(): string;
 	options: ProactiveOptions;
@@ -145,7 +145,7 @@ export class Proactive {
 				const text = binNudge(events.filter((event) => event.start.slice(0, 10) === localDate(startOfDay(now, 1))));
 				this.state.binDate = today;
 				await this.save();
-				if (text) await this.deps.notify(text);
+				if (text) await this.deps.notify(text, "bins");
 			}
 			if (options.batteryThreshold > 0) await this.checkBatteries(now);
 		} catch (error) {
@@ -171,6 +171,7 @@ export class Proactive {
 		const names = low.map((card) => `${card.name.replace(/\s*battery$/i, "")} at ${Math.round(card.numericState!)}%`);
 		const sent = await this.deps.notify(
 			low.length === 1 ? `🔋 ${names[0]}. Time for a new battery.` : `🔋 Batteries running low: ${names.join(", ")}.`,
+			"battery",
 		);
 		if (!sent) return;
 		for (const card of low) this.state.batteries[card.entityId] = localDate(now);
@@ -231,8 +232,41 @@ export class Proactive {
 			extra: `Facts gathered for the brief, as JSON. Use your tools only if something important is missing.\n${JSON.stringify(facts)}`,
 		});
 		const text = result.problem ? plainBrief(facts, result.problem) : `☀️ ${result.text}`;
-		await this.deps.notify(text);
+		await this.deps.notify(text, "brief");
 		return text;
+	}
+
+	private binsCache?: { day: string; text?: string };
+
+	/**
+	 * What RemindMe will send next on its own: the brief and tonight's bins.
+	 * For the console's ledger; the calendar is read at most once a day here.
+	 */
+	async upcoming(now = new Date()): Promise<Array<{ at: Date; text: string }>> {
+		const { options } = this.deps;
+		const planned: Array<{ at: Date; text: string }> = [];
+		const today = localDate(now);
+		const at = (day: Date, minutes: number) => new Date(startOfDay(day).getTime() + minutes * 60_000);
+		const briefAt = minutesOf(options.briefTime);
+		if (briefAt !== undefined) {
+			const minute = now.getHours() * 60 + now.getMinutes();
+			const todayStill = this.state.briefDate !== today && minute < briefAt;
+			planned.push({ at: at(todayStill ? now : startOfDay(now, 1), briefAt), text: "Morning brief to Discord" });
+		}
+		const binAt = minutesOf(options.binTime);
+		if (binAt !== undefined && this.state.binDate !== today && this.deps.home) {
+			if (this.binsCache?.day !== today) {
+				const tomorrow = localDate(startOfDay(now, 1));
+				try {
+					const events = await this.deps.home.calendarEvents(startOfDay(now, 1), startOfDay(now, 2));
+					this.binsCache = { day: today, text: binNudge(events.filter((event) => event.start.slice(0, 10) === tomorrow)) };
+				} catch {
+					this.binsCache = { day: today };
+				}
+			}
+			if (this.binsCache.text) planned.push({ at: at(now, binAt), text: this.binsCache.text.replace(/^🗑️ /, "") });
+		}
+		return planned;
 	}
 }
 

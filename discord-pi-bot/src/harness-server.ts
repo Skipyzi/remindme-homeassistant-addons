@@ -10,7 +10,6 @@ import {
 	listReminders,
 } from "./utils/reminderManager";
 import { createSseSender } from "./harness/sse";
-import { validateHistory } from "./harness/history";
 import { normalizeEntity, type HassEntity } from "./harness/entities";
 import { resolveEntities } from "./harness/entityResolver";
 import {
@@ -57,8 +56,12 @@ import { AiSettings, PROVIDERS } from "./ai/settings";
 import { SpendLedger } from "./ai/spend";
 import { withLegacyKeys } from "./ai/legacyEndpoints";
 import type { Effort, ImageInput, ProviderId } from "./ai/types";
-import { Assistant, type AskEvents } from "./assistant/agent";
+import { Assistant, type AskEvents, type AskResult } from "./assistant/agent";
 import { ConfirmationStore } from "./assistant/confirmations";
+import { ActivityLog } from "./assistant/activity";
+import { wasteEvents } from "./assistant/proactive";
+import { DiscordChats } from "./discord/chats";
+import type { CalendarEvent } from "./agent/home";
 import { buildTools, type McpTool, type ToolContext } from "./assistant/tools";
 import { registerBridge, chatgptFetch } from "./agents/bridge";
 import { NativeAccounts } from "./agents/native-accounts";
@@ -77,6 +80,12 @@ const homeAssistantUrl = process.env.HA_API_URL || "http://supervisor/core/api";
 const instanceId = randomUUID();
 /* Device actions waiting for the owner's tap, shared with the Discord bot. */
 export const confirmations = new ConfirmationStore();
+/* What RemindMe said, did and sent: the console's ledger. */
+export const activity = new ActivityLog();
+void activity.load();
+/* The console's running chat, kept here like a Discord DM's. */
+const consoleChat = new DiscordChats(process.env.CONSOLE_CHAT_PATH || "./data/console-chat.json");
+void consoleChat.load();
 /* Which AI answers, and what it has cost today. */
 /* The CLI agents' own sign-ins (Codex, OpenCode, Pi), and their sign-in console. */
 const nativeAccounts = new NativeAccounts();
@@ -941,15 +950,106 @@ app.post("/api/confirm", async (request, response) => {
 		typeof request.body?.token === "string" ? request.body.token : "";
 	const held = confirmations.take(token);
 	if (!held || !home) {
-		response.status(404).json({ error: "Action expired or not found" });
+		response.status(404).json({ error: "That request expired. Ask again." });
 		return;
 	}
 	try {
 		await home.service(held.action);
+		activity.resolve(token, "confirmed", held.label);
 		response.json({ done: true, message: held.label });
 	} catch (error) {
-		response.status(502).json({ error: error instanceof Error ? error.message : "Home Assistant refused" });
+		const reason = error instanceof Error ? error.message : "Home Assistant refused";
+		activity.resolve(token, "failed", `${held.label}: ${reason}`);
+		response.status(502).json({ error: reason });
 	}
+});
+app.post("/api/confirm/cancel", (request, response) => {
+	const token = typeof request.body?.token === "string" ? request.body.token : "";
+	const pending = confirmations.list().find((item) => item.token === token);
+	confirmations.cancel(token);
+	activity.resolve(token, "cancelled", pending?.message || "Cancelled");
+	response.json({ cancelled: true });
+});
+
+/* What RemindMe will do next on its own; set by the app once the scheduler runs. */
+let plannedSends: () => Promise<Array<{ at: Date; text: string }>> = async () => [];
+export function setPlannedSends(source: () => Promise<Array<{ at: Date; text: string }>>): void {
+	plannedSends = source;
+}
+let calendarCache: { at: number; events: CalendarEvent[] } | undefined;
+async function nextEvents(now: Date): Promise<CalendarEvent[]> {
+	if (!home) return [];
+	if (calendarCache && now.getTime() - calendarCache.at < 5 * 60_000) return calendarCache.events;
+	try {
+		const all = await home.calendarEvents(now, new Date(now.getTime() + 36 * 3_600_000));
+		const waste = new Set(wasteEvents(all));
+		calendarCache = { at: now.getTime(), events: all.filter((event) => !waste.has(event)) };
+	} catch (error) {
+		console.warn("Ledger calendar failed:", error instanceof Error ? error.message : error);
+		calendarCache = { at: now.getTime(), events: [] };
+	}
+	return calendarCache.events;
+}
+
+/**
+ * The console's one view: what is waiting on you, what comes next, and
+ * everything RemindMe said, did and sent over the last week.
+ */
+app.get("/api/ledger", async (_request, response) => {
+	const now = new Date();
+	const status = aiSettings.status(searchFallback());
+	const ownerId = process.env.OWNER_ID || "";
+	const weekAhead = now.getTime() + 7 * 86_400_000;
+	const [reminders, planned, events, cards] = await Promise.all([
+		listReminders(ownerId).catch(() => []),
+		plannedSends().catch(() => []),
+		nextEvents(now),
+		home ? home.cards().catch(() => []) : Promise.resolve([]),
+	]);
+	const upcoming = [
+		...planned.map((item) => ({ at: item.at.toISOString(), kind: "will send", text: item.text })),
+		...reminders
+			.filter((item) => item.time.getTime() <= weekAhead)
+			.map((item) => ({ at: item.time.toISOString(), kind: "reminder", text: item.message, reminderId: item.id })),
+		...events
+			.filter((event) => !event.allDay && Date.parse(event.start) > now.getTime())
+			.map((event) => ({ at: new Date(event.start).toISOString(), kind: "calendar", text: event.summary, until: event.end })),
+		...events
+			.filter((event) => event.allDay)
+			.map((event) => ({ at: new Date(`${event.start}T00:00:00`).toISOString(), kind: "calendar", text: event.summary, allDay: true })),
+		...tasks
+			.list()
+			.filter((task) => task.enabled && Date.parse(task.nextRun) <= now.getTime() + 36 * 3_600_000)
+			.map((task) => ({ at: task.nextRun, kind: "task", text: task.name })),
+	].sort((a, b) => a.at.localeCompare(b.at));
+	const threshold = Number(process.env.BATTERY_NUDGE_PERCENT || 15) || 15;
+	const pending = new Set(confirmations.list().map((item) => item.token));
+	response.set("Cache-Control", "no-store").json({
+		now: now.toISOString(),
+		ai: { label: status.label, model: status.model, ready: status.ready, problem: status.problem },
+		waiting: confirmations.list(),
+		batteries: cards
+			.filter((card) => card.available && card.deviceClass === "battery" && card.numericState !== undefined && card.numericState <= threshold)
+			.map((card) => ({ entityId: card.entityId, name: card.name.replace(/\s*battery$/i, ""), level: Math.round(card.numericState!) })),
+		upcoming,
+		// A waiting row whose token is gone expired unseen.
+		entries: activity
+			.recent(7, now)
+			.map((entry) => (entry.kind === "waiting" && (!entry.token || !pending.has(entry.token)) ? { ...entry, kind: "cancelled", text: `${entry.text} (expired)`, token: undefined } : entry)),
+	});
+});
+/* Set a reminder straight from the ledger, such as "replace the battery on Saturday". */
+app.post("/api/reminders", async (request, response) => {
+	const message = typeof request.body?.message === "string" ? request.body.message.trim().slice(0, 300) : "";
+	const at = new Date(String(request.body?.at || ""));
+	if (!message || Number.isNaN(at.getTime()) || at.getTime() < Date.now()) return response.status(400).json({ error: "Say what to remind you of, and a time in the future." });
+	const created = await addReminder(message, (at.getTime() - Date.now()) / 60_000, process.env.OWNER_ID || "", "");
+	activity.add({ kind: "did", channel: "console", text: `Reminder for ${describeWhen(at)}: ${message}`, receipts: [{ text: `Reminder for ${describeWhen(at)}: ${message}` }] });
+	response.status(201).json({ id: created.id, at: at.toISOString() });
+});
+app.post("/api/chat/reset", (_request, response) => {
+	consoleChat.reset("console");
+	response.json({ ok: true });
 });
 
 app.post("/api/chat", async (request, response) => {
@@ -975,21 +1075,23 @@ app.post("/api/chat", async (request, response) => {
 	try {
 		const attachments = validateAttachments(request.body?.attachments, true);
 		const artifactId = typeof request.body?.artifactId === "string" ? request.body.artifactId : "";
-		await runConsoleTurn(send, `request-${Date.now()}`, {
+		const result = await runConsoleTurn(send, `request-${Date.now()}`, {
 			prompt,
-			history: validateHistory(request.body?.history).map((turn) => ({ role: turn.role, text: turn.content })),
+			history: consoleChat.history("console"),
 			images: attachments.map(
 				(image): ImageInput => ({ mediaType: image.mediaType, data: image.dataUrl.slice(image.dataUrl.indexOf(",") + 1) }),
 			),
 			// Which document is on the bench, so edits have a default target.
 			openDocument: artifactId ? artifacts.get(artifactId) : undefined,
 			effort: effortFor(request.body?.thinkingMode),
-			conversationId:
-				typeof request.body?.conversationId === "string" && request.body.conversationId
-					? `console:${request.body.conversationId.slice(0, 80)}`
-					: undefined,
+			conversationId: consoleChat.conversationId("console"),
 			signal: abort.signal,
 		});
+		if (!result.problem)
+			consoleChat.append("console", [
+				{ role: "user", text: prompt },
+				{ role: "assistant", text: result.text },
+			]);
 		send("complete", {});
 	} catch (error) {
 		if (abort.signal.aborted) return;
@@ -1205,6 +1307,7 @@ export const assistant = new Assistant({
 	home: () => homeName,
 	searchFallback,
 	agents: { bridgeUrl: `http://127.0.0.1:${port}/internal/agent-tools`, threads: new RunnerThreads() },
+	activity,
 });
 
 /** Parcels still on their way, as lines for the morning brief. */
@@ -1235,7 +1338,7 @@ async function runConsoleTurn(
 	send: Send,
 	requestId: string,
 	input: Omit<Parameters<Assistant["ask"]>[0], "channel">,
-): Promise<void> {
+): Promise<AskResult> {
 	const phase = (round: number) => `${requestId}-${round}`;
 	const thinkingOpen = new Set<number>();
 	const toolNames = new Map<string, string>();
@@ -1304,7 +1407,7 @@ async function runConsoleTurn(
 		send("phase_start", { phaseId: `${final}-problem`, iteration: lastRound + 1, kind: "answer", state: "active" });
 		send("answer_delta", { phaseId: `${final}-problem`, iteration: lastRound + 1, kind: "answer", text: result.text });
 		send("phase_complete", { phaseId: `${final}-problem`, iteration: lastRound + 1, kind: "answer", state: "complete" });
-		return;
+		return result;
 	}
 	send("answer", { phaseId: final, iteration: lastRound, text: result.text, cards: result.cards });
 	send("phase_metrics", {
@@ -1320,6 +1423,7 @@ async function runConsoleTurn(
 		},
 	});
 	send("phase_complete", { phaseId: final, iteration: lastRound, kind: "answer", state: "complete" });
+	return result;
 }
 
 async function hassRequest(path: string, method = "GET", body?: unknown) {

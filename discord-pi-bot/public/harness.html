@@ -2,1629 +2,338 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta
-      name="viewport"
-      content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content"
-    />
-    <meta name="theme-color" content="#0d0a06" />
-    <!-- The saved theme, applied before first paint so nothing flashes. -->
-    <script>
-      try {
-        const theme = localStorage.getItem("remindme.theme");
-        if (theme && theme !== "lucky38") document.documentElement.dataset.theme = theme;
-      } catch (_) {}
-    </script>
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="theme-color" content="#000000" />
     <title>RemindMe</title>
-    <script defer src="./components/timeline.js"></script>
-    <script defer src="./components/thinking.js"></script>
-    <script defer src="./components/tools.js"></script>
-    <script defer src="./components/composer.js"></script>
-    <script defer src="./components/entities.js"></script>
-    <script defer src="./components/entityCards.js"></script>
-    <script defer src="./vendor/katex.min.js"></script>
-    <script defer src="./components/math.js"></script>
+    <link rel="stylesheet" href="./styles.css" />
+    <link rel="stylesheet" href="./vendor/xterm.css" />
     <script defer src="./components/highlight.js"></script>
-    <script defer src="./components/editor.js"></script>
     <script defer src="./components/richtext.js"></script>
-    <script defer src="./components/commands.js"></script>
-    <script defer src="./components/entityControls.js"></script>
-    <script defer src="./components/conversations.js"></script>
-    <script defer src="./components/attachments.js"></script>
     <script defer src="./components/account-console.js"></script>
     <script defer src="./vendor/xterm.js"></script>
-    <link rel="stylesheet" href="./vendor/xterm.css" />
     <script defer src="./app.js"></script>
     <script defer src="./vendor/alpine.min.js"></script>
-    <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
-    <pre id="ascii" aria-hidden="true"></pre>
-    <div
-      class="app"
-      x-data="harness()"
-      x-init="init()"
-      :class="{scanlines: scanlines, 'drawer-open': historyOpen, 'with-artifact': artifactOpen}"
-      @keydown.escape.window="historyOpen=false"
-    >
-      <!-- Tapping outside the drawer closes it on narrow screens. -->
-      <div class="scrim" x-show="historyOpen" x-cloak @click="historyOpen=false"></div>
-
-      <!--
-        The drawer: chats first, then the rooms of the app. A fixed column on
-        wide screens, an off-canvas panel on phones.
-      -->
-      <aside
-        class="drawer"
-        id="conversation-library"
-        :class="{open: historyOpen}"
-        aria-label="Chats and settings"
-      >
-        <div class="drawer-head">
-          <div class="brand"><svg class="emblem" viewBox="0 0 32 32" aria-hidden="true"><ellipse cx="16" cy="10" rx="12" ry="3.4" /><path d="M16 3v4M13 13.2 11 29h10l-2-15.8M11 29h10M14 19h4M13.4 24h5.2" /></svg><span>RemindMe</span></div>
-          <button
-            type="button"
-            class="icon-btn drawer-close"
-            aria-label="Close menu"
-            @click="historyOpen=false"
-          >
-            ✕
-          </button>
+    <div class="rm" x-data="remindme()" x-init="init()">
+      <!-- The command line on top, then what waits, then everything in time order. -->
+      <header class="rm-top">
+        <div class="rm-title">
+          <h1>RemindMe <span x-show="ai?.ready" x-text="`on ${ai?.label}`"></span></h1>
+          <button class="rm-btn ghost" type="button" x-show="authConsole.running" x-cloak @click="window.RemindMeAccountConsole.open($data, authConsole.backend)">Sign-in running</button>
+          <button class="rm-btn ghost" type="button" @click="openSettings('ai')">Settings</button>
         </div>
-        <button type="button" class="btn primary block" @click="newChat()">
-          <span aria-hidden="true">＋</span> New chat
-        </button>
-        <label class="search-field">
-          <span class="sr-only">Search chats</span>
-          <input
-            x-model="conversationSearch"
-            type="search"
-            placeholder="Search chats"
-            autocomplete="off"
-          />
-        </label>
-        <div class="history-list">
-            <template
-              x-for="conversation in filteredConversations"
-              :key="conversation.id"
-              ><div class="history-row">
-                <button
-                  class="history-open"
-                  :class="{active:conversation.id===currentConversationId}"
-                  @click="selectConversation(conversation)"
-                >
-                  <span class="history-title"
-                    ><i
-                      class="history-pin-mark"
-                      x-show="conversation.pinned"
-                      aria-hidden="true"
-                      >◆</i
-                    ><span x-text="conversation.title"></span
-                  ></span>
-                  <!-- Enough to tell two conversations apart at a glance:
-                       when it last moved, how long it ran, how it opened. -->
-                  <small class="history-meta">
-                    <span x-text="conversationWhen(conversation)"></span
-                    ><span x-text="conversationSize(conversation)"></span>
-                  </small>
-                  <small
-                    class="history-preview"
-                    x-show="conversationPreview(conversation)"
-                    x-text="conversationPreview(conversation)"
-                  ></small>
-                </button>
-                <div class="history-controls">
-                  <button
-                    class="history-pin"
-                    :class="{on: conversation.pinned}"
-                    :aria-label="conversation.pinned ? 'Unpin' : 'Pin'"
-                    :title="conversation.pinned ? 'Unpin' : 'Pin to top'"
-                    @click.stop="togglePin(conversation)"
-                  >
-                    ◆
-                  </button>
-                  <button
-                    class="history-delete"
-                    :aria-label="`Delete ${conversation.title}`"
-                    title="Delete conversation"
-                    @click.stop="deleteConversation(conversation)"
-                  >
-                    &times;
-                  </button>
-                </div></div
-            ></template>
-          <p class="history-empty" x-show="!filteredConversations.length">
-            No chats yet.
-          </p>
-        </div>
-        <nav class="drawer-nav" aria-label="Console">
-          <button @click="modelsOpen=true">AI</button>
-          <button @click="openSkills()">Skills</button>
-          <button @click="openMcp()">MCP</button>
-          <button @click="openSettings()">Settings</button>
-          <button class="danger" @click="clearChat()">Clear conversation</button>
-        </nav>
-        <div class="drawer-foot">
-          <div
-            class="status"
-            :class="{'offline': offline}"
-            x-text="offline ? 'RemindMe offline' : 'RemindMe ready'"
-          ></div>
-          <!-- Host telemetry: inference and Home Assistant share this Pi, so
-               these are the numbers that explain a slow reply. -->
-          <div class="host-stats" x-show="system">
-            <div class="host-stat">
-              <span class="host-label">CPU</span>
-              <span class="host-bar"
-                ><i :style="`width:${system?.cpuPercent || 0}%`"></i
-              ></span>
-              <span class="host-value" x-text="`${system?.cpuPercent ?? 0}%`"></span>
-            </div>
-            <div class="host-stat">
-              <span class="host-label">MEM</span>
-              <span class="host-bar"
-                ><i :style="`width:${system?.memoryPercent || 0}%`"></i
-              ></span>
-              <span
-                class="host-value"
-                x-text="`${formatBytes(system?.memoryUsedBytes)}/${formatBytes(system?.memoryTotalBytes)}`"
-              ></span>
-            </div>
-            <div class="host-stat" x-show="system?.temperatureC !== undefined">
-              <span class="host-label">TEMP</span>
-              <span class="host-bar"
-                ><i
-                  :class="{hot: system?.throttling}"
-                  :style="`width:${Math.min(100, ((system?.temperatureC || 0) / 90) * 100)}%`"
-                ></i
-              ></span>
-              <span
-                class="host-value"
-                :class="{hot: system?.throttling}"
-                x-text="`${system?.temperatureC}°C`"
-              ></span>
-            </div>
-          </div>
-        </div>
-      </aside>
-
-      <!--
-        The bench: the console, and beside it (or over it, on a phone) the
-        document the model wrote. `.workbench` is what the divider measures.
-      -->
-      <div class="workbench">
-        <main
-          class="stage"
-          :style="artifactOpen && benchSplit ? `flex-grow:${(1 - benchSplit).toFixed(3)}` : ''"
-        >
-          <header class="topbar">
-            <button
-              type="button"
-              class="icon-btn menu-btn"
-              aria-controls="conversation-library"
-              :aria-expanded="historyOpen"
-              aria-label="Chats and settings"
-              @click="historyOpen=!historyOpen"
-            >
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16" /></svg>
-            </button>
-            <div class="top-title">
-              <svg class="emblem" viewBox="0 0 32 32" aria-hidden="true"><ellipse cx="16" cy="10" rx="12" ry="3.4" /><path d="M16 3v4M13 13.2 11 29h10l-2-15.8M11 29h10M14 19h4M13.4 24h5.2" /></svg><b>RemindMe</b>
-            </div>
-            <button class="chip" x-show="authConsole.running" x-cloak @click="window.RemindMeAccountConsole.open($data, authConsole.backend)">Sign-in running</button>
-            <button
-              type="button"
-              class="badge"
-              title="AI settings"
-              @click="modelsOpen=true"
-              x-text="modelBadge"
-            ></button>
-            <button
-              type="button"
-              class="icon-btn"
-              aria-controls="house-board"
-              aria-label="Model instruments"
-              title="Model instruments"
-              @click="boardOpen=!boardOpen"
-            >
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19V11M12 19V5M19 19v-5" /></svg>
-            </button>
-          </header>
-
-          <section class="chat" id="timeline" aria-live="polite">
-            <div class="chat-column">
-              <div class="empty" x-show="messages.length===0">
-                <svg class="emblem hero" viewBox="0 0 32 32" aria-hidden="true"><ellipse cx="16" cy="10" rx="12" ry="3.4" /><path d="M16 3v4M13 13.2 11 29h10l-2-15.8M11 29h10M14 19h4M13.4 24h5.2" /></svg>
-                <h2 x-text="greeting"></h2>
-                <ul class="pulse" x-show="pulse.length">
-                  <template x-for="line in pulse" :key="line"><li x-text="line"></li></template>
-                </ul>
-                <div class="suggestions">
-                  <template x-for="suggestion in suggestions" :key="suggestion">
-                    <button
-                      type="button"
-                      class="suggestion"
-                      @click="draft = suggestion; $nextTick(() => $refs.composerInput.focus())"
-                      x-text="suggestion"
-                    ></button>
-                  </template>
-                </div>
-              </div>
-          <template
-            x-for="message in messages"
-            :key="message.id || message.key"
-          >
-            <!--
-              Object syntax, not an array holding an object: Alpine joins an
-              array's entries as strings, so the conditional was landing in
-              the class list as "[object Object]" and `settled` never applied
-              — finished tool and thinking rows kept their spinner turning
-              and never dimmed back.
-            -->
-            <article
-              class="message"
-              :class="{
-                [message.kind || 'answer']: true,
-                settled: message.state==='complete' && (message.kind==='thinking' || message.kind==='tool'),
-                streaming: message.kind==='answer' && message.state==='active',
-              }"
-            >
-              <!-- The console's mark beside what it says. -->
-              <template x-if="message.kind==='answer' || message.kind==='reader'">
-                <svg class="emblem avatar" viewBox="0 0 32 32" aria-hidden="true"><ellipse cx="16" cy="10" rx="12" ry="3.4" /><path d="M16 3v4M13 13.2 11 29h10l-2-15.8M11 29h10M14 19h4M13.4 24h5.2" /></svg>
-              </template>
-              <template x-if="message.kind==='thinking'">
-                <details
-                  :open="message.expanded"
-                  @toggle="message.expanded=$event.target.open"
-                >
-                                    <summary>
-                    <span
-                      class="status"
-                      :class="{warn: message.state==='active'}"
-                    ></span
-                    ><span class="label" x-text="message.state==='active' ? 'Consulting the house&hellip;' : thoughtLabel(message)"></span
-                    ><span
-                      class="tok-badge"
-                      x-show="message.metrics?.thinkingTokens"
-                      x-text="`+${message.metrics?.thinkingTokens} tok`"
-                    ></span>
-                  </summary>
-                  <pre
-                    x-text="message.text || 'No reasoning trace returned.'"
-                  ></pre>
-                </details>
-              </template>
-              <template x-if="message.kind==='tool'">
-                <details
-                  :open="message.expanded"
-                  @toggle="message.expanded=$event.target.open"
-                >
-                                    <summary>
-                    <span
-                      class="status"
-                      :class="{warn: message.state==='active'}"
-                    ></span
-                    ><span class="label" x-text="message.state==='active' ? toolLabel(message) : completedToolLabel(message)"></span
-                    ><span
-                      class="tok-badge"
-                      x-show="message.metrics?.toolResultTokens"
-                      x-text="`+${message.metrics?.toolResultTokens} tok`"
-                    ></span>
-                  </summary>
-                  <div class="tool-ledger">
-                    <section
-                      x-show="message.arguments && Object.keys(message.arguments).length"
-                    >
-                      <b>Request</b
-                      ><template
-                        x-for="(value,key) in message.arguments"
-                        :key="(message.key || message.id) + key"
-                        ><div class="tool-row">
-                          <span x-text="key.replaceAll('_',' ')"></span
-                          ><code x-text="formatValue(value)"></code></div
-                      ></template>
-                    </section>
-                    <section x-show="message.metrics">
-                      <b>Inference</b>
-                      <div class="metric-chips">
-                        <span
-                          x-text="`${message.metrics?.estimated ? '~' : ''}${message.metrics?.inputTokens || 0} in`"
-                        ></span
-                        ><span
-                          x-text="`${message.metrics?.estimated ? '~' : ''}${message.metrics?.outputTokens || 0} out`"
-                        ></span
-                        ><!-- Tool output fed BACK into the window, counted
-                             separately from the model's own generation so
-                             context bloat is attributable per call. -->
-                        <span
-                          class="chip-context"
-                          x-show="message.metrics?.toolResultTokens"
-                          title="Tool result fed back into context"
-                          x-text="`+${message.metrics?.toolResultTokens} ctx`"
-                        ></span
-                        ><span
-                          x-text="`${formatSpeed(message.metrics?.encodeTokensPerSecond)} encode`"
-                        ></span
-                        ><span
-                          x-text="`${formatSpeed(message.metrics?.decodeTokensPerSecond)} decode`"
-                        ></span>
-                      </div>
-                    </section>
-                    <section
-                      x-show="message.result !== undefined && !message.items"
-                    >
-                      <b>Result</b>
-                      <pre x-text="formatValue(message.result)"></pre>
-                    </section>
-                  </div>
-                </details>
-              </template>
-              <!-- x-effect re-renders as the reply streams; LaTeX is turned
-                   into MathML, everything else stays a text node.
-                   Shown for anything that is not a thinking or tool
-                   disclosure, so a row with an unexpected kind still shows
-                   its text rather than rendering as a silent empty bubble. -->
-              <span
-                x-show="!['thinking','tool'].includes(message.kind)"
-                x-effect="renderMessageText($el, message.text)"
-              ></span>
-              <!--
-                Four card tiers, picked by what you can do with the entity.
-                A result set of 3+ collapses to compact rows regardless.
-              -->
-              <template x-if="message.items"
-                ><div
-                  class="entity-stack"
-                  :class="{compact: message.items.length>=3}"
-                >
-                  <template
-                    x-for="item in message.items"
-                    :key="item.id || item.entityId"
-                    ><section
-                      class="entity-card"
-                      :class="[tierOf(item,message.items.length), {pending:item.pending,applied:item.applied}]"
-                    >
-                      <!-- COMPACT — one line, no controls -->
-                      <template x-if="tierOf(item,message.items.length)==='tier-compact'"
-                        ><div style="display:contents">
-                          <svg
-                            class="ico"
-                            :class="iconTone(item)"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            stroke-width="1.6"
-                            x-html="iconPaths(item)"
-                          ></svg>
-                          <span class="nm" x-text="item.name"></span
-                          ><span
-                            class="val"
-                            :class="{cool: iconTone(item)==='cool', off: !isActive(item)}"
-                            x-text="item.numericState ?? sentenceCase(item.state)"
-                          ></span
-                          ><span class="u" x-text="compactDetail(item)"></span></div
-                      ></template>
-
-                      <!-- All other tiers share the head -->
-                      <template x-if="tierOf(item,message.items.length)!=='tier-compact'"
-                        ><div style="display:contents">
-                          <header>
-                            <svg
-                              class="ico"
-                              :class="iconTone(item)"
-                              viewBox="0 0 24 24"
-                              fill="none"
-                              stroke="currentColor"
-                              stroke-width="1.6"
-                              x-html="iconPaths(item)"
-                            ></svg>
-                            <div class="ct">
-                              <div
-                                class="name"
-                                x-text="item.message ? item.message : item.name"
-                              ></div>
-                              <div
-                                class="entity"
-                                x-show="item.message || item.area"
-                                x-text="item.message ? formatTime(item.time) : item.area"
-                              ></div>
-                            </div>
-                            <span
-                              class="pill"
-                              x-show="showPill(item)"
-                              :class="statePill(item).tone"
-                              x-text="item.message ? 'Scheduled' : statePill(item).text"
-                            ></span>
-                          </header>
-
-                          <!-- BINARY — state pill and dwell time only -->
-                          <template
-                            x-if="tierOf(item,message.items.length)==='tier-binary'"
-                            ><div class="card-body" x-init="loadSpark(item)">
-                              <div
-                                class="meta"
-                                x-text="item.sparkSummary ? `${formatDwell(item)} · ${item.sparkSummary}` : formatDwell(item)"
-                              ></div></div
-                          ></template>
-
-                          <!-- READ-ONLY SENSOR — value as hero, no actions -->
-                          <template
-                            x-if="tierOf(item,message.items.length)==='tier-readout'"
-                            ><div class="card-body" x-init="loadSpark(item)">
-                              <div>
-                                <span
-                                  class="big"
-                                  :class="fillTone(item)==='cool'?'cool':(fillTone(item)==='bad'?'bad':'')"
-                                  x-text="item.numericState ?? item.state"
-                                ></span
-                                ><span class="unit" x-text="item.unit || ''"></span>
-                              </div>
-                              <!-- bounded 0-100 → level → bar -->
-                              <div
-                                class="bar"
-                                style="margin-top: 9px"
-                                x-show="item.measurement==='bar' && barPercent(item)!==null"
-                              >
-                                <div
-                                  class="fill"
-                                  :class="fillTone(item)"
-                                  :style="`width:${barPercent(item) || 0}%`"
-                                ></div>
-                              </div>
-                              <!-- drifting value → trend → sparkline -->
-                              <template x-if="item.measurement==='sparkline'"
-                                ><div>
-                                  <svg
-                                    class="spark"
-                                    viewBox="0 0 200 34"
-                                    preserveAspectRatio="none"
-                                    x-show="item.sparkPoints"
-                                  >
-                                    <polyline
-                                      :points="item.sparkPoints"
-                                      fill="none"
-                                      stroke="currentColor"
-                                      stroke-width="1.4"
-                                      style="color: var(--amber)"
-                                    />
-                                  </svg></div
-                              ></template>
-                              <div
-                                class="meta"
-                                x-text="item.sparkSummary || metaLine(item)"
-                              ></div></div
-                          ></template>
-
-                          <!-- CONTROLLABLE — full card plus an action row -->
-                          <template
-                            x-if="tierOf(item,message.items.length)==='tier-controllable'"
-                            ><div style="display:contents">
-                              <div class="card-body">
-                                <!-- One bulb, two moods: warm white or a
-                                     colour. It cannot be in both, so the card
-                                     offers one set of controls at a time
-                                     rather than stacking them. -->
-                                <div
-                                  class="mode-toggle"
-                                  x-show="item.domain==='light' && item.capabilities?.colorTemperature && item.capabilities?.color"
-                                >
-                                  <button
-                                    :class="{on: lightMode(item)==='warm'}"
-                                    @click="setLightMode(item,'warm')"
-                                  >
-                                    Warm
-                                  </button>
-                                  <button
-                                    :class="{on: lightMode(item)==='color'}"
-                                    @click="setLightMode(item,'color')"
-                                  >
-                                    Colour
-                                  </button>
-                                </div>
-
-                                <!-- Every adjustable channel this thing has,
-                                     as a slider you can drag, click or tab to.
-                                     A bar you cannot move is a readout. -->
-                                <template
-                                  x-for="channel in controlChannels(item)"
-                                  :key="channel"
-                                  ><div class="slider-control">
-                                    <div class="row">
-                                      <span x-text="channelLabel(channel)"></span
-                                      ><span
-                                        x-text="controlLabel(item,channel)"
-                                      ></span>
-                                    </div>
-                                    <div
-                                      class="slider"
-                                      role="slider"
-                                      tabindex="0"
-                                      :aria-label="channelLabel(channel)"
-                                      :aria-valuenow="Math.round(controlValue(item,channel))"
-                                      :aria-valuemin="channelMin(item,channel)"
-                                      :aria-valuemax="channelMax(item,channel)"
-                                      :class="{tinted: !!controlTrack(item,channel)}"
-                                      :style="controlTrack(item,channel) ? `background-image:${controlTrack(item,channel)}` : ''"
-                                      @pointerdown.prevent="startControlDrag($event,item,channel)"
-                                      @keydown.arrow-left="nudgeControl($event,item,channel,-1)"
-                                      @keydown.arrow-down="nudgeControl($event,item,channel,-1)"
-                                      @keydown.arrow-right="nudgeControl($event,item,channel,1)"
-                                      @keydown.arrow-up="nudgeControl($event,item,channel,1)"
-                                    >
-                                      <div
-                                        class="slider-fill"
-                                        :style="`width:${controlPercent(item,channel)}%`"
-                                      ></div>
-                                      <i
-                                        class="slider-knob"
-                                        :style="`left:${controlPercent(item,channel)}%`"
-                                      ></i>
-                                    </div></div
-                                ></template>
-
-                                <!-- climate: target stepper, current vs target in meta -->
-                                <template x-if="item.domain==='climate'"
-                                  ><div class="stepper">
-                                    <button
-                                      class="step-btn"
-                                      @click="stepTemperature(item,-1)"
-                                    >
-                                      −
-                                    </button>
-                                    <div>
-                                      <span
-                                        class="big"
-                                        x-text="item.targetTemperature ?? '—'"
-                                      ></span
-                                      ><span class="unit">° TARGET</span>
-                                    </div>
-                                    <button
-                                      class="step-btn"
-                                      @click="stepTemperature(item,1)"
-                                    >
-                                      +
-                                    </button></div
-                                ></template>
-
-                                <!-- locks report their own battery -->
-                                <template
-                                  x-if="item.domain==='lock' && item.batteryLevel!=null"
-                                  ><div>
-                                    <div class="row">
-                                      <span>Battery</span
-                                      ><span x-text="`${item.batteryLevel}%`"></span>
-                                    </div>
-                                    <div class="bar">
-                                      <div
-                                        class="fill"
-                                        :class="item.batteryLevel<=20?'bad':'good'"
-                                        :style="`width:${item.batteryLevel}%`"
-                                      ></div>
-                                    </div></div
-                                ></template>
-
-                                <!-- switches: surface live wattage -->
-                                <template
-                                  x-if="item.domain==='switch' && item.power!=null"
-                                  ><div>
-                                    <div class="row">
-                                      <span>Drawing now</span
-                                      ><span x-text="`${item.power} W`"></span>
-                                    </div>
-                                    <div class="bar">
-                                      <div
-                                        class="fill"
-                                        :style="`width:${Math.min(100,(item.power/1500)*100)}%`"
-                                      ></div>
-                                    </div></div
-                                ></template>
-
-                                <div class="meta" x-text="metaLine(item)"></div>
-                              </div>
-                              <div class="actions">
-                                <button
-                                  class="chip"
-                                  x-show="item.capabilities?.toggle"
-                                  @click="entityAction(item,isActive(item)?'turn_off':'turn_on')"
-                                  x-text="isActive(item)?'Turn off':'Turn on'"
-                                ></button>
-                                <!-- destructive: hovers rust, never amber -->
-                                <button
-                                  class="chip warn"
-                                  x-show="item.capabilities?.lock"
-                                  @click="entityAction(item, item.state==='locked'?'unlock':'lock')"
-                                  x-text="item.state==='locked'?'Unlock':'Lock'"
-                                ></button>
-                                <button
-                                  class="chip warn"
-                                  x-show="item.domain==='cover'"
-                                  @click="entityAction(item,'open_cover')"
-                                >
-                                  Open
-                                </button>
-                                <button
-                                  class="chip"
-                                  x-show="item.domain==='cover'"
-                                  @click="entityAction(item,'close_cover')"
-                                >
-                                  Close
-                                </button>
-                                <!-- Brightness and position are sliders on the
-                                     card now, so the fixed-amount chips they
-                                     stood in for are gone. -->
-
-                                <button
-                                  class="chip"
-                                  x-show="item.domain==='fan' && item.fanPercentage!=null"
-                                  @click="stepFanSpeed(item)"
-                                >
-                                  Speed up
-                                </button>
-                                <!-- One-tap setback, the adjustment you reach
-                                     for without opening the stepper. -->
-                                <button
-                                  class="chip"
-                                  x-show="item.capabilities?.targetTemperature"
-                                  @click="entityAction(item,'set_temperature',setbackTarget(item))"
-                                  x-text="`SET ${setbackTarget(item)}°`"
-                                ></button>
-                                <button
-                                  class="chip"
-                                  x-show="item.domain==='climate' && item.state!=='off'"
-                                  @click="entityAction(item,'set_hvac_mode','off')"
-                                >
-                                  Turn off
-                                </button>
-                              </div></div
-                          ></template>
-                        </div></template
-                      >
-                      <p
-                        class="entity-error"
-                        x-show="item.error"
-                        x-text="item.error"
-                      ></p></section
-                  ></template></div
-              ></template>
-              <!-- Destructive confirms read rust, never amber. -->
-              <!-- Artifact produced this turn: a card, not the document. -->
-              <template x-if="message.artifact"
-                ><button
-                  type="button"
-                  class="artifact-card"
-                  @click="openArtifact(message.artifact.id)"
-                >
-                  <span class="artifact-kind" x-text="message.artifact.kind"></span>
-                  <span class="artifact-title" x-text="message.artifact.title"></span>
-                  <span class="artifact-open">Open</span></button
-              ></template>
-              <!-- Gauge line: stats attach under the reply, not a side rail. -->
-              <div
-                class="gauge"
-                x-show="message.kind==='answer' && message.metrics"
-              >
-                <div class="ring" aria-hidden="true"></div>
-                <div class="gauge-readout">
-                  <b x-text="message.metrics?.inputTokens || 0"></b>
-                  in &middot;
-                  <b x-text="message.metrics?.outputTokens || 0"></b>
-                  out
-                  <template x-if="message.metrics?.costUsd !== undefined"
-                    ><span
-                      >&middot; <b x-text="`$${Number(message.metrics.costUsd).toFixed(3)}`"></b></span
-                  ></template>
-                  <template x-if="message.metrics?.modelName || message.metrics?.modelId"
-                    ><span
-                      >&middot;
-                      <b
-                        x-text="message.metrics?.modelName || message.metrics?.modelId"
-                      ></b></span
-                  ></template>
-                  <!--
-                    An answer that stopped at the ceiling used to look
-                    exactly like one that finished. Say which it was, and
-                    say what gets more of it.
-                  -->
-                  <template x-if="message.metrics?.truncated"
-                    ><span class="gauge-cut"
-                      >&middot; CUT OFF AT THE LIMIT &mdash; ASK TO CONTINUE, OR
-                      RAISE THE THINKING MODE</span
-                  ></template>
-                </div>
-              </div>
-              <!-- A reminder shows what was understood before it is set: the
-                   time is a reading of ambiguous words, so it is worth seeing
-                   before agreeing to it. -->
-              <template x-if="message.confirm?.kind === 'reminder'"
-                ><div class="reminder-card">
-                  <header>
-                    <svg
-                      class="ico live"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="1.6"
-                    >
-                      <circle cx="12" cy="13" r="8" />
-                      <path d="M12 9v4l3 2M9 2h6" />
-                    </svg>
-                    <div class="ct">
-                      <div class="name" x-text="message.confirm.message"></div>
-                      <div class="entity" x-text="message.confirm.when"></div>
-                    </div>
-                    <span class="pill">Pending</span>
-                  </header>
-                  <div class="card-body">
-                    <div class="meta" x-text="formatTime(message.confirm.at)"></div>
-                    <div
-                      class="reminder-assumption"
-                      x-show="message.confirm.assumedEvening"
-                    >
-                      Read as evening. Say "am" if you meant the morning.
-                    </div>
-                  </div>
-                  <div class="actions">
-                    <button class="chip" @click="confirmAction(message)">
-                      Set reminder
-                    </button>
-                    <button class="chip warn" @click="cancelAction(message)">
-                      Cancel
-                    </button>
-                  </div>
-                </div></template
-              >
-              <template
-                x-if="message.confirm && message.confirm.kind !== 'reminder'"
-                ><div class="controls">
-                  <button
-                    class="action"
-                    :class="{destructive: message.confirm.destructive}"
-                    @click="confirmAction(message)"
-                    x-text="message.confirm.destructive ? 'Confirm — unsafe' : 'Confirm action'"
-                  ></button
-                  ><button class="ghost" @click="cancelAction(message)">
-                    Cancel
-                  </button>
-                </div></template
-              >
-              <!-- Task wizard: build a scheduled task inline, without having to
-                   remember the /task grammar. Same idea as the reminder card —
-                   show what will be scheduled before committing it. -->
-              <template x-if="message.wizard"
-                ><div class="task-wizard">
-                  <header>
-                    <span class="tw-title">New scheduled task</span>
-                    <span class="pill">Wizard</span>
-                  </header>
-                  <div class="tw-body">
-                    <label class="tw-field">
-                      <span>What should it do</span>
-                      <textarea
-                        rows="2"
-                        x-model="message.wizard.what"
-                        @keydown.enter.meta="submitTaskWizard(message)"
-                        placeholder="summarise what happened yesterday"
-                      ></textarea>
-                    </label>
-                    <label class="tw-field">
-                      <span>When</span>
-                      <input
-                        type="text"
-                        x-model="message.wizard.when"
-                        placeholder="every day at 8"
-                      />
-                    </label>
-                    <div class="tw-presets">
-                      <button
-                        type="button"
-                        class="chip"
-                        @click="message.wizard.when='every day at 8'"
-                      >
-                        Daily 8AM
-                      </button>
-                      <button
-                        type="button"
-                        class="chip"
-                        @click="message.wizard.when='every 6 hours'"
-                      >
-                        Every 6h
-                      </button>
-                      <button
-                        type="button"
-                        class="chip"
-                        @click="message.wizard.when='mondays at 9'"
-                      >
-                        Weekly mon
-                      </button>
-                    </div>
-                    <div class="tw-targets">
-                      <button
-                        type="button"
-                        class="chip"
-                        :class="{on: message.wizard.vault}"
-                        @click="message.wizard.vault=!message.wizard.vault"
-                      >
-                        Archive to vault
-                      </button>
-                      <button
-                        type="button"
-                        class="chip"
-                        :class="{on: message.wizard.notify}"
-                        @click="message.wizard.notify=!message.wizard.notify"
-                      >
-                        Notify
-                      </button>
-                    </div>
-                    <p
-                      class="tw-error"
-                      x-show="message.wizard.error"
-                      x-text="message.wizard.error"
-                    ></p>
-                  </div>
-                  <div class="actions">
-                    <button
-                      class="chip"
-                      :disabled="message.wizard.submitting"
-                      @click="submitTaskWizard(message)"
-                      x-text="message.wizard.submitting ? 'Scheduling…' : 'Schedule'"
-                    ></button>
-                    <button class="chip warn" @click="cancelTaskWizard(message)">
-                      Cancel
-                    </button>
-                  </div>
-                </div></template
-              >
-              <!-- Vault graph: notes as a constellation, drawn same-origin so
-                   it can fetch its own data. Clusters are tags, edges are
-                   [[wikilinks]], a tap reads the note. -->
-              <template x-if="message.graph"
-                ><div class="vault-graph">
-                  <header>
-                    <span class="vg-title">Vault graph</span>
-                    <span class="vg-meta" x-text="message.graphMeta"></span>
-                  </header>
-                  <svg
-                    class="vg-canvas"
-                    x-init="renderGraphInto($el, message.graph)"
-                    @pointerdown="graphPanStart(message,$event)"
-                    @pointermove="graphPanMove($event)"
-                    @pointerup="graphPanEnd()"
-                    @pointerleave="graphPanEnd()"
-                    @wheel.prevent="graphZoom(message,$event)"
-                    @click="graphClick($event)"
-                  ></svg>
-                  <div class="vg-hint">
-                    drag to pan · scroll to zoom · tap a note to read it
-                  </div>
-                </div></template
-              >
-            </article>
+        <p class="rm-problem" x-show="ai && !ai.ready" x-cloak>
+          <span x-text="ai?.problem"></span>
+          <button class="rm-btn solid" type="button" @click="openSettings('ai')">Set up the AI</button>
+        </p>
+        <form class="rm-ask" @submit.prevent="busy ? stop() : send()">
+          <label class="rm-attach" title="Add a picture">
+            <input type="file" accept="image/jpeg,image/png,image/webp" multiple hidden @change="attach($event)" />Picture
+          </label>
+          <input type="text" x-model="draft" x-ref="ask" placeholder="Tell RemindMe what to do, or ask" aria-label="Tell RemindMe what to do, or ask" autocomplete="off" />
+          <button class="rm-btn solid" type="submit" x-text="busy ? 'Stop' : 'Send'" :disabled="!busy && !draft.trim() && !pictures.length"></button>
+        </form>
+        <div class="rm-pictures" x-show="pictures.length" x-cloak>
+          <template x-for="(picture, index) in pictures" :key="index">
+            <button type="button" @click="pictures.splice(index, 1)" :title="`Remove ${picture.name}`" x-text="`${picture.name} ✕`"></button>
           </template>
-          <!-- Activity row: the turn is alive but has not produced a phase
-               yet. Reads like a trace line so it sits in the same rhythm. -->
-          <div class="activity" x-show="activity" x-cloak>
-            <span class="activity-spinner" aria-hidden="true"></span>
-            <span class="activity-label" x-text="activity?.label || 'Working'"
-              >Working</span
-            ><span class="activity-dots" aria-hidden="true">…</span>
-            <span
-              class="activity-elapsed"
-              x-text="`${activityElapsed.toFixed(1)} s`"
-            ></span>
-          </div>
-            </div>
-          </section>
+        </div>
+        <p class="rm-note" x-show="error" x-text="error" x-cloak></p>
+        <div class="rm-tabs" role="group" aria-label="Show">
+          <template x-for="tab in tabs" :key="tab.id">
+            <button type="button" :aria-pressed="String(filter === tab.id)" @click="filter = tab.id" x-text="tab.label"></button>
+          </template>
+          <button class="rm-fresh rm-link" type="button" @click="newTopic()" title="The next message starts a fresh conversation">New topic</button>
+        </div>
+      </header>
 
-          <footer
-            class="composer"
-            id="composer"
-            @dragover.prevent
-            @drop.prevent="addAttachments($event.dataTransfer.files)"
-            @paste.window="addAttachments($event.clipboardData.files)"
-          >
-            <form class="chat-column" @submit.prevent="send()">
-              <!-- Discoverability: what the prefix could still become. -->
-              <div class="command-hints" x-show="commandMatches.length > 1">
-                <template x-for="command in commandMatches" :key="command.name">
-                  <button
-                    type="button"
-                    class="command-hint"
-                    @click="draft = command.name + (command.usage.includes('<') ? ' ' : ''); $refs.composerInput.focus()"
-                  >
-                    <span x-text="command.usage"></span
-                    ><small x-text="command.blurb"></small>
+      <section class="rm-waiting" x-show="waiting.length || batteries.length" x-cloak aria-label="Waiting on you">
+        <div class="rm-head">
+          <h2>Waiting on you</h2>
+          <span class="rm-mute" x-text="waiting.length + batteries.length"></span>
+        </div>
+        <div class="rm-waits">
+          <template x-for="item in waiting" :key="item.token">
+            <div class="rm-wait">
+              <p><span x-text="item.message"></span><small x-text="item.destructive ? 'Opens or unlocks something.' : 'Waits for your tap.'"></small></p>
+              <button class="rm-btn solid" type="button" @click="confirm(item)">Do it</button>
+              <button class="rm-btn" type="button" @click="cancelWait(item)">Cancel</button>
+            </div>
+          </template>
+          <template x-for="item in batteries" :key="item.entityId">
+            <div class="rm-wait">
+              <p><span x-text="`${item.name} battery at ${item.level}%`"></span><small>Time for a new battery.</small></p>
+              <button class="rm-btn" type="button" @click="remindBattery(item)">Remind me on Saturday</button>
+            </div>
+          </template>
+        </div>
+      </section>
+
+      <section class="rm-ledger" aria-label="Everything RemindMe said, did and will do">
+        <template x-for="item in view" :key="item.key">
+          <div>
+            <template x-if="item.type === 'day'"><h2 class="rm-day" x-text="item.label"></h2></template>
+            <template x-if="item.type === 'now'">
+              <div class="rm-now"><time x-text="clock"></time><span>Now</span></div>
+            </template>
+            <template x-if="item.type === 'row'">
+              <div class="rm-row" :class="item.css">
+                <time x-text="item.time"></time>
+                <span class="rm-kind" x-text="item.kind"></span>
+                <div class="rm-what">
+                  <p class="rm-asked" x-show="item.question" x-text="item.question"></p>
+                  <div class="rm-md" x-effect="renderText($el, item.text)"></div>
+                  <ul class="rm-receipts" x-show="item.receipts?.length">
+                    <template x-for="(receipt, index) in item.receipts || []" :key="index">
+                      <li :class="receipt.color ? '' : 'plain'"><span class="rm-sq" :style="receipt.color ? `--c:${receipt.color}` : ''"></span><span x-text="receipt.text"></span></li>
+                    </template>
+                  </ul>
+                  <span class="rm-via" x-show="item.via" x-text="item.via"></span>
+                </div>
+                <div class="rm-act" x-show="item.reminderId">
+                  <button class="rm-btn ghost" type="button" @click="cancelReminder(item)">Cancel</button>
+                </div>
+              </div>
+            </template>
+          </div>
+        </template>
+        <p class="rm-empty" x-show="!view.some((item) => item.type === 'row')" x-text="emptyText"></p>
+      </section>
+
+      <!-- Settings -->
+      <div class="rm-sheet" x-show="settingsOpen" x-cloak @keydown.escape.window="settingsOpen = false" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+        <div class="rm-sheet-in">
+          <div class="rm-sheet-top">
+            <h2 id="settings-title">Settings</h2>
+            <button class="rm-btn" type="button" @click="settingsOpen = false">Close</button>
+          </div>
+          <div class="rm-settings">
+            <nav class="rm-sections" aria-label="Settings sections">
+              <template x-for="section in sections" :key="section.id">
+                <button type="button" :aria-pressed="String(settingsTab === section.id)" @click="openSettings(section.id)" x-text="section.label"></button>
+              </template>
+            </nav>
+
+            <!-- AI -->
+            <div class="rm-panel" x-show="settingsTab === 'ai'">
+              <h3>Who answers</h3>
+              <p>Here and on Discord. API keys go in the RemindMe app's options in Home Assistant; switching between what's set up needs no restart.</p>
+              <div class="rm-choices">
+                <template x-for="option in ai?.providers || []" :key="option.id">
+                  <button class="rm-choice" type="button" :class="{ on: option.id === ai.provider }" :disabled="!option.configured || aiBusy" @click="chooseAi({ provider: option.id })">
+                    <span x-text="option.label"></span>
+                    <small x-text="option.configured ? option.model || 'pick a model' : option.kind === 'api' ? 'no key in the app options' : 'not signed in'"></small>
+                    <span></span>
                   </button>
                 </template>
               </div>
-              <div class="attachment-strip" x-show="attachments.length">
-                <template
-                  x-for="(attachment,index) in attachments"
-                  :key="attachment.name+index"
-                  ><span
-                    ><img
-                      :src="attachment.dataUrl"
-                      :alt="attachment.name"
-                    /><button
-                      type="button"
-                      aria-label="Remove image"
-                      @click="attachments.splice(index,1)"
-                    >
-                      ×
-                    </button></span
-                  ></template
-                >
-              </div>
-              <p
-                class="entity-error"
-                x-show="attachmentError"
-                x-text="attachmentError"
-              ></p>
-              <div class="compose-box">
-                <label class="icon-btn attach-button" title="Attach image">
-                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11.5l-7.8 7.8a5 5 0 0 1-7.1-7.1l8.5-8.5a3.3 3.3 0 0 1 4.7 4.7l-8.5 8.5a1.7 1.7 0 0 1-2.4-2.4l7.8-7.8" /></svg>
-                  <span class="sr-only">Attach image</span>
-                  <input
-                    type="file"
-                    accept="image/jpeg,image/png,image/webp"
-                    multiple
-                    @change="addAttachments($event.target.files)"
-                  />
+              <div class="rm-two">
+                <label class="rm-field">Model
+                  <input list="ai-models" x-model="aiModel" spellcheck="false" :placeholder="aiModels.length ? 'Choose or type a model' : 'Type a model name'" :disabled="aiBusy || !ai?.providers?.find((option) => option.id === ai.provider)?.configured" @change="chooseAi({ model: aiModel })" />
+                  <datalist id="ai-models"><template x-for="id in aiModels" :key="id"><option :value="id"></option></template></datalist>
                 </label>
-                <!-- Ghost completion sits behind the textarea, sharing its
-                     metrics so the suggestion lines up with what you typed. -->
-                <div class="compose-field">
-                  <div
-                    class="compose-ghost"
-                    aria-hidden="true"
-                    x-show="commandGhost"
-                  ><span class="ghost-typed" x-text="draft"></span><span
-                      class="ghost-rest"
-                      x-text="commandGhost"
-                    ></span></div>
-                  <textarea
-                    x-ref="composerInput"
-                    x-model="draft"
-                    @input="resizeComposer($event)"
-                    @keydown="handleComposerKeydown($event)"
-                    rows="1"
-                    placeholder="Ask anything…"
-                    aria-label="Message"
-                    enterkeyhint="send"
-                  ></textarea>
-                </div>
-                <button
-                  class="send"
-                  :class="{cancel: busy}"
-                  type="button"
-                  @click="busy ? cancel() : send()"
-                  :aria-label="busy ? 'Cancel the current turn' : 'Send message'"
-                >
-                  <svg x-show="!busy" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7" /></svg>
-                  <svg x-show="busy" x-cloak viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7l10 10M17 7L7 17" /></svg>
-                </button>
+                <label class="rm-field">How hard it thinks
+                  <select x-model="aiEffort" :disabled="aiBusy" @change="chooseAi({ effort: aiEffort })">
+                    <option value="low">Low: quick and cheap</option>
+                    <option value="medium">Medium</option>
+                    <option value="high">High: slower, costs more</option>
+                  </select>
+                </label>
               </div>
-              <div class="compose-meta">
-                <label class="thinking-select"
-                  ><span>Thinking</span>
-                  <select x-model="thinking">
-                    <template x-for="preset in thinkingProfiles" :key="preset.id"
-                      ><option :value="preset.id" x-text="preset.name"></option
-                    ></template></select
-                ></label>
-                <span
-                  class="thinking-hint"
-                  x-text="currentThinkingProfile.description || ''"
-                ></span>
-                <span
-                  class="context-label"
-                  :title="tokenUsage.exact ? `Prompt ${tokenUsage.promptTokens} tokens · Context ${tokenUsage.contextTokens + tokenUsage.promptTokens} / ${tokenUsage.contextCapacity}` : 'Exact token count unavailable'"
-                  x-text="tokenUsage.exact ? `${tokenUsage.contextTokens + tokenUsage.promptTokens} / ${tokenUsage.contextCapacity}` : '— / —'"
-                ></span>
-                <div class="context-track" :class="contextLevel" aria-hidden="true">
-                  <i :style="`width:${contextPercent}%`"></i>
-                </div>
+              <p class="rm-note" x-show="ai?.problem" x-text="ai?.problem"></p>
+              <p class="rm-note" x-show="aiError" x-text="aiError"></p>
+              <p class="rm-note" x-text="aiSpendLine()"></p>
+              <p class="rm-note" x-text="aiSearchLine()"></p>
+              <p class="rm-result" x-show="aiTest" x-cloak :class="{ bad: aiTest && !aiTest.ok }" x-text="aiTest?.ok ? aiTest.reply : aiTest?.error"></p>
+              <div class="rm-actions">
+                <button class="rm-btn solid" type="button" :disabled="aiBusy || !ai?.ready" @click="testAi()" x-text="aiBusy ? 'Working' : 'Test'"></button>
+                <button class="rm-btn" type="button" :disabled="aiBusy || !ai?.ready" @click="sendBrief()">Send today's brief to Discord</button>
               </div>
-            </form>
-          </footer>
-        </main>
 
-        <!--
-          The bench divider. Drags the split between the two cases; double-click
-          returns them to the default. Only on wide screens: on a phone the
-          document covers the console instead.
-        -->
-        <div
-          class="bench-grip"
-          role="separator"
-          aria-orientation="vertical"
-          aria-label="Resize the artifact"
-          tabindex="0"
-          x-show="artifactOpen"
-          x-cloak
-          @pointerdown.prevent="startBenchDrag($event)"
-          @dblclick="benchSplit = null"
-          @keydown.arrow-left.prevent="nudgeBench(-1)"
-          @keydown.arrow-right.prevent="nudgeBench(1)"
-        ></div>
-        <!--
-          HTML and SVG render in a frame with sandbox="allow-scripts" and no
-          allow-same-origin, which puts them in an opaque origin: a document the
-          model wrote cannot read the console, its storage, or the Home Assistant
-          session it is embedded in. Those two flags together would undo the
-          sandbox, so they are never combined.
-        -->
-        <section
-          class="artifact-panel"
-          :style="benchSplit ? `flex-grow:${benchSplit}` : ''"
-          x-show="artifactOpen"
-          x-cloak
-        >
-        <aside class="artifact-pane">
-          <header class="artifact-head">
-            <div class="artifact-heading">
-              <span class="artifact-kind" x-text="currentArtifact?.kind"></span>
-              <b x-text="currentArtifact?.title || 'Artifact'"></b>
-            </div>
-            <div class="artifact-actions">
-              <!--
-                While the model writes there is nothing saved to save or
-                delete, and nothing rendered to preview, so the toggle is the
-                only control that means anything.
-              -->
-              <div class="mode-toggle" role="group" aria-label="Artifact view">
-                <button
-                  :class="{on: artifactView==='source'}"
-                  @click="artifactView='source'"
-                >
-                  Source
-                </button>
-                <button
-                  :class="{on: artifactView==='preview'}"
-                  :disabled="artifactStreaming"
-                  @click="artifactView='preview'"
-                >
-                  Preview
-                </button>
+              <h3>Sign-ins</h3>
+              <p>Use a subscription instead of an API key. ChatGPT answers like the providers above. Claude, Codex, OpenCode and Pi run as agents with RemindMe's tools and nothing else.</p>
+              <div class="rm-choices">
+                <template x-for="option in [{ id: 'chatgpt', label: 'ChatGPT subscription' }, { id: 'claude', label: 'Claude subscription' }]" :key="option.id">
+                  <div class="rm-choice" :class="{ on: signinStatus[option.id]?.connected }">
+                    <span x-text="option.label"></span>
+                    <small x-text="signinStatus[option.id]?.connected ? signinStatus[option.id].email || 'signed in' : 'not signed in'"></small>
+                    <button class="rm-link" type="button" :disabled="aiBusy" @click="signinStatus[option.id]?.connected ? signOut(option.id) : signIn(option.id)" x-text="signinStatus[option.id]?.connected ? 'Sign out' : 'Sign in'"></button>
+                  </div>
+                </template>
+                <div class="rm-choice">
+                  <span>Codex, OpenCode or Pi account</span>
+                  <small>their own sign-ins, in a console</small>
+                  <button class="rm-link" type="button" @click="window.RemindMeAccountConsole.open($data, 'codex')">Open</button>
+                </div>
               </div>
-              <!-- Both act on a stored document, so both wait for one. -->
-              <template x-if="currentArtifact?.id"
-                ><span
-                  ><button class="chip" @click="downloadArtifact()">Save</button>
-                  <button class="chip warn" @click="deleteArtifact()">
-                    Delete</button></span
-              ></template>
-              <button
-                class="chip"
-                @click="artifactOpen=false"
-                aria-label="Close artifact"
-              >
-                ✕
-              </button>
-            </div>
-          </header>
-          <div class="artifact-stage">
-            <template x-if="artifactIsFramed()"
-              ><iframe
-                class="artifact-frame"
-                sandbox="allow-scripts"
-                referrerpolicy="no-referrer"
-                :src="artifactFrameSrc()"
-                title="Artifact preview"
-              ></iframe
-            ></template>
-            <template
-              x-if="!artifactIsFramed() && artifactView==='preview' && currentArtifact"
-              ><div
-                class="artifact-text"
-                x-effect="renderArtifactBody($el, currentArtifact)"
-              ></div
-            ></template>
-            <!--
-              While the model is writing, the source is a read-only trace:
-              there is nothing to edit yet and the text is still moving.
-            -->
-            <template x-if="artifactView==='source' && artifactStreaming"
-              ><pre
-                class="artifact-source writing"
-                x-text="currentArtifact?.content"
-              ></pre
-            ></template>
-            <!--
-              Once it has settled the same view is an editor. Ctrl/Cmd+Enter
-              applies, which for a shader means it recompiles where you can
-              see it.
-            -->
-            <template x-if="artifactView==='source' && !artifactStreaming && currentArtifact"
-              ><div class="artifact-editor">
-                <div class="editor-body">
-                  <!-- Line numbers, scrolled to follow the text beside them. -->
-                  <pre
-                    class="editor-gutter"
-                    aria-hidden="true"
-                    x-text="editorGutter()"
-                  ></pre>
-                  <div class="editor-input">
-                    <!--
-                      The painted layer sits behind a textarea whose own text
-                      is transparent. The textarea keeps focus, selection,
-                      undo and IME; this only supplies colour, so the two must
-                      share font, padding and wrapping exactly.
-                    -->
-                    <pre
-                      class="editor-highlight"
-                      aria-hidden="true"
-                      x-effect="editorPaint($el)"
-                    ></pre>
-                    <textarea
-                      class="editor-text"
-                      spellcheck="false"
-                      autocapitalize="off"
-                      autocomplete="off"
-                      wrap="off"
-                      aria-label="Artifact source"
-                      x-model="artifactSource"
-                      @keydown="editorKey($event)"
-                      @scroll="editorScroll($event)"
-                    ></textarea>
+              <template x-if="signin">
+                <div class="rm-panel" style="grid-column: auto">
+                  <p class="rm-note" x-text="signin.instructions"></p>
+                  <a class="rm-link" :href="signin.url" target="_blank" rel="noreferrer noopener">Open the sign-in page</a>
+                  <label class="rm-field">Paste the code or the final page's address here
+                    <input type="password" autocomplete="off" spellcheck="false" x-model="signin.code" />
+                  </label>
+                  <div class="rm-actions">
+                    <button class="rm-btn solid" type="button" :disabled="aiBusy || !signin.code" @click="finishSignIn()">Finish sign-in</button>
+                    <button class="rm-btn" type="button" @click="cancelSignIn()">Cancel</button>
                   </div>
                 </div>
-                <!-- What the frame said last time this ran. -->
-                <div class="artifact-problem" x-show="artifactStatus" x-cloak>
-                  <b>from the frame</b>
-                  <span x-text="artifactStatus"></span>
-                </div>
-                <div class="artifact-editbar">
-                  <span class="editor-where" x-text="editorPosition()"></span>
-                  <span
-                    class="artifact-dirty"
-                    x-show="artifactDirty()"
-                    x-cloak
-                    >unsaved &middot; ctrl+enter</span
-                  >
-                  <button
-                    class="chip"
-                    :disabled="!artifactDirty() || artifactSaving"
-                    @click="applyArtifactEdit()"
-                    x-text="artifactSaving ? 'Applying' : 'Apply'"
-                  ></button>
-                  <button
-                    class="chip"
-                    :disabled="!artifactDirty()"
-                    @click="artifactSource = currentArtifact.content || ''"
-                  >
-                    Revert
-                  </button>
-                </div></div
-            ></template>
-          </div>
-        </aside>
-        </section>
-      </div>
+              </template>
+            </div>
 
-      <!-- Model instruments: the last turn's numbers, on demand. -->
-      <div class="settings" id="house-board" x-show="boardOpen" x-cloak @keydown.escape.window="boardOpen=false">
-        <section class="settings-card telemetry" @click.outside="boardOpen=false">
-          <button type="button" class="sheet-close" aria-label="Close" @click="boardOpen=false">✕</button>
-          <h2>Model instruments</h2>
-          <dl class="meters">
-            <div class="meter"><dt>Prompt tokens</dt><dd x-text="metrics.inputTokens || '—'"></dd></div>
-            <div class="meter"><dt>Decode speed</dt><dd x-text="metrics.decode ? `${metrics.decode.toFixed(1)} tok/s` : '—'"></dd></div>
-            <div class="meter"><dt>First token</dt><dd x-text="metrics.ttft ? `${metrics.ttft} ms` : '—'"></dd></div>
-            <div class="meter"><dt>Context used</dt><dd x-text="metrics.context || '—'"></dd></div>
-            <div class="meter"><dt>Thinking</dt><dd x-text="`${metrics.thinking || 0} tok`"></dd></div>
-          </dl>
-        </section>
-      </div>
-      <!-- MCP servers: remote tool providers, enabled per server because
-           every tool definition is spent from the context window. -->
-      <div
-        class="settings"
-        id="mcp-view"
-        x-show="mcpOpen"
-        x-cloak
-        @keydown.escape.window="mcpOpen=false"
-      >
-        <section class="settings-card" @click.outside="mcpOpen=false">
-          <button type="button" class="sheet-close" aria-label="Close" @click="mcpOpen=false">✕</button>
-          <h2>Connected servers</h2>
-          <p class="settings-note">
-            Tools from enabled servers are offered to the model alongside the
-            built-in ones. Each definition costs context on every request, so
-            enable only what you use.
-          </p>
-
-          <div class="skill-list">
-            <template x-for="server in mcpServers" :key="server.id">
-              <div class="skill-row" :class="{disabled: !server.enabled}">
-                <div class="skill-head">
-                  <label class="skill-toggle"
-                    ><input
-                      type="checkbox"
-                      :checked="server.enabled"
-                      @change="updateMcp(server, {enabled: $event.target.checked})"
-                    /><span x-text="server.enabled ? 'On' : 'Off'"></span
-                  ></label>
-                  <input
-                    class="skill-name"
-                    :value="server.name"
-                    @change="updateMcp(server, {name: $event.target.value})"
-                  />
-                  <button
-                    class="chip"
-                    style="flex: none"
-                    @click="testMcp(server)"
-                  >
-                    Test
-                  </button>
-                  <button
-                    class="history-delete"
-                    title="Remove server"
-                    @click="deleteMcp(server)"
-                  >
-                    &times;
-                  </button>
-                </div>
-                <input
-                  class="skill-body"
-                  :value="server.url"
-                  @change="updateMcp(server, {url: $event.target.value})"
-                />
-                <p
-                  class="settings-note"
-                  x-show="server.probe"
-                  x-text="server.probe"
-                ></p>
+            <!-- Persona -->
+            <div class="rm-panel" x-show="settingsTab === 'prompt'">
+              <h3>How it talks</h3>
+              <p>RemindMe's standing instructions. Its tools, the time and the house are always added on top.</p>
+              <label class="rm-field">Instructions
+                <textarea rows="7" spellcheck="false" x-model="persona"></textarea>
+              </label>
+              <p class="rm-note" x-show="personaStatus" x-text="personaStatus"></p>
+              <div class="rm-actions">
+                <button class="rm-btn solid" type="button" @click="savePersona()">Save</button>
+                <button class="rm-btn" type="button" @click="resetPersona()">Back to the default</button>
               </div>
-            </template>
-            <p class="settings-note" x-show="!mcpServers.length">
-              No servers yet. Add one below.
-            </p>
-          </div>
+            </div>
 
-          <div class="skill-new">
-            <input x-model="newMcpName" placeholder="Name, e.g. Weather" />
-            <input x-model="newMcpUrl" placeholder="https://host/mcp" />
-            <input
-              x-model="newMcpAuth"
-              placeholder="Authorization header (optional)"
-            />
-            <button class="action" @click="addMcp()">Add server</button>
-          </div>
+            <!-- Skills -->
+            <div class="rm-panel" x-show="settingsTab === 'skills'">
+              <h3>Skills</h3>
+              <p>Extra instructions added to every turn while they're on. Each one costs a little on every message.</p>
+              <div>
+                <template x-for="skill in skills" :key="skill.id">
+                  <div class="rm-item">
+                    <div class="rm-item-head">
+                      <input class="rm-input" :value="skill.name" aria-label="Skill name" @change="updateSkill(skill, { name: $event.target.value })" />
+                      <label class="rm-toggle"><input type="checkbox" :checked="skill.enabled" @change="updateSkill(skill, { enabled: $event.target.checked })" /><span x-text="skill.enabled ? 'On' : 'Off'"></span></label>
+                      <button class="rm-link" type="button" @click="deleteSkill(skill)">Delete</button>
+                    </div>
+                    <textarea class="rm-input" rows="3" :value="skill.instructions" aria-label="Skill instructions" @change="updateSkill(skill, { instructions: $event.target.value })"></textarea>
+                  </div>
+                </template>
+                <p class="rm-note" x-show="!skills.length">No skills yet.</p>
+              </div>
+              <div class="rm-item">
+                <label class="rm-field">New skill<input x-model="newSkillName" placeholder="Name, such as Short replies" /></label>
+                <label class="rm-field">What it should always do<textarea rows="2" x-model="newSkillBody"></textarea></label>
+                <div class="rm-actions"><button class="rm-btn solid" type="button" @click="addSkill()">Add skill</button></div>
+              </div>
+              <p class="rm-note" x-show="skillError" x-text="skillError"></p>
+            </div>
 
-          <p class="settings-note" x-show="mcpError" x-text="mcpError"></p>
-          <div class="settings-actions">
-            <button class="send" @click="mcpOpen=false">Close</button>
-          </div>
-        </section>
-      </div>
-      <!-- Skill manager: named instruction blocks injected into the system
-           prompt when enabled. They cost context every turn, so enabling is
-           explicit and the panel shows the running total. -->
-      <div
-        class="settings"
-        id="skills-view"
-        x-show="skillsOpen"
-        x-cloak
-        @keydown.escape.window="skillsOpen=false"
-      >
-        <section class="settings-card" @click.outside="skillsOpen=false">
-          <button type="button" class="sheet-close" aria-label="Close" @click="skillsOpen=false">✕</button>
-          <h2>Teach the console</h2>
-          <p class="settings-note">
-            Enabled skills are added to the system prompt on every turn.
-            <b x-text="`${enabledSkillCount} of ${skills.length} enabled`"></b>
-            <span x-text="`· ~${skillTokenCost} tok per request`"></span>
-          </p>
-
-          <div class="skill-list">
-            <template x-for="skill in skills" :key="skill.id">
-              <div class="skill-row" :class="{disabled: !skill.enabled}">
-                <div class="skill-head">
-                  <label class="skill-toggle"
-                    ><input
-                      type="checkbox"
-                      :checked="skill.enabled"
-                      @change="toggleSkill(skill, $event.target.checked)"
-                    /><span x-text="skill.enabled ? 'On' : 'Off'"></span
-                  ></label>
-                  <input
-                    class="skill-name"
-                    :value="skill.name"
-                    @change="updateSkill(skill, {name: $event.target.value})"
-                  />
-                  <button
-                    class="history-delete"
-                    title="Delete skill"
-                    @click="deleteSkill(skill)"
-                  >
-                    &times;
-                  </button>
+            <!-- MCP -->
+            <div class="rm-panel" x-show="settingsTab === 'mcp'">
+              <h3>Connected tools</h3>
+              <p>Tools from MCP servers, offered to the AI next to its own. Turn on only what you use: each one costs a little on every message.</p>
+              <div>
+                <template x-for="server in mcpServers" :key="server.id">
+                  <div class="rm-item">
+                    <div class="rm-item-head">
+                      <input class="rm-input" :value="server.name" aria-label="Server name" @change="updateMcp(server, { name: $event.target.value })" />
+                      <label class="rm-toggle"><input type="checkbox" :checked="server.enabled" @change="updateMcp(server, { enabled: $event.target.checked })" /><span x-text="server.enabled ? 'On' : 'Off'"></span></label>
+                      <button class="rm-link" type="button" @click="testMcp(server)">Test</button>
+                      <button class="rm-link" type="button" @click="deleteMcp(server)">Remove</button>
+                    </div>
+                    <input class="rm-input" :value="server.url" aria-label="Server URL" @change="updateMcp(server, { url: $event.target.value })" />
+                    <p class="rm-note" x-show="server.probe" x-text="server.probe"></p>
+                  </div>
+                </template>
+                <p class="rm-note" x-show="!mcpServers.length">No servers yet.</p>
+              </div>
+              <div class="rm-item">
+                <div class="rm-two">
+                  <label class="rm-field">Name<input x-model="newMcpName" placeholder="Weather" /></label>
+                  <label class="rm-field">Address<input x-model="newMcpUrl" placeholder="https://host/mcp" /></label>
                 </div>
-                <textarea
-                  class="skill-body"
-                  rows="3"
-                  :value="skill.instructions"
-                  placeholder="Instructions to follow on every reply…"
-                  @change="updateSkill(skill, {instructions: $event.target.value})"
-                ></textarea>
+                <label class="rm-field">Authorization header (optional)<input type="password" x-model="newMcpAuth" autocomplete="off" /></label>
+                <div class="rm-actions"><button class="rm-btn solid" type="button" @click="addMcp()">Add server</button></div>
               </div>
-            </template>
-            <p class="settings-note" x-show="!skills.length">
-              No skills yet. Add one below.
-            </p>
-          </div>
+              <p class="rm-note" x-show="mcpError" x-text="mcpError"></p>
+            </div>
 
-          <div class="skill-new">
-            <input
-              x-model="newSkillName"
-              placeholder="Skill name, e.g. Terse replies"
-            />
-            <textarea
-              x-model="newSkillBody"
-              rows="2"
-              placeholder="What should the console always do?"
-            ></textarea>
-            <button class="action" @click="addSkill()">Add skill</button>
-          </div>
-
-          <p class="settings-note" x-show="skillError" x-text="skillError"></p>
-          <div class="settings-actions">
-            <button class="send" @click="skillsOpen=false">Close</button>
-          </div>
-        </section>
-      </div>
-      <div
-        class="settings"
-        id="settings-view"
-        x-show="settingsOpen"
-        x-cloak
-        @keydown.escape.window="settingsOpen=false"
-      >
-        <section class="settings-card" @click.outside="settingsOpen=false">
-          <button type="button" class="sheet-close" aria-label="Close" @click="settingsOpen=false">✕</button>
-          <h2>Shape the console</h2>
-          <fieldset class="theme-picker">
-            <legend>Theme</legend>
-            <template x-for="option in themes" :key="option.id">
-              <button
-                type="button"
-                class="theme-option"
-                :class="{on: theme===option.id}"
-                :aria-pressed="theme===option.id"
-                @click="theme=option.id"
-              >
-                <span class="theme-swatch" :style="`background:${option.bg}`"
-                  ><i :style="`background:${option.accent}`"></i
-                  ><b :style="`border-color:${option.accent};background:${option.surface}`"></b
-                ></span>
-                <span class="theme-name" x-text="option.name"></span>
-                <small x-text="option.blurb"></small>
-              </button>
-            </template>
-          </fieldset>
-          <div class="settings-grid">
-            <label
-              >Performance profile<select
-                x-model="profile"
-                @change="thinking=profile"
-              >
-                <template x-for="preset in thinkingProfiles" :key="preset.id"
-                  ><option
-                    :value="preset.id"
-                    x-text="`${preset.name}${preset.recommended ? ' · recommended' : ''}`"
-                  ></option
-                ></template></select
-            ></label>
-            <label
-              >Glow intensity<input
-                type="range"
-                min="0"
-                max="100"
-                x-model="glow"
-                @input="document.documentElement.style.setProperty('--glow', glow / 100)"
-            /></label>
-            <label class="settings-toggle"
-              ><span>CRT scanlines</span
-              ><input type="checkbox" x-model="scanlines"
-            /></label>
-          </div>
-          <div class="settings-persona">
-            <label
-              >System prompt
-              <textarea
-                x-model="persona"
-                rows="6"
-                spellcheck="false"
-                placeholder="You are RemindMe, a concise general and home assistant…"
-              ></textarea>
-            </label>
-            <p class="settings-note">
-              The model's base instructions. Memory, tools and skills are always
-              added on top of this.
-            </p>
-            <p
-              class="settings-note"
-              x-show="personaStatus"
-              x-text="personaStatus"
-            ></p>
-          </div>
-          <div class="settings-actions">
-            <button class="action" @click="savePersona()">Save prompt</button>
-            <button class="action" @click="resetPersona()">Reset to default</button>
-            <button class="send" @click="settingsOpen=false">Close</button>
-          </div>
-        </section>
-      </div>
-      <div class="settings account-console-sheet" x-show="authConsoleOpen" x-cloak @keydown.escape.stop="window.RemindMeAccountConsole.close($data)">
-        <section class="settings-card account-console-card" role="dialog" aria-modal="true" aria-labelledby="account-console-title">
-          <button class="sheet-close" aria-label="Close sign-in console" @click="window.RemindMeAccountConsole.close($data)">✕</button>
-          <h2 id="account-console-title">Sign-in console</h2>
-          <p class="settings-copy">Sign in on the Pi. Follow the link shown below, then enter a code here if asked. Closing this panel keeps the sign-in running.</p>
-          <div class="console-controls">
-            <label class="endpoint-field">Agent
-              <select x-model="authConsoleBackend" :disabled="authConsole.running || authConsoleBusy">
-                <option value="codex">Codex</option><option value="claude">Claude Code</option><option value="opencode">OpenCode</option><option value="pi">Pi</option>
-              </select>
-            </label>
-            <label class="endpoint-field" x-show="authConsoleBackend==='pi'">Pi account
-              <select x-model="authConsoleProvider" :disabled="authConsole.running"><template x-for="provider in agentPiProviders" :key="provider.id"><option :value="provider.id" x-text="provider.name"></option></template></select>
-            </label>
-            <button class="chip" :disabled="busy || authConsole.running || authConsoleBusy" @click="window.RemindMeAccountConsole.start($data)">Start sign-in</button>
-            <button class="chip" :disabled="!authConsole.running" @click="window.RemindMeAccountConsole.cancel($data)">Cancel sign-in</button>
-          </div>
-          <p class="micro" x-show="authConsoleBackend==='codex'">Codex uses your ChatGPT sign-in when there is one. This console adds Codex's own sign-in, used when ChatGPT isn't signed in.</p>
-          <p class="micro" x-show="authConsole.running" x-text="`Sign-in running for ${authConsole.backend}`"></p>
-          <div id="account-terminal" aria-label="CLI sign-in output"></div>
-          <div class="console-links"><template x-for="url in authConsole.urls" :key="url"><a class="chip" :href="url" target="_blank" rel="noreferrer noopener">Open sign-in link</a></template></div>
-          <div class="console-keys" x-show="authConsole.running && ['codex','opencode'].includes(authConsole.backend)">
-            <button class="chip" @click="window.RemindMeAccountConsole.key($data, '\x1b[A')">↑</button>
-            <button class="chip" @click="window.RemindMeAccountConsole.key($data, '\x1b[B')">↓</button>
-            <button class="chip" @click="window.RemindMeAccountConsole.key($data, '\r')">Enter</button>
-          </div>
-          <p class="micro" x-show="authConsole.prompt" x-text="authConsole.prompt"></p>
-          <div class="console-links"><template x-for="option in (authConsole.options || [])" :key="option.id"><button class="chip" @click="window.RemindMeAccountConsole.input($data, option.id)" x-text="option.label"></button></template></div>
-          <form class="console-input" @submit.prevent="window.RemindMeAccountConsole.input($data)">
-            <label class="endpoint-field">Code, callback URL or requested input
-              <input type="password" x-model="authConsoleInput" autocomplete="off" spellcheck="false" :disabled="!authConsole.running || authConsoleBusy" />
-            </label>
-            <button class="chip" type="submit" :disabled="!authConsole.running || authConsoleBusy || !authConsoleInput">Send input</button>
-          </form>
-          <p class="endpoint-error" role="alert" x-show="authConsoleError" x-text="authConsoleError"></p>
-          <button class="chip" @click="window.RemindMeAccountConsole.close($data)">Back to AI settings</button>
-        </section>
-      </div>
-      <div
-        class="settings"
-        id="models-view"
-        x-show="modelsOpen"
-        x-cloak
-        @keydown.escape.window="modelsOpen=false"
-      >
-        <section class="settings-card" @click.outside="modelsOpen=false">
-          <button type="button" class="sheet-close" aria-label="Close" @click="modelsOpen=false">✕</button>
-          <h2>AI</h2>
-          <p class="settings-copy">
-            Which AI answers, here and on Discord. API keys go in the RemindMe
-            app's options in Home Assistant; switch between the ones you've
-            added here, without a restart.
-          </p>
-          <div class="endpoint-list">
-            <template x-for="option in ai?.providers || []" :key="option.id">
-              <button
-                class="endpoint-row"
-                :class="{active: option.id===ai.provider}"
-                :disabled="!option.configured || aiBusy"
-                @click="chooseAi({provider: option.id})"
-              >
-                <span class="endpoint-dot" aria-hidden="true"></span>
-                <span class="endpoint-name" x-text="option.label"></span>
-                <span
-                  class="endpoint-model"
-                  x-text="option.configured ? (option.model || 'pick a model') : (option.kind === 'api' ? 'no key in the app options' : 'sign in below')"
-                ></span>
-              </button>
-            </template>
-          </div>
-          <h3 class="ai-subhead">Sign-ins</h3>
-          <p class="settings-copy">
-            Use a subscription instead of an API key. ChatGPT answers like the
-            providers above. Claude, Codex, OpenCode and Pi run as agents with
-            RemindMe's tools and nothing else.
-          </p>
-          <div class="endpoint-list">
-            <template x-for="option in [{id: 'chatgpt', label: 'ChatGPT subscription'}, {id: 'claude', label: 'Claude subscription'}]" :key="option.id">
-              <div class="endpoint-row" :class="{active: signinStatus[option.id]?.connected}">
-                <span class="endpoint-dot" aria-hidden="true"></span>
-                <span class="endpoint-name" x-text="option.label"></span>
-                <span
-                  class="endpoint-model"
-                  x-text="signinStatus[option.id]?.connected ? (signinStatus[option.id].email || 'signed in') : 'not signed in'"
-                ></span>
-                <button
-                  class="endpoint-edit"
-                  :disabled="aiBusy"
-                  @click="signinStatus[option.id]?.connected ? signOut(option.id) : signIn(option.id)"
-                  x-text="signinStatus[option.id]?.connected ? 'Sign out' : 'Sign in'"
-                ></button>
+            <!-- Tasks -->
+            <div class="rm-panel" x-show="settingsTab === 'tasks'">
+              <h3>Scheduled tasks</h3>
+              <p>Things RemindMe does on its own on a schedule, then messages you the result.</p>
+              <div>
+                <template x-for="task in tasks" :key="task.id">
+                  <div class="rm-item">
+                    <div class="rm-item-head">
+                      <span><b x-text="task.name"></b><br /><span class="rm-mute" x-text="`${task.scheduleText}. Next: ${formatWhen(task.nextRun)}`"></span></span>
+                      <button class="rm-link" type="button" @click="runTask(task)">Run now</button>
+                      <button class="rm-link" type="button" @click="deleteTask(task)">Delete</button>
+                    </div>
+                    <p class="rm-note" x-show="task.lastSummary" x-text="`Last time: ${task.lastSummary}`"></p>
+                  </div>
+                </template>
+                <p class="rm-note" x-show="!tasks.length">No scheduled tasks yet.</p>
               </div>
-            </template>
-            <div class="endpoint-row">
-              <span class="endpoint-dot" aria-hidden="true"></span>
-              <span class="endpoint-name">Codex, OpenCode or Pi account</span>
-              <span class="endpoint-model">their own sign-ins, in a console</span>
-              <button class="endpoint-edit" @click="window.RemindMeAccountConsole.open($data, 'codex')">Open</button>
+              <div class="rm-item">
+                <label class="rm-field">What to do<input x-model="newTaskWhat" placeholder="Check the parcels and tell me what's arriving" /></label>
+                <label class="rm-field">When<input x-model="newTaskWhen" placeholder="daily at 8, every 6 hours, mondays at 9" /></label>
+                <div class="rm-actions"><button class="rm-btn solid" type="button" @click="addTask()">Add task</button></div>
+              </div>
+              <p class="rm-note" x-show="taskError" x-text="taskError"></p>
+            </div>
+
+            <!-- Documents -->
+            <div class="rm-panel" x-show="settingsTab === 'documents'">
+              <h3>Documents</h3>
+              <p>What RemindMe has written for you. Ask it to write or change one in the command line.</p>
+              <div class="rm-docs">
+                <template x-for="doc in documents" :key="doc.id">
+                  <a :href="`./api/artifacts/${encodeURIComponent(doc.id)}/document`" target="_blank" rel="noopener"><span x-text="doc.title"></span><span x-text="`${doc.kind}, ${formatWhen(doc.updatedAt)}`"></span></a>
+                </template>
+              </div>
+              <p class="rm-note" x-show="!documents.length">No documents yet.</p>
             </div>
           </div>
-          <div class="endpoint-editor" x-show="signin" x-cloak>
-            <template x-if="signin">
-              <div>
-                <p class="settings-note" x-text="signin.instructions"></p>
-                <a class="chip" :href="signin.url" target="_blank" rel="noreferrer noopener">Open the sign-in page</a>
-                <label class="endpoint-field"
-                  >Paste the code or the final page's address here<input
-                    type="password"
-                    autocomplete="off"
-                    spellcheck="false"
-                    x-model="signin.code"
-                /></label>
-                <div class="endpoint-actions">
-                  <button class="chip" :disabled="aiBusy || !signin.code" @click="finishSignIn()">Finish sign-in</button>
-                  <button class="chip" @click="cancelSignIn()">Cancel</button>
-                </div>
-              </div>
-            </template>
+        </div>
+      </div>
+
+      <!-- The CLI agents' sign-in console, from 3.1 -->
+      <div class="rm-sheet" x-show="authConsoleOpen" x-cloak @keydown.escape.stop="window.RemindMeAccountConsole.close($data)" role="dialog" aria-modal="true" aria-labelledby="console-title">
+        <div class="rm-sheet-in">
+          <div class="rm-sheet-top">
+            <h2 id="console-title">Sign-in console</h2>
+            <button class="rm-btn" type="button" @click="window.RemindMeAccountConsole.close($data)">Back to settings</button>
           </div>
-          <div class="settings-grid">
-            <label
-              >Model<input
-                list="ai-models"
-                x-model="aiModel"
-                spellcheck="false"
-                :placeholder="aiModels.length ? 'Choose or type a model' : 'Type a model name'"
-                :disabled="aiBusy || !ai?.providers?.find((option) => option.id===ai.provider)?.configured"
-                @change="chooseAi({model: aiModel})"
-              /><datalist id="ai-models"
-                ><template x-for="id in aiModels" :key="id"
-                  ><option :value="id"></option></template
-              ></datalist>
-            </label>
-            <label
-              >Effort on Discord and in tasks<select
-                x-model="aiEffort"
-                :disabled="aiBusy"
-                @change="chooseAi({effort: aiEffort})"
-              >
-                <option value="low">Low: quick and cheap</option>
-                <option value="medium">Medium</option>
-                <option value="high">High: slower, costs more</option>
-              </select></label
-            >
+          <div class="rm-panel" style="margin-top: 24px">
+            <p>Sign in on the Pi. Follow the link shown below, then enter a code here if asked. Going back keeps the sign-in running.</p>
+            <div class="rm-two">
+              <label class="rm-field">Agent
+                <select x-model="authConsoleBackend" :disabled="authConsole.running || authConsoleBusy">
+                  <option value="codex">Codex</option><option value="claude">Claude Code</option><option value="opencode">OpenCode</option><option value="pi">Pi</option>
+                </select>
+              </label>
+              <label class="rm-field" x-show="authConsoleBackend === 'pi'">Pi account
+                <select x-model="authConsoleProvider" :disabled="authConsole.running"><template x-for="provider in agentPiProviders" :key="provider.id"><option :value="provider.id" x-text="provider.name"></option></template></select>
+              </label>
+            </div>
+            <div class="rm-actions">
+              <button class="rm-btn solid" type="button" :disabled="busy || authConsole.running || authConsoleBusy" @click="window.RemindMeAccountConsole.start($data)">Start sign-in</button>
+              <button class="rm-btn" type="button" :disabled="!authConsole.running" @click="window.RemindMeAccountConsole.cancel($data)">Cancel sign-in</button>
+            </div>
+            <p class="rm-note" x-show="authConsoleBackend === 'codex'">Codex uses your ChatGPT sign-in when there is one. This adds Codex's own sign-in, used when ChatGPT isn't signed in.</p>
+            <div id="account-terminal" class="rm-console-out" aria-label="Sign-in output"></div>
+            <div class="rm-actions">
+              <template x-for="url in authConsole.urls" :key="url"><a class="rm-btn" :href="url" target="_blank" rel="noreferrer noopener" style="display: inline-grid; place-items: center; text-decoration: none">Open sign-in link</a></template>
+            </div>
+            <div class="rm-actions" x-show="authConsole.running && ['codex', 'opencode'].includes(authConsole.backend)">
+              <button class="rm-btn" type="button" @click="window.RemindMeAccountConsole.key($data, '\x1b[A')">↑</button>
+              <button class="rm-btn" type="button" @click="window.RemindMeAccountConsole.key($data, '\x1b[B')">↓</button>
+              <button class="rm-btn" type="button" @click="window.RemindMeAccountConsole.key($data, '\r')">Enter</button>
+            </div>
+            <p class="rm-note" x-show="authConsole.prompt" x-text="authConsole.prompt"></p>
+            <div class="rm-actions"><template x-for="option in authConsole.options || []" :key="option.id"><button class="rm-btn" type="button" @click="window.RemindMeAccountConsole.input($data, option.id)" x-text="option.label"></button></template></div>
+            <form class="rm-ask" @submit.prevent="window.RemindMeAccountConsole.input($data)">
+              <input type="password" x-model="authConsoleInput" autocomplete="off" spellcheck="false" placeholder="Code, callback address or requested input" :disabled="!authConsole.running || authConsoleBusy" aria-label="Code, callback address or requested input" />
+              <button class="rm-btn solid" type="submit" :disabled="!authConsole.running || authConsoleBusy || !authConsoleInput">Send</button>
+            </form>
+            <p class="rm-note" role="alert" x-show="authConsoleError" x-text="authConsoleError"></p>
           </div>
-          <p class="settings-note" x-show="ai?.problem" x-text="ai?.problem"></p>
-          <p class="settings-note" x-show="aiError" x-text="aiError"></p>
-          <p class="settings-note" x-text="aiSpendLine()"></p>
-          <p class="settings-note" x-text="aiSearchLine()"></p>
-          <div
-            class="endpoint-result"
-            x-show="aiTest"
-            x-cloak
-            :class="{bad: aiTest && !aiTest.ok}"
-          >
-            <span x-text="aiTest?.ok ? `Replied: ${aiTest.reply}` : aiTest?.error"></span>
-          </div>
-          <div class="settings-actions">
-            <button
-              class="action"
-              :disabled="aiBusy || !ai?.ready"
-              @click="testAi()"
-              x-text="aiBusy ? 'Working' : 'Test'"
-            ></button>
-            <button class="action" :disabled="aiBusy || !ai?.ready" @click="sendBrief()">
-              Send today's brief to Discord
-            </button>
-            <button class="send" @click="modelsOpen=false">Close</button>
-          </div>
-        </section>
+        </div>
       </div>
     </div>
   </body>

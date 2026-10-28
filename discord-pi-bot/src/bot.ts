@@ -71,7 +71,7 @@ export function startBot(deps: ChatDeps): OwnerMessenger | undefined {
 							`Home Assistant notification failed: ${response.status}`,
 						);
 				};
-				return deliverReminder(reminder, process.env.OWNER_ID || "", {
+				const delivered = await deliverReminder(reminder, process.env.OWNER_ID || "", {
 					homeAssistant: () =>
 						callHomeAssistant("persistent_notification/create", {
 							title: "RemindMe",
@@ -143,6 +143,11 @@ export function startBot(deps: ChatDeps): OwnerMessenger | undefined {
 					...(reminder.deliveryStatus || {}),
 				},
 			);
+				// Into the ledger once, when the first channel gets it.
+				const before = Object.values(reminder.deliveryStatus || {}).includes("delivered");
+				if (!before && Object.values(delivered).includes("delivered"))
+					deps.activity?.add({ kind: "sent", channel: "reminder", text: `Reminder: ${reminder.message}` });
+				return delivered;
 			});
 			await startPresenceMonitor(client);
 		}

@@ -54,8 +54,11 @@ export function turnContext(options: {
 	recalled?: VaultNote[];
 	openDocument?: Artifact;
 	extra?: string;
+	/** Which AI and model answer this turn: "ChatGPT, model gpt-5.6-luna". */
+	servedBy?: string;
 }): string {
 	const lines = [`Current local time: ${describeNow(options.now || new Date())}.`];
+	if (options.servedBy) lines.push(`You are running on ${options.servedBy}. When asked which AI or model you are, say exactly that.`);
 	if (options.home) lines.push(`Home: ${options.home}.`);
 	lines.push(channelStyle[options.channel]);
 	if (options.recalled?.length)

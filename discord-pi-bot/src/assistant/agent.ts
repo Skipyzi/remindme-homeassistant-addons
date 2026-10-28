@@ -15,11 +15,12 @@ import {
 	type Usage,
 } from "../ai/types";
 import type { Artifact } from "../harness/artifacts";
+import type { ActivityChannel, ActivityLog, Receipt } from "./activity";
 import type { EntityCard } from "../harness/entities";
 import type { VaultNote } from "../harness/vault";
 import type { Confirmation } from "./confirmations";
 import { systemPrompt, turnContext, type Channel } from "./prompt";
-import { buildTools, runTool, type Effects, type ToolContext, type ToolRun } from "./tools";
+import { buildTools, newEffects, runTool, type Effects, type ToolContext, type ToolRun } from "./tools";
 
 /** Tool rounds per turn. A brief or a "check everything" question needs a few. */
 const MAX_ROUNDS = 10;
@@ -42,6 +43,8 @@ export interface AssistantDeps {
 	searchFallback(): boolean;
 	/** CLI agents: where their tool bridge listens, and their sessions per conversation. */
 	agents?: { bridgeUrl: string; threads: RunnerThreads };
+	/** The console's ledger: every answer, change and wait is written here. */
+	activity?: ActivityLog;
 }
 
 /* A CLI agent runs its own loop; this caps how many tools one turn may call. */
@@ -80,6 +83,8 @@ export interface AskResult {
 	confirms: Confirmation[];
 	cards: EntityCard[];
 	artifacts: Artifact[];
+	/** What the tools changed, for the ledger. */
+	did: Receipt[];
 	model: string;
 	usage: Usage;
 	costUsd?: number;
@@ -99,7 +104,7 @@ export function trimHistory(history: PriorTurn[]): PriorTurn[] {
 }
 
 function failure(problem: string, model = ""): AskResult {
-	return { text: problem, problem, confirms: [], cards: [], artifacts: [], model, usage: emptyUsage(), rounds: 0 };
+	return { text: problem, problem, confirms: [], cards: [], artifacts: [], did: [], model, usage: emptyUsage(), rounds: 0 };
 }
 
 /**
@@ -114,6 +119,34 @@ export class Assistant {
 	constructor(private readonly deps: AssistantDeps) {}
 
 	async ask(input: AskInput, events: AskEvents = {}): Promise<AskResult> {
+		const result = await this.answer(input, events);
+		this.record(input, result);
+		return result;
+	}
+
+	/*
+	 * Into the ledger: what changed, what waits for a tap, and the answer,
+	 * a millisecond apart so they list in the order they happened. The
+	 * brief is logged when it is sent, so it isn't recorded twice.
+	 */
+	private record(input: AskInput, result: AskResult): void {
+		const activity = this.deps.activity;
+		if (!activity || input.channel === "brief") return;
+		const channel: ActivityChannel = input.channel;
+		const start = Date.now();
+		if (result.did.length) activity.add({ kind: "did", channel, text: result.did.map((item) => item.text).join("; "), receipts: result.did, at: new Date(start) });
+		for (const confirmation of result.confirms)
+			activity.add({ kind: "waiting", channel, text: confirmation.message, token: confirmation.token, at: new Date(start + 1) });
+		activity.add({
+			kind: result.problem ? "failed" : "answered",
+			channel,
+			question: input.prompt,
+			text: result.text,
+			at: new Date(start + 2),
+		});
+	}
+
+	private async answer(input: AskInput, events: AskEvents): Promise<AskResult> {
 		const { settings, spend } = this.deps;
 		const runner = settings.runner();
 		if (runner) {
@@ -141,6 +174,7 @@ export class Assistant {
 				recalled: this.deps.recall?.(input.prompt),
 				openDocument: input.openDocument,
 				extra: input.extra,
+				servedBy: `${provider.label}, model ${provider.model}`,
 			}),
 			history: trimHistory(input.history || []),
 			prompt: input.prompt,
@@ -152,7 +186,7 @@ export class Assistant {
 			signal: input.signal,
 		});
 
-		const effects: Effects = { cards: new Map(), confirms: [], artifacts: [] };
+		const effects: Effects = newEffects();
 		let usage = emptyUsage();
 		let model = provider.model;
 		let answer = "";
@@ -211,6 +245,7 @@ export class Assistant {
 			confirms: effects.confirms,
 			cards: [...effects.cards.values()],
 			artifacts: effects.artifacts,
+			did: effects.did,
 			model,
 			usage,
 			costUsd,
@@ -229,7 +264,7 @@ export class Assistant {
 		if (!agents) return failure(`${runner.label} isn't available here.`);
 		if (input.images?.length) return failure(`${runner.label} can't look at images here. Switch to Claude, OpenAI or ChatGPT to send pictures.`, runner.model);
 		const tools = await buildTools(this.deps.tools(), { nativeWebSearch: false });
-		const effects: Effects = { cards: new Map(), confirms: [], artifacts: [] };
+		const effects: Effects = newEffects();
 		const abort = new AbortController();
 		const cancel = () => abort.abort();
 		input.signal?.addEventListener("abort", cancel, { once: true });
@@ -265,6 +300,7 @@ export class Assistant {
 					recalled: this.deps.recall?.(input.prompt),
 					openDocument: input.openDocument,
 					extra: input.extra,
+					servedBy: `${runner.label}, model ${runner.model}`,
 				})}`,
 				prompt: input.prompt,
 				history: trimHistory(input.history || []),
@@ -285,7 +321,7 @@ export class Assistant {
 			if (input.signal?.aborted) throw error;
 			console.error(`${runner.label} turn failed:`, error);
 			const problem = `${runner.label} couldn't finish: ${error instanceof Error ? error.message : error}`;
-			return { ...failure(problem, runner.model), confirms: effects.confirms, cards: [...effects.cards.values()], artifacts: effects.artifacts };
+			return { ...failure(problem, runner.model), confirms: effects.confirms, cards: [...effects.cards.values()], artifacts: effects.artifacts, did: effects.did };
 		} finally {
 			capability.close();
 			abort.abort();
@@ -296,6 +332,7 @@ export class Assistant {
 			confirms: effects.confirms,
 			cards: [...effects.cards.values()],
 			artifacts: effects.artifacts,
+			did: effects.did,
 			model: `${runner.label} · ${runner.model}`,
 			usage: emptyUsage(),
 			rounds: 1,

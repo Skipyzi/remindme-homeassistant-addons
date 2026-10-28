@@ -9,7 +9,8 @@ import type { Provider, Session, Step, ToolCall, ToolOutcome, TurnRequest } from
 import { HomeApi } from "../src/agent/home.ts";
 import { Assistant, trimHistory } from "../src/assistant/agent.ts";
 import { ConfirmationStore } from "../src/assistant/confirmations.ts";
-import { buildTools, runTool, type Effects, type ToolContext } from "../src/assistant/tools.ts";
+import { ActivityLog } from "../src/assistant/activity.ts";
+import { buildTools, newEffects, runTool, type Effects, type ToolContext } from "../src/assistant/tools.ts";
 
 /* ── A small Home Assistant ─────────────────────────────────────────── */
 
@@ -80,7 +81,7 @@ function context(home: HomeApi, overrides: Partial<ToolContext> = {}): ToolConte
 	};
 }
 
-const effects = (): Effects => ({ cards: new Map(), confirms: [], artifacts: [] });
+const effects = (): Effects => newEffects();
 
 /* ── A scripted provider ─────────────────────────────────────────────── */
 
@@ -129,13 +130,14 @@ function ledger() {
 	return new SpendLedger(join(mkdtempSync(join(tmpdir(), "spend-")), "spend.json"));
 }
 
-function assistantWith(provider: Provider | undefined, toolContext: ToolContext, spend = ledger(), budget = 2) {
+function assistantWith(provider: Provider | undefined, toolContext: ToolContext, spend = ledger(), budget = 2, activity?: ActivityLog) {
 	return new Assistant({
 		settings: settings(provider, budget),
 		spend,
 		persona: () => "You are RemindMe.",
 		tools: () => toolContext,
 		searchFallback: () => false,
+		activity,
 	});
 }
 
@@ -269,4 +271,31 @@ test("history keeps the latest turns that fit", () => {
 	assert.equal(kept.at(-1)?.text, "turn 49");
 	const long = trimHistory([{ role: "user", text: "x".repeat(39_000) }, { role: "assistant", text: "y".repeat(2_000) }]);
 	assert.deepEqual(long.map((turn) => turn.role), ["assistant"]);
+});
+
+test("the prompt names the AI and model that answer", async () => {
+	const { home } = fakeHome();
+	const provider = new ScriptedProvider([step({ text: "I'm Claude." })]);
+	await assistantWith(provider, context(home)).ask({ prompt: "which model are you?", channel: "console" });
+	assert.match(provider.requests[0].context, /You are running on Claude, model claude-opus-5-5\./);
+});
+
+test("each turn lands in the ledger: what changed, what waits, then the answer", async () => {
+	const { home } = fakeHome();
+	const activity = new ActivityLog(join(mkdtempSync(join(tmpdir(), "activity-")), "activity.json"));
+	const ctx = context(home);
+	const provider = new ScriptedProvider([
+		step({ stop: "tools", calls: [{ id: "1", name: "control_devices", input: { entity_ids: ["light.desk"], command: "set_brightness", value: "40" } }, { id: "2", name: "control_devices", input: { entity_ids: ["lock.front"], command: "unlock" } }] }),
+		step({ text: "Desk lamp is at 40%. Tap to unlock the door." }),
+	]);
+	const result = await assistantWith(provider, ctx, ledger(), 2, activity).ask({ prompt: "dim the desk lamp and unlock the door", channel: "discord" });
+	const entries = activity.recent();
+	assert.deepEqual(entries.map((entry) => entry.kind), ["answered", "waiting", "did"]);
+	assert.equal(entries[0].question, "dim the desk lamp and unlock the door");
+	assert.equal(entries[0].channel, "discord");
+	assert.deepEqual(entries[2].receipts, [{ text: "Desk lamp: on at 40%", color: "#ffd23f" }]);
+	assert.equal(entries[1].token, result.confirms[0].token);
+	activity.resolve(result.confirms[0].token, "confirmed", "Unlock Front door");
+	assert.equal(activity.recent()[1].kind, "confirmed");
+	assert.equal(activity.recent()[1].token, undefined);
 });

@@ -10,6 +10,7 @@ import {
 import type { ImageInput } from "../ai/types";
 import type { HomeApi } from "../agent/home";
 import type { Assistant } from "../assistant/agent";
+import type { ActivityLog } from "../assistant/activity";
 import type { Confirmation, ConfirmationStore } from "../assistant/confirmations";
 import { splitMessage, type DiscordChats } from "./chats";
 
@@ -19,6 +20,7 @@ export interface ChatDeps {
 	confirmations: ConfirmationStore;
 	home?: HomeApi;
 	ownerId: string;
+	activity?: ActivityLog;
 }
 
 const IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
@@ -147,7 +149,9 @@ async function handleButton(deps: ChatDeps, interaction: ButtonInteraction): Pro
 	}
 	let line: string;
 	if (verb === "no") {
+		const pending = deps.confirmations.list().find((item) => item.token === token);
 		deps.confirmations.cancel(token);
+		deps.activity?.resolve(token, "cancelled", pending?.message || "Cancelled");
 		line = "Cancelled.";
 	} else {
 		const held = deps.confirmations.take(token);
@@ -155,9 +159,12 @@ async function handleButton(deps: ChatDeps, interaction: ButtonInteraction): Pro
 		else {
 			try {
 				await deps.home.service(held.action);
+				deps.activity?.resolve(token, "confirmed", held.label);
 				line = `Done: ${held.label}.`;
 			} catch (error) {
-				line = `${held.label} failed: ${error instanceof Error ? error.message : "Home Assistant refused"}.`;
+				const reason = error instanceof Error ? error.message : "Home Assistant refused";
+				deps.activity?.resolve(token, "failed", `${held.label}: ${reason}`);
+				line = `${held.label} failed: ${reason}.`;
 			}
 		}
 	}
