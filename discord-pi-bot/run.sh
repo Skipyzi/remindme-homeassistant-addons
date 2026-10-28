@@ -72,6 +72,7 @@ export CONSOLE_CHAT_PATH=/data/console-chat.json
 export MAIL_DATA_PATH=/data/mail.json
 export CONNECTORS_DATA_PATH=/data/connectors.json
 export CALENDAR_DATA_PATH=/data/calendar.json
+export THREADS_DATA_PATH=/data/threads.json
 # Subscription sign-ins and the CLI agents' own accounts and sessions. Same
 # places as 3.1, so existing sign-ins carry over.
 export CHATGPT_AUTH_PATH=/data/chatgpt-auth.json

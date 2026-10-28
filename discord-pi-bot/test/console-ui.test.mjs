@@ -5,14 +5,20 @@ import test from "node:test";
 const html = readFileSync("public/harness.html", "utf8");
 const app = readFileSync("public/app.js", "utf8");
 
-test("the console is the ledger: command line, waiting on you, and the timeline", () => {
-	assert.match(html, /class="rm-ask"/);
-	assert.match(html, /aria-label="Waiting on you"/);
+test("the console is an inbox: needs you, working on, threads, and the ledger as History", () => {
+	assert.match(html, /class="rm-inbox"/);
+	assert.match(html, /aria-label="Needs you"/);
+	assert.match(html, /aria-label="Working on"/);
+	assert.match(html, /class="rm-compose"/);
+	assert.match(html, /class="rm-thread"/);
+	assert.match(html, /id="history-title"/);
 	assert.match(html, /class="rm-ledger"/);
 	assert.match(html, /class="rm-now"/);
 	for (const tab of ["Everything", "Coming up", "What it did", "Messages"]) assert.match(app, new RegExp(`label: "${tab}"`));
-	assert.match(app, /fetch\("\.\/api\/ledger"/);
-	assert.match(app, /"\.\/api\/chat"/);
+	assert.match(app, /fetch\("\.\/api\/inbox"/);
+	assert.match(app, /"\.\/api\/threads"/);
+	assert.match(app, /"\.\/api\/ledger"/);
+	assert.doesNotMatch(app, /"\.\/api\/chat"/, "the single console chat is gone; every request is a thread");
 });
 
 test("the old dev-harness pieces are gone from the page", () => {

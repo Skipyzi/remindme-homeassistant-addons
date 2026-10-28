@@ -9,7 +9,7 @@ import { dirname } from "node:path";
 export type ActivityKind = "answered" | "did" | "sent" | "failed" | "waiting" | "confirmed" | "cancelled";
 
 /** Where it happened. */
-export type ActivityChannel = "console" | "discord" | "task" | "brief" | "nudge" | "reminder";
+export type ActivityChannel = "console" | "discord" | "task" | "brief" | "nudge" | "reminder" | "job";
 
 /** One changed thing: "Desk lamp: on at 40%", with the lamp's colour when it has one. */
 export interface Receipt {

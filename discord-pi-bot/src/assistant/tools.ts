@@ -15,6 +15,8 @@ import {
 import type { Mailboxes } from "../mail/mailboxes";
 import { eventTimes, listCalendars } from "../connectors/calendar";
 import type { ValidatedEntityAction } from "../harness/entityActions";
+import type { JobTools } from "./jobs";
+import type { Channel } from "./prompt";
 import type { Receipt } from "./activity";
 import type { Confirmation, ConfirmationStore } from "./confirmations";
 
@@ -60,6 +62,15 @@ export interface ToolContext {
 	mail?: Mailboxes;
 	/** The calendar the user chose for new events, if any. */
 	calendar?: { newEvents(): string | undefined };
+	/** Background jobs: start one, or pass the user's answer to one that asked. */
+	jobs?: {
+		start(input: { title: string; instructions: string; threadId?: string; origin: "console" | "discord"; request?: string }): { id: string; title: string };
+		answer(id: string, text: string): boolean;
+	};
+	/** Only inside a running job: its own progress, questions and result. */
+	job?: JobTools;
+	/** The turn the tools run in. */
+	turn?: { channel: Channel; prompt: string; threadId?: string };
 }
 
 /** What a turn's tools produced besides text for the model. */
@@ -787,6 +798,105 @@ function mailTools(ctx: ToolContext): AssistantTool[] {
 	];
 }
 
+function jobTools(ctx: ToolContext): AssistantTool[] {
+	const job = ctx.job;
+	if (job)
+		return [
+			{
+				spec: {
+					name: "job_update",
+					description:
+						'Record a step of this job in one line the user can read, such as "Eurowings from Leipzig: 84 €, one stop". These notes are all you keep between runs, so note every finding you will need later. Give done and total when you know how far along you are.',
+					parameters: object(
+						{
+							step: { type: "string" },
+							done: { type: "number", description: "Parts finished so far." },
+							total: { type: "number", description: "Parts in all." },
+							note: { type: "string", description: 'Where the job stands overall, in a few words: "best so far 61 €".' },
+						},
+						["step"],
+					),
+				},
+				async run(input) {
+					const done = typeof input.done === "number" ? Math.round(input.done) : NaN;
+					const total = typeof input.total === "number" ? Math.round(input.total) : NaN;
+					const progress = Number.isFinite(done) && Number.isFinite(total) && total > 0 && done >= 0 ? { done: Math.min(done, total), total } : undefined;
+					job.update(text(input, "step", 400), progress, text(input, "note", 80, false) || undefined);
+					return { content: "Noted." };
+				},
+			},
+			{
+				spec: {
+					name: "ask_user",
+					description: "Ask the user for a decision only they can make, with two to four short options to tap. The job waits for their answer; end your turn after this.",
+					parameters: object(
+						{
+							question: { type: "string" },
+							options: { type: "array", items: { type: "string" }, maxItems: 4, description: "Short answers, a few words each." },
+						},
+						["question"],
+					),
+				},
+				async run(input) {
+					job.ask(text(input, "question", 600), list(input, "options", 4).map((option) => option.slice(0, 40)));
+					return { content: "Asked. End your turn now; the job carries on when they answer." };
+				},
+			},
+			{
+				spec: {
+					name: "finish_job",
+					description: "Finish the job with its result: a short Markdown message for the user with what you found, and links where they help. End your turn after this.",
+					parameters: object({ result: { type: "string" } }, ["result"]),
+				},
+				async run(input) {
+					job.finish(text(input, "result", 6_000));
+					return { content: "Finished. End your turn with one short line." };
+				},
+			},
+		];
+	const jobs = ctx.jobs;
+	if (!jobs) return [];
+	return [
+		{
+			spec: {
+				name: "start_job",
+				description:
+					"Hand work that takes many steps or a while to a background job: comparing prices across sites, researching options, going through a lot of mail, checking something until it changes. It keeps working after this turn, writes down its steps, asks the user when it needs a decision, and reports back. Don't do that work in this turn as well.",
+				parameters: object(
+					{
+						title: { type: "string", description: 'A short name, such as "Flights to Budapest, 12–15 Mar".' },
+						instructions: { type: "string", description: "Everything the job needs: the goal, limits and preferences the user gave, and what to report." },
+					},
+					["title", "instructions"],
+				),
+			},
+			async run(input, effects) {
+				const turn = ctx.turn;
+				const started = jobs.start({
+					title: text(input, "title", 80),
+					instructions: text(input, "instructions", 4_000),
+					threadId: turn?.threadId,
+					origin: turn?.channel === "discord" ? "discord" : "console",
+					request: turn?.threadId ? undefined : turn?.prompt,
+				});
+				effects.did.push({ text: `Started a job: ${started.title}` });
+				return { content: json({ started: true, title: started.title, note: "It runs in the background and reports back. Tell the user so in a sentence." }) };
+			},
+		},
+		{
+			spec: {
+				name: "reply_to_job",
+				description: "Pass the user's answer or follow-up to a background job, by the id from the context's list of jobs waiting for an answer.",
+				parameters: object({ id: { type: "string" }, answer: { type: "string" } }, ["id", "answer"]),
+			},
+			async run(input) {
+				const ok = jobs.answer(text(input, "id", 40), text(input, "answer", 2_000));
+				return ok ? { content: "Passed on; the job carries on." } : { content: "There's no job with that id.", isError: true };
+			},
+		},
+	];
+}
+
 /* Model APIs allow only these characters in tool names, up to 64. */
 const toolName = /^[a-zA-Z0-9_-]{1,64}$/;
 
@@ -826,6 +936,7 @@ export async function buildTools(ctx: ToolContext, options: { nativeWebSearch: b
 		...parcelTools(ctx),
 		...documentTools(ctx),
 		...mailTools(ctx),
+		...jobTools(ctx),
 		...(await mcpTools(ctx)),
 	];
 }

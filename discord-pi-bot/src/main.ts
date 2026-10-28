@@ -15,6 +15,7 @@ import {
 	mailboxes,
 	parcelSummary,
 	setBriefSender,
+	setJobNotifier,
 	setPlannedSends,
 	startHarness,
 } from "./harness-server";
@@ -70,6 +71,11 @@ async function main() {
 		},
 	});
 	await proactive.load();
+	// A job's question or result comes as a DM card titled with the job; reply there or in the console.
+	setJobNotifier(async (thread, text) => {
+		const sent = messenger ? await messenger.send(`${text}\n\n_Reply here or in the RemindMe console._`, { title: thread.title }) : false;
+		activity.add(sent ? { kind: "sent", channel: "job", text: `${thread.title}: ${text}` } : { kind: "failed", channel: "job", text: `Couldn't send this on Discord: ${thread.title}: ${text}` });
+	});
 	if (messenger) {
 		proactive.start();
 		setBriefSender(() => proactive.sendBrief());

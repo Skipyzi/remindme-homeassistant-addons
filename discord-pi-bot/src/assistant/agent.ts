@@ -45,6 +45,8 @@ export interface AssistantDeps {
 	agents?: { bridgeUrl: string; threads: RunnerThreads };
 	/** The console's ledger: every answer, change and wait is written here. */
 	activity?: ActivityLog;
+	/** Context every turn should have, such as jobs waiting for the user's answer. */
+	standing?(): string | undefined;
 }
 
 /* A CLI agent runs its own loop; this caps how many tools one turn may call. */
@@ -61,7 +63,22 @@ export interface AskInput {
 	extra?: string;
 	/** Which conversation this turn belongs to, so a CLI agent can resume its session. */
 	conversationId?: string;
+	/** The console thread this turn runs in, so a job started from it takes it over. */
+	threadId?: string;
+	/** Tools for this turn only, such as a running job's own. */
+	tools?: Partial<ToolContext>;
 	signal?: AbortSignal;
+}
+
+/* What the tools see of the turn they run in. */
+function toolContext(deps: AssistantDeps, input: AskInput): ToolContext {
+	return { ...deps.tools(), ...input.tools, turn: { channel: input.channel, prompt: input.prompt, threadId: input.threadId } };
+}
+
+/* The turn's own context plus what every turn should know; a job gets only its brief. */
+function extraFor(deps: AssistantDeps, input: AskInput): string | undefined {
+	const standing = input.channel === "job" ? undefined : deps.standing?.();
+	return [input.extra, standing].filter(Boolean).join("\n\n") || undefined;
 }
 
 export interface AskEvents {
@@ -133,10 +150,12 @@ export class Assistant {
 		const activity = this.deps.activity;
 		if (!activity || input.channel === "brief") return;
 		const channel: ActivityChannel = input.channel;
+		// A job's runs aren't answers to anyone; its thread and its messages say what it did.
 		const start = Date.now();
 		if (result.did.length) activity.add({ kind: "did", channel, text: result.did.map((item) => item.text).join("; "), receipts: result.did, at: new Date(start) });
 		for (const confirmation of result.confirms)
 			activity.add({ kind: "waiting", channel, text: confirmation.message, token: confirmation.token, at: new Date(start + 1) });
+		if (channel === "job") return;
 		activity.add({
 			kind: result.problem ? "failed" : "answered",
 			channel,
@@ -165,7 +184,7 @@ export class Assistant {
 		if (input.images?.length && !provider.vision)
 			return failure(`${provider.label} with ${provider.model} can't look at images here. Switch to Claude or OpenAI to send pictures.`, provider.model);
 
-		const tools = await buildTools(this.deps.tools(), { nativeWebSearch: provider.nativeWebSearch });
+		const tools = await buildTools(toolContext(this.deps, input), { nativeWebSearch: provider.nativeWebSearch });
 		const session = provider.start({
 			system: systemPrompt(this.deps.persona()),
 			context: turnContext({
@@ -173,7 +192,7 @@ export class Assistant {
 				home: this.deps.home?.(),
 				recalled: this.deps.recall?.(input.prompt),
 				openDocument: input.openDocument,
-				extra: input.extra,
+				extra: extraFor(this.deps, input),
 				servedBy: `${provider.label}, model ${provider.model}`,
 			}),
 			history: trimHistory(input.history || []),
@@ -263,7 +282,7 @@ export class Assistant {
 		const agents = this.deps.agents;
 		if (!agents) return failure(`${runner.label} isn't available here.`);
 		if (input.images?.length) return failure(`${runner.label} can't look at images here. Switch to Claude, OpenAI or ChatGPT to send pictures.`, runner.model);
-		const tools = await buildTools(this.deps.tools(), { nativeWebSearch: false });
+		const tools = await buildTools(toolContext(this.deps, input), { nativeWebSearch: false });
 		const effects: Effects = newEffects();
 		const abort = new AbortController();
 		const cancel = () => abort.abort();
@@ -299,7 +318,7 @@ export class Assistant {
 					home: this.deps.home?.(),
 					recalled: this.deps.recall?.(input.prompt),
 					openDocument: input.openDocument,
-					extra: input.extra,
+					extra: extraFor(this.deps, input),
 					servedBy: `${runner.label}, model ${runner.model}`,
 				})}`,
 				prompt: input.prompt,

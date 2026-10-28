@@ -82,18 +82,32 @@ It only sees and changes devices through these tools. Each turn sends your recen
 
 ## The console
 
-Open **RemindMe** in the sidebar. It is one ledger, newest first, with now in the middle:
+Open **RemindMe** in the sidebar. It is an inbox. On a phone a thread opens over the inbox; on a wide screen they sit side by side.
 
-- **The command line** on top: tell RemindMe what to do, or ask. It keeps the thread like a Discord DM; **New topic** starts over. Pictures work with Claude, OpenAI and ChatGPT.
-- **Waiting on you:** actions that need your tap (locks, doors, scenes), and batteries running out.
-- **The ledger:** what's coming up (reminders, the brief, tonight's bins, your next shift, scheduled tasks), then everything RemindMe answered, changed, sent and failed at, here and on Discord. Changed lamps show in their own colour. Filter it by **Coming up**, **What it did** or **Messages**.
-- **Settings:** the AI and sign-ins, how it talks, skills, connected tools (MCP), scheduled tasks and documents.
+- **Needs you:** actions waiting for your tap (locks, doors, scenes, calendar events), questions from jobs with their answers as buttons, and batteries running out.
+- **Working on:** background jobs with how far along they are, and your scheduled tasks.
+- **Today, Yesterday, Earlier:** every conversation and job, and what RemindMe sent or did elsewhere (the brief, nudges, reminders, Discord).
+- **The box at the bottom:** ask, or hand something off. Every request opens a thread of its own; reply in it to carry on. Pictures work with Claude, OpenAI and ChatGPT.
+- **History:** the full timeline: what's coming up, then everything RemindMe answered, changed, sent and failed at, with changed lamps in their own colour.
+- **Settings:** the AI and sign-ins, connectors and calendars, how it talks, skills, connected tools (MCP), scheduled tasks and documents.
+
+## Background jobs
+
+Work that takes many steps, such as comparing flights across sites, going through a week of receipts, or researching a purchase, goes to a job instead of a single answer. You ask as usual, here or on Discord; the AI decides to hand it off. The job:
+
+- runs in the background, one at a time, on the AI chosen under **AI**, and survives a restart;
+- writes down each step in its thread, with progress when it knows it;
+- asks you when only you can decide, with options to tap in the inbox or to answer on Discord;
+- finishes with a result, sent to you on Discord as well;
+- stops after six runs of up to ten tool steps each to check in, so it can't run up the bill. Reply "carry on" to continue, or **Stop** it any time.
+
+Device changes, calendar events and the like still wait for your tap, as everywhere else.
 
 The assistant always knows which AI and model are answering, and says so when asked.
 
 ## Data
 
-Everything lives in `/data`: reminders, chats, the AI choice (`ai.json`), today's spend (`spend.json`), Discord chat history (`discord-chats.json`) and which nudges were sent (`proactive.json`). Notes stay in `/share/vault`, shared with the Vault editor app.
+Everything lives in `/data`: reminders, chats, the inbox's threads and jobs (`threads.json`), the AI choice (`ai.json`), today's spend (`spend.json`), Discord chat history (`discord-chats.json`) and which nudges were sent (`proactive.json`). Notes stay in `/share/vault`, shared with the Vault editor app.
 
 ## Upgrading from 3.x
 

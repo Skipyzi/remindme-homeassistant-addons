@@ -65,6 +65,9 @@ import { Mailboxes, type MailAccount } from "./mail/mailboxes";
 import { ConnectorStore, publicView } from "./connectors/store";
 import { CONNECTOR_KINDS, checkMailInput, importMailOptions, mailAccount } from "./connectors/mail";
 import { CalendarChoice, listCalendars } from "./connectors/calendar";
+import { ThreadStore, titleFrom, type Thread } from "./assistant/threads";
+import { JobRunner } from "./assistant/jobs";
+import type { EntityCard } from "./harness/entities";
 import type { CalendarEvent } from "./agent/home";
 import { buildTools, type McpTool, type ToolContext } from "./assistant/tools";
 import { registerBridge, chatgptFetch } from "./agents/bridge";
@@ -107,6 +110,8 @@ export async function loadConnectors(): Promise<void> {
 /* The console's running chat, kept here like a Discord DM's. */
 const consoleChat = new DiscordChats(process.env.CONSOLE_CHAT_PATH || "./data/console-chat.json");
 void consoleChat.load();
+/* The inbox's threads: one per request; a background job lives in its thread. */
+export const threads = new ThreadStore();
 /* Which AI answers, and what it has cost today. */
 /* The CLI agents' own sign-ins (Codex, OpenCode, Pi), and their sign-in console. */
 const nativeAccounts = new NativeAccounts();
@@ -1012,8 +1017,125 @@ async function nextEvents(now: Date): Promise<CalendarEvent[]> {
 	return calendarCache.events;
 }
 
+/* Batteries at or under the nudge threshold, for "waiting on you". */
+function lowBatteries(cards: EntityCard[]) {
+	const threshold = Number(process.env.BATTERY_NUDGE_PERCENT || 15) || 15;
+	return cards
+		.filter((card) => card.available && card.deviceClass === "battery" && card.numericState !== undefined && card.numericState <= threshold)
+		.map((card) => ({ entityId: card.entityId, name: card.name.replace(/\s*battery$/i, ""), level: Math.round(card.numericState!) }));
+}
+
 /**
- * The console's one view: what is waiting on you, what comes next, and
+ * The inbox: what needs the user, the jobs and scheduled tasks running, the
+ * threads, and what RemindMe sent or did outside them (the brief, nudges,
+ * reminders, Discord).
+ */
+app.get("/api/inbox", async (_request, response) => {
+	const now = new Date();
+	const status = aiSettings.status(searchFallback());
+	const cards = home ? await home.cards().catch(() => [] as EntityCard[]) : [];
+	response.set("Cache-Control", "no-store").json({
+		now: now.toISOString(),
+		ai: { label: status.label, model: status.model, ready: status.ready, problem: status.problem },
+		waiting: confirmations.list(),
+		batteries: lowBatteries(cards),
+		threads: threads.list().slice(0, 100),
+		tasks: tasks
+			.list()
+			.filter((task) => task.enabled)
+			.map((task) => ({ id: task.id, name: task.name, schedule: describeSchedule(task.schedule), nextRun: task.nextRun, lastRun: task.lastRun, lastStatus: task.lastStatus, lastSummary: task.lastSummary })),
+		activity: activity
+			.recent(3, now)
+			.filter((entry) => entry.channel !== "console" && entry.channel !== "job" && entry.kind !== "waiting")
+			.slice(0, 80),
+	});
+});
+
+app.get("/api/threads/:id", (request, response) => {
+	const thread = threads.get(request.params.id);
+	if (!thread) return response.status(404).json({ error: "That conversation is gone." });
+	response.set("Cache-Control", "no-store").json(thread);
+});
+
+/*
+ * A turn in a thread, streamed like the old console chat. A new message from
+ * the inbox opens a thread first and says which; a reply continues one.
+ */
+async function threadTurn(request: express.Request, response: express.Response, existing?: Thread): Promise<void> {
+	const said = typeof request.body?.message === "string" ? request.body.message.trim() : "";
+	let attachments: ReturnType<typeof validateAttachments>;
+	try {
+		attachments = validateAttachments(request.body?.attachments, true);
+	} catch (error) {
+		response.status(400).json({ error: error instanceof Error ? error.message : "Those pictures can't be used." });
+		return;
+	}
+	const prompt = said || (attachments.length ? "What's in this picture?" : "");
+	if (!prompt) {
+		response.status(400).json({ error: "Say something first." });
+		return;
+	}
+	response.status(200).set({ "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" });
+	const send = createSseSender(response);
+	const abort = new AbortController();
+	response.on("close", () => {
+		if (!response.writableFinished) abort.abort();
+	});
+	const thread = existing || threads.create({ title: titleFrom(prompt), origin: "console" });
+	send("thread", { id: thread.id, title: thread.title });
+	const history = threads.history(thread.id);
+	threads.setBusy(thread.id, true);
+	threads.append(thread.id, { role: "user", text: attachments.length ? `${prompt}\n\n(${attachments.length} picture${attachments.length === 1 ? "" : "s"})` : prompt });
+	try {
+		const result = await runConsoleTurn(send, `thread-${thread.id}-${Date.now()}`, {
+			prompt,
+			history,
+			images: attachments.map((image): ImageInput => ({ mediaType: image.mediaType, data: image.dataUrl.slice(image.dataUrl.indexOf(",") + 1) })),
+			effort: effortFor(request.body?.thinkingMode),
+			conversationId: `thread:${thread.id}`,
+			threadId: thread.id,
+			signal: abort.signal,
+		});
+		threads.append(thread.id, {
+			role: "assistant",
+			text: result.text,
+			receipts: result.did,
+			confirms: result.confirms.map((item) => ({ token: item.token, message: item.message, destructive: item.destructive })),
+		});
+		send("complete", { threadId: thread.id });
+	} catch (error) {
+		if (abort.signal.aborted) threads.append(thread.id, { role: "assistant", text: "(Stopped before answering.)" });
+		else {
+			console.error("Thread turn failed:", error);
+			threads.append(thread.id, { role: "assistant", text: `Something went wrong: ${error instanceof Error ? error.message : error}` });
+			send("error", { message: error instanceof Error ? error.message : "Unknown error" });
+		}
+	} finally {
+		threads.setBusy(thread.id, false);
+		response.end();
+	}
+}
+app.post("/api/threads", (request, response) => void threadTurn(request, response));
+/* A reply: a job takes it as an answer and carries on; a conversation answers it now. */
+app.post("/api/threads/:id/messages", (request, response) => {
+	const thread = threads.get(request.params.id);
+	if (!thread) return void response.status(404).json({ error: "That conversation is gone." });
+	if (!thread.job) return void threadTurn(request, response, thread);
+	const text = typeof request.body?.message === "string" ? request.body.message.trim() : "";
+	if (!text || !jobs.answer(thread.id, text)) return void response.status(400).json({ error: "Say something first." });
+	response.json(threads.get(thread.id));
+});
+app.post("/api/threads/:id/stop", (request, response) => {
+	if (!jobs.stop(request.params.id)) return response.status(400).json({ error: "That job isn't running." });
+	response.json(threads.get(request.params.id));
+});
+app.delete("/api/threads/:id", (request, response) => {
+	jobs.stop(request.params.id);
+	response.status(threads.remove(request.params.id) ? 204 : 404).end();
+});
+
+/**
+ * The console's history: what is waiting on you, what comes next, and
  * everything RemindMe said, did and sent over the last week.
  */
 app.get("/api/ledger", async (_request, response) => {
@@ -1043,15 +1165,12 @@ app.get("/api/ledger", async (_request, response) => {
 			.filter((task) => task.enabled && Date.parse(task.nextRun) <= now.getTime() + 36 * 3_600_000)
 			.map((task) => ({ at: task.nextRun, kind: "task", text: task.name })),
 	].sort((a, b) => a.at.localeCompare(b.at));
-	const threshold = Number(process.env.BATTERY_NUDGE_PERCENT || 15) || 15;
 	const pending = new Set(confirmations.list().map((item) => item.token));
 	response.set("Cache-Control", "no-store").json({
 		now: now.toISOString(),
 		ai: { label: status.label, model: status.model, ready: status.ready, problem: status.problem },
 		waiting: confirmations.list(),
-		batteries: cards
-			.filter((card) => card.available && card.deviceClass === "battery" && card.numericState !== undefined && card.numericState <= threshold)
-			.map((card) => ({ entityId: card.entityId, name: card.name.replace(/\s*battery$/i, ""), level: Math.round(card.numericState!) })),
+		batteries: lowBatteries(cards),
 		upcoming,
 		// A waiting row whose token is gone expired unseen.
 		entries: activity
@@ -1371,6 +1490,7 @@ export function toolContext(): ToolContext {
 		artifacts,
 		mail: mailboxes,
 		calendar: calendarChoice,
+		jobs: { start: (input) => jobs.start(input), answer: (id, text) => jobs.answer(id, text) },
 		mcp: {
 			/* A server that is down must not take the turn with it. */
 			async tools() {
@@ -1414,7 +1534,23 @@ export const assistant = new Assistant({
 	searchFallback,
 	agents: { bridgeUrl: `http://127.0.0.1:${port}/internal/agent-tools`, threads: new RunnerThreads() },
 	activity,
+	standing: () => {
+		const waiting = jobs.waiting();
+		return waiting.length
+			? `Background jobs waiting for the user's answer (pass an answer on with reply_to_job):\n${waiting.map((job) => `- ${job.id} "${job.title}": ${job.question}`).join("\n")}`
+			: undefined;
+	},
 });
+
+/* How a job's questions and results reach the user; the app sets this once Discord runs. */
+let jobNotifier = async (thread: Thread, text: string): Promise<void> => {
+	activity.add({ kind: "sent", channel: "job", text: `${thread.title}: ${text}` });
+};
+export function setJobNotifier(notify: (thread: Thread, text: string) => Promise<void>): void {
+	jobNotifier = notify;
+}
+/* Background jobs, one at a time, on the same assistant. */
+export const jobs = new JobRunner({ threads, ask: (input) => assistant.ask(input), notify: (thread, text) => jobNotifier(thread, text) });
 
 /** Parcels still on their way, as lines for the morning brief. */
 export function parcelSummary(): string {
@@ -1874,8 +2010,9 @@ export function createHarnessApp(): Express {
  * runs on the container's clock.
  */
 export async function startHarness(): Promise<void> {
-	await loadConnectors();
+	await Promise.all([loadConnectors(), threads.load()]);
 	app.listen(port, () => console.log(`RemindMe console listening on port ${port}`));
+	jobs.resume();
 	await loadHomeName();
 	startTaskScheduler();
 	// Parcel polling starts only when a TrackingMore key is configured.

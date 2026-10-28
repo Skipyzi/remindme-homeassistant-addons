@@ -1,8 +1,8 @@
 /*
- * The RemindMe console: a command line on top, what is waiting on you, and
- * one ledger of everything RemindMe said, did and will do, newest first with
- * "now" in the middle. The ledger comes from /api/ledger; a turn streams in
- * from /api/chat and then lands in the ledger like any other answer.
+ * The RemindMe console: an inbox. What needs you comes first, then the jobs
+ * and scheduled tasks running, then every conversation and everything
+ * RemindMe sent or did, newest first. Each request is a thread of its own;
+ * a job lives in the thread that started it. The old timeline is History.
  */
 
 const KIND_LABELS = {
@@ -21,6 +21,7 @@ const CHANNEL_NOTES = {
 	nudge: "On Discord",
 	reminder: "Reminder, on Discord and your phone",
 	task: "Scheduled task",
+	job: "From a job",
 };
 
 const TOOL_WORDS = {
@@ -28,6 +29,7 @@ const TOOL_WORDS = {
 	find_devices: "finding devices",
 	control_devices: "changing devices",
 	calendar_events: "reading the calendars",
+	add_calendar_event: "preparing the event",
 	weather_forecast: "checking the weather",
 	todo_items: "reading the lists",
 	todo_add: "adding to a list",
@@ -43,7 +45,16 @@ const TOOL_WORDS = {
 	list_parcels: "checking parcels",
 	write_document: "writing a document",
 	edit_document: "editing a document",
+	search_mail: "searching your mail",
+	read_mail: "reading a mail",
+	draft_mail: "writing a draft",
+	start_job: "handing it to a job",
+	reply_to_job: "passing it to the job",
 };
+
+const JOB_WORDS = { queued: "Waiting its turn", working: "Working", needs_you: "Needs you", done: "Done", stopped: "Stopped" };
+/* The first word of a held action, when it is a plain verb, names its button. */
+const VERBS = new Set(["Unlock", "Lock", "Open", "Close", "Add", "Run", "Arm", "Disarm"]);
 
 function pad(value) {
 	return String(value).padStart(2, "0");
@@ -53,15 +64,41 @@ function dayKey(date) {
 	return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
 
+function firstLine(text) {
+	return (
+		String(text || "")
+			.replace(/\*\*|__|`/g, "")
+			.split("\n")
+			.map((line) => line.replace(/^[#>\-•*\s]+/, "").trim())
+			.find(Boolean) || ""
+	);
+}
+
 function remindme() {
 	return {
-		/* The ledger */
+		/* The inbox */
 		ai: null,
 		waiting: [],
 		batteries: [],
+		threads: [],
+		scheduled: [],
+		activity: [],
+		now: new Date(),
+		loaded: false,
+		error: "",
+		draft: "",
+		pictures: [],
+		/* The open thread, and a turn streaming into it */
+		open: null,
+		replyDraft: "",
+		streaming: null,
+		sending: false,
+		busy: false,
+		abort: null,
+		/* History: the old ledger */
+		historyOpen: false,
 		upcoming: [],
 		entries: [],
-		now: new Date(),
 		filter: "all",
 		tabs: [
 			{ id: "all", label: "Everything" },
@@ -69,13 +106,6 @@ function remindme() {
 			{ id: "did", label: "What it did" },
 			{ id: "messages", label: "Messages" },
 		],
-		/* The command line */
-		draft: "",
-		pictures: [],
-		busy: false,
-		working: null,
-		error: "",
-		abort: null,
 		/* Settings */
 		settingsOpen: false,
 		settingsTab: "ai",
@@ -129,15 +159,424 @@ function remindme() {
 		agentPiProviders: [],
 
 		init() {
-			this.loadLedger();
+			this.loadInbox();
+			this.route();
+			window.addEventListener("popstate", () => this.route());
 			setInterval(() => {
 				this.now = new Date();
-				if (!this.busy && !document.hidden) this.loadLedger();
-			}, 30_000);
+				if (!this.sending && !document.hidden) this.loadInbox();
+			}, 15_000);
+			// A job that is running reports in; its thread follows along while open.
+			setInterval(() => {
+				if (this.open && !this.open.readOnly && !this.streaming && !document.hidden && this.isRunning(this.open)) this.refreshThread();
+			}, 3_000);
 			document.addEventListener("visibilitychange", () => {
-				if (!document.hidden) this.loadLedger();
+				if (document.hidden) return;
+				this.loadInbox();
+				if (this.open && !this.open.readOnly && !this.streaming) this.refreshThread();
 			});
-			this.$nextTick(() => this.$refs.ask?.focus());
+		},
+
+		/* ── The inbox ───────────────────────────────────────────────── */
+
+		async loadInbox() {
+			try {
+				const response = await fetch("./api/inbox", { cache: "no-store" });
+				if (!response.ok) throw new Error(`HTTP ${response.status}`);
+				const data = await response.json();
+				this.ai = { ...(this.ai || {}), ...data.ai };
+				this.waiting = data.waiting || [];
+				this.batteries = data.batteries || [];
+				this.threads = data.threads || [];
+				this.scheduled = data.tasks || [];
+				this.activity = data.activity || [];
+				this.now = new Date(data.now || Date.now());
+				this.loaded = true;
+				this.error = "";
+			} catch (error) {
+				this.error = `RemindMe isn't answering (${error.message || error}). It may be restarting.`;
+			}
+		},
+
+		/* Settings call this after a change; it refreshes whatever is showing. */
+		async loadLedger() {
+			await this.loadInbox();
+			if (this.historyOpen) await this.loadHistory();
+		},
+
+		get asking() {
+			return this.threads.filter((thread) => thread.job?.status === "needs_you" && thread.job.question);
+		},
+
+		get working() {
+			return this.threads.filter((thread) => thread.job && ["queued", "working"].includes(thread.job.status));
+		},
+
+		get needsCount() {
+			return this.waiting.length + this.asking.length + this.batteries.length;
+		},
+
+		get inboxLine() {
+			const day = this.now.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
+			const needs = this.needsCount;
+			return `${day} · ${needs ? `${needs} need${needs === 1 ? "s" : ""} you` : "nothing needs you"}`;
+		},
+
+		threadItem(thread) {
+			const job = thread.job;
+			const item = { key: `t-${thread.id}`, threadId: thread.id, openId: thread.id, at: new Date(thread.updatedAt), title: thread.title, line: firstLine(thread.last), mark: "›", bad: false };
+			if (job?.status === "done") item.mark = "✓";
+			if (job?.status === "stopped") Object.assign(item, { mark: "✕", bad: Boolean(job.error), line: job.error || job.note || item.line });
+			return item;
+		},
+
+		activityItem(entry) {
+			const base = { key: `a-${entry.id}`, openId: `entry:${entry.id}`, at: new Date(entry.at), entry, mark: "↗", bad: false };
+			const line = firstLine(entry.text);
+			if (entry.kind === "failed") return { ...base, mark: "✕", bad: true, title: "Couldn't do this", line };
+			if (entry.channel === "brief") return { ...base, mark: "☀", title: "Morning brief", line };
+			if (entry.channel === "reminder") return { ...base, title: "Reminded you", line };
+			if (entry.kind === "did") {
+				const receipts = entry.receipts || [];
+				return { ...base, mark: "•", color: receipts.find((receipt) => receipt.color)?.color, title: receipts[0]?.text || line, line: receipts.length > 1 ? `and ${receipts.length - 1} more` : CHANNEL_NOTES[entry.channel] || "" };
+			}
+			if (entry.kind === "answered") return { ...base, mark: "›", title: entry.question || "Answered", line: `${CHANNEL_NOTES[entry.channel] || ""}: ${line}`.replace(/^: /, "") };
+			if (entry.kind === "confirmed") return { ...base, mark: "✓", title: entry.text, line: "Done after your tap" };
+			if (entry.kind === "cancelled") return { ...base, mark: "–", title: entry.text, line: "Cancelled" };
+			return { ...base, title: entry.channel === "task" ? "Scheduled task" : "Sent you", line };
+		},
+
+		get groups() {
+			const busy = new Set([...this.asking, ...this.working].map((thread) => thread.id));
+			const items = [...this.threads.filter((thread) => !busy.has(thread.id)).map((thread) => this.threadItem(thread)), ...this.activity.map((entry) => this.activityItem(entry))].sort((a, b) => b.at - a.at);
+			const today = dayKey(this.now);
+			const yesterday = dayKey(new Date(this.now.getTime() - 86_400_000));
+			const groups = [
+				{ id: "today", label: "Today", items: [] },
+				{ id: "yesterday", label: "Yesterday", items: [] },
+				{ id: "earlier", label: "Earlier", items: [] },
+			];
+			for (const item of items) {
+				const key = dayKey(item.at);
+				const group = key === today ? groups[0] : key === yesterday ? groups[1] : groups[2];
+				item.time = group === groups[2] ? item.at.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" }) : this.timeOf(item.at);
+				group.items.push(item);
+			}
+			groups[2].items = groups[2].items.slice(0, 40);
+			return groups.filter((group) => group.items.length);
+		},
+
+		get isEmpty() {
+			return !this.needsCount && !this.working.length && !this.scheduled.length && !this.groups.length;
+		},
+
+		jobLine(thread) {
+			const job = thread.job;
+			if (!job) return thread.last;
+			const progress = job.progress ? `${job.progress.done} of ${job.progress.total}` : "";
+			return [JOB_WORDS[job.status], progress, job.note].filter(Boolean).join(" · ");
+		},
+
+		progressOf(thread) {
+			const progress = thread.job?.progress;
+			return progress && progress.total ? Math.round((progress.done / progress.total) * 100) : 0;
+		},
+
+		taskLine(task) {
+			const next = task.nextRun ? `Next ${this.formatWhen(task.nextRun)}` : "";
+			return [next, task.lastStatus === "error" ? "the last run failed" : task.lastSummary].filter(Boolean).join(" · ");
+		},
+
+		verbFor(message) {
+			const word = String(message || "").split(" ")[0];
+			return VERBS.has(word) ? word : "Do it";
+		},
+
+		/* ── A thread ────────────────────────────────────────────────── */
+
+		route() {
+			const match = location.hash.match(/^#t\/([\w-]+)$/);
+			if (match) this.showThread(match[1]);
+			else this.open = null;
+		},
+
+		openThread(id) {
+			if (this.open?.id === id) return;
+			history.pushState({ thread: id }, "", `#t/${id}`);
+			this.showThread(id);
+		},
+
+		async showThread(id) {
+			const thread = await this.getJson(`./api/threads/${encodeURIComponent(id)}`, null);
+			if (!thread) {
+				this.error = "That conversation is gone.";
+				this.closeThread();
+				return;
+			}
+			this.open = thread;
+			this.replyDraft = "";
+			this.scrollMessages();
+		},
+
+		/* Something RemindMe sent or did outside a thread, shown on its own. */
+		openEntry(item) {
+			const entry = item.entry;
+			const meta = `${this.formatWhen(entry.at)} · ${CHANNEL_NOTES[entry.channel] || "RemindMe"}`;
+			if (history.state?.thread) history.replaceState(null, "", location.pathname + location.search);
+			this.open = {
+				id: item.openId,
+				readOnly: true,
+				title: item.title,
+				createdAt: entry.at,
+				meta,
+				messages: [
+					...(entry.question ? [{ id: "q", role: "user", at: entry.at, text: entry.question }] : []),
+					{ id: "a", role: "assistant", at: entry.at, meta, text: entry.receipts?.length ? "" : entry.text, receipts: entry.receipts },
+				],
+			};
+		},
+
+		closeThread() {
+			if (history.state?.thread) history.back();
+			else {
+				if (location.hash) history.replaceState(null, "", location.pathname + location.search);
+				this.open = null;
+			}
+		},
+
+		async refreshThread() {
+			const open = this.open;
+			if (!open || open.readOnly) return;
+			const fresh = await this.getJson(`./api/threads/${encodeURIComponent(open.id)}`, null);
+			if (!fresh || this.open?.id !== fresh.id || this.streaming) return;
+			const box = document.querySelector(".rm-messages");
+			const atBottom = !box || box.scrollHeight - box.scrollTop - box.clientHeight < 80;
+			const changed = fresh.updatedAt !== open.updatedAt;
+			this.open = fresh;
+			if (changed) {
+				if (atBottom) this.scrollMessages();
+				if (fresh.job?.status !== open.job?.status) this.loadInbox();
+			}
+		},
+
+		threadLine(thread) {
+			if (thread.readOnly) return thread.meta;
+			const job = thread.job;
+			if (!job) return `Started ${this.formatWhen(thread.createdAt)}`;
+			const progress = job.progress ? ` · ${job.progress.done} of ${job.progress.total}` : "";
+			return `Job · ${JOB_WORDS[job.status] || job.status}${progress} · started ${this.formatWhen(thread.createdAt)}`;
+		},
+
+		isRunning(thread) {
+			return Boolean(thread && !thread.readOnly && (["queued", "working"].includes(thread.job?.status) || this.streaming?.threadId === thread.id));
+		},
+
+		/* The held actions a message left behind that still wait for a tap. */
+		pendingIn(message) {
+			return (message.confirms || []).map((item) => this.waiting.find((waiting) => waiting.token === item.token)).filter(Boolean);
+		},
+
+		scrollMessages() {
+			this.$nextTick(() => {
+				const box = document.querySelector(".rm-messages");
+				if (box) box.scrollTop = box.scrollHeight;
+			});
+		},
+
+		renderText(element, text) {
+			element.replaceChildren();
+			if (!text) return;
+			if (window.RemindMeRichText) window.RemindMeRichText.render(element, text);
+			else element.textContent = text;
+		},
+
+		/* ── Sending ─────────────────────────────────────────────────── */
+
+		attach(event) {
+			for (const file of event.target.files || []) {
+				if (this.pictures.length >= 4) break;
+				if (file.size > 6_000_000) {
+					this.error = `${file.name} is bigger than 6 MB.`;
+					continue;
+				}
+				const reader = new FileReader();
+				reader.onload = () => this.pictures.push({ name: file.name, mediaType: file.type, dataUrl: String(reader.result) });
+				reader.readAsDataURL(file);
+			}
+			event.target.value = "";
+		},
+
+		/* A new request from the inbox: it opens a thread of its own. */
+		async send() {
+			const text = this.draft.trim();
+			if ((!text && !this.pictures.length) || this.sending) return;
+			const attachments = this.pictures;
+			this.draft = "";
+			this.pictures = [];
+			await this.stream("./api/threads", { message: text, attachments }, true);
+		},
+
+		async reply() {
+			const open = this.open;
+			const text = this.replyDraft.trim();
+			if (!open || open.readOnly || !text || this.sending) return;
+			this.replyDraft = "";
+			// A job takes the reply as an answer and carries on in the background.
+			if (open.job) {
+				try {
+					this.open = await this.request(`./api/threads/${encodeURIComponent(open.id)}/messages`, "POST", { message: text });
+					this.scrollMessages();
+				} catch (error) {
+					this.error = error.message;
+				}
+				await this.loadInbox();
+				return;
+			}
+			open.messages = [...open.messages, { id: `local-${Date.now()}`, role: "user", at: new Date().toISOString(), text }];
+			await this.stream(`./api/threads/${encodeURIComponent(open.id)}/messages`, { message: text }, false);
+		},
+
+		async answerJob(thread, option) {
+			try {
+				const fresh = await this.request(`./api/threads/${encodeURIComponent(thread.id)}/messages`, "POST", { message: option });
+				if (this.open?.id === thread.id) {
+					this.open = fresh;
+					this.scrollMessages();
+				}
+			} catch (error) {
+				this.error = error.message;
+			}
+			await this.loadInbox();
+		},
+
+		async stream(url, body, fresh) {
+			this.sending = this.busy = true;
+			this.error = "";
+			this.abort = new AbortController();
+			let threadId = fresh ? null : this.open?.id;
+			this.streaming = { threadId, status: "thinking", text: "" };
+			this.scrollMessages();
+			try {
+				const response = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal: this.abort.signal });
+				if (!response.ok || !response.body) {
+					const data = await response.json().catch(() => ({}));
+					throw new Error(data.error || "RemindMe didn't start answering.");
+				}
+				const reader = response.body.getReader();
+				const decoder = new TextDecoder();
+				let buffer = "";
+				let event = "";
+				for (;;) {
+					const chunk = await reader.read();
+					if (chunk.done) break;
+					buffer += decoder.decode(chunk.value, { stream: true });
+					const lines = buffer.split("\n");
+					buffer = lines.pop() || "";
+					for (const line of lines) {
+						if (line.startsWith("event: ")) event = line.slice(7);
+						if (!line.startsWith("data: ")) continue;
+						const data = JSON.parse(line.slice(6));
+						if (event === "thread") {
+							threadId = data.id;
+							this.streaming.threadId = data.id;
+							if (fresh) {
+								const at = new Date().toISOString();
+								this.open = { id: data.id, title: data.title, createdAt: at, updatedAt: at, messages: [{ id: "local-user", role: "user", at, text: body.message || "(picture)" }] };
+								history.pushState({ thread: data.id }, "", `#t/${data.id}`);
+							}
+						} else if (event === "tool_start") this.streaming.status = TOOL_WORDS[String(data.name || "").split(" ")[0]] || "working";
+						else if (event === "answer_delta") {
+							this.streaming.status = "answering";
+							this.streaming.text += data.text || "";
+						} else if (event === "error") throw new Error(data.message);
+						this.scrollMessages();
+					}
+				}
+			} catch (error) {
+				if (error.name !== "AbortError") this.error = error.message || String(error);
+			} finally {
+				this.sending = this.busy = false;
+				this.abort = null;
+				this.streaming = null;
+				if (threadId && (!this.open || this.open.id === threadId)) await this.showThread(threadId);
+				await this.loadInbox();
+				if (fresh) this.$nextTick(() => this.$refs.ask?.focus());
+			}
+		},
+
+		async stopJob(thread) {
+			if (this.streaming?.threadId === thread.id) {
+				this.abort?.abort();
+				return;
+			}
+			try {
+				this.open = await this.request(`./api/threads/${encodeURIComponent(thread.id)}/stop`);
+			} catch (error) {
+				this.error = error.message;
+			}
+			await this.loadInbox();
+		},
+
+		async deleteThread(thread) {
+			if (!window.confirm(`Delete "${thread.title}"? It goes from the inbox; what RemindMe did stays in History.`)) return;
+			await fetch(`./api/threads/${encodeURIComponent(thread.id)}`, { method: "DELETE" });
+			this.closeThread();
+			await this.loadInbox();
+		},
+
+		/* ── Waiting on you ──────────────────────────────────────────── */
+
+		async request(url, method = "POST", body = {}) {
+			const response = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+			const data = await response.json().catch(() => ({}));
+			if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+			return data;
+		},
+
+		async confirm(item) {
+			try {
+				await this.request("./api/confirm", "POST", { token: item.token });
+			} catch (error) {
+				this.error = `${item.message}: ${error.message}`;
+			}
+			await this.loadInbox();
+		},
+
+		async cancelWait(item) {
+			await this.request("./api/confirm/cancel", "POST", { token: item.token }).catch(() => {});
+			await this.loadInbox();
+		},
+
+		async remindBattery(item) {
+			const at = new Date(this.now);
+			at.setDate(at.getDate() + ((6 - at.getDay() + 7) % 7 || 7));
+			at.setHours(10, 0, 0, 0);
+			try {
+				await this.request("./api/reminders", "POST", { message: `Put a new battery in the ${item.name}`, at: at.toISOString() });
+			} catch (error) {
+				this.error = error.message;
+			}
+			await this.loadInbox();
+		},
+
+		/* ── History: the ledger ─────────────────────────────────────── */
+
+		async openHistory() {
+			this.historyOpen = true;
+			await this.loadHistory();
+		},
+
+		async loadHistory() {
+			const data = await this.getJson("./api/ledger", null);
+			if (!data) return;
+			this.upcoming = data.upcoming || [];
+			this.entries = data.entries || [];
+			this.now = new Date(data.now || Date.now());
+		},
+
+		async cancelReminder(row) {
+			await fetch(`./api/reminders/${encodeURIComponent(row.reminderId)}`, { method: "DELETE" });
+			await this.loadHistory();
 		},
 
 		get clock() {
@@ -150,25 +589,6 @@ function remindme() {
 			if (this.filter === "messages") return "No messages this week.";
 			return "Nothing yet. Ask RemindMe something, or wait for the morning brief.";
 		},
-
-		async loadLedger() {
-			try {
-				const response = await fetch("./api/ledger", { cache: "no-store" });
-				if (!response.ok) throw new Error(`HTTP ${response.status}`);
-				const data = await response.json();
-				this.ai = { ...(this.ai || {}), ...data.ai };
-				this.waiting = data.waiting || [];
-				this.batteries = data.batteries || [];
-				this.upcoming = data.upcoming || [];
-				this.entries = data.entries || [];
-				this.now = new Date(data.now || Date.now());
-				this.error = "";
-			} catch (error) {
-				this.error = `RemindMe isn't answering (${error.message || error}). It may be restarting.`;
-			}
-		},
-
-		/* ── The ledger, as rows ─────────────────────────────────────── */
 
 		dayLabel(date) {
 			const diff = Math.round((new Date(dayKey(date)) - new Date(dayKey(this.now))) / 86_400_000);
@@ -193,16 +613,7 @@ function remindme() {
 			return this.upcoming.map((item, index) => {
 				const at = new Date(item.at);
 				const until = item.until ? ` until ${this.timeOf(new Date(item.until))}` : "";
-				return {
-					type: "row",
-					key: `up-${index}-${item.at}`,
-					at,
-					time: item.allDay ? "all day" : this.timeOf(at),
-					kind: item.kind,
-					text: `${item.text}${until}`,
-					css: "future",
-					reminderId: item.reminderId,
-				};
+				return { type: "row", key: `up-${index}-${item.at}`, at, time: item.allDay ? "all day" : this.timeOf(at), kind: item.kind, text: `${item.text}${until}`, css: "future", reminderId: item.reminderId };
 			});
 		},
 
@@ -231,8 +642,6 @@ function remindme() {
 			let past = this.filter === "coming" ? [] : this.pastRows();
 			if (this.filter === "did") past = past.filter((row) => ["did", "confirmed", "cancelled", "waiting"].includes(row.group));
 			if (this.filter === "messages") past = past.filter((row) => ["answered", "sent", "failed"].includes(row.group));
-			if (this.working && this.filter !== "coming" && this.filter !== "did")
-				past = [{ type: "row", key: "working", at: this.now, time: this.clock, kind: this.working.status, question: this.working.question, text: this.working.text || "", css: "working" }, ...past];
 			// Newest first: the future counts down to now, then the past goes back from it.
 			future.sort((a, b) => b.at - a.at);
 			const items = [];
@@ -254,130 +663,6 @@ function remindme() {
 				items.push(row);
 			}
 			return items;
-		},
-
-		renderText(element, text) {
-			element.replaceChildren();
-			if (!text) return;
-			if (window.RemindMeRichText) window.RemindMeRichText.render(element, text);
-			else element.textContent = text;
-		},
-
-		/* ── The command line ────────────────────────────────────────── */
-
-		attach(event) {
-			for (const file of event.target.files || []) {
-				if (this.pictures.length >= 4) break;
-				if (file.size > 6_000_000) {
-					this.error = `${file.name} is bigger than 6 MB.`;
-					continue;
-				}
-				const reader = new FileReader();
-				reader.onload = () => this.pictures.push({ name: file.name, mediaType: file.type, dataUrl: String(reader.result) });
-				reader.readAsDataURL(file);
-			}
-			event.target.value = "";
-		},
-
-		stop() {
-			this.abort?.abort();
-		},
-
-		async send() {
-			const text = this.draft.trim() || (this.pictures.length ? "What's in this picture?" : "");
-			if (!text || this.busy) return;
-			this.draft = "";
-			this.error = "";
-			this.busy = true;
-			if (this.filter === "coming" || this.filter === "did") this.filter = "all";
-			this.working = { question: text, status: "thinking", text: "" };
-			this.abort = new AbortController();
-			const attachments = this.pictures;
-			this.pictures = [];
-			try {
-				const response = await fetch("./api/chat", {
-					method: "POST",
-					headers: { "Content-Type": "application/json" },
-					body: JSON.stringify({ message: text, attachments }),
-					signal: this.abort.signal,
-				});
-				if (!response.ok || !response.body) throw new Error("RemindMe didn't start answering.");
-				const reader = response.body.getReader();
-				const decoder = new TextDecoder();
-				let buffer = "";
-				let event = "";
-				for (;;) {
-					const chunk = await reader.read();
-					if (chunk.done) break;
-					buffer += decoder.decode(chunk.value, { stream: true });
-					const lines = buffer.split("\n");
-					buffer = lines.pop() || "";
-					for (const line of lines) {
-						if (line.startsWith("event: ")) event = line.slice(7);
-						if (!line.startsWith("data: ")) continue;
-						const data = JSON.parse(line.slice(6));
-						if (event === "tool_start") this.working.status = TOOL_WORDS[String(data.name || "").split(" ")[0]] || "working";
-						else if (event === "answer_delta") {
-							this.working.status = "answering";
-							this.working.text += data.text || "";
-						} else if (event === "error") throw new Error(data.message);
-					}
-				}
-			} catch (error) {
-				if (error.name !== "AbortError") this.error = error.message || String(error);
-			} finally {
-				this.busy = false;
-				this.working = null;
-				this.abort = null;
-				await this.loadLedger();
-				this.$nextTick(() => this.$refs.ask?.focus());
-			}
-		},
-
-		async newTopic() {
-			await fetch("./api/chat/reset", { method: "POST" });
-			this.error = "";
-			this.$refs.ask?.focus();
-		},
-
-		/* ── Waiting on you ──────────────────────────────────────────── */
-
-		async request(url, method = "POST", body = {}) {
-			const response = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-			const data = await response.json().catch(() => ({}));
-			if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
-			return data;
-		},
-
-		async confirm(item) {
-			try {
-				await this.request("./api/confirm", "POST", { token: item.token });
-			} catch (error) {
-				this.error = `${item.message}: ${error.message}`;
-			}
-			await this.loadLedger();
-		},
-
-		async cancelWait(item) {
-			await this.request("./api/confirm/cancel", "POST", { token: item.token }).catch(() => {});
-			await this.loadLedger();
-		},
-
-		async remindBattery(item) {
-			const at = new Date(this.now);
-			at.setDate(at.getDate() + ((6 - at.getDay() + 7) % 7 || 7));
-			at.setHours(10, 0, 0, 0);
-			try {
-				await this.request("./api/reminders", "POST", { message: `Put a new battery in the ${item.name}`, at: at.toISOString() });
-			} catch (error) {
-				this.error = error.message;
-			}
-			await this.loadLedger();
-		},
-
-		async cancelReminder(row) {
-			await fetch(`./api/reminders/${encodeURIComponent(row.reminderId)}`, { method: "DELETE" });
-			await this.loadLedger();
 		},
 
 		/* ── Settings ────────────────────────────────────────────────── */

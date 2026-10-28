@@ -16,91 +16,204 @@
     <script defer src="./vendor/alpine.min.js"></script>
   </head>
   <body>
-    <div class="rm" x-data="remindme()" x-init="init()">
-      <!-- The command line on top, then what waits, then everything in time order. -->
-      <header class="rm-top">
-        <div class="rm-title">
-          <h1>RemindMe <span x-show="ai?.ready" x-text="`on ${ai?.label}`"></span></h1>
-          <button class="rm-btn ghost" type="button" x-show="authConsole.running" x-cloak @click="window.RemindMeAccountConsole.open($data, authConsole.backend)">Sign-in running</button>
-          <button class="rm-btn ghost" type="button" @click="openSettings('ai')">Settings</button>
+    <div class="rm-app" x-data="remindme()" x-init="init()" :class="{ 'thread-open': open }">
+      <!-- The inbox: what needs you, what's running, then everything else, newest first. -->
+      <section class="rm-inbox" aria-label="Inbox">
+        <header class="rm-bar">
+          <h1>RemindMe<small x-text="inboxLine"></small></h1>
+          <button class="rm-barlink" type="button" x-show="authConsole.running" x-cloak @click="window.RemindMeAccountConsole.open($data, authConsole.backend)">Sign-in running</button>
+          <button class="rm-barlink" type="button" @click="openHistory()">History</button>
+          <button class="rm-barlink" type="button" @click="openSettings('ai')">Settings</button>
+        </header>
+        <div class="rm-scroll">
+          <p class="rm-problem" x-show="ai && !ai.ready" x-cloak>
+            <span x-text="ai?.problem"></span>
+            <button class="rm-btn solid" type="button" @click="openSettings('ai')">Set up the AI</button>
+          </p>
+          <p class="rm-note rm-gap" role="alert" x-show="error" x-text="error" x-cloak></p>
+
+          <section class="rm-sec" x-show="needsCount" x-cloak aria-label="Needs you">
+            <h2><span>Needs you</span><span x-text="needsCount"></span></h2>
+            <template x-for="item in waiting" :key="item.token">
+              <div class="rm-need">
+                <b><span class="rm-flag" x-show="item.destructive">Lock</span><span x-text="item.message"></span></b>
+                <small x-text="item.destructive ? 'Opens or unlocks something.' : 'Waits for your tap.'"></small>
+                <div class="rm-need-acts">
+                  <button class="rm-btn solid" type="button" @click="confirm(item)" x-text="verbFor(item.message)"></button>
+                  <button class="rm-btn" type="button" @click="cancelWait(item)">Cancel</button>
+                </div>
+              </div>
+            </template>
+            <template x-for="thread in asking" :key="thread.id">
+              <div class="rm-need">
+                <b x-text="`${thread.title} asks`"></b>
+                <small x-text="thread.job.question.text"></small>
+                <div class="rm-need-acts">
+                  <template x-for="(option, index) in thread.job.question.options" :key="option">
+                    <button class="rm-btn" :class="{ solid: index === 0 }" type="button" @click="answerJob(thread, option)" x-text="option"></button>
+                  </template>
+                  <button class="rm-btn" type="button" @click="openThread(thread.id)">Open</button>
+                </div>
+              </div>
+            </template>
+            <template x-for="item in batteries" :key="item.entityId">
+              <div class="rm-need">
+                <b x-text="`${item.name} battery at ${item.level}%`"></b>
+                <small>Time for a new battery.</small>
+                <div class="rm-need-acts"><button class="rm-btn" type="button" @click="remindBattery(item)">Remind me Saturday</button></div>
+              </div>
+            </template>
+          </section>
+
+          <section class="rm-sec" x-show="working.length || scheduled.length" x-cloak aria-label="Working on">
+            <h2><span>Working on</span><span x-text="working.length + scheduled.length"></span></h2>
+            <template x-for="thread in working" :key="thread.id">
+              <button class="rm-entry" type="button" :class="{ on: open?.id === thread.id }" @click="openThread(thread.id)">
+                <span class="rm-mark" aria-hidden="true">◐</span>
+                <span class="rm-entry-what"><b x-text="thread.title"></b><span x-text="jobLine(thread)"></span></span>
+                <time x-text="timeOf(new Date(thread.createdAt))"></time>
+                <span class="rm-progress" x-show="thread.job.progress" :style="`--p:${progressOf(thread)}%`"><i></i></span>
+              </button>
+            </template>
+            <template x-for="task in scheduled" :key="task.id">
+              <button class="rm-entry" type="button" @click="openSettings('tasks')">
+                <span class="rm-mark" aria-hidden="true">↻</span>
+                <span class="rm-entry-what"><b x-text="task.name"></b><span x-text="taskLine(task)"></span></span>
+                <time x-text="task.schedule"></time>
+              </button>
+            </template>
+          </section>
+
+          <template x-for="group in groups" :key="group.id">
+            <section class="rm-sec" :aria-label="group.label">
+              <h2><span x-text="group.label"></span><span x-text="group.items.length"></span></h2>
+              <template x-for="item in group.items" :key="item.key">
+                <button class="rm-entry" type="button" :class="{ bad: item.bad, on: open && open.id === item.openId }" @click="item.threadId ? openThread(item.threadId) : openEntry(item)">
+                  <span class="rm-mark" aria-hidden="true"><template x-if="item.color"><span class="rm-sq" :style="`--c:${item.color}`"></span></template><span x-show="!item.color" x-text="item.mark"></span></span>
+                  <span class="rm-entry-what"><b x-text="item.title"></b><span x-text="item.line"></span></span>
+                  <time x-text="item.time"></time>
+                </button>
+              </template>
+            </section>
+          </template>
+          <p class="rm-empty" x-show="loaded && isEmpty" x-cloak>Nothing yet. Ask RemindMe something below, or hand it a job, such as "find me a cheap flight to Budapest in March".</p>
         </div>
-        <p class="rm-problem" x-show="ai && !ai.ready" x-cloak>
-          <span x-text="ai?.problem"></span>
-          <button class="rm-btn solid" type="button" @click="openSettings('ai')">Set up the AI</button>
-        </p>
-        <form class="rm-ask" @submit.prevent="busy ? stop() : send()">
-          <label class="rm-attach" title="Add a picture">
-            <input type="file" accept="image/jpeg,image/png,image/webp" multiple hidden @change="attach($event)" />Picture
-          </label>
-          <input type="text" x-model="draft" x-ref="ask" placeholder="Tell RemindMe what to do, or ask" aria-label="Tell RemindMe what to do, or ask" autocomplete="off" />
-          <button class="rm-btn solid" type="submit" x-text="busy ? 'Stop' : 'Send'" :disabled="!busy && !draft.trim() && !pictures.length"></button>
-        </form>
         <div class="rm-pictures" x-show="pictures.length" x-cloak>
           <template x-for="(picture, index) in pictures" :key="index">
             <button type="button" @click="pictures.splice(index, 1)" :title="`Remove ${picture.name}`" x-text="`${picture.name} ✕`"></button>
           </template>
         </div>
-        <p class="rm-note" x-show="error" x-text="error" x-cloak></p>
-        <div class="rm-tabs" role="group" aria-label="Show">
-          <template x-for="tab in tabs" :key="tab.id">
-            <button type="button" :aria-pressed="String(filter === tab.id)" @click="filter = tab.id" x-text="tab.label"></button>
-          </template>
-          <button class="rm-fresh rm-link" type="button" @click="newTopic()" title="The next message starts a fresh conversation">New topic</button>
-        </div>
-      </header>
-
-      <section class="rm-waiting" x-show="waiting.length || batteries.length" x-cloak aria-label="Waiting on you">
-        <div class="rm-head">
-          <h2>Waiting on you</h2>
-          <span class="rm-mute" x-text="waiting.length + batteries.length"></span>
-        </div>
-        <div class="rm-waits">
-          <template x-for="item in waiting" :key="item.token">
-            <div class="rm-wait">
-              <p><span x-text="item.message"></span><small x-text="item.destructive ? 'Opens or unlocks something.' : 'Waits for your tap.'"></small></p>
-              <button class="rm-btn solid" type="button" @click="confirm(item)">Do it</button>
-              <button class="rm-btn" type="button" @click="cancelWait(item)">Cancel</button>
-            </div>
-          </template>
-          <template x-for="item in batteries" :key="item.entityId">
-            <div class="rm-wait">
-              <p><span x-text="`${item.name} battery at ${item.level}%`"></span><small>Time for a new battery.</small></p>
-              <button class="rm-btn" type="button" @click="remindBattery(item)">Remind me on Saturday</button>
-            </div>
-          </template>
-        </div>
+        <form class="rm-compose" @submit.prevent="send()">
+          <label class="rm-plus" title="Add a picture"><input type="file" accept="image/jpeg,image/png,image/webp" multiple hidden @change="attach($event)" />+</label>
+          <input type="text" x-model="draft" x-ref="ask" placeholder="Ask, or hand something off" aria-label="Ask, or hand something off" autocomplete="off" enterkeyhint="send" />
+          <button class="rm-btn solid" type="submit" :disabled="sending || (!draft.trim() && !pictures.length)">Send</button>
+        </form>
       </section>
 
-      <section class="rm-ledger" aria-label="Everything RemindMe said, did and will do">
-        <template x-for="item in view" :key="item.key">
-          <div>
-            <template x-if="item.type === 'day'"><h2 class="rm-day" x-text="item.label"></h2></template>
-            <template x-if="item.type === 'now'">
-              <div class="rm-now"><time x-text="clock"></time><span>Now</span></div>
-            </template>
-            <template x-if="item.type === 'row'">
-              <div class="rm-row" :class="item.css">
-                <time x-text="item.time"></time>
-                <span class="rm-kind" x-text="item.kind"></span>
-                <div class="rm-what">
-                  <p class="rm-asked" x-show="item.question" x-text="item.question"></p>
-                  <div class="rm-md" x-effect="renderText($el, item.text)"></div>
-                  <ul class="rm-receipts" x-show="item.receipts?.length">
-                    <template x-for="(receipt, index) in item.receipts || []" :key="index">
-                      <li :class="receipt.color ? '' : 'plain'"><span class="rm-sq" :style="receipt.color ? `--c:${receipt.color}` : ''"></span><span x-text="receipt.text"></span></li>
-                    </template>
-                  </ul>
-                  <span class="rm-via" x-show="item.via" x-text="item.via"></span>
+      <!-- One thread: a conversation, or a job with its steps. -->
+      <section class="rm-thread" aria-label="Conversation">
+        <template x-if="open">
+          <div class="rm-thread-in">
+            <header class="rm-bar">
+              <button class="rm-back" type="button" @click="closeThread()">‹ Inbox</button>
+              <h1><span x-text="open.title"></span><small x-text="threadLine(open)"></small></h1>
+              <button class="rm-barlink" type="button" x-show="isRunning(open)" @click="stopJob(open)">Stop</button>
+              <button class="rm-barlink" type="button" x-show="!open.readOnly && !isRunning(open)" @click="deleteThread(open)">Delete</button>
+            </header>
+            <div class="rm-scroll rm-messages" x-ref="messages">
+              <template x-for="message in open.messages" :key="message.id">
+                <div :class="`rm-msg ${message.role}`">
+                  <template x-if="message.role === 'user'">
+                    <div class="rm-me"><span class="rm-meta" x-text="timeOf(new Date(message.at))"></span><p x-text="message.text"></p></div>
+                  </template>
+                  <template x-if="message.role === 'step'">
+                    <div class="rm-step"><time x-text="timeOf(new Date(message.at))"></time><span x-text="message.text"></span></div>
+                  </template>
+                  <template x-if="message.role === 'assistant'">
+                    <div class="rm-it">
+                      <span class="rm-meta" x-text="message.meta || timeOf(new Date(message.at))"></span>
+                      <div class="rm-md" x-effect="renderText($el, message.receipts?.length && /^done\.?$/i.test(message.text) ? '' : message.text)"></div>
+                      <ul class="rm-receipts" x-show="message.receipts?.length">
+                        <template x-for="(receipt, index) in message.receipts || []" :key="index">
+                          <li :class="receipt.color ? '' : 'plain'"><span class="rm-sq" :style="receipt.color ? `--c:${receipt.color}` : ''"></span><span x-text="receipt.text"></span></li>
+                        </template>
+                      </ul>
+                    </div>
+                  </template>
+                  <template x-for="item in pendingIn(message)" :key="item.token">
+                    <div class="rm-need">
+                      <b><span class="rm-flag" x-show="item.destructive">Lock</span><span x-text="item.message"></span></b>
+                      <div class="rm-need-acts">
+                        <button class="rm-btn solid" type="button" @click="confirm(item)" x-text="verbFor(item.message)"></button>
+                        <button class="rm-btn" type="button" @click="cancelWait(item)">Cancel</button>
+                      </div>
+                    </div>
+                  </template>
                 </div>
-                <div class="rm-act" x-show="item.reminderId">
-                  <button class="rm-btn ghost" type="button" @click="cancelReminder(item)">Cancel</button>
-                </div>
+              </template>
+              <div class="rm-it" x-show="streaming && streaming.threadId === open.id" x-cloak>
+                <span class="rm-meta" x-text="streaming?.status"></span>
+                <div class="rm-md" x-effect="renderText($el, streaming?.text || '')"></div>
               </div>
-            </template>
+              <div class="rm-need-acts rm-answers" x-show="open.job?.status === 'needs_you' && open.job.question?.options?.length" x-cloak>
+                <template x-for="(option, index) in open.job?.question?.options || []" :key="option">
+                  <button class="rm-btn" :class="{ solid: index === 0 }" type="button" @click="answerJob(open, option)" x-text="option"></button>
+                </template>
+              </div>
+            </div>
+            <form class="rm-compose" x-show="!open.readOnly" @submit.prevent="reply()">
+              <input type="text" x-model="replyDraft" x-ref="reply" :placeholder="open.job ? 'Reply to this job' : 'Reply'" aria-label="Reply" autocomplete="off" enterkeyhint="send" />
+              <button class="rm-btn solid" type="submit" :disabled="sending || !replyDraft.trim()">Send</button>
+            </form>
           </div>
         </template>
-        <p class="rm-empty" x-show="!view.some((item) => item.type === 'row')" x-text="emptyText"></p>
+        <p class="rm-thread-empty" x-show="!open">Open something on the left, or ask below.</p>
       </section>
+
+      <!-- History: the old ledger, everything RemindMe said, did and will do. -->
+      <div class="rm-sheet" x-show="historyOpen" x-cloak @keydown.escape.window="historyOpen = false" role="dialog" aria-modal="true" aria-labelledby="history-title">
+        <div class="rm-sheet-in">
+          <div class="rm-sheet-top">
+            <h2 id="history-title">History</h2>
+            <button class="rm-btn" type="button" @click="historyOpen = false">Close</button>
+          </div>
+          <div class="rm-tabs" role="group" aria-label="Show">
+            <template x-for="tab in tabs" :key="tab.id">
+              <button type="button" :aria-pressed="String(filter === tab.id)" @click="filter = tab.id" x-text="tab.label"></button>
+            </template>
+          </div>
+          <section class="rm-ledger" aria-label="Everything RemindMe said, did and will do">
+            <template x-for="item in view" :key="item.key">
+              <div>
+                <template x-if="item.type === 'day'"><h2 class="rm-day" x-text="item.label"></h2></template>
+                <template x-if="item.type === 'now'">
+                  <div class="rm-now"><time x-text="clock"></time><span>Now</span></div>
+                </template>
+                <template x-if="item.type === 'row'">
+                  <div class="rm-row" :class="item.css">
+                    <time x-text="item.time"></time>
+                    <span class="rm-kind" x-text="item.kind"></span>
+                    <div class="rm-what">
+                      <p class="rm-asked" x-show="item.question" x-text="item.question"></p>
+                      <div class="rm-md" x-effect="renderText($el, item.text)"></div>
+                      <ul class="rm-receipts" x-show="item.receipts?.length">
+                        <template x-for="(receipt, index) in item.receipts || []" :key="index">
+                          <li :class="receipt.color ? '' : 'plain'"><span class="rm-sq" :style="receipt.color ? `--c:${receipt.color}` : ''"></span><span x-text="receipt.text"></span></li>
+                        </template>
+                      </ul>
+                      <span class="rm-via" x-show="item.via" x-text="item.via"></span>
+                    </div>
+                    <div class="rm-act" x-show="item.reminderId">
+                      <button class="rm-btn ghost" type="button" @click="cancelReminder(item)">Cancel</button>
+                    </div>
+                  </div>
+                </template>
+              </div>
+            </template>
+            <p class="rm-empty" x-show="!view.some((item) => item.type === 'row')" x-text="emptyText"></p>
+          </section>
+        </div>
+      </div>
 
       <!-- Settings -->
       <div class="rm-sheet" x-show="settingsOpen" x-cloak @keydown.escape.window="settingsOpen = false" role="dialog" aria-modal="true" aria-labelledby="settings-title">
