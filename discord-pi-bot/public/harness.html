@@ -100,22 +100,36 @@
 
           <!-- RemindMe's own thread, pinned: what it sent and did on its own, with buttons, and your replies. -->
           <section class="rm-sec rm-pin" x-show="feedRow" x-cloak aria-label="RemindMe">
-            <button class="rm-entry" type="button" :class="{ on: open?.id === 'remindme' }" @click="openThread('remindme')">
-              <span class="rm-mark" aria-hidden="true"><span class="rm-cat" x-effect="drawCat($el, 'remindme', feedRow?.fresh ? 'asking' : 'done')"></span></span>
-              <span class="rm-entry-what"><b>RemindMe<em class="rm-new" x-show="feedRow?.fresh" x-text="`${feedRow?.fresh} new`"></em></b><span x-text="feedRow?.line"></span></span>
-              <time x-text="feedRow?.time"></time>
-            </button>
+            <div class="rm-swipe" x-init="swipeable($el, 'feed', 'remindme')">
+              <div class="rm-swipe-under right"><template x-for="act in swipeActions('feed', 'remindme').left" :key="act"><button class="rm-swipe-act" :class="act" type="button" @click.stop="rowAct('feed', 'remindme', act)" x-text="actLabel(act)"></button></template></div>
+              <div class="rm-swipe-under left"><template x-for="act in swipeActions('feed', 'remindme').right" :key="act"><button class="rm-swipe-act" :class="act" type="button" @click.stop="rowAct('feed', 'remindme', act)" x-text="actLabel(act)"></button></template></div>
+              <div class="rm-swipe-face">
+                <button class="rm-entry" type="button" :class="{ on: open?.id === 'remindme' }" @click="openThread('remindme')">
+                  <span class="rm-mark" aria-hidden="true"><span class="rm-cat" x-effect="drawCat($el, 'remindme', feedRow?.fresh ? 'asking' : 'done')"></span></span>
+                  <span class="rm-entry-what"><b>RemindMe<em class="rm-new" x-show="feedRow?.fresh" x-text="`${feedRow?.fresh} new`"></em></b><span x-text="feedRow?.line"></span></span>
+                  <time x-text="feedRow?.time"></time>
+                </button>
+              </div>
+              <div class="rm-swipe-hover"><template x-for="act in [...swipeActions('feed', 'remindme').left, ...swipeActions('feed', 'remindme').right]" :key="act"><button type="button" :class="act" @click.stop="rowAct('feed', 'remindme', act)" x-text="actLabel(act)"></button></template></div>
+            </div>
           </section>
 
           <section class="rm-sec" x-show="working.length || scheduled.length" x-cloak aria-label="Working on">
             <h2><span>Working on</span><span x-text="working.length + scheduled.length"></span></h2>
             <template x-for="thread in working" :key="thread.id">
-              <button class="rm-entry" type="button" :class="{ on: open?.id === thread.id }" @click="openThread(thread.id)">
-                <span class="rm-mark" aria-hidden="true"><span class="rm-cat" x-effect="drawCat($el, thread.id, catState(thread))"></span></span>
-                <span class="rm-entry-what"><b x-text="thread.title"></b><span x-text="jobLine(thread)"></span></span>
-                <time x-text="timeOf(new Date(thread.createdAt))"></time>
-                <span class="rm-progress" x-show="thread.job.progress" :style="`--p:${progressOf(thread)}%`"><i></i></span>
-              </button>
+              <div class="rm-swipe" x-init="swipeable($el, 'job', thread.id)">
+                <div class="rm-swipe-under right"><template x-for="act in swipeActions('job', thread.id).left" :key="act"><button class="rm-swipe-act" :class="act" type="button" @click.stop="rowAct('job', thread.id, act)" x-text="actLabel(act)"></button></template></div>
+                <div class="rm-swipe-under left"><template x-for="act in swipeActions('job', thread.id).right" :key="act"><button class="rm-swipe-act" :class="act" type="button" @click.stop="rowAct('job', thread.id, act)" x-text="actLabel(act)"></button></template></div>
+                <div class="rm-swipe-face">
+                  <button class="rm-entry" type="button" :class="{ on: open?.id === thread.id }" @click="openThread(thread.id)">
+                    <span class="rm-mark" aria-hidden="true"><span class="rm-cat" x-effect="drawCat($el, thread.id, catState(thread))"></span></span>
+                    <span class="rm-entry-what"><b x-text="thread.title"></b><span x-text="jobLine(thread)"></span></span>
+                    <time x-text="timeOf(new Date(thread.createdAt))"></time>
+                    <span class="rm-progress" x-show="thread.job.progress" :style="`--p:${progressOf(thread)}%`"><i></i></span>
+                  </button>
+                </div>
+                <div class="rm-swipe-hover"><template x-for="act in [...swipeActions('job', thread.id).left, ...swipeActions('job', thread.id).right]" :key="act"><button type="button" :class="act" @click.stop="rowAct('job', thread.id, act)" x-text="actLabel(act)"></button></template></div>
+              </div>
             </template>
             <template x-for="task in scheduled" :key="task.id">
               <button class="rm-entry" type="button" @click="openSettings('tasks')">
@@ -131,9 +145,9 @@
               <h2><span x-text="group.label"></span><span x-text="group.items.length"></span></h2>
               <template x-for="item in group.items" :key="item.key">
                 <!-- Swipe left for Snooze and Archive (all the way archives), right for Delete; with a mouse, they show on hover. -->
-                <div class="rm-swipe" x-init="swipeable($el, item)">
-                  <div class="rm-swipe-under right"><button class="rm-swipe-act snooze" type="button" @click.stop="rowAct(item, 'snooze')">Snooze</button><button class="rm-swipe-act archive" type="button" @click.stop="rowAct(item, 'archive')">Archive</button></div>
-                  <div class="rm-swipe-under left"><button class="rm-swipe-act delete" type="button" @click.stop="rowAct(item, 'delete')">Delete</button></div>
+                <div class="rm-swipe" x-init="swipeable($el, 'thread', item.threadId)">
+                  <div class="rm-swipe-under right"><template x-for="act in swipeActions('thread', item.threadId).left" :key="act"><button class="rm-swipe-act" :class="act" type="button" @click.stop="rowAct('thread', item.threadId, act)" x-text="actLabel(act)"></button></template></div>
+                  <div class="rm-swipe-under left"><template x-for="act in swipeActions('thread', item.threadId).right" :key="act"><button class="rm-swipe-act" :class="act" type="button" @click.stop="rowAct('thread', item.threadId, act)" x-text="actLabel(act)"></button></template></div>
                   <div class="rm-swipe-face">
                     <button class="rm-entry" type="button" :class="{ bad: item.bad, on: open && open.id === item.openId }" @click="openThread(item.threadId)">
                       <span class="rm-mark" aria-hidden="true"><span class="rm-cat" x-effect="drawCat($el, item.threadId, item.cat)"></span></span>
@@ -141,7 +155,7 @@
                       <time x-text="item.time"></time>
                     </button>
                   </div>
-                  <div class="rm-swipe-hover"><button type="button" @click.stop="rowAct(item, 'snooze')">Snooze</button><button type="button" @click.stop="rowAct(item, 'archive')">Archive</button><button class="delete" type="button" @click.stop="rowAct(item, 'delete')">Delete</button></div>
+                  <div class="rm-swipe-hover"><template x-for="act in [...swipeActions('thread', item.threadId).left, ...swipeActions('thread', item.threadId).right]" :key="act"><button type="button" :class="act" @click.stop="rowAct('thread', item.threadId, act)" x-text="actLabel(act)"></button></template></div>
                 </div>
               </template>
             </section>

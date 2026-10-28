@@ -279,7 +279,8 @@ function remindme() {
 		},
 
 		get working() {
-			return this.threads.filter((thread) => thread.job && ["queued", "working", "waiting"].includes(thread.job.status));
+			const now = this.now.getTime();
+			return this.threads.filter((thread) => thread.job && ["queued", "working", "waiting"].includes(thread.job.status) && !this.hiddenRows.includes(thread.id) && !(thread.snoozedUntil && Date.parse(thread.snoozedUntil) > now));
 		},
 
 		get needsCount() {
@@ -506,13 +507,23 @@ function remindme() {
 
 		/* ── Swiping rows: left to snooze or archive, right to delete ── */
 
-		swipeable(element, item) {
+		/* What a row swipes to: a conversation, a running job or watch, or RemindMe's own thread. */
+		swipeActions(kind, id) {
+			if (kind === "feed") return { left: this.feedRow?.fresh ? ["read"] : [], right: [], full: { left: "read" } };
+			if (kind === "job") return { left: ["snooze", "stop"], right: ["delete"], full: { left: "snooze" } };
+			return { left: ["snooze", "archive"], right: ["delete"], full: { left: "archive", right: "delete" } };
+		},
+		actLabel(act) {
+			return { snooze: "Snooze", archive: "Archive", delete: "Delete", stop: "Stop", read: "Mark read" }[act];
+		},
+		swipeable(element, kind, id) {
 			const face = element.querySelector(".rm-swipe-face");
-			const REVEAL = 176;
-			let start, base = 0, dx = 0, decided = false, sliding = false;
+			const width = (side) => [...element.querySelectorAll(`.rm-swipe-under.${side} .rm-swipe-act`)].reduce((sum, button) => sum + button.offsetWidth, 0);
+			let start, base = 0, dx = 0, decided = false, sliding = false, acts;
 			const begin = (x, y) => {
 				start = { x, y };
-				base = element.dataset.state === "left" ? -REVEAL : element.dataset.state === "right" ? 96 : 0;
+				acts = this.swipeActions(kind, id);
+				base = element.dataset.state === "left" ? -width("right") : element.dataset.state === "right" ? width("left") : 0;
 				dx = 0;
 				decided = sliding = false;
 			};
@@ -532,8 +543,10 @@ function remindme() {
 					face.style.transition = "none";
 				}
 				dx = mx;
-				face.style.transform = `translateX(${base + dx}px)`;
-				element.dataset.dir = base + dx < 0 ? "left" : "right";
+				// Only towards a side that has actions.
+				const x2 = Math.max(acts.left.length ? -Infinity : 0, Math.min(acts.right.length ? Infinity : 0, base + dx));
+				face.style.transform = `translateX(${x2}px)`;
+				element.dataset.dir = x2 < 0 ? "left" : x2 > 0 ? "right" : "";
 				return true;
 			};
 			const end = () => {
@@ -542,13 +555,13 @@ function remindme() {
 				face.style.transition = "";
 				if (!sliding) return;
 				element.dataset.moved = "1";
-				const x = base + dx;
-				const width = element.offsetWidth;
+				const x = Math.max(acts.left.length ? -Infinity : 0, Math.min(acts.right.length ? Infinity : 0, base + dx));
+				const full = element.offsetWidth * 0.6;
 				this.closeSwipes(element);
-				if (x < -width * 0.6) return void this.rowAct(item, "archive");
-				if (x > width * 0.6) return void this.rowAct(item, "delete");
-				if (x < -50) Object.assign(element.dataset, { state: "left", dir: "left" }), (face.style.transform = `translateX(-${REVEAL}px)`);
-				else if (x > 50) Object.assign(element.dataset, { state: "right", dir: "right" }), (face.style.transform = "translateX(96px)");
+				if (x < -full && acts.full.left) return void this.rowAct(kind, id, acts.full.left);
+				if (x > full && acts.full.right) return void this.rowAct(kind, id, acts.full.right);
+				if (x < -40) Object.assign(element.dataset, { state: "left", dir: "left" }), (face.style.transform = `translateX(-${width("right")}px)`);
+				else if (x > 40) Object.assign(element.dataset, { state: "right", dir: "right" }), (face.style.transform = `translateX(${width("left")}px)`);
 				else this.closeSwipes();
 			};
 			/*
@@ -625,13 +638,31 @@ function remindme() {
 		unhide(id) {
 			this.hiddenRows = this.hiddenRows.filter((hidden) => hidden !== id);
 		},
-		async rowAct(item, what) {
+		async rowAct(kind, id, what) {
 			this.closeSwipes();
-			const id = item.threadId;
-			const name = item.title.length > 32 ? `${item.title.slice(0, 32)}…` : item.title;
-			if (what === "snooze") {
-				this.snoozeFor = item;
+			if (what === "read") {
+				this.feedSeen = Date.now();
+				try {
+					localStorage.setItem("rm-feed-seen", String(this.feedSeen));
+				} catch {
+					/* private browsing */
+				}
 				return;
+			}
+			const title = this.threads.find((thread) => thread.id === id)?.title || "this";
+			const name = title.length > 32 ? `${title.slice(0, 32)}…` : title;
+			if (what === "snooze") {
+				this.snoozeFor = { threadId: id, title };
+				return;
+			}
+			if (what === "stop") {
+				try {
+					await this.request(`./api/threads/${encodeURIComponent(id)}/stop`);
+					this.showToast(`Stopped “${name}”. Reply in it to start it again.`);
+				} catch (error) {
+					this.error = error.message;
+				}
+				return this.loadInbox();
 			}
 			this.hiddenRows = [...this.hiddenRows, id];
 			if (this.open?.id === id) this.closeThread();
@@ -648,7 +679,7 @@ function remindme() {
 				}
 				return this.loadInbox();
 			}
-			// Deleting waits out the undo: only then is it gone for good.
+			// Deleting waits out the undo: only then is it gone for good (a running job stops then too).
 			const timer = setTimeout(async () => {
 				await fetch(`./api/threads/${encodeURIComponent(id)}`, { method: "DELETE" }).catch(() => {});
 				this.unhide(id);

@@ -1103,6 +1103,14 @@ body:has(> .rm-app) {
 	background: #fff;
 	color: #000;
 }
+.rm-swipe-act.stop {
+	background: #3a3a3a;
+	color: #fff;
+}
+.rm-swipe-act.read {
+	background: #fff;
+	color: #000;
+}
 .rm-swipe-act.delete {
 	background: #d93a33;
 	color: #fff;
