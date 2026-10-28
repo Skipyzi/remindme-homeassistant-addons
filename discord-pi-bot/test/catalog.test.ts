@@ -32,6 +32,6 @@ test("subscriptions show plan use, the OpenAI API shows no price, unknown provid
 	const openai = modelTable("openai", ["gpt-6.1-sol"], 6);
 	assert.equal(openai.billing, "unknown");
 	assert.equal(openai.featured[0].plan, undefined);
-	assert.deepEqual(modelTable("opencode", ["glm-5.3", "kimi-k3"], 6), { billing: "unknown", budget: 6, featured: [], others: ["glm-5.3", "kimi-k3"] });
+	assert.deepEqual(modelTable("openai", ["gpt-7-preview"], 6), { billing: "unknown", budget: 6, featured: [], others: ["gpt-7-preview"] }, "a model the catalogue doesn't know yet still shows");
 	assert.deepEqual(modelTable("claude-code", ["sonnet", "opus", "haiku"], 6).featured.map((model) => [model.id, model.recommended ?? false]), [["opus", false], ["sonnet", true], ["haiku", false]]);
 });

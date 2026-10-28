@@ -1,10 +1,10 @@
 /**
- * The provider-neutral shape of one assistant turn. Claude, OpenAI and any
- * OpenAI-compatible server (OpenCode) each translate this into their own API;
+ * The provider-neutral shape of one assistant turn. Claude and OpenAI (by
+ * API key or the ChatGPT sign-in) each translate this into their own API;
  * the agent above them only ever sees these types.
  */
 
-export type ProviderId = "claude" | "openai" | "chatgpt" | "opencode" | "custom";
+export type ProviderId = "claude" | "openai" | "chatgpt";
 
 export type Effort = "low" | "medium" | "high";
 
@@ -104,7 +104,7 @@ export interface Session {
 
 export interface Provider {
 	id: ProviderId;
-	/** Shown in the console: "Claude", "OpenAI", "OpenCode". */
+	/** Shown in the console: "Claude", "OpenAI", "ChatGPT subscription". */
 	label: string;
 	model: string;
 	/** The provider runs web search itself; no client-side search tool needed. */

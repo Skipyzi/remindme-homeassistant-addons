@@ -2,7 +2,6 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { RUNNER_LABELS, RUNNERS, type RunnerId } from "../agents/runners";
 import { ClaudeProvider, DEFAULT_CLAUDE_MODEL } from "./claude";
-import { CompatibleProvider, OPENCODE_GO_URL } from "./compatible";
 import { OpenAiProvider, type Subscription } from "./openai";
 import type { Effort, Provider, ProviderId } from "./types";
 
@@ -12,8 +11,6 @@ export type AssistantId = ProviderId | RunnerId;
 export const PROVIDERS: Array<{ id: AssistantId; label: string; kind: "api" | "subscription" | "agent" }> = [
 	{ id: "claude", label: "Claude", kind: "api" },
 	{ id: "openai", label: "OpenAI", kind: "api" },
-	{ id: "opencode", label: "OpenCode", kind: "api" },
-	{ id: "custom", label: "Custom server", kind: "api" },
 	{ id: "chatgpt", label: "ChatGPT subscription", kind: "subscription" },
 	{ id: "claude-code", label: RUNNER_LABELS["claude-code"], kind: "agent" },
 	{ id: "codex", label: RUNNER_LABELS.codex, kind: "agent" },
@@ -85,7 +82,7 @@ const NO_ACCOUNTS: Accounts = { chatgpt: false, claude: false, codex: false };
 /**
  * Which AI answers, with which model, at what effort. The app options supply
  * the keys and the defaults; the console's choice is saved on top of them, so
- * switching between Claude, OpenAI, OpenCode, the subscriptions and the CLI
+ * switching between Claude, OpenAI, the subscriptions and the CLI
  * agents needs no restart.
  */
 export class AiSettings {
@@ -130,10 +127,6 @@ export class AiSettings {
 				return this.env.ANTHROPIC_API_KEY || "";
 			case "openai":
 				return this.env.OPENAI_API_KEY || "";
-			case "opencode":
-				return this.env.OPENCODE_API_KEY || "";
-			case "custom":
-				return this.env.CUSTOM_AI_KEY || "";
 			case "chatgpt":
 				return "";
 		}
@@ -141,8 +134,6 @@ export class AiSettings {
 
 	configured(id: AssistantId): boolean {
 		switch (id) {
-			case "custom":
-				return Boolean(this.env.CUSTOM_AI_URL);
 			case "chatgpt":
 				return this.accounts.chatgpt;
 			case "claude-code":
@@ -195,10 +186,6 @@ export class AiSettings {
 			case "chatgpt":
 				if (!this.signIns) throw new Error("ChatGPT sign-in isn't available here.");
 				return new OpenAiProvider("", model, { subscription: this.signIns.chatgpt });
-			case "opencode":
-				return new CompatibleProvider("opencode", "OpenCode", this.key(id), model, this.env.OPENCODE_URL || OPENCODE_GO_URL);
-			case "custom":
-				return new CompatibleProvider("custom", "Custom server", this.key(id), model, this.env.CUSTOM_AI_URL || "");
 		}
 	}
 
@@ -210,8 +197,8 @@ export class AiSettings {
 		const id = this.providerId();
 		const label = this.label(id);
 		if (!this.configured(id)) {
-			if (id === "custom" || !PROVIDERS.some((provider) => this.configured(provider.id)))
-				return "No AI is set up yet. Add an API key for Claude, OpenAI or OpenCode in the RemindMe app's options, or sign in under AI in the RemindMe console.";
+			if (!PROVIDERS.some((provider) => this.configured(provider.id)))
+				return "No AI is set up yet. Add an API key for Claude or OpenAI in the RemindMe app's options, or sign in under AI in the RemindMe console.";
 			return PROVIDERS.find((entry) => entry.id === id)?.kind === "api"
 				? `No ${label} API key is set. Add one in the RemindMe app's options, then restart the app.`
 				: `${label} isn't signed in. Sign in under AI in the RemindMe console.`;

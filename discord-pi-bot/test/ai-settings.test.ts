@@ -21,9 +21,9 @@ test("Claude with a key works out of the box on Opus 5.5", () => {
 });
 
 test("without a key for the chosen provider, the first one with a key answers", () => {
-	const settings = new AiSettings({ AI_PROVIDER: "claude", OPENCODE_API_KEY: "oc" }, path());
-	assert.equal(settings.providerId(), "opencode");
-	assert.equal(settings.problem(), "Pick a model for OpenCode in RemindMe's AI settings.");
+	const settings = new AiSettings({ AI_PROVIDER: "claude", OPENAI_API_KEY: "o" }, path());
+	assert.equal(settings.providerId(), "openai");
+	assert.equal(settings.problem(), "Pick a model for OpenAI in RemindMe's AI settings.");
 	const none = new AiSettings({ AI_PROVIDER: "openai" }, path());
 	assert.match(none.problem(), /No AI is set up yet/);
 	const other = new AiSettings({ AI_PROVIDER: "openai", ANTHROPIC_API_KEY: "a" }, path());
@@ -37,7 +37,8 @@ test("the console's choice is saved, and only providers with a key can be chosen
 	const settings = new AiSettings(env, file);
 	await settings.choose({ provider: "openai", model: "gpt-5.5", effort: "medium" });
 	assert.deepEqual(JSON.parse(readFileSync(file, "utf8")), { models: { openai: "gpt-5.5" }, provider: "openai", effort: "medium" });
-	await assert.rejects(settings.choose({ provider: "opencode" }), /no API key/);
+	await assert.rejects(settings.choose({ provider: "chatgpt" }), /Sign in to that one first/);
+	await assert.rejects(settings.choose({ provider: "opencode" }), /Unknown AI provider/, "OpenCode and custom servers are gone");
 	await assert.rejects(settings.choose({ effort: "max" }), /low, medium or high/);
 	const reloaded = new AiSettings(env, file);
 	await reloaded.load();
@@ -81,17 +82,9 @@ test("API keys saved by RemindMe 3.x fill blank options, and options win", () =>
 			],
 		}),
 	);
-	assert.deepEqual(legacyKeys(file), {
-		CHATGPT_MODEL: "gpt-5.5",
-		ANTHROPIC_API_KEY: "sk-ant-old",
-		OPENCODE_API_KEY: "oc-old",
-		CUSTOM_AI_URL: "https://openrouter.ai/api/v1",
-		CUSTOM_AI_KEY: "or-old",
-	});
-	const env = withLegacyKeys({ ANTHROPIC_API_KEY: "sk-ant-new", CUSTOM_AI_URL: "https://my.server/v1" }, file);
-	assert.equal(env.ANTHROPIC_API_KEY, "sk-ant-new");
-	assert.equal(env.OPENCODE_API_KEY, "oc-old");
-	assert.equal(env.CUSTOM_AI_URL, "https://my.server/v1");
-	assert.equal(env.CUSTOM_AI_KEY, undefined, "a different server's key is never paired with yours");
+	assert.deepEqual(legacyKeys(file), { CHATGPT_MODEL: "gpt-5.5", ANTHROPIC_API_KEY: "sk-ant-old" }, "OpenCode, other servers and the local llama.cpp are left behind");
+	const env = withLegacyKeys({ ANTHROPIC_API_KEY: "sk-ant-new" }, file);
+	assert.equal(env.ANTHROPIC_API_KEY, "sk-ant-new", "options win");
+	assert.equal(env.CHATGPT_MODEL, "gpt-5.5");
 	assert.deepEqual(legacyKeys(join(tmpdir(), "missing-endpoints.json")), {});
 });

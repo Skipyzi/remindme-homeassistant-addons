@@ -23,10 +23,6 @@ export AI_MODEL="$(get_option ai_model)"
 export AI_EFFORT="$(get_option ai_effort)"
 export ANTHROPIC_API_KEY="$(get_option anthropic_api_key)"
 export OPENAI_API_KEY="$(get_option openai_api_key)"
-export OPENCODE_API_KEY="$(get_option opencode_api_key)"
-export OPENCODE_URL="$(get_option opencode_url)"
-export CUSTOM_AI_URL="$(get_option custom_ai_url)"
-export CUSTOM_AI_KEY="$(get_option custom_ai_key)"
 export DAILY_AI_BUDGET="$(get_option daily_ai_budget)"
 
 # The assistant speaking first, on Discord.

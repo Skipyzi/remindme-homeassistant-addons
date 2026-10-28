@@ -17,18 +17,6 @@ configuration:
   openai_api_key:
     name: OpenAI API key
     description: From platform.openai.com.
-  opencode_api_key:
-    name: OpenCode API key
-    description: Your OpenCode Go or Zen key.
-  opencode_url:
-    name: OpenCode server
-    description: Optional. Defaults to OpenCode Go (https://opencode.ai/zen/go/v1). Use https://opencode.ai/zen/v1 for Zen.
-  custom_ai_url:
-    name: Custom AI server
-    description: Optional. Any OpenAI-compatible server, such as OpenRouter. Its base URL, ending in /v1.
-  custom_ai_key:
-    name: Custom AI server key
-    description: Optional. The key for the custom server.
   ai_model:
     name: Model
     description: Optional. The default provider's model. Blank uses Claude Opus 5.5 for Claude; pick one in the console for the others.
@@ -79,10 +67,10 @@ configuration:
     description: Accent colour of the reminder card, as a hex code.
   searxng_url:
     name: SearXNG URL
-    description: Optional. Web search for OpenCode and custom servers. Claude and OpenAI search the web themselves.
+    description: Optional. Web search for the Claude Code and Codex agents. Claude, OpenAI and ChatGPT search the web themselves.
   exa_api_key:
     name: Exa API key
-    description: Optional. Web search fallback for OpenCode and custom servers.
+    description: Optional. Web search fallback for the Claude Code and Codex agents.
   phone_app:
     name: Phone app
     description: RemindMe joins your tailnet as its own device, so you can install it on your phone with its own notifications. Connect it under Settings, Phone app.

@@ -1,7 +1,7 @@
 name: RemindMe
-version: "4.8.0"
+version: "4.8.1"
 slug: remindme_discord_bot
-description: Your personal assistant in Home Assistant and Discord, on Claude, OpenAI, OpenCode or your ChatGPT and Claude subscriptions
+description: Your personal assistant in Home Assistant and Discord, on Claude, OpenAI or your ChatGPT and Claude subscriptions
 arch:
   - aarch64
 startup: application
@@ -21,7 +21,6 @@ options:
   ai_provider: claude
   anthropic_api_key: ""
   openai_api_key: ""
-  opencode_api_key: ""
   ai_model: ""
   ai_effort: low
   daily_ai_budget: 2
@@ -48,13 +47,9 @@ schema:
   discord_token: password
   owner_id: str
   guild_id: str?
-  ai_provider: list(claude|openai|opencode|custom)
+  ai_provider: list(claude|openai)
   anthropic_api_key: password?
   openai_api_key: password?
-  opencode_api_key: password?
-  opencode_url: url?
-  custom_ai_url: url?
-  custom_ai_key: password?
   ai_model: str?
   ai_effort: list(low|medium|high)
   daily_ai_budget: float(0,1000)

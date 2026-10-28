@@ -12,8 +12,6 @@ Add at least one key in the app's **Configuration** page, then restart the app:
 |---|---|---|
 | Claude | `anthropic_api_key` | From console.anthropic.com, billed per use (separate from a Claude subscription). Uses Claude Opus 5.5 unless you pick another model. Searches the web itself. |
 | OpenAI | `openai_api_key` | From platform.openai.com. Pick a model in the console. Searches the web itself. |
-| OpenCode | `opencode_api_key` | Your OpenCode Go key (`opencode_url` defaults to `https://opencode.ai/zen/go/v1`; use `https://opencode.ai/zen/v1` for Zen). Pick a model in the console. Web search needs `searxng_url` or `exa_api_key`. |
-| Custom server | `custom_ai_url`, `custom_ai_key` | Any server that speaks OpenAI's Chat Completions, such as OpenRouter. |
 
 ### Or sign in with a subscription
 
@@ -27,7 +25,7 @@ The agents (Claude and Codex) run each turn themselves with RemindMe's tools and
 
 `ai_provider` picks the default. In the console, **Settings → AI and sign-ins** switches between the providers that are set up and picks the model without a restart. Models come in a table: what each is good for, a rough guide to smarts and speed, what a typical answer costs (or how much of a subscription it uses), and how many answers the daily budget covers. Older versions, and typing a model's exact name, are under **Older and other models**. Keys only ever come from the app options; the console never sees them.
 
-`ai_effort` sets how hard the AI thinks on Discord and in scheduled tasks; in the console, the **Thinking** menu under the message box sets it per message. `daily_ai_budget` (US dollars, default 2) pauses the assistant for the rest of the day once reached. Spend is counted from Claude's list prices; OpenAI and OpenCode usage is shown in tokens only, because their APIs publish no prices.
+`ai_effort` sets how hard the AI thinks; **How hard it thinks** under Settings → AI in the console changes it without a restart. `daily_ai_budget` (US dollars, default 2) pauses the assistant for the rest of the day once reached. Spend is counted from Claude's list prices; OpenAI usage is shown in tokens only, because its API publishes no prices.
 
 ## On Discord
 
@@ -76,7 +74,7 @@ To use iCloud, add Home Assistant's **CalDAV** integration (Settings → Devices
 
 ## What the assistant can do
 
-House overview, find and control devices, calendar events (read, and add once you confirm), mail (search, read, save drafts), weather forecasts, to-do lists (read, add, complete), reminders (set, list, cancel), notes in the shared vault (search, save when asked), web search (built into Claude and OpenAI; SearXNG or Exa for the others), reading a web page, parcel tracking (with `trackingmore_api_key`), documents in the console, and tools from MCP servers added in the console.
+House overview, find and control devices, calendar events (read, and add once you confirm), mail (search, read, save drafts), weather forecasts, to-do lists (read, add, complete), reminders (set, list, cancel), notes in the shared vault (search, save when asked), web search (built into Claude, OpenAI and ChatGPT; SearXNG or Exa for the Claude Code and Codex agents), reading a web page, parcel tracking (with `trackingmore_api_key`), documents in the console, and tools from MCP servers added in the console.
 
 It only sees and changes devices through these tools. Each turn sends your recent chat, the tool results and any recalled notes to the provider you chose.
 
@@ -124,7 +122,7 @@ Everything lives in `/data`: reminders, chats, the inbox's threads and jobs (`th
 
 The `local_llm_*`, `model_manager_*` and `pi_agent_webhook_url` options are gone, and so is the console's Models workbench.
 
-From 3.1: your ChatGPT, Claude, Codex, OpenCode and Pi sign-ins carry over, and API keys saved in the old endpoint list keep working until you add them to the app options (options win). Choosing an assistant per conversation is gone: the choice under **AI** applies everywhere, Discord included. The Local llama.cpp and SearXNG apps keep running until you uninstall them; RemindMe no longer uses llama.cpp, and uses SearXNG only for web search with OpenCode or a custom server.
+From 3.1: your ChatGPT, Claude and Codex sign-ins carry over, and API keys saved in the old endpoint list keep working until you add them to the app options (options win). Choosing an assistant per conversation is gone: the choice under **AI** applies everywhere, Discord included. The Local llama.cpp and SearXNG apps keep running until you uninstall them; RemindMe no longer uses llama.cpp, and uses SearXNG only for web search with the Claude Code and Codex agents.
 
 ## Development
 

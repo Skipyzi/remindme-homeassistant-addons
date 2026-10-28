@@ -3,7 +3,6 @@ import { createServer, type IncomingHttpHeaders } from "node:http";
 import type { AddressInfo } from "node:net";
 import { after, before, test } from "node:test";
 import { ClaudeProvider } from "../src/ai/claude.ts";
-import { CompatibleProvider } from "../src/ai/compatible.ts";
 import { OpenAiProvider } from "../src/ai/openai.ts";
 import type { TurnRequest } from "../src/ai/types.ts";
 
@@ -172,43 +171,9 @@ test("OpenAI: a function call continues the stored response by id", async () => 
 	assert.match(String(seen[1].body.instructions), /You are RemindMe/);
 });
 
-test("OpenCode: tool calls arrive in pieces and reasoning goes back", async () => {
-	seen.length = 0;
-	const chunk = (delta: unknown, finish: string | null = null) =>
-		`data: ${JSON.stringify({ id: "c", object: "chat.completion.chunk", created: 0, model: "muse-spark", choices: [{ index: 0, delta, finish_reason: finish }] })}\n\n`;
-	script = [
-		chunk({ role: "assistant", reasoning_content: "Look it up." }) +
-			chunk({ tool_calls: [{ index: 0, id: "call_a", type: "function", function: { name: "find_devices", arguments: '{"que' } }] }) +
-			chunk({ tool_calls: [{ index: 0, function: { arguments: 'ry":"lamp"}' } }] }, "tool_calls") +
-			`data: ${JSON.stringify({ id: "c", object: "chat.completion.chunk", created: 0, model: "muse-spark", choices: [], usage: { prompt_tokens: 50, completion_tokens: 5, total_tokens: 55 } })}\n\ndata: [DONE]\n\n`,
-		chunk({ content: "On, " }) + chunk({ content: "at 40%." }, "stop") + "data: [DONE]\n\n",
-	];
-	const provider = new CompatibleProvider("opencode", "OpenCode", "oc-key", "muse-spark", `${base}/zen/go/v1`);
-	const session = provider.start(request());
-	const thinking: string[] = [];
-	const first = await session.next({ thinking: (delta) => thinking.push(delta) });
-	assert.equal(first.stop, "tools");
-	assert.deepEqual(first.calls, [{ id: "call_a", name: "find_devices", input: { query: "lamp" } }]);
-	assert.deepEqual(thinking, ["Look it up."]);
-	assert.equal(first.usage.inputTokens, 50);
-	session.answer([{ call: first.calls[0], outcome: { content: "on" } }]);
-	const second = await session.next({});
-	assert.equal(second.text, "On, at 40%.");
-	assert.equal(seen[0].url, "/zen/go/v1/chat/completions");
-	assert.equal(seen[0].headers.authorization, "Bearer oc-key");
-	assert.equal(seen[0].body.max_tokens, 1000);
-	const messages = seen[1].body.messages as Array<Record<string, unknown>>;
-	const assistant = messages.find((message) => message.role === "assistant" && message.tool_calls);
-	assert.equal(assistant?.reasoning_content, "Look it up.");
-	assert.deepEqual(messages[messages.length - 1], { role: "tool", tool_call_id: "call_a", content: "on" });
-	assert.equal((messages[0] as { role: string }).role, "system");
-});
-
 test("model lists come from each provider's API", async () => {
 	script = [JSON.stringify({ data: [{ id: "gpt-5.5", object: "model" }, { id: "text-embedding-3", object: "model" }, { id: "gpt-image-2", object: "model" }], object: "list" })];
 	assert.deepEqual(await new OpenAiProvider("k", "x", { baseURL: `${base}/v1` }).listModels(), ["gpt-5.5"]);
-	script = [JSON.stringify({ data: [{ id: "glm-5.3-flash" }, { id: "deepseek-v4.1-flash" }], object: "list" })];
-	assert.deepEqual(await new CompatibleProvider("opencode", "OpenCode", "k", "x", `${base}/v1`).listModels(), ["deepseek-v4.1-flash", "glm-5.3-flash"]);
 });
 
 test("OpenAI: a commentary message streams as thinking and stays out of the answer", async () => {

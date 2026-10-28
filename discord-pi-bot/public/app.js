@@ -816,7 +816,7 @@ function remindme() {
 			const search = this.ai?.webSearch;
 			if (search === "provider") return "Web search: built into this provider.";
 			if (search === "searxng") return "Web search: through SearXNG or Exa.";
-			return "Web search: off. Add a SearXNG address or an Exa key in the app options to search with OpenCode or the agents.";
+			return "Web search: off. Add a SearXNG address or an Exa key in the app options to search with the Claude Code and Codex agents.";
 		},
 		async loadSignins() {
 			const status = {};

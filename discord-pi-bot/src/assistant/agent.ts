@@ -273,7 +273,7 @@ export class Assistant {
 	}
 
 	/**
-	 * A turn on a CLI agent (Claude Code, Codex, OpenCode, Pi). The agent runs
+	 * A turn on a CLI agent (Claude Code, Codex). The agent runs
 	 * its own loop and reaches RemindMe's tools through the bridge; tool rows
 	 * and confirmations still come back through the same events. Usage is
 	 * billed to the subscription, so nothing is added to the daily spend.
@@ -289,8 +289,8 @@ export class Assistant {
 		input.signal?.addEventListener("abort", cancel, { once: true });
 		let calls = 0;
 		let answer = "";
-		// One way into the tools, whether the agent comes over the bridge (Claude Code,
-		// OpenCode) or calls in-process (Codex, Pi).
+		// One way into the tools, whether the agent comes over the bridge (Claude Code)
+		// or calls in-process (Codex).
 		const call = async (name: string, args: unknown): Promise<ToolRun> => {
 			if (++calls > MAX_RUNNER_TOOL_CALLS) {
 				abort.abort();
