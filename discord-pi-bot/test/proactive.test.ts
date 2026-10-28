@@ -126,3 +126,44 @@ test("without the AI, the brief is a plain list of the same facts", () => {
 		].join("\n"),
 	);
 });
+
+test("the morning before a collection the bins go on the chores; the evening nudge only if still open", async () => {
+	const { binChore, Proactive } = await import("../src/assistant/proactive.ts");
+	assert.equal(binChore([event("Abfall", "Blaue Tonne (Abholzeit)", "2026-10-29")]), "Put the paper bin out (Blaue Tonne)");
+	assert.equal(binChore([event("Abfall", "Blaue Tonne", "2026-10-29"), event("Abfall", "Bio Tonne", "2026-10-29")]), "Put the bins out: paper (Blaue Tonne), organic (Bio Tonne)");
+	assert.equal(binChore([event("Dienstplan", "Late shift", "2026-10-29T15:00:00+01:00")]), undefined);
+
+	for (const ticked of [false, true]) {
+		const sent: string[] = [];
+		const added: Array<Record<string, unknown>> = [];
+		const did: string[] = [];
+		const home = {
+			cards: async () => [],
+			calendarEvents: async () => [event("Abfall", "Blaue Tonne (Abholzeit)", "2026-10-29")],
+			callService: async (_domain: string, _service: string, data: Record<string, unknown>) => {
+				added.push(data);
+			},
+			serviceResponse: async () => ({ "todo.chores": { items: ticked ? [] : [{ summary: "Put the paper bin out (Blaue Tonne)" }] } }),
+		} as unknown as HomeApi;
+		const proactive = new Proactive({
+			assistant: { ask: async () => ({ text: "", confirms: [], cards: [], artifacts: [] }) } as unknown as Assistant,
+			home,
+			notify: async (text) => {
+				sent.push(text);
+				return true;
+			},
+			reminders: async () => [],
+			did: (text) => did.push(text),
+			options: { briefTime: "", binTime: "19:00", quietHours: "22:30-07:00", batteryThreshold: 0, choresList: "todo.chores" },
+			statePath: join(mkdtempSync(join(tmpdir(), "chores-")), "state.json"),
+		});
+		await proactive.tick(at("2026-10-28T06:30:00"));
+		assert.equal(added.length, 0, "not before 07:00");
+		await proactive.tick(at("2026-10-28T07:01:00"));
+		await proactive.tick(at("2026-10-28T12:00:00"));
+		assert.deepEqual(added, [{ entity_id: "todo.chores", item: "Put the paper bin out (Blaue Tonne)", due_date: "2026-10-28" }], "added once");
+		assert.deepEqual(did, ['Added "Put the paper bin out (Blaue Tonne)" to the chores']);
+		await proactive.tick(at("2026-10-28T19:01:00"));
+		assert.deepEqual(sent, ticked ? [] : ["🗑️ Bins tonight: paper (Blaue Tonne). Collection is tomorrow."]);
+	}
+});

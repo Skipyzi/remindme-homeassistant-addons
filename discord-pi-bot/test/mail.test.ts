@@ -3,7 +3,10 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { Mailboxes, mailAccounts, type MailAccount, type MailMessage, type MailSource, type MailSummary } from "../src/mail/mailboxes.ts";
+import { Mailboxes, type MailAccount, type MailMessage, type MailSource, type MailSummary } from "../src/mail/mailboxes.ts";
+import { ConnectorStore, publicView } from "../src/connectors/store.ts";
+import { checkMailInput, importMailOptions, mailAccount } from "../src/connectors/mail.ts";
+import { statSync } from "node:fs";
 import { MailWatch, findingText, parseFindings, sortMail, worthKnowing } from "../src/mail/watch.ts";
 import { ConfirmationStore } from "../src/assistant/confirmations.ts";
 import { buildTools, newEffects, runTool } from "../src/assistant/tools.ts";
@@ -22,6 +25,10 @@ const mail = (account: "gmail" | "gmx", uid: number, values: Partial<MailSummary
 
 class FakeSource implements MailSource {
 	calls: string[] = [];
+	async test(account: MailAccount) {
+		if (this.failing.has(account.id)) throw new Error(`${account.label} refused the connection`);
+		return "Connected: 3 messages in the inbox.";
+	}
 	inbox: MailSummary[] = [];
 	failing = new Set<string>();
 	async search(account: MailAccount, query: string, _since: Date, limit: number) {
@@ -31,6 +38,7 @@ class FakeSource implements MailSource {
 	}
 	async recent(account: MailAccount, since: Date) {
 		this.calls.push(`recent ${account.id}`);
+		if (this.failing.has(account.id)) throw new Error(`${account.label} refused the connection`);
 		return this.inbox.filter((item) => item.account === account.id && Date.parse(item.date) > since.getTime());
 	}
 	async read(account: MailAccount, mailbox: string, uid: number): Promise<MailMessage | undefined> {
@@ -39,12 +47,18 @@ class FakeSource implements MailSource {
 	}
 }
 
-const accounts = mailAccounts({ GMAIL_ADDRESS: "me@gmail.com", GMAIL_APP_PASSWORD: "abcd efgh ijkl mnop", GMX_ADDRESS: "me@gmx.de", GMX_PASSWORD: "secret" });
+const connector = (id: string, preset: string, values: Record<string, string>, password: string) => ({ id, kind: "mail", preset, name: preset === "gmail" ? "Gmail" : preset === "gmx" ? "GMX" : "Work", enabled: true, values, secrets: { password }, createdAt: "" });
+const accounts = [
+	mailAccount(connector("gmail", "gmail", { address: "me@gmail.com" }, "abcd efgh ijkl mnop"))!,
+	mailAccount(connector("gmx", "gmx", { address: "me@gmx.de" }, "secret"))!,
+];
 
-test("accounts come from the options, with the app password's spaces dropped", () => {
-	assert.deepEqual(accounts.map((account) => [account.id, account.host, account.port]), [["gmail", "imap.gmail.com", 993], ["gmx", "imap.gmx.net", 993]]);
+test("a connector becomes a mail account, with the app password's spaces dropped", () => {
+	assert.deepEqual(accounts.map((account) => [account.id, account.host, account.port, account.provider]), [["gmail", "imap.gmail.com", 993, "gmail"], ["gmx", "imap.gmx.net", 993, "imap"]]);
 	assert.equal(accounts[0].pass, "abcdefghijklmnop");
-	assert.deepEqual(mailAccounts({ GMAIL_ADDRESS: "me@gmail.com" }), [], "an address without a password is not an account");
+	assert.equal(mailAccount(connector("x", "gmx", { address: "me@gmx.de" }, "")), undefined, "no password, no account");
+	const other = mailAccount(connector("w", "imap", { address: "me", host: "mail.example.com", port: "143" }, "pw"))!;
+	assert.deepEqual([other.host, other.port, other.provider], ["mail.example.com", 143, "imap"]);
 });
 
 test("search covers both accounts, newest first, and a failing one is reported", async () => {
@@ -155,4 +169,50 @@ test("the watcher starts quietly, then reports new bills and appointments and th
 	assert.deepEqual(sent.slice(2), ["🧾 Due tomorrow: Stadtwerke electricity, 39,99 €."]);
 	await watch.clearDigest();
 	assert.deepEqual(watch.digest(), []);
+});
+
+test("connector passwords are stored privately and never shown", async () => {
+	const path = join(mkdtempSync(join(tmpdir(), "connectors-")), "connectors.json");
+	const store = new ConnectorStore(path);
+	const saved = await store.create({ kind: "mail", preset: "gmx", name: "GMX", enabled: true, values: { address: "me@gmx.de" }, secrets: { password: "hunter2" } });
+	assert.equal(statSync(path).mode & 0o777, 0o600);
+	const shown = publicView(saved);
+	assert.deepEqual(shown.secretsSet, ["password"]);
+	assert.ok(!JSON.stringify(shown).includes("hunter2"));
+	await store.update(saved.id, { secrets: { password: "" }, enabled: false });
+	assert.equal(store.get(saved.id)?.secrets.password, "hunter2", "a blank password keeps the stored one");
+	const reloaded = new ConnectorStore(path);
+	await reloaded.load();
+	assert.equal(reloaded.list("mail")[0].enabled, false);
+	assert.equal(await reloaded.remove(saved.id), true);
+});
+
+test("the add form is checked before anything is tested or saved", () => {
+	assert.deepEqual(checkMailInput({ preset: "gmail", values: { address: " me@gmail.com " }, secrets: { password: "abcd efgh" } }, true), { preset: "gmail", name: "Gmail", values: { address: "me@gmail.com" }, secrets: { password: "abcd efgh" } });
+	assert.throws(() => checkMailInput({ preset: "outlook", values: { address: "me@outlook.com" } }, true), /Pick a mail service/);
+	assert.throws(() => checkMailInput({ preset: "gmx", values: { address: "nope" }, secrets: { password: "x" } }, true), /full email address/);
+	assert.throws(() => checkMailInput({ preset: "gmx", values: { address: "me@gmx.de" } }, true), /Enter the password/);
+	assert.throws(() => checkMailInput({ preset: "imap", values: { address: "me", host: "bad host!" }, secrets: { password: "x" } }, true), /IMAP server name/);
+	assert.deepEqual(checkMailInput({ preset: "imap", name: "Work", values: { address: "me", host: "mail.example.com", port: "993" }, secrets: { password: "x" } }, true).values, { address: "me", host: "mail.example.com", port: "993" });
+});
+
+test("Gmail and GMX from the app options become connectors once, and follow a new password", async () => {
+	const store = new ConnectorStore(join(mkdtempSync(join(tmpdir(), "import-")), "connectors.json"));
+	const env = { GMAIL_ADDRESS: "me@gmail.com", GMAIL_APP_PASSWORD: "one", GMX_ADDRESS: "", GMX_PASSWORD: "" };
+	await importMailOptions(store, env);
+	await importMailOptions(store, env);
+	assert.deepEqual(store.list().map((item) => [item.preset, item.name, item.values.address, item.fromOptions]), [["gmail", "Gmail", "me@gmail.com", true]]);
+	await importMailOptions(store, { ...env, GMAIL_APP_PASSWORD: "two" });
+	assert.equal(store.list()[0].secrets.password, "two");
+});
+
+test("each account's last check is kept for the console", async () => {
+	const source = new FakeSource();
+	source.failing.add("gmx");
+	const boxes = new Mailboxes(() => accounts, source);
+	await boxes.recent(new Date(0));
+	assert.equal(boxes.status("gmail")?.ok, true);
+	assert.equal(boxes.status("gmx")?.ok, false);
+	assert.match(boxes.status("gmx")?.error || "", /refused/);
+	assert.equal(await boxes.test(accounts[0]), "Connected: 3 messages in the inbox.");
 });

@@ -45,14 +45,21 @@ The bot must share a server with you, and your DMs must be open to it.
 All to your DMs, and part of that chat, so you can reply to them:
 
 - **Morning brief** at `morning_brief_time` (default 07:00): today's shift and appointments, bins tonight, the weather, reminders, parcels, and anything wrong in the house. The facts are gathered in code and the AI writes them up; without the AI you get a plain list. The console's **AI** panel can send today's brief on demand.
-- **Bins** at `bin_reminder_time` (default 19:00) the evening before collection, from your waste calendar. German bin names get an English label: paper (Blaue Tonne), packaging (Gelbe Tonne), organic, residual waste.
+- **Bins:** on the morning before a collection, "Put the paper bin out" goes on your chores list (`chores_list`, default `todo.chores`), due that day. At `bin_reminder_time` (default 19:00) you get a message too, unless you've ticked the chore off. German bin names get an English label: paper (Blaue Tonne), packaging (Gelbe Tonne), organic, residual waste.
 - **Batteries** at or below `battery_nudge_percent` (default 15), once a week per device.
 
 Nothing is sent during `quiet_hours` (default 22:30-07:00); nudges wait until they end. Blank times turn a message off. The bins and battery checks don't use the AI.
 
-## Your mail
+## Connectors: your mail
 
-Set `gmail_address` and `gmail_app_password` (Google Account → Security → 2-step verification → App passwords), and/or `gmx_address` and `gmx_password` (turn on "POP3/IMAP Abruf" in GMX's settings first), then restart. RemindMe reads over IMAP and never sends, deletes, moves or marks mail as read.
+Add mail accounts in the console under **Settings → Connectors**: Gmail, GMX, WEB.DE, iCloud Mail, or any other IMAP server. Each one is tested before it's saved, shows its last check, and can be switched off or removed. Passwords stay in the app's private data on the Pi and are never shown again. RemindMe reads over IMAP and never sends, deletes, moves or marks mail as read.
+
+- **Gmail** needs 2-step verification and an app password (Google Account → Security → App passwords).
+- **GMX** and **WEB.DE** need "POP3/IMAP Abruf" turned on in their mail settings.
+- **iCloud Mail** needs an app-specific password from account.apple.com.
+- **Outlook.com** isn't offered: Microsoft no longer accepts passwords over IMAP.
+
+Gmail and GMX set in the 4.2 app options are taken in as connectors once. Connectors are built so other kinds (calendars, feeds) can be added the same way.
 
 - **Ask about it:** "did the landlord reply?", "when is my dentist appointment?". Gmail searches all mail, archived included; GMX searches the inbox.
 - **The morning brief** gets a line or two on new mail worth knowing. Your inbox sorter app keeps newsletters and social mail out; without it, mailing-list headers do.

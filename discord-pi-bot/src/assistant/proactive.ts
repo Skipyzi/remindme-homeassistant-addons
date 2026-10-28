@@ -15,6 +15,11 @@ export interface ProactiveOptions {
 	quietHours: string;
 	/** Nudge about batteries at or below this percentage. 0 turns it off. */
 	batteryThreshold: number;
+	/**
+	 * The to-do list ("todo.chores") that gets "Put the paper bin out" on the
+	 * morning before a collection. Blank turns the chore off.
+	 */
+	choresList?: string;
 }
 
 export interface ProactiveDeps {
@@ -23,6 +28,8 @@ export interface ProactiveDeps {
 	/** Message the owner on Discord. False when it could not be sent. */
 	notify(text: string, what: "brief" | "bins" | "battery" | "mail"): Promise<boolean>;
 	reminders(): Promise<Array<{ message: string; time: Date }>>;
+	/** Something RemindMe did on its own, for the ledger. */
+	did?(text: string): void;
 	parcels?(): string;
 	/** Gmail and GMX: checked every quarter hour outside quiet hours. */
 	mail?: MailWatch;
@@ -33,6 +40,8 @@ export interface ProactiveDeps {
 interface State {
 	briefDate?: string;
 	binDate?: string;
+	/** The bin chore added for tomorrow's collection: when, and its exact text. */
+	binChore?: { date: string; item: string };
 	/** entity_id → date of the last low-battery nudge. */
 	batteries: Record<string, string>;
 }
@@ -67,8 +76,21 @@ const BIN_NAMES: Array<[RegExp, string]> = [
 ];
 
 export function binLabel(summary: string): string {
-	const english = BIN_NAMES.find(([pattern]) => pattern.test(summary))?.[1];
-	return english && !summary.toLowerCase().includes(english) ? `${english} (${summary})` : summary;
+	// "Blaue Tonne (Abholzeit)": the pickup-time note says nothing here.
+	const name = summary.replace(/\s*\((abholzeit|abholung|leerung|pickup)[^)]*\)/gi, "").trim() || summary;
+	const english = BIN_NAMES.find(([pattern]) => pattern.test(name))?.[1];
+	return english && !name.toLowerCase().includes(english) ? `${english} (${name})` : name;
+}
+
+/** The chore for tomorrow's collection: "Put the paper bin out (Blaue Tonne)". */
+export function binChore(events: CalendarEvent[]): string | undefined {
+	const bins = [...new Set(wasteEvents(events).map((event) => binLabel(event.summary)))];
+	if (!bins.length) return undefined;
+	if (bins.length === 1) {
+		const [, english, original] = bins[0].match(/^(.+?) \((.+)\)$/) || [];
+		return english ? `Put the ${english} bin out (${original})` : `Put the ${bins[0]} bin out`;
+	}
+	return `Put the bins out: ${bins.join(", ")}`;
 }
 
 export function wasteEvents(events: CalendarEvent[]): CalendarEvent[] {
@@ -142,6 +164,8 @@ export class Proactive {
 				await this.save();
 				await this.sendBrief(now);
 			}
+			const choreAt = briefAt ?? 7 * 60;
+			if (options.choresList && minute >= choreAt && this.state.binChore?.date !== today && this.deps.home) await this.addBinChore(now);
 			if (inQuietHours(options.quietHours, now)) return;
 			const binAt = minutesOf(options.binTime);
 			if (binAt !== undefined && minute >= binAt && this.state.binDate !== today && this.deps.home) {
@@ -149,7 +173,8 @@ export class Proactive {
 				const text = binNudge(events.filter((event) => event.start.slice(0, 10) === localDate(startOfDay(now, 1))));
 				this.state.binDate = today;
 				await this.save();
-				if (text) await this.deps.notify(text, "bins");
+				// Ticked off already: no need to say it again.
+				if (text && !(await this.binChoreDone(today))) await this.deps.notify(text, "bins");
 			}
 			if (options.batteryThreshold > 0) await this.checkBatteries(now);
 			if (this.deps.mail && now.getTime() - this.mailCheckedAt >= 15 * 60_000) {
@@ -161,6 +186,38 @@ export class Proactive {
 			console.warn("Nudge check failed:", error instanceof Error ? error.message : error);
 		} finally {
 			this.running = false;
+		}
+	}
+
+	/** The morning before a collection: the bins go on the chores list, due today. */
+	private async addBinChore(now: Date): Promise<void> {
+		const home = this.deps.home!;
+		const today = localDate(now);
+		const tomorrow = localDate(startOfDay(now, 1));
+		const events = await home.calendarEvents(startOfDay(now, 1), startOfDay(now, 2));
+		const item = binChore(events.filter((event) => event.start.slice(0, 10) === tomorrow));
+		this.state.binChore = { date: today, item: item || "" };
+		await this.save();
+		if (!item) return;
+		try {
+			await home.callService("todo", "add_item", { entity_id: this.deps.options.choresList, item, due_date: today });
+			this.deps.did?.(`Added "${item}" to the chores`);
+		} catch (error) {
+			console.warn("Could not add the bin chore:", error instanceof Error ? error.message : error);
+		}
+	}
+
+	/** Whether today's bin chore is off the list (ticked off, or removed). */
+	private async binChoreDone(today: string): Promise<boolean> {
+		const chore = this.state.binChore;
+		const list = this.deps.options.choresList;
+		if (!chore?.item || chore.date !== today || !list || !this.deps.home) return false;
+		try {
+			const response = await this.deps.home.serviceResponse("todo", "get_items", { entity_id: list, status: ["needs_action"] });
+			const items = (response[list] as { items?: Array<{ summary?: string }> })?.items || [];
+			return !items.some((entry) => entry.summary === chore.item);
+		} catch {
+			return false;
 		}
 	}
 

@@ -198,7 +198,7 @@ export class MailWatch {
 				...this.state.digest,
 				...kept.map((mail) => ({
 					id: mail.id,
-					account: mail.account,
+					account: this.deps.mailboxes.accounts.find((account) => account.id === mail.account)?.label || mail.account,
 					date: mail.date,
 					from: mail.from,
 					subject: mail.subject,

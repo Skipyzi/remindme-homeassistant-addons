@@ -81,6 +81,7 @@ function remindme() {
 		settingsTab: "ai",
 		sections: [
 			{ id: "ai", label: "AI and sign-ins" },
+			{ id: "connectors", label: "Connectors" },
 			{ id: "prompt", label: "How it talks" },
 			{ id: "skills", label: "Skills" },
 			{ id: "mcp", label: "Connected tools" },
@@ -111,6 +112,11 @@ function remindme() {
 		newTaskWhen: "",
 		taskError: "",
 		documents: [],
+		connectors: [],
+		connectorKinds: [],
+		newConnector: { preset: "gmail", name: "", address: "", password: "", host: "", port: "993" },
+		connectorBusy: false,
+		connectorResult: null,
 		/* The CLI agents' sign-in console (account-console.js) */
 		authConsole: { id: "", backend: "", running: false, output: "", urls: [] },
 		authConsoleOpen: false,
@@ -383,6 +389,7 @@ function remindme() {
 			if (tab === "skills") this.skills = await this.getJson("./api/skills", []);
 			if (tab === "mcp") this.mcpServers = await this.getJson("./api/mcp", []);
 			if (tab === "tasks") this.tasks = await this.getJson("./api/tasks", []);
+			if (tab === "connectors") await this.loadConnectors();
 			if (tab === "documents") this.documents = (await this.getJson("./api/artifacts", [])).sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)));
 		},
 
@@ -601,6 +608,69 @@ function remindme() {
 			if (!window.confirm(`Remove "${server.name}"?`)) return;
 			await fetch(`./api/mcp/${encodeURIComponent(server.id)}`, { method: "DELETE" });
 			this.mcpServers = this.mcpServers.filter((entry) => entry.id !== server.id);
+		},
+
+		/* Connectors */
+		async loadConnectors() {
+			const data = await this.getJson("./api/connectors", { kinds: [], connectors: [] });
+			this.connectorKinds = data.kinds || [];
+			this.connectors = (data.connectors || []).map((connector) => ({ ...connector, newPassword: "", probe: "", editing: false }));
+		},
+		presetOf(id) {
+			return this.connectorKinds[0]?.presets?.find((preset) => preset.id === id);
+		},
+		connectorLine(connector) {
+			const service = this.presetOf(connector.preset)?.label || connector.preset;
+			const status = connector.status
+				? connector.status.ok
+					? `Last check ${this.formatWhen(connector.status.at)}, worked.`
+					: `Last check ${this.formatWhen(connector.status.at)} failed: ${connector.status.error}`
+				: connector.enabled
+					? "Not checked yet."
+					: "Off.";
+			return `${connector.values.address}, ${service}. ${status}`;
+		},
+		async addConnector() {
+			this.connectorBusy = true;
+			this.connectorResult = null;
+			const form = this.newConnector;
+			try {
+				const data = await this.request("./api/connectors", "POST", {
+					kind: "mail",
+					preset: form.preset,
+					name: form.name.trim(),
+					values: { address: form.address.trim(), host: form.host.trim(), port: form.port },
+					secrets: { password: form.password },
+				});
+				this.connectorResult = { ok: true, text: `${data.connector.name} added. ${data.result}` };
+				this.newConnector = { preset: form.preset, name: "", address: "", password: "", host: "", port: "993" };
+				await this.loadConnectors();
+				await this.loadLedger();
+			} catch (error) {
+				this.connectorResult = { ok: false, text: error.message };
+			} finally {
+				this.connectorBusy = false;
+			}
+		},
+		async updateConnector(connector, change) {
+			connector.probe = change.secrets ? "Testing the new password" : "";
+			try {
+				await this.request(`./api/connectors/${encodeURIComponent(connector.id)}`, "PATCH", change);
+				await this.loadConnectors();
+				if (change.secrets) this.connectors.find((entry) => entry.id === connector.id).probe = "Password changed.";
+			} catch (error) {
+				connector.probe = `Not saved: ${error.message}`;
+			}
+		},
+		async testConnector(connector) {
+			connector.probe = "Testing";
+			const data = await this.request(`./api/connectors/${encodeURIComponent(connector.id)}/test`).catch((error) => ({ ok: false, error: error.message }));
+			connector.probe = data.ok ? data.message : `Failed: ${data.error}`;
+		},
+		async removeConnector(connector) {
+			if (!window.confirm(`Remove ${connector.name}? RemindMe stops reading it; nothing in the mailbox changes.`)) return;
+			await fetch(`./api/connectors/${encodeURIComponent(connector.id)}`, { method: "DELETE" });
+			await this.loadConnectors();
 		},
 
 		/* Scheduled tasks */

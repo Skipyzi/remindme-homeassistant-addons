@@ -61,7 +61,9 @@ import { ConfirmationStore } from "./assistant/confirmations";
 import { ActivityLog } from "./assistant/activity";
 import { wasteEvents } from "./assistant/proactive";
 import { DiscordChats } from "./discord/chats";
-import { Mailboxes, mailAccounts } from "./mail/mailboxes";
+import { Mailboxes, type MailAccount } from "./mail/mailboxes";
+import { ConnectorStore, publicView } from "./connectors/store";
+import { CONNECTOR_KINDS, checkMailInput, importMailOptions, mailAccount } from "./connectors/mail";
 import type { CalendarEvent } from "./agent/home";
 import { buildTools, type McpTool, type ToolContext } from "./assistant/tools";
 import { registerBridge, chatgptFetch } from "./agents/bridge";
@@ -84,8 +86,21 @@ export const confirmations = new ConfirmationStore();
 /* What RemindMe said, did and sent: the console's ledger. */
 export const activity = new ActivityLog();
 void activity.load();
-/* Gmail and GMX, read-only, when their addresses and passwords are set. */
-export const mailboxes = new Mailboxes(mailAccounts());
+/* Connectors: the mail accounts (and later other sources) added in the console. */
+const connectors = new ConnectorStore();
+/* Every switched-on mail connector, read fresh on each use. */
+export const mailboxes = new Mailboxes(() =>
+	connectors
+		.list("mail")
+		.filter((connector) => connector.enabled)
+		.map(mailAccount)
+		.filter((account): account is MailAccount => Boolean(account)),
+);
+/* Load the connectors, taking in Gmail and GMX from the 4.2 app options once. */
+export async function loadConnectors(): Promise<void> {
+	await connectors.load();
+	await importMailOptions(connectors).catch((error) => console.warn("Could not import the mail options:", error instanceof Error ? error.message : error));
+}
 /* The console's running chat, kept here like a Discord DM's. */
 const consoleChat = new DiscordChats(process.env.CONSOLE_CHAT_PATH || "./data/console-chat.json");
 void consoleChat.load();
@@ -1050,6 +1065,71 @@ app.post("/api/reminders", async (request, response) => {
 	activity.add({ kind: "did", channel: "console", text: `Reminder for ${describeWhen(at)}: ${message}`, receipts: [{ text: `Reminder for ${describeWhen(at)}: ${message}` }] });
 	response.status(201).json({ id: created.id, at: at.toISOString() });
 });
+/*
+ * Connectors. Passwords go in, never out: the list says which are set.
+ * A mail account is tested before it's saved, so a typo never lands.
+ */
+app.get("/api/connectors", (_request, response) => {
+	response.set("Cache-Control", "no-store").json({
+		kinds: CONNECTOR_KINDS,
+		connectors: connectors.list().map((connector) => ({ ...publicView(connector), status: mailboxes.status(connector.id) })),
+	});
+});
+app.post("/api/connectors", async (request, response) => {
+	try {
+		if (request.body?.kind !== "mail") throw new Error("Unknown kind of connector");
+		const input = checkMailInput(request.body, true);
+		const draftId = `draft-${Date.now()}`;
+		const account = mailAccount({ kind: "mail", enabled: true, ...input, id: draftId, createdAt: "" });
+		if (!account) throw new Error("Enter the address and password.");
+		const result = await mailboxes.test(account);
+		const saved = await connectors.create({ kind: "mail", enabled: true, ...input });
+		mailboxes.carryStatus(draftId, saved.id);
+		activity.add({ kind: "did", channel: "console", text: `Connected ${saved.name} (${saved.values.address})`, receipts: [{ text: `Connected ${saved.name} (${saved.values.address})` }] });
+		response.status(201).json({ connector: publicView(saved), result });
+	} catch (error) {
+		response.status(400).json({ error: error instanceof Error ? error.message : "Could not add the connector" });
+	}
+});
+app.patch("/api/connectors/:id", async (request, response) => {
+	const existing = connectors.get(request.params.id);
+	if (!existing) return response.status(404).json({ error: "No such connector" });
+	try {
+		const body = request.body || {};
+		const patch: Parameters<ConnectorStore["update"]>[1] = {};
+		if (typeof body.enabled === "boolean") patch.enabled = body.enabled;
+		if (body.values || body.secrets || body.name !== undefined) {
+			const input = checkMailInput({ preset: existing.preset, name: body.name ?? existing.name, values: { ...existing.values, ...(body.values || {}) }, secrets: body.secrets }, false);
+			patch.name = input.name;
+			patch.values = input.values;
+			patch.secrets = input.secrets;
+			// New credentials are tested before they replace the working ones.
+			if (input.secrets.password || body.values) {
+				const account = mailAccount({ ...existing, values: input.values, secrets: { ...existing.secrets, ...input.secrets } });
+				if (!account) throw new Error("Enter the address and password.");
+				await mailboxes.test(account);
+			}
+		}
+		const saved = await connectors.update(existing.id, patch);
+		response.json({ connector: saved && publicView(saved) });
+	} catch (error) {
+		response.status(400).json({ error: error instanceof Error ? error.message : "Could not save the connector" });
+	}
+});
+app.delete("/api/connectors/:id", async (request, response) => {
+	response.status((await connectors.remove(request.params.id)) ? 204 : 404).end();
+});
+app.post("/api/connectors/:id/test", async (request, response) => {
+	const connector = connectors.get(request.params.id);
+	const account = connector && mailAccount(connector);
+	if (!account) return response.status(404).json({ ok: false, error: "No such connector, or it has no password." });
+	try {
+		response.json({ ok: true, message: await mailboxes.test(account) });
+	} catch (error) {
+		response.json({ ok: false, error: error instanceof Error ? error.message : "The test failed" });
+	}
+});
+
 app.post("/api/chat/reset", (_request, response) => {
 	consoleChat.reset("console");
 	response.json({ ok: true });
@@ -1772,6 +1852,7 @@ export function createHarnessApp(): Express {
  * runs on the container's clock.
  */
 export async function startHarness(): Promise<void> {
+	await loadConnectors();
 	app.listen(port, () => console.log(`RemindMe console listening on port ${port}`));
 	await loadHomeName();
 	startTaskScheduler();

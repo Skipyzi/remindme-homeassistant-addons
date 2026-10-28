@@ -34,6 +34,7 @@ export MORNING_BRIEF_TIME="$(get_option morning_brief_time)"
 export BIN_REMINDER_TIME="$(get_option bin_reminder_time)"
 export QUIET_HOURS="$(get_option quiet_hours)"
 export BATTERY_NUDGE_PERCENT="$(get_option battery_nudge_percent)"
+export CHORES_LIST="$(get_option chores_list)"
 
 # Mail, read-only over IMAP. The inbox sorter app labels it; blank skips that.
 export GMAIL_ADDRESS="$(get_option gmail_address)"
@@ -69,6 +70,7 @@ export PROACTIVE_DATA_PATH=/data/proactive.json
 export ACTIVITY_DATA_PATH=/data/activity.json
 export CONSOLE_CHAT_PATH=/data/console-chat.json
 export MAIL_DATA_PATH=/data/mail.json
+export CONNECTORS_DATA_PATH=/data/connectors.json
 # Subscription sign-ins and the CLI agents' own accounts and sessions. Same
 # places as 3.1, so existing sign-ins carry over.
 export CHATGPT_AUTH_PATH=/data/chatgpt-auth.json

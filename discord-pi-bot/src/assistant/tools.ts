@@ -658,7 +658,8 @@ function documentTools(ctx: ToolContext): AssistantTool[] {
 function mailTools(ctx: ToolContext): AssistantTool[] {
 	const mail = ctx.mail;
 	if (!mail?.configured) return [];
-	const accounts = mail.accounts.map((account) => account.id);
+	const accounts = mail.accounts.map((account) => account.label);
+	const nameOf = (id: string) => mail.accounts.find((account) => account.id === id)?.label || id;
 	return [
 		{
 			spec: {
@@ -675,7 +676,7 @@ function mailTools(ctx: ToolContext): AssistantTool[] {
 				const found = await mail.search(text(input, "query", 200, false), { account: text(input, "account", 10, false) || undefined, days, limit: 12 });
 				return {
 					content: json({
-						mails: found.mails.map((item) => ({ id: item.id, account: item.account, date: item.date, from: item.from, subject: item.subject, snippet: item.snippet, unread: item.unread })),
+						mails: found.mails.map((item) => ({ id: item.id, account: nameOf(item.account), date: item.date, from: item.from, subject: item.subject, snippet: item.snippet, unread: item.unread })),
 						...(found.problems.length ? { problems: found.problems } : {}),
 					}),
 					isError: !found.mails.length && found.problems.length > 0,

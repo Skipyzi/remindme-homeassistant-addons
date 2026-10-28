@@ -1,15 +1,19 @@
 import { ImapFlow } from "imapflow";
 import { simpleParser } from "mailparser";
 
-export type AccountId = "gmail" | "gmx";
+export type AccountId = string;
 
 export interface MailAccount {
+	/** The connector's id. */
 	id: AccountId;
+	/** The connector's name, such as "Gmail" or "GMX work". */
 	label: string;
 	host: string;
 	port: number;
 	user: string;
 	pass: string;
+	/** Gmail searches all its mail with its own search words; others search the inbox. */
+	provider: "gmail" | "imap";
 }
 
 /** One message as a line in a list: enough to judge it, not the whole thing. */
@@ -32,18 +36,10 @@ export interface MailMessage extends MailSummary {
 	attachments: string[];
 }
 
-/** The account ids and their IMAP servers. Both use SSL on 993. */
-export function mailAccounts(env: NodeJS.ProcessEnv = process.env): MailAccount[] {
-	const accounts: MailAccount[] = [];
-	if (env.GMAIL_ADDRESS && env.GMAIL_APP_PASSWORD)
-		accounts.push({ id: "gmail", label: "Gmail", host: "imap.gmail.com", port: 993, user: env.GMAIL_ADDRESS.trim(), pass: env.GMAIL_APP_PASSWORD.replace(/\s+/g, "") });
-	if (env.GMX_ADDRESS && env.GMX_PASSWORD)
-		accounts.push({ id: "gmx", label: "GMX", host: "imap.gmx.net", port: 993, user: env.GMX_ADDRESS.trim(), pass: env.GMX_PASSWORD });
-	return accounts;
-}
-
 /** Where the messages come from: IMAP in the app, a stand-in in tests. */
 export interface MailSource {
+	/** Connect and count the inbox: "Connected: 1,234 messages in the inbox." */
+	test(account: MailAccount): Promise<string>;
 	search(account: MailAccount, query: string, since: Date, limit: number): Promise<MailSummary[]>;
 	recent(account: MailAccount, since: Date, limit: number): Promise<MailSummary[]>;
 	read(account: MailAccount, mailbox: string, uid: number): Promise<MailMessage | undefined>;
@@ -75,7 +71,7 @@ export class ImapSource implements MailSource {
 			await client.connect();
 		} catch (error) {
 			const reason = error instanceof Error ? error.message : String(error);
-			throw new Error(`${account.label} refused the connection (${reason}). Check the address and password in the app options.`);
+			throw new Error(`${account.label} refused the connection (${reason}). Check the address, password and server under Settings, Connectors.`);
 		}
 		try {
 			return await work(client);
@@ -84,9 +80,21 @@ export class ImapSource implements MailSource {
 		}
 	}
 
+	async test(account: MailAccount): Promise<string> {
+		return this.open(account, async (client) => {
+			const lock = await client.getMailboxLock("INBOX", { readOnly: true });
+			try {
+				const count = client.mailbox ? client.mailbox.exists : 0;
+				return `Connected: ${count.toLocaleString("en-GB")} message${count === 1 ? "" : "s"} in the inbox.`;
+			} finally {
+				lock.release();
+			}
+		});
+	}
+
 	/* Gmail keeps archived mail out of the inbox, so search all of it there. */
 	private async searchBox(client: ImapFlow, account: MailAccount): Promise<string> {
-		if (account.id !== "gmail") return "INBOX";
+		if (account.provider !== "gmail") return "INBOX";
 		const all = (await client.list()).find((box) => box.specialUse === "\\All");
 		return all?.path || "INBOX";
 	}
@@ -133,7 +141,7 @@ export class ImapSource implements MailSource {
 				const days = Math.max(1, Math.ceil((Date.now() - since.getTime()) / 86_400_000));
 				const words = query.trim();
 				const found =
-					account.id === "gmail"
+					account.provider === "gmail"
 						? await client.search({ gmraw: `${words} newer_than:${days}d`.trim() }, { uid: true })
 						: await client.search(words ? { since, or: [{ subject: words }, { from: words }, { body: words }] } : { since }, { uid: true });
 				const uids = (found || []).slice(-limit);
@@ -186,15 +194,59 @@ export class ImapSource implements MailSource {
 	}
 }
 
-/** Gmail and GMX together: what the assistant's tools and the mail watcher use. */
+export interface AccountStatus {
+	at: string;
+	ok: boolean;
+	error?: string;
+}
+
+/**
+ * Every connected mail account together: what the assistant's tools and the
+ * mail watcher use. The accounts are read fresh each time, so connectors
+ * added or switched off in the console apply at once.
+ */
 export class Mailboxes {
+	private readonly statuses = new Map<string, AccountStatus>();
+
 	constructor(
-		readonly accounts: MailAccount[],
+		private readonly current: MailAccount[] | (() => MailAccount[]),
 		private readonly source: MailSource = new ImapSource(),
 	) {}
 
+	get accounts(): MailAccount[] {
+		return typeof this.current === "function" ? this.current() : this.current;
+	}
+
 	get configured(): boolean {
 		return this.accounts.length > 0;
+	}
+
+	/** The last time an account was reached, and whether it worked. */
+	status(id: string): AccountStatus | undefined {
+		return this.statuses.get(id);
+	}
+
+	/* Every call goes through here, so the console can show each account's last check. */
+	private async tracked<T>(account: MailAccount, work: () => Promise<T>): Promise<T> {
+		try {
+			const result = await work();
+			this.statuses.set(account.id, { at: new Date().toISOString(), ok: true });
+			return result;
+		} catch (error) {
+			this.statuses.set(account.id, { at: new Date().toISOString(), ok: false, error: error instanceof Error ? error.message : String(error) });
+			throw error;
+		}
+	}
+
+	async test(account: MailAccount): Promise<string> {
+		return this.tracked(account, () => this.source.test(account));
+	}
+
+	/** A connector tested before it had its id: its result, under the id it got. */
+	carryStatus(from: string, to: string): void {
+		const status = this.statuses.get(from);
+		if (status) this.statuses.set(to, status);
+		this.statuses.delete(from);
 	}
 
 	private pick(account?: string): MailAccount[] {
@@ -211,7 +263,7 @@ export class Mailboxes {
 		const problems: string[] = [];
 		const lists = await Promise.all(
 			this.pick(options.account).map((account) =>
-				this.source.search(account, query, since, limit).catch((error) => {
+				this.tracked(account, () => this.source.search(account, query, since, limit)).catch((error) => {
 					problems.push(error instanceof Error ? error.message : String(error));
 					return [] as MailSummary[];
 				}),
@@ -224,7 +276,7 @@ export class Mailboxes {
 		const problems: string[] = [];
 		const lists = await Promise.all(
 			this.accounts.map((account) =>
-				this.source.recent(account, since, limit).catch((error) => {
+				this.tracked(account, () => this.source.recent(account, since, limit)).catch((error) => {
 					problems.push(error instanceof Error ? error.message : String(error));
 					return [] as MailSummary[];
 				}),
@@ -239,6 +291,6 @@ export class Mailboxes {
 		const mailbox = rest.join("|");
 		const account = this.accounts.find((entry) => entry.id === accountId);
 		if (!account || !mailbox || !Number.isInteger(uid) || uid <= 0) throw new Error("That isn't a mail id from search_mail.");
-		return this.source.read(account, mailbox, uid);
+		return this.tracked(account, () => this.source.read(account, mailbox, uid));
 	}
 }

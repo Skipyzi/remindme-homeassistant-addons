@@ -183,6 +183,55 @@
               </template>
             </div>
 
+            <!-- Connectors -->
+            <div class="rm-panel" x-show="settingsTab === 'connectors'">
+              <h3>Connectors</h3>
+              <p>Outside sources RemindMe reads, such as your mail. Passwords stay on the Pi and are never shown again.</p>
+              <div>
+                <template x-for="connector in connectors" :key="connector.id">
+                  <div class="rm-item">
+                    <div class="rm-item-head">
+                      <span><b x-text="connector.name"></b><br /><span class="rm-mute" x-text="connectorLine(connector)"></span></span>
+                      <label class="rm-toggle"><input type="checkbox" :checked="connector.enabled" @change="updateConnector(connector, { enabled: $event.target.checked })" /><span x-text="connector.enabled ? 'On' : 'Off'"></span></label>
+                      <button class="rm-link" type="button" @click="testConnector(connector)">Test</button>
+                      <button class="rm-link" type="button" @click="connector.editing = !connector.editing">Password</button>
+                      <button class="rm-link" type="button" @click="removeConnector(connector)">Remove</button>
+                    </div>
+                    <p class="rm-note" x-show="connector.probe" x-text="connector.probe"></p>
+                    <form class="rm-ask" x-show="connector.editing" x-cloak @submit.prevent="updateConnector(connector, { secrets: { password: connector.newPassword } })">
+                      <input type="password" x-model="connector.newPassword" autocomplete="new-password" placeholder="New password" aria-label="New password" />
+                      <button class="rm-btn" type="submit" :disabled="!connector.newPassword">Change password</button>
+                    </form>
+                  </div>
+                </template>
+                <p class="rm-note" x-show="!connectors.length">Nothing connected yet.</p>
+              </div>
+
+              <h3>Add a mail account</h3>
+              <p x-text="connectorKinds[0]?.description"></p>
+              <div class="rm-two">
+                <label class="rm-field">Service
+                  <select x-model="newConnector.preset">
+                    <template x-for="preset in connectorKinds[0]?.presets || []" :key="preset.id"><option :value="preset.id" x-text="preset.label"></option></template>
+                  </select>
+                </label>
+                <label class="rm-field">Name<input x-model="newConnector.name" :placeholder="presetOf(newConnector.preset)?.label" /></label>
+                <label class="rm-field">Address<input type="email" x-model="newConnector.address" autocomplete="off" placeholder="you@example.com" /></label>
+                <label class="rm-field">Password<input type="password" x-model="newConnector.password" autocomplete="new-password" /></label>
+                <template x-if="newConnector.preset === 'imap'">
+                  <label class="rm-field">IMAP server<input x-model="newConnector.host" placeholder="imap.example.com" /></label>
+                </template>
+                <template x-if="newConnector.preset === 'imap'">
+                  <label class="rm-field">Port<input x-model="newConnector.port" inputmode="numeric" /></label>
+                </template>
+              </div>
+              <p class="rm-note" x-text="presetOf(newConnector.preset)?.help"></p>
+              <div class="rm-actions">
+                <button class="rm-btn solid" type="button" :disabled="connectorBusy || !newConnector.address || !newConnector.password" @click="addConnector()" x-text="connectorBusy ? 'Testing the connection' : 'Test and add'"></button>
+              </div>
+              <p class="rm-result" x-show="connectorResult" x-cloak :class="{ bad: connectorResult && !connectorResult.ok }" x-text="connectorResult?.text"></p>
+            </div>
+
             <!-- Persona -->
             <div class="rm-panel" x-show="settingsTab === 'prompt'">
               <h3>How it talks</h3>

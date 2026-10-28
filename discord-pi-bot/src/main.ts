@@ -44,28 +44,29 @@ async function main() {
 		);
 		return sent;
 	};
-	const mail = mailboxes.configured
-		? new MailWatch({
-				mailboxes,
-				sorterUrl: process.env.INBOX_SORTER_URL ?? "http://local-inbox-sorter:8095",
-				ask: (prompt) => assistant.quick(prompt),
-				notify: (text) => notify(text, "mail"),
-				nudges: process.env.MAIL_NUDGES !== "false",
-			})
-		: undefined;
-	await mail?.load();
+	// Always on: it does nothing until a mail connector is added in the console.
+	const mail = new MailWatch({
+		mailboxes,
+		sorterUrl: process.env.INBOX_SORTER_URL ?? "http://local-inbox-sorter:8095",
+		ask: (prompt) => assistant.quick(prompt),
+		notify: (text) => notify(text, "mail"),
+		nudges: process.env.MAIL_NUDGES !== "false",
+	});
+	await mail.load();
 	const proactive = new Proactive({
 		assistant,
 		home,
 		mail,
 		notify,
 		reminders: () => listReminders(ownerId),
+		did: (text) => activity.add({ kind: "did", channel: "nudge", text, receipts: [{ text }] }),
 		parcels: parcelSummary,
 		options: {
 			briefTime: process.env.MORNING_BRIEF_TIME ?? "07:00",
 			binTime: process.env.BIN_REMINDER_TIME ?? "19:00",
 			quietHours: process.env.QUIET_HOURS ?? "22:30-07:00",
 			batteryThreshold: Number(process.env.BATTERY_NUDGE_PERCENT ?? 15) || 0,
+			choresList: process.env.CHORES_LIST ?? "todo.chores",
 		},
 	});
 	await proactive.load();
