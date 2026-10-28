@@ -6,11 +6,15 @@ export interface ReminderDeliveryStatus {
 	homeAssistant: DeliveryState;
 	mobile: DeliveryState;
 	discord: DeliveryState;
+	/** The RemindMe phone app's own notification; missing on reminders saved before 4.6. */
+	phone: DeliveryState;
 }
 export interface DeliveryAdapters {
 	homeAssistant: (reminder: Reminder) => Promise<void>;
 	mobile?: (reminder: Reminder) => Promise<void>;
 	discord: (reminder: Reminder) => Promise<void>;
+	/** Absent when no phone has the app's notifications on. */
+	phone?: (reminder: Reminder) => Promise<void>;
 }
 
 export function deliveryTargets(
@@ -29,6 +33,7 @@ export function deliveryTargets(
 		 * so it does not retry against nothing once a minute for ever.
 		 */
 		discord: reminder.channelId || reminder.userId ? "pending" : "skipped",
+		phone: isOwner ? "pending" : "skipped",
 	};
 }
 
@@ -63,5 +68,6 @@ export async function deliverReminder(
 			: undefined,
 	);
 	await attempt("discord", () => adapters.discord(reminder));
+	await attempt("phone", adapters.phone ? () => adapters.phone!(reminder) : undefined);
 	return next;
 }

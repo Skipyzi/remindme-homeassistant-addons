@@ -6,6 +6,13 @@
     <meta name="color-scheme" content="dark" />
     <meta name="theme-color" content="#000000" />
     <title>RemindMe</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="icon" type="image/png" sizes="192x192" href="./icons/icon-192.png" />
+    <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black" />
+    <meta name="apple-mobile-web-app-title" content="RemindMe" />
     <link rel="stylesheet" href="./styles.css" />
     <link rel="stylesheet" href="./vendor/xterm.css" />
     <script defer src="./components/highlight.js"></script>
@@ -292,6 +299,46 @@
                     <button class="rm-btn solid" type="button" :disabled="aiBusy || !signin.code" @click="finishSignIn()">Finish sign-in</button>
                     <button class="rm-btn" type="button" @click="cancelSignIn()">Cancel</button>
                   </div>
+                </div>
+              </template>
+            </div>
+
+            <!-- Phone app -->
+            <div class="rm-panel" x-show="settingsTab === 'phone'">
+              <h3>Phone app</h3>
+              <p>RemindMe as an app on your phone, with its own notifications for job questions, reminders and the morning brief. It joins your tailnet as a device of its own, so only your Tailscale account can open it, wherever your phone has Tailscale on.</p>
+              <p class="rm-note" x-show="phone.state === 'off'">The phone app is off. Turn on <b>phone_app</b> in the RemindMe app's options in Home Assistant, then restart RemindMe.</p>
+              <p class="rm-note" x-show="phone.state === 'starting'">Tailscale is starting inside RemindMe.</p>
+              <p class="rm-result bad" x-show="phone.error" x-text="phone.error"></p>
+              <template x-if="phone.state === 'needs_login'">
+                <div class="rm-stack">
+                  <p>Connect RemindMe to Tailscale once, signed in with the account your phone uses.</p>
+                  <div class="rm-actions">
+                    <button class="rm-btn solid" type="button" :disabled="phoneBusy" @click="connectPhone()" x-text="phoneBusy ? 'Starting' : 'Connect to Tailscale'"></button>
+                    <a class="rm-btn" x-show="phone.authUrl" :href="phone.authUrl" target="_blank" rel="noreferrer noopener" style="display: inline-grid; place-items: center; text-decoration: none">Open the sign-in link</a>
+                  </div>
+                  <p class="rm-note" x-show="phone.authUrl">After signing in, come back here. This page updates by itself.</p>
+                </div>
+              </template>
+              <template x-if="phone.state === 'running'">
+                <div class="rm-stack">
+                  <div class="rm-item">
+                    <div class="rm-item-head">
+                      <span><b x-text="phone.url"></b><br /><span class="rm-mute" x-text="`Connected as ${phone.owner || 'your account'}. Only that account can open it.`"></span></span>
+                      <button class="rm-link" type="button" @click="copyPhoneUrl()" x-text="phoneCopied ? 'Copied' : 'Copy'"></button>
+                    </div>
+                  </div>
+                  <p class="rm-result bad" x-show="phone.enableHttpsUrl">HTTPS isn't on for your tailnet yet. <a class="rm-link" :href="phone.enableHttpsUrl" target="_blank" rel="noreferrer noopener">Turn it on</a>, then open this page again.</p>
+                  <h3>Install it</h3>
+                  <p><b>iPhone:</b> open the address in Safari, tap Share, then Add to Home Screen, and open RemindMe from there.<br /><b>Android:</b> open it in Chrome, then the menu, Install app.</p>
+                  <h3>Notifications</h3>
+                  <p x-text="pushLine"></p>
+                  <div class="rm-actions">
+                    <button class="rm-btn solid" type="button" x-show="pushPossible && !pushOn" :disabled="phoneBusy" @click="enablePush()">Turn on notifications here</button>
+                    <button class="rm-btn" type="button" x-show="phone.devices?.length" :disabled="phoneBusy" @click="testPush()">Send a test</button>
+                    <button class="rm-btn" type="button" x-show="pushOn" :disabled="phoneBusy" @click="disablePush()">Turn off here</button>
+                  </div>
+                  <p class="rm-note" role="status" x-show="phoneNote" x-text="phoneNote"></p>
                 </div>
               </template>
             </div>

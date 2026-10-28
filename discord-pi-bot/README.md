@@ -91,6 +91,17 @@ Open **RemindMe** in the sidebar. It is an inbox. On a phone a thread opens over
 - **History:** the full timeline: what's coming up, then everything RemindMe answered, changed, sent and failed at, with changed lamps in their own colour.
 - **Settings:** the AI and sign-ins, connectors and calendars, how it talks, skills, connected tools (MCP), scheduled tasks and documents.
 
+## The phone app
+
+RemindMe installs on your phone as an app with its own notifications. It joins your tailnet as a device of its own (the `phone_app` option, on by default), so it gets a private HTTPS address that only your Tailscale account can open. No port is opened on your network.
+
+1. In the console, open **Settings → Phone app** and press **Connect to Tailscale**. Sign in with the account your phone uses; RemindMe appears in your Tailscale admin console as `remindme`.
+2. If it says HTTPS isn't on for your tailnet, follow its link and turn on MagicDNS and HTTPS certificates.
+3. On the phone, with Tailscale on, open the address it shows (`https://remindme.<your-tailnet>.ts.net`). iPhone: Share → Add to Home Screen, then open it from the home screen. Android: Chrome menu → Install app.
+4. In the installed app, open **Settings → Phone app → Turn on notifications here**, then **Send a test**.
+
+Notifications come for job questions and results, reminders, the morning brief and nudges, alongside Discord; tapping one opens what it is about. Requests from other accounts and from tagged devices on the tailnet are turned away. Tailscale's state stays in `/data/tailscale`, and its logs aren't uploaded.
+
 ## Background jobs
 
 Work that takes many steps, such as comparing flights across sites, going through a week of receipts, or researching a purchase, goes to a job instead of a single answer. You ask as usual, here or on Discord; the AI decides to hand it off. The job:
@@ -107,7 +118,7 @@ The assistant always knows which AI and model are answering, and says so when as
 
 ## Data
 
-Everything lives in `/data`: reminders, chats, the inbox's threads and jobs (`threads.json`), the AI choice (`ai.json`), today's spend (`spend.json`), Discord chat history (`discord-chats.json`) and which nudges were sent (`proactive.json`). Notes stay in `/share/vault`, shared with the Vault editor app.
+Everything lives in `/data`: reminders, chats, the inbox's threads and jobs (`threads.json`), the phone app's notification keys and devices (`push.json`) and Tailscale's state (`tailscale/`), the AI choice (`ai.json`), today's spend (`spend.json`), Discord chat history (`discord-chats.json`) and which nudges were sent (`proactive.json`). Notes stay in `/share/vault`, shared with the Vault editor app.
 
 ## Upgrading from 3.x
 

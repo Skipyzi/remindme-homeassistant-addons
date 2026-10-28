@@ -83,6 +83,9 @@ configuration:
   exa_api_key:
     name: Exa API key
     description: Optional. Web search fallback for OpenCode and custom servers.
+  phone_app:
+    name: Phone app
+    description: RemindMe joins your tailnet as its own device, so you can install it on your phone with its own notifications. Connect it under Settings, Phone app.
   ha_notify_target:
     name: Phone notifications
     description: Optional. A notify service such as mobile_app_iphone, for reminders on your phone.

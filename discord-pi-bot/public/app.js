@@ -112,6 +112,7 @@ function remindme() {
 		sections: [
 			{ id: "ai", label: "AI and sign-ins" },
 			{ id: "connectors", label: "Connectors" },
+			{ id: "phone", label: "Phone app" },
 			{ id: "prompt", label: "How it talks" },
 			{ id: "skills", label: "Skills" },
 			{ id: "mcp", label: "Connected tools" },
@@ -148,6 +149,13 @@ function remindme() {
 		connectorBusy: false,
 		connectorResult: null,
 		calendars: { list: [], newEvents: null, note: "", error: "" },
+		/* The phone app: Tailscale, and notifications on this device */
+		phone: { state: "" },
+		phoneBusy: false,
+		phoneNote: "",
+		phoneCopied: false,
+		phoneTimer: null,
+		pushOn: false,
 		/* The CLI agents' sign-in console (account-console.js) */
 		authConsole: { id: "", backend: "", running: false, output: "", urls: [] },
 		authConsoleOpen: false,
@@ -162,6 +170,10 @@ function remindme() {
 			this.loadInbox();
 			this.route();
 			window.addEventListener("popstate", () => this.route());
+			// A tapped notification opens its thread by changing the address.
+			window.addEventListener("hashchange", () => this.route());
+			// Installed on a phone (not inside Home Assistant), it works offline and gets notifications.
+			if (this.inPhoneApp && "serviceWorker" in navigator) navigator.serviceWorker.register("./sw.js").catch(() => {});
 			setInterval(() => {
 				this.now = new Date();
 				if (!this.sending && !document.hidden) this.loadInbox();
@@ -676,6 +688,7 @@ function remindme() {
 			if (tab === "mcp") this.mcpServers = await this.getJson("./api/mcp", []);
 			if (tab === "tasks") this.tasks = await this.getJson("./api/tasks", []);
 			if (tab === "connectors") await this.loadConnectors();
+			if (tab === "phone") await this.loadPhone();
 			if (tab === "documents") this.documents = (await this.getJson("./api/artifacts", [])).sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)));
 		},
 
@@ -894,6 +907,102 @@ function remindme() {
 			if (!window.confirm(`Remove "${server.name}"?`)) return;
 			await fetch(`./api/mcp/${encodeURIComponent(server.id)}`, { method: "DELETE" });
 			this.mcpServers = this.mcpServers.filter((entry) => entry.id !== server.id);
+		},
+
+		/* Phone app */
+		get inPhoneApp() {
+			return window.isSecureContext && !location.pathname.includes("/hassio_ingress/");
+		},
+		get pushPossible() {
+			return this.inPhoneApp && "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+		},
+		get pushLine() {
+			const count = this.phone.devices?.length || 0;
+			const devices = count ? `${count} device${count === 1 ? " gets" : "s get"} notifications.` : "No device gets notifications yet.";
+			if (this.pushOn) return `This device gets them. ${devices}`;
+			if (this.pushPossible) return `${devices} Turn them on for this device below.`;
+			if (this.inPhoneApp && /iPhone|iPad/.test(navigator.userAgent)) return `${devices} On an iPhone they work once RemindMe is on the home screen: open it from there and come back to this page.`;
+			return `${devices} Turn them on in the phone app itself: open the address above on your phone, install it, and come back to this page there.`;
+		},
+		async loadPhone() {
+			this.phone = await this.getJson("./api/phone", { state: "error", error: "RemindMe didn't answer." });
+			if (this.pushPossible) {
+				const registration = await navigator.serviceWorker.getRegistration().catch(() => undefined);
+				this.pushOn = Boolean(await registration?.pushManager.getSubscription().catch(() => null));
+			}
+			this.pollPhone();
+		},
+		/* While signing in to Tailscale, the page follows along until it's connected. */
+		pollPhone() {
+			clearTimeout(this.phoneTimer);
+			if (this.settingsOpen && this.settingsTab === "phone" && ["needs_login", "starting"].includes(this.phone.state))
+				this.phoneTimer = setTimeout(() => this.loadPhone(), 3_000);
+		},
+		async connectPhone() {
+			this.phoneBusy = true;
+			try {
+				this.phone = await this.request("./api/phone/connect");
+				if (this.phone.authUrl) window.open(this.phone.authUrl, "_blank", "noopener");
+			} catch (error) {
+				this.phone = { ...this.phone, error: error.message };
+			} finally {
+				this.phoneBusy = false;
+				this.pollPhone();
+			}
+		},
+		copyPhoneUrl() {
+			navigator.clipboard?.writeText(this.phone.url).then(() => {
+				this.phoneCopied = true;
+				setTimeout(() => (this.phoneCopied = false), 2_000);
+			});
+		},
+		async enablePush() {
+			this.phoneBusy = true;
+			this.phoneNote = "";
+			try {
+				if ((await Notification.requestPermission()) !== "granted") throw new Error("Notifications are blocked for RemindMe. Allow them in the phone's settings, then try again.");
+				const registration = await navigator.serviceWorker.ready;
+				const key = this.phone.pushKey.replace(/-/g, "+").replace(/_/g, "/");
+				const raw = atob(key.padEnd(Math.ceil(key.length / 4) * 4, "="));
+				const subscription = await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: Uint8Array.from(raw, (char) => char.charCodeAt(0)) });
+				await this.request("./api/push/subscribe", "POST", { subscription: subscription.toJSON() });
+				this.pushOn = true;
+				this.phoneNote = "Notifications are on for this device.";
+				await this.loadPhone();
+			} catch (error) {
+				const message = error.message || String(error);
+				this.phoneNote = /denied|not ?allowed/i.test(`${error.name} ${message}`)
+					? "The browser refused notifications. On an iPhone, open RemindMe from the home screen first; elsewhere, allow notifications for this site in the browser's settings."
+					: message;
+			} finally {
+				this.phoneBusy = false;
+			}
+		},
+		async disablePush() {
+			this.phoneBusy = true;
+			try {
+				const registration = await navigator.serviceWorker.getRegistration();
+				const subscription = await registration?.pushManager.getSubscription();
+				if (subscription) {
+					await this.request("./api/push/unsubscribe", "POST", { endpoint: subscription.endpoint });
+					await subscription.unsubscribe();
+				}
+				this.pushOn = false;
+				this.phoneNote = "Notifications are off for this device.";
+				await this.loadPhone();
+			} catch (error) {
+				this.phoneNote = error.message || String(error);
+			} finally {
+				this.phoneBusy = false;
+			}
+		},
+		async testPush() {
+			try {
+				const data = await this.request("./api/push/test");
+				this.phoneNote = data.reached ? `Sent to ${data.reached} device${data.reached === 1 ? "" : "s"}.` : "No device took it. Turn notifications on again on the phone.";
+			} catch (error) {
+				this.phoneNote = error.message;
+			}
 		},
 
 		/* Connectors */

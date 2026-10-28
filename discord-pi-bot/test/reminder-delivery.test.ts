@@ -61,6 +61,22 @@ test("deliverReminder marks the channel-less owner reminder delivered via the DM
 	assert.equal(status.homeAssistant, "delivered");
 });
 
+test("the phone app gets the owner's reminders when a phone has notifications on", async () => {
+	const sent: string[] = [];
+	const status = await deliverReminder(reminder(), OWNER, {
+		homeAssistant: async () => {},
+		discord: async () => {},
+		phone: async (rem) => {
+			sent.push(rem.message);
+		},
+	});
+	assert.equal(status.phone, "delivered");
+	assert.equal(sent.length, 1);
+	const without = await deliverReminder(reminder(), OWNER, { homeAssistant: async () => {}, discord: async () => {} });
+	assert.equal(without.phone, "skipped", "no phone app, nothing to retry");
+	assert.equal(deliveryTargets(reminder({ userId: "someone-else", channelId: "chan-9" }), OWNER).phone, "skipped");
+});
+
 test("a failed Discord delivery is reported as failed so it retries", async () => {
 	const status = await deliverReminder(reminder(), OWNER, {
 		homeAssistant: async () => {},

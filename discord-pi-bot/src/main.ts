@@ -14,6 +14,7 @@ import {
 	home,
 	mailboxes,
 	parcelSummary,
+	phoneApp,
 	setBriefSender,
 	setJobNotifier,
 	setPlannedSends,
@@ -33,11 +34,16 @@ async function main() {
 	const chats = new DiscordChats();
 	await chats.load();
 	const ownerId = process.env.OWNER_ID || "";
-	const messenger = startBot({ assistant, chats, confirmations, home, ownerId, activity });
+	const messenger = startBot({ assistant, chats, confirmations, home, ownerId, activity, phone: phoneApp });
 
+	// What RemindMe says first goes to Discord and to every phone with the app.
 	const notify = async (text: string, what: "brief" | "bins" | "battery" | "mail") => {
 		const title = what === "brief" ? `☀️ ${new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" })}` : undefined;
-		const sent = messenger ? await messenger.send(text, { title }) : false;
+		const [onDiscord, phones] = await Promise.all([
+			messenger ? messenger.send(text, { title }) : Promise.resolve(false),
+			phoneApp.send({ title: what === "brief" ? "Morning brief" : "RemindMe", body: text, url: "./", tag: what }),
+		]);
+		const sent = onDiscord || phones > 0;
 		activity.add(
 			sent
 				? { kind: "sent", channel: what === "brief" ? "brief" : "nudge", text }

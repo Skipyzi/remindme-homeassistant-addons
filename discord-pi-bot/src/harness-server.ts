@@ -68,6 +68,8 @@ import { CalendarChoice, listCalendars } from "./connectors/calendar";
 import { ThreadStore, titleFrom, type Thread } from "./assistant/threads";
 import { JobRunner } from "./assistant/jobs";
 import type { EntityCard } from "./harness/entities";
+import { PhonePush, type PushMessage } from "./phone/push";
+import { TailscaleNode, tailnetGuard } from "./phone/tailscale";
 import type { CalendarEvent } from "./agent/home";
 import { buildTools, type McpTool, type ToolContext } from "./assistant/tools";
 import { registerBridge, chatgptFetch } from "./agents/bridge";
@@ -80,6 +82,20 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 
 const app = express();
+/* The phone app: RemindMe on the tailnet, and notifications to the phones that installed it. */
+export const tailscale = new TailscaleNode();
+let phoneUrl: string | undefined;
+const phonePush = new PhonePush(undefined, () => phoneUrl || "mailto:remindme@example.com");
+/** A notification to every phone with the app; answers how many it reached. */
+export function phoneNotify(message: PushMessage): Promise<number> {
+	return phonePush.send(message).catch((error) => {
+		console.warn("Push failed:", error instanceof Error ? error.message : error);
+		return 0;
+	});
+}
+/** For the Discord bot's reminders: whether any phone listens, and how to reach it. */
+export const phoneApp = { devices: () => phonePush.devices().length, send: phoneNotify };
+app.use(tailnetGuard(tailscale));
 const port = Number(process.env.HARNESS_PORT || 8090);
 const supervisorToken = process.env.SUPERVISOR_TOKEN || "";
 /* Home Assistant through the Supervisor; HA_API_URL points elsewhere for local runs. */
@@ -1549,8 +1565,42 @@ let jobNotifier = async (thread: Thread, text: string): Promise<void> => {
 export function setJobNotifier(notify: (thread: Thread, text: string) => Promise<void>): void {
 	jobNotifier = notify;
 }
-/* Background jobs, one at a time, on the same assistant. */
-export const jobs = new JobRunner({ threads, ask: (input) => assistant.ask(input), notify: (thread, text) => jobNotifier(thread, text) });
+/* Background jobs, one at a time, on the same assistant. Their news goes to Discord and the phone app. */
+export const jobs = new JobRunner({
+	threads,
+	ask: (input) => assistant.ask(input),
+	notify: async (thread, text) => {
+		await Promise.all([jobNotifier(thread, text), phoneNotify({ title: thread.title, body: text, url: `./#t/${thread.id}`, tag: `job-${thread.id}` })]);
+	},
+});
+
+/* The phone app's settings: Tailscale, and the phones that get notifications. */
+app.get("/api/phone", async (_request, response) => {
+	const status = await tailscale.status();
+	if (status.url) phoneUrl = status.url;
+	response.set("Cache-Control", "no-store").json({ ...status, pushKey: phonePush.publicKey, devices: phonePush.devices() });
+});
+app.post("/api/phone/connect", async (_request, response) => {
+	const status = await tailscale.connect();
+	if (status.url) phoneUrl = status.url;
+	response.json({ ...status, pushKey: phonePush.publicKey, devices: phonePush.devices() });
+});
+app.post("/api/push/subscribe", async (request, response) => {
+	try {
+		await phonePush.subscribe(request.body?.subscription, request.get("user-agent") || "");
+		response.json({ devices: phonePush.devices() });
+	} catch (error) {
+		response.status(400).json({ error: error instanceof Error ? error.message : "Couldn't turn notifications on." });
+	}
+});
+app.post("/api/push/unsubscribe", async (request, response) => {
+	await phonePush.unsubscribe(typeof request.body?.endpoint === "string" ? request.body.endpoint : undefined);
+	response.json({ devices: phonePush.devices() });
+});
+app.post("/api/push/test", async (_request, response) => {
+	const reached = await phoneNotify({ title: "RemindMe", body: "Notifications work. Questions from jobs, reminders and the morning brief arrive like this.", url: "./", tag: "test" });
+	response.json({ reached });
+});
 
 /** Parcels still on their way, as lines for the morning brief. */
 export function parcelSummary(): string {
@@ -2010,9 +2060,16 @@ export function createHarnessApp(): Express {
  * runs on the container's clock.
  */
 export async function startHarness(): Promise<void> {
-	await Promise.all([loadConnectors(), threads.load()]);
+	await Promise.all([loadConnectors(), threads.load(), phonePush.load()]);
 	app.listen(port, () => console.log(`RemindMe console listening on port ${port}`));
 	jobs.resume();
+	// Once Tailscale is up: the app's address, and HTTPS to the console.
+	if (tailscale.enabled)
+		setTimeout(async () => {
+			const status = await tailscale.status();
+			if (status.url) phoneUrl = status.url;
+			console.log(status.state === "running" ? `Phone app on ${status.url}` : `Phone app: Tailscale ${status.state.replace("_", " ")}`);
+		}, 5_000);
 	await loadHomeName();
 	startTaskScheduler();
 	// Parcel polling starts only when a TrackingMore key is configured.

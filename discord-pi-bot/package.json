@@ -28,13 +28,15 @@
     "nodemailer": "10.2.1",
     "openai": "7.45.0",
     "opencode-ai": "1.18.34",
-    "proper-lockfile": "4.1.2"
+    "proper-lockfile": "4.1.2",
+    "web-push": "3.6.7"
   },
   "devDependencies": {
     "@types/express": "^5.0.6",
     "@types/mailparser": "^3.9.0",
     "@types/node": "^26.1.1",
     "@types/proper-lockfile": "^4.1.4",
+    "@types/web-push": "3.6.4",
     "tsx": "^4.23.0",
     "typescript": "^7.0.2"
   }

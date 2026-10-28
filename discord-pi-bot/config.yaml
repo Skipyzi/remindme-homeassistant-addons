@@ -1,5 +1,5 @@
 name: RemindMe
-version: "4.5.0"
+version: "4.6.0"
 slug: remindme_discord_bot
 description: Your personal assistant in Home Assistant and Discord, on Claude, OpenAI, OpenCode or your ChatGPT and Claude subscriptions
 arch:
@@ -38,6 +38,7 @@ options:
   inbox_sorter_url: http://local-inbox-sorter:8095
   playful_placeholders: true
   reminder_color: "5865f2"
+  phone_app: true
   searxng_url: ""
   exa_api_key: ""
   ha_notify_target: ""
@@ -70,6 +71,7 @@ schema:
   inbox_sorter_url: str?
   playful_placeholders: bool
   reminder_color: str
+  phone_app: bool
   searxng_url: str?
   exa_api_key: password?
   ha_notify_target: str?

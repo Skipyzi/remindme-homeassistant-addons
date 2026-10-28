@@ -84,5 +84,14 @@ export LEGACY_ENDPOINTS_PATH=/data/endpoints.json
 # the remindme-vault editor add-on reads and writes the same files.
 export VAULT_DATA_PATH=/share/vault
 
+# The phone app: Tailscale inside RemindMe, in userspace (no network device
+# needed), its state kept in /data. The console connects it and turns on HTTPS.
+if [ "$(get_option phone_app)" != "false" ]; then
+	mkdir -p /data/tailscale /var/run/tailscale
+	tailscaled --tun=userspace-networking --statedir=/data/tailscale --socket=/var/run/tailscale/tailscaled.sock -no-logs-no-support >/dev/null 2>&1 &
+	export TAILSCALE_SOCKET=/var/run/tailscale/tailscaled.sock
+fi
+export PUSH_DATA_PATH=/data/push.json
+
 # One process: the console, the Discord bot and the scheduler share one assistant.
 exec node /app/dist/main.js

@@ -85,6 +85,11 @@ export function startBot(deps: ChatDeps): OwnerMessenger | undefined {
 									{ title: "RemindMe", message: reminder.message },
 								)
 						: undefined,
+					phone: deps.phone?.devices()
+						? async () => {
+								if (!(await deps.phone!.send({ title: "Reminder", body: reminder.message, url: "./", tag: `reminder-${reminder.id}` }))) throw new Error("No phone took the reminder");
+							}
+						: undefined,
 					discord: async () => {
 						/*
 						 * A reminder made in a channel answers there and mentions
