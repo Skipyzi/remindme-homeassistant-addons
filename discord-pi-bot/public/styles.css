@@ -990,6 +990,17 @@ body:has(> .rm-app) {
 	color: #444;
 	font-size: 13px;
 }
+/* Dealt with: the card goes quiet and says what happened, then leaves */
+.rm-need.settled {
+	background: #000;
+	color: #fff;
+	outline: 1px solid var(--rule);
+	outline-offset: -1px;
+	transition: background 0.2s, color 0.2s;
+}
+.rm-need.settled small {
+	color: #fff;
+}
 .rm-need-detail {
 	max-height: 10.5em;
 	margin-top: 8px;

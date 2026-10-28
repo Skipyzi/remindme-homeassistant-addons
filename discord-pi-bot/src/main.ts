@@ -12,8 +12,10 @@ import {
 	activity,
 	aiSettings,
 	assistant,
+	batteryNeeds,
 	confirmations,
 	home,
+	jobs,
 	mailboxes,
 	parcelSummary,
 	phoneApp,
@@ -60,6 +62,7 @@ async function main() {
 		sorterUrl: process.env.INBOX_SORTER_URL ?? "http://local-inbox-sorter:8095",
 		ask: (prompt) => assistant.quick(prompt),
 		notify: (text) => notify(text, "mail"),
+		onNew: (mails) => jobs.mailArrived(mails),
 		nudges: process.env.MAIL_NUDGES !== "false",
 	});
 	await mail.load();
@@ -94,6 +97,7 @@ async function main() {
 		reminders: () => listReminders(ownerId),
 		did: (text) => activity.add({ kind: "did", channel: "nudge", text, receipts: [{ text }] }),
 		parcels: parcelSummary,
+		batteries: batteryNeeds,
 		options: {
 			briefTime: process.env.MORNING_BRIEF_TIME ?? "07:00",
 			binTime: process.env.BIN_REMINDER_TIME ?? "19:00",

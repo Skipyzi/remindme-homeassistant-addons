@@ -8,6 +8,8 @@ export interface JobTools {
 	update(step: string, progress?: { done: number; total: number }, note?: string): void;
 	ask(question: string, options: string[]): void;
 	finish(result: string): void;
+	/** End this run and look again later: after `hours`, or sooner when a matching email arrives. */
+	checkBack(input: { hours: number; mailWords: string[]; tell?: string; note?: string }): void;
 }
 
 export interface JobDeps {
@@ -17,9 +19,16 @@ export interface JobDeps {
 	notify(thread: Thread, text: string): Promise<void>;
 	/** Runs (of up to ten tool rounds each) before a job stops to check in. */
 	runsPerGo?: number;
+	/** A wake-up time moved out of the quiet hours. */
+	quietUntil?(at: Date): Date;
+	/** How long a watch keeps going before it stops on its own. */
+	watchDays?: number;
 }
 
 const RUNS_PER_GO = 6;
+const WATCH_DAYS = 7;
+/* A watch that ends a run without saying when to look again looks again in three hours. */
+const DEFAULT_CHECK_HOURS = 3;
 
 function clock(at: string): string {
 	const date = new Date(at);
@@ -34,6 +43,8 @@ export function jobBrief(thread: Thread): string {
 		`You are working on a background job: "${thread.title}".`,
 		`What to do: ${job.instructions}`,
 		`This is run ${job.runs + 1}. Each run allows about ten tool rounds, and the job gets several runs, so work steadily.`,
+		"If the job watches for something to change (a parcel, a price, a reply), look once, note what you saw with job_update, then call check_back with when to look again and mail_words that should wake you sooner. Never look twice in a row: nothing changes in a minute, and every look costs money. Tell the user only what is new.",
+		...(job.wokeBy ? [`You were woken by ${job.wokeBy}.`] : []),
 		steps.length ? `Steps so far (you don't keep tool results between runs; these are your notes):\n${steps.map((step) => `- ${clock(step.at)} ${step.text}`).join("\n")}` : "No steps yet.",
 	].join("\n");
 }
@@ -84,7 +95,7 @@ export class JobRunner {
 		if (!thread?.job || !text.trim()) return false;
 		threads.append(id, { role: "user", text });
 		if (thread.job.status === "queued" || thread.job.status === "working") return true;
-		threads.updateJob(id, { status: "queued", question: undefined, error: undefined, result: undefined });
+		threads.updateJob(id, { status: "queued", question: undefined, error: undefined, result: undefined, wakeAt: undefined, wokeBy: "the user's reply" });
 		this.enqueue(id);
 		return true;
 	}
@@ -95,7 +106,7 @@ export class JobRunner {
 		if (!thread?.job || thread.job.status === "done" || thread.job.status === "stopped") return false;
 		this.queue = this.queue.filter((queued) => queued !== id);
 		if (this.current?.id === id) this.current.abort.abort();
-		threads.updateJob(id, { status: "stopped", note: "Stopped by you", question: undefined });
+		threads.updateJob(id, { status: "stopped", note: "Stopped by you", question: undefined, wakeAt: undefined, wakeWords: undefined });
 		threads.append(id, { role: "assistant", text: "Stopped. Reply to start it again." });
 		return true;
 	}
@@ -111,6 +122,55 @@ export class JobRunner {
 	/** Resolves when nothing is queued or running; for tests. */
 	async settled(): Promise<void> {
 		while (this.pumping) await this.pumping;
+	}
+
+	/** A watch between checks: tell what's new, then sleep until the time or a matching email. */
+	private async sleep(id: string, later: { hours: number; mailWords: string[]; tell?: string; note?: string }, say: (text: string) => Promise<void>, now = new Date()): Promise<void> {
+		const { threads } = this.deps;
+		const job = threads.get(id)!.job!;
+		if (later.tell?.trim()) await say(later.tell.trim());
+		const until = job.watchUntil ? new Date(job.watchUntil) : new Date(now.getTime() + (this.deps.watchDays ?? WATCH_DAYS) * 86_400_000);
+		const hours = Math.min(72, Math.max(0.5, Number.isFinite(later.hours) ? later.hours : DEFAULT_CHECK_HOURS));
+		const wake = this.deps.quietUntil ? this.deps.quietUntil(new Date(now.getTime() + hours * 3_600_000)) : new Date(now.getTime() + hours * 3_600_000);
+		if (wake > until) {
+			threads.updateJob(id, { status: "done", result: "Stopped watching after a week.", wakeAt: undefined, wakeWords: undefined });
+			return say("I've watched this for a week, so I've stopped. Reply if you want me to keep going.");
+		}
+		const words = later.mailWords.map((word) => word.trim()).filter((word) => word.length >= 3).slice(0, 8);
+		const when = `${clock(wake.toISOString())}${wake.toDateString() === now.toDateString() ? "" : ` ${wake.toLocaleDateString("en-GB", { weekday: "short" })}`}`;
+		threads.updateJob(id, {
+			status: "waiting",
+			wakeAt: wake.toISOString(),
+			wakeWords: words.length ? words : undefined,
+			watchUntil: until.toISOString(),
+			note: `${later.note?.trim() ? `${later.note.trim().slice(0, 60)}; ` : ""}next look ${when}${words.length ? `, or when an email mentions ${words.slice(0, 2).join(" or ")}` : ""}`,
+		});
+	}
+
+	/** Wake the watches that are due. Called every minute. */
+	tick(now = new Date()): void {
+		for (const thread of this.deps.threads.list())
+			if (thread.job?.status === "waiting" && thread.job.wakeAt && Date.parse(thread.job.wakeAt) <= now.getTime()) this.wake(thread.id, "the time it set to look again");
+	}
+
+	/** New mail: wake the watches whose words are in a sender or subject. */
+	mailArrived(mails: Array<{ from: string; subject: string }>): void {
+		for (const thread of this.deps.threads.list()) {
+			const words = thread.job?.status === "waiting" ? thread.job.wakeWords || [] : [];
+			const match = mails.find((mail) => words.some((word) => `${mail.from} ${mail.subject}`.toLowerCase().includes(word.toLowerCase())));
+			if (match) this.wake(thread.id, `a new email from ${match.from}: "${match.subject}"`);
+		}
+	}
+
+	private wake(id: string, why: string): void {
+		this.deps.threads.updateJob(id, { status: "queued", wakeAt: undefined, wokeBy: why });
+		this.enqueue(id);
+	}
+
+	/** Look for due watches every minute, for as long as the app runs. */
+	startClock(): void {
+		this.tick();
+		setInterval(() => this.tick(), 60_000).unref();
 	}
 
 	private enqueue(id: string): void {
@@ -142,7 +202,8 @@ export class JobRunner {
 		try {
 			for (let go = 0; go < (this.deps.runsPerGo ?? RUNS_PER_GO); go++) {
 				const thread = threads.get(id)!;
-				let outcome: "asked" | "finished" | undefined;
+				let outcome: "asked" | "finished" | "waiting" | undefined;
+				let later: { hours: number; mailWords: string[]; tell?: string; note?: string } | undefined;
 				const tools: JobTools = {
 					update: (step, progress, note) => {
 						if (step.trim()) threads.append(id, { role: "step", text: step });
@@ -157,7 +218,12 @@ export class JobRunner {
 						if (outcome) return;
 						outcome = "finished";
 						const progress = threads.get(id)?.job?.progress;
-						threads.updateJob(id, { status: "done", result, question: undefined, ...(progress ? { progress: { done: progress.total, total: progress.total } } : {}) });
+						threads.updateJob(id, { status: "done", result, question: undefined, wakeAt: undefined, wakeWords: undefined, ...(progress ? { progress: { done: progress.total, total: progress.total } } : {}) });
+					},
+					checkBack: (input) => {
+						if (outcome) return;
+						outcome = "waiting";
+						later = input;
 					},
 				};
 				// The user's latest words, if new and last, are this run's prompt.
@@ -171,6 +237,7 @@ export class JobRunner {
 					prompt = fresh && !first ? said : `${said}\n\n${prompt}`;
 				}
 				if (lastUser) threads.updateJob(id, { lastRead: lastUser.id });
+				const watching = Boolean(thread.job!.watchUntil);
 				const result = await this.deps.ask({
 					prompt,
 					channel: "job",
@@ -181,7 +248,7 @@ export class JobRunner {
 					signal: abort.signal,
 					tools: { job: tools },
 				});
-				threads.updateJob(id, { runs: (threads.get(id)?.job?.runs || 0) + 1 });
+				threads.updateJob(id, { runs: (threads.get(id)?.job?.runs || 0) + 1, wokeBy: undefined });
 				if (abort.signal.aborted) return;
 				if (result.did.length) threads.append(id, { role: "step", text: result.did.map((item) => item.text).join("; "), receipts: result.did });
 				if (result.confirms.length)
@@ -198,6 +265,8 @@ export class JobRunner {
 				const job = threads.get(id)!.job!;
 				if (outcome === "asked" && job.question) return void (await say(job.question.text, `${job.question.text}${optionsLine(job.question.options)}`));
 				if (outcome === "finished") return void (await say(job.result || result.text));
+				// A watch never loops: if it didn't say when to look again, it looks again in a few hours.
+				if (outcome === "waiting" || watching) return void (await this.sleep(id, later || { hours: DEFAULT_CHECK_HOURS, mailWords: job.wakeWords || [] }, say));
 			}
 			threads.updateJob(id, { status: "stopped", note: "Paused to check in" });
 			await say("I've worked on this for a while without finishing. Reply \"carry on\" and I'll keep going, or tell me what to change.");

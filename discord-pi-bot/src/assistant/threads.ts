@@ -8,7 +8,8 @@ import type { Receipt } from "./activity";
  * Where a job stands. Queued jobs wait their turn; one that needs the user
  * has a question; done and stopped ones are finished until the user replies.
  */
-export type JobStatus = "queued" | "working" | "needs_you" | "done" | "stopped";
+/** "waiting": a watch between checks, asleep until wakeAt or a matching email. */
+export type JobStatus = "queued" | "working" | "waiting" | "needs_you" | "done" | "stopped";
 
 export interface JobState {
 	status: JobStatus;
@@ -25,6 +26,14 @@ export interface JobState {
 	error?: string;
 	/** The user's message the job last took in, so it isn't read as new twice. */
 	lastRead?: string;
+	/** A watch: when it looks again, at the latest. */
+	wakeAt?: string;
+	/** A watch: a new email whose sender or subject has one of these wakes it early. */
+	wakeWords?: string[];
+	/** A watch ends on its own after this. */
+	watchUntil?: string;
+	/** Why this run started: "a new email from DHL: …", for the job's brief. */
+	wokeBy?: string;
 }
 
 export interface ThreadMessage {

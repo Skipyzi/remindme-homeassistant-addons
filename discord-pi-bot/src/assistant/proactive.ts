@@ -1,3 +1,4 @@
+import { type LowBattery, batteryHint, batteryShort } from "./batteries";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { localDate } from "../ai/spend";
@@ -33,6 +34,8 @@ export interface ProactiveDeps {
 	parcels?(): string;
 	/** Gmail and GMX: checked every quarter hour outside quiet hours. */
 	mail?: MailWatch;
+	/** The low batteries the inbox shows, with what to do about each; without it, every low battery. */
+	batteries?(): Promise<LowBattery[]>;
 	/** The look across everything for what deserves a heads-up, after the brief and outside quiet hours. */
 	triage?: { maybeRun(now: Date): Promise<unknown> };
 	options: ProactiveOptions;
@@ -63,6 +66,16 @@ export function inQuietHours(window: string, at: Date): boolean {
 	if (from === undefined || to === undefined || from === to) return false;
 	const now = at.getHours() * 60 + at.getMinutes();
 	return from < to ? now >= from && now < to : now >= from || now < to;
+}
+
+/** `at`, or the end of the quiet hours when it falls inside them. */
+export function afterQuietHours(window: string, at: Date): Date {
+	if (!inQuietHours(window, at)) return at;
+	const to = minutesOf(window.split("-")[1] || "")!;
+	const end = new Date(at);
+	end.setHours(Math.floor(to / 60), to % 60, 0, 0);
+	if (end <= at) end.setDate(end.getDate() + 1);
+	return end;
 }
 
 const WASTE_CALENDAR = /abfall|müll|muell|waste|trash|garbage|bin|tonne|recycl/i;
@@ -225,26 +238,28 @@ export class Proactive {
 		}
 	}
 
-	private async checkBatteries(now: Date): Promise<void> {
+	/** The batteries that need the user: the inbox's list, or every low one without it. */
+	private async lowBatteries(): Promise<LowBattery[]> {
+		if (this.deps.batteries) return this.deps.batteries();
 		const home = this.deps.home;
-		if (!home) return;
+		if (!home) return [];
+		return (await home.cards())
+			.filter((card) => card.available && card.deviceClass === "battery" && card.numericState !== undefined && card.numericState <= (this.deps.options.batteryThreshold || 20))
+			.map((card) => ({ entityId: card.entityId, name: card.name.replace(/\s*battery(\s*level)?$/i, ""), level: Math.round(card.numericState!), rechargeable: false }));
+	}
+
+	private async checkBatteries(now: Date): Promise<void> {
 		const weekAgo = localDate(new Date(now.getTime() - 7 * 86_400_000));
-		const low = (await home.cards()).filter(
-			(card) =>
-				card.available &&
-				card.deviceClass === "battery" &&
-				card.numericState !== undefined &&
-				card.numericState <= this.deps.options.batteryThreshold &&
-				!((this.state.batteries[card.entityId] || "") > weekAgo),
-		);
+		const low = (await this.lowBatteries()).filter((battery) => !((this.state.batteries[battery.entityId] || "") > weekAgo));
 		if (!low.length) return;
-		const names = low.map((card) => `${card.name.replace(/\s*battery$/i, "")} at ${Math.round(card.numericState!)}%`);
 		const sent = await this.deps.notify(
-			low.length === 1 ? `🔋 ${names[0]}. Time for a new battery.` : `🔋 Batteries running low: ${names.join(", ")}.`,
+			low.length === 1
+				? `🔋 ${low[0].name} at ${low[0].level}%. ${batteryHint(low[0])}`
+				: `🔋 Batteries running low: ${low.map((battery) => `${battery.name} at ${battery.level}% (${batteryShort(battery)})`).join(", ")}.`,
 			"battery",
 		);
 		if (!sent) return;
-		for (const card of low) this.state.batteries[card.entityId] = localDate(now);
+		for (const battery of low) this.state.batteries[battery.entityId] = localDate(now);
 		await this.save();
 	}
 
@@ -270,9 +285,7 @@ export class Proactive {
 					const day = (response[weather.entityId] as { forecast?: Array<Record<string, unknown>> })?.forecast?.[0];
 					facts.weather = { now: stateText(weather), today: day };
 				}
-				facts.low_batteries = cards
-					.filter((card) => card.available && card.deviceClass === "battery" && card.numericState !== undefined && card.numericState <= 20)
-					.map((card) => `${card.name} ${card.numericState}%`);
+				facts.low_batteries = (await this.lowBatteries()).map((battery) => `${battery.name} ${battery.level}% (${batteryShort(battery)})`);
 				facts.lights_on = cards.filter((card) => card.domain === "light" && card.state === "on").map((card) => card.name);
 			} catch (error) {
 				facts.home_error = error instanceof Error ? error.message : String(error);

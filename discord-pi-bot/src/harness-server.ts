@@ -62,7 +62,7 @@ import type { Effort, ImageInput, ProviderId } from "./ai/types";
 import { Assistant, type AskEvents, type AskResult } from "./assistant/agent";
 import { ConfirmationStore } from "./assistant/confirmations";
 import { ActivityLog } from "./assistant/activity";
-import { wasteEvents } from "./assistant/proactive";
+import { afterQuietHours, wasteEvents } from "./assistant/proactive";
 import { DiscordChats } from "./discord/chats";
 import { Mailboxes, type MailAccount } from "./mail/mailboxes";
 import { ConnectorStore, publicView } from "./connectors/store";
@@ -75,6 +75,7 @@ import { modelTable } from "./ai/catalog";
 import { ThreadStore, titleFrom, type Thread } from "./assistant/threads";
 import { JobRunner } from "./assistant/jobs";
 import { MemoryStore } from "./assistant/memory";
+import { BatteryHides, batteryHint, lowBatteries, type LowBattery } from "./assistant/batteries";
 import type { EntityCard } from "./harness/entities";
 import { PhonePush, type PushMessage } from "./phone/push";
 import { TailscaleNode, tailnetGuard } from "./phone/tailscale";
@@ -1094,12 +1095,18 @@ async function nextEvents(now: Date): Promise<CalendarEvent[]> {
 	return calendarCache.events;
 }
 
-/* Batteries at or under the nudge threshold, for "waiting on you". */
-function lowBatteries(cards: EntityCard[]) {
-	const threshold = Number(process.env.BATTERY_NUDGE_PERCENT || 15) || 15;
-	return cards
-		.filter((card) => card.available && card.deviceClass === "battery" && card.numericState !== undefined && card.numericState <= threshold)
-		.map((card) => ({ entityId: card.entityId, name: card.name.replace(/\s*battery$/i, ""), level: Math.round(card.numericState!) }));
+/* Batteries the user dealt with for now: a reminder set, or "Got it". */
+const batteryHides = new BatteryHides();
+const batteryThreshold = () => Number(process.env.BATTERY_NUDGE_PERCENT || 15) || 15;
+/** Batteries at or under the nudge threshold that need the user, with what to do about each. */
+async function visibleBatteries(cards: EntityCard[], now = new Date()): Promise<Array<LowBattery & { hint: string }>> {
+	if (!home || !cards.length) return [];
+	const low = lowBatteries(cards, await home.batteryKinds(), batteryThreshold());
+	return (await batteryHides.visible(low, cards, batteryThreshold(), now)).map((battery) => ({ ...battery, hint: batteryHint(battery) }));
+}
+/** For the nudges and the brief: the same batteries the inbox shows. */
+export async function batteryNeeds(): Promise<Array<LowBattery & { hint: string }>> {
+	return home ? visibleBatteries(await home.cards().catch(() => [] as EntityCard[])) : [];
 }
 
 /**
@@ -1115,7 +1122,7 @@ app.get("/api/inbox", async (_request, response) => {
 		now: now.toISOString(),
 		ai: { label: status.label, model: status.model, ready: status.ready, problem: status.problem },
 		waiting: confirmations.list(),
-		batteries: lowBatteries(cards),
+		batteries: await visibleBatteries(cards, now),
 		threads: threads.list().slice(0, 100),
 		tasks: tasks
 			.list()
@@ -1269,13 +1276,37 @@ app.get("/api/ledger", async (_request, response) => {
 		now: now.toISOString(),
 		ai: { label: status.label, model: status.model, ready: status.ready, problem: status.problem },
 		waiting: confirmations.list(),
-		batteries: lowBatteries(cards),
+		batteries: await visibleBatteries(cards, now),
 		upcoming,
 		// A waiting row whose token is gone expired unseen.
 		entries: activity
 			.recent(7, now)
 			.map((entry) => (entry.kind === "waiting" && (!entry.token || !pending.has(entry.token)) ? { ...entry, kind: "cancelled", text: `${entry.text} (expired)`, token: undefined } : entry)),
 	});
+});
+/*
+ * A low battery's two buttons: a reminder (the card is back when it's due,
+ * if the battery is still low) or "Got it" (back only after it was charged
+ * or replaced and runs low again).
+ */
+app.post("/api/batteries/:entityId/:action", async (request, response) => {
+	const battery = (await batteryNeeds()).find((entry) => entry.entityId === request.params.entityId);
+	if (!battery) return response.status(404).json({ error: "That battery isn't low any more." });
+	if (request.params.action === "hide") {
+		await batteryHides.hide(battery.entityId);
+		return response.json({ text: battery.rechargeable ? "Hidden until it's charged." : "Hidden until the battery is changed." });
+	}
+	if (request.params.action !== "remind") return response.status(404).json({ error: "Unknown action" });
+	const at = new Date(String(request.body?.at || ""));
+	if (Number.isNaN(at.getTime()) || at.getTime() < Date.now()) return response.status(400).json({ error: "Pick a time in the future." });
+	const message = battery.rechargeable ? `Charge the ${battery.name}` : `Put a new ${battery.battery || "battery"} in the ${battery.name}`;
+	await addReminder(message, (at.getTime() - Date.now()) / 60_000, process.env.OWNER_ID || "", "");
+	await batteryHides.hide(battery.entityId, at);
+	const line = `Reminder for ${describeWhen(at)}: ${message}`;
+	activity.add({ kind: "did", channel: "console", text: line, receipts: [{ text: line }] });
+	const day = at.toLocaleDateString("en-GB", { weekday: "long" });
+	const time = at.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+	response.json({ text: `Reminder set for ${day} at ${time}.` });
 });
 /* Set a reminder straight from the ledger, such as "replace the battery on Saturday". */
 app.post("/api/reminders", async (request, response) => {
@@ -1666,6 +1697,8 @@ export function setJobNotifier(notify: (thread: Thread, text: string) => Promise
 export const jobs = new JobRunner({
 	threads,
 	ask: (input) => assistant.ask(input),
+	// A watch never wakes you: its looks move past the quiet hours.
+	quietUntil: (at) => afterQuietHours(process.env.QUIET_HOURS ?? "22:30-07:00", at),
 	notify: async (thread, text) => {
 		await Promise.all([jobNotifier(thread, text), phoneNotify({ title: thread.title, body: text, url: `./#t/${thread.id}`, tag: `job-${thread.id}` })]);
 	},
@@ -2157,9 +2190,10 @@ export function createHarnessApp(): Express {
  * runs on the container's clock.
  */
 export async function startHarness(): Promise<void> {
-	await Promise.all([loadConnectors(), threads.load(), phonePush.load(), memory.load()]);
+	await Promise.all([loadConnectors(), threads.load(), phonePush.load(), memory.load(), batteryHides.load()]);
 	app.listen(port, () => console.log(`RemindMe console listening on port ${port}`));
 	jobs.resume();
+	jobs.startClock();
 	// Once Tailscale is up: the app's address, and HTTPS to the console.
 	if (tailscale.enabled)
 		setTimeout(async () => {

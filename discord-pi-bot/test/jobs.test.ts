@@ -208,3 +208,79 @@ test("start_job hands work off with the turn's thread; job tools exist only insi
 	await runTool(inside, { id: "6", name: "finish_job", input: { result: "Done" } }, newEffects());
 	assert.deepEqual(calls, ['update Checked Eurowings {"done":6,"total":6}', "ask Which day? Thursday/Friday/Saturday/Sunday", "finish Done"]);
 });
+
+test("a watch looks once, sleeps, and wakes on its time or on a matching email; never at night, and not past a week", async () => {
+	const threads = store();
+	const job = (input: AskInput) => input.tools!.job!;
+	let looks = 0;
+	const look = (call: (input: AskInput) => void) => (input: AskInput) => {
+		looks++;
+		call(input);
+		return answer("Checked.");
+	};
+	const runner = new JobRunner({
+		threads,
+		ask: async (input) => scripts.shift()!(input),
+		notify: async (_thread, text) => void told.push(text),
+		runsPerGo: 6,
+		// Quiet from 22:30 to 07:00.
+		quietUntil: (at) => (at.getHours() >= 22 || at.getHours() < 7 ? new Date(new Date(at).setHours(at.getHours() >= 22 ? 31 : 7, 0, 0, 0)) : at),
+	});
+	const told: string[] = [];
+	const scripts: Array<(input: AskInput) => AskResult> = [
+		look((input) => job(input).checkBack({ hours: 3, mailWords: ["DHL", "WGOYED9T8", "x"], note: "shipped 27 Oct" })),
+		look((input) => {
+			assert.match(input.extra || "", /woken by a new email from DHL Paket: "Ihre Sendung kommt heute"/);
+			job(input).checkBack({ hours: 4, mailWords: ["DHL"], tell: "Your Apotheke parcel arrives today." });
+		}),
+		// A run that forgets to say when: it still sleeps, three hours.
+		look(() => {}),
+	];
+	const thread = runner.start({ title: "Track DHL parcel", instructions: "Tell me when the parcel moves.", origin: "console" });
+	await runner.settled();
+	assert.equal(looks, 1, "one look, not six in a row");
+	let state = threads.get(thread.id)!.job!;
+	assert.equal(state.status, "waiting");
+	assert.deepEqual(state.wakeWords, ["DHL", "WGOYED9T8"], "words too short to mean anything are dropped");
+	assert.match(state.note || "", /^shipped 27 Oct; next look \d\d:\d\d.*, or when an email mentions DHL or WGOYED9T8$/);
+	assert.ok(Date.parse(state.watchUntil!) - Date.now() > 6.9 * 86_400_000);
+
+	runner.tick(new Date(Date.now() + 60 * 60_000));
+	runner.mailArrived([{ from: "Newsletter", subject: "Angebote der Woche" }]);
+	await runner.settled();
+	assert.equal(looks, 1, "not due yet, and that email wasn't about it");
+
+	runner.mailArrived([{ from: "DHL Paket", subject: "Ihre Sendung kommt heute" }]);
+	await runner.settled();
+	assert.equal(looks, 2);
+	assert.deepEqual(told, ["Your Apotheke parcel arrives today."]);
+	state = threads.get(thread.id)!.job!;
+	assert.equal(state.status, "waiting");
+	assert.equal(state.wokeBy, undefined);
+
+	runner.tick(new Date(Date.parse(state.wakeAt!) + 1000));
+	await runner.settled();
+	assert.equal(looks, 3);
+	state = threads.get(thread.id)!.job!;
+	assert.equal(state.status, "waiting", "a watch that forgot check_back still sleeps");
+	const wake = new Date(state.wakeAt!);
+	assert.ok(wake.getHours() >= 7 && (wake.getHours() < 22 || (wake.getHours() === 22 && wake.getMinutes() < 30)), "never inside the quiet hours");
+
+	// A week on, the watch ends by itself.
+	threads.updateJob(thread.id, { watchUntil: new Date(Date.now() + 60_000).toISOString() });
+	scripts.push(look((input) => job(input).checkBack({ hours: 6, mailWords: [] })));
+	runner.tick(new Date(Date.parse(state.wakeAt!) + 1000));
+	await runner.settled();
+	assert.equal(threads.get(thread.id)!.job!.status, "done");
+	assert.match(told.at(-1)!, /watched this for a week/);
+
+	// Stopping a sleeping watch works too.
+	const other = runner.start({ title: "Price watch", instructions: "Tell me when it drops.", origin: "console" });
+	scripts.push(look((input) => job(input).checkBack({ hours: 6, mailWords: ["Bahn"] })));
+	await runner.settled();
+	assert.equal(runner.stop(other.id), true);
+	assert.equal(threads.get(other.id)!.job!.status, "stopped");
+	runner.mailArrived([{ from: "Bahn", subject: "Preis gesunken" }]);
+	await runner.settled();
+	assert.equal(looks, 5, "a stopped watch doesn't wake");
+});

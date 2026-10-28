@@ -44,7 +44,7 @@ All to your DMs, and part of that chat, so you can reply to them:
 
 - **Morning brief** at `morning_brief_time` (default 07:00): today's shift and appointments, bins tonight, the weather, reminders, parcels, and anything wrong in the house. The facts are gathered in code and the AI writes them up; without the AI you get a plain list. The console's **AI** panel can send today's brief on demand.
 - **Bins:** on the morning before a collection, "Put the paper bin out" goes on your chores list (`chores_list`, default `todo.chores`), due that day. At `bin_reminder_time` (default 19:00) you get a message too, unless you've ticked the chore off. German bin names get an English label: paper (Blaue Tonne), packaging (Gelbe Tonne), organic, residual waste.
-- **Batteries** at or below `battery_nudge_percent` (default 15), once a week per device.
+- **Batteries** at or below `battery_nudge_percent` (default 15), once a week per device: what to buy when the device says (a CR2032, two AAA), or "needs charging" for devices with a charging sensor, left out while they charge. Phones with the Companion app are left out: they warn about themselves.
 - **Heads-ups** (`smart_nudges`, on by default): every two hours between the brief and quiet hours, RemindMe looks across new mail, the next three hours of your calendar, doors, windows and locks left open, leak or smoke alarms, and jobs that have waited long for you, and messages you only about what can't wait. Nothing is told twice, and there are four a day at most. One short AI request per pass, only when there's something new to look at.
 
 Nothing is sent during `quiet_hours` (default 22:30-07:00); nudges wait until they end. Blank times turn a message off. The bins and battery checks don't use the AI.
@@ -84,7 +84,7 @@ It only sees and changes devices through these tools. Each turn sends your recen
 
 Open **RemindMe** in the sidebar. It is an inbox. On a phone a thread opens over the inbox; on a wide screen they sit side by side.
 
-- **Needs you:** actions waiting for your tap (locks, doors, scenes, calendar events), questions from jobs with their answers as buttons, and batteries running out.
+- **Needs you:** actions waiting for your tap (locks, doors, scenes, calendar events), questions from jobs with their answers as buttons, and batteries running out. A battery's **Remind me Saturday** hides it until then; **Got it** hides it until it's charged or changed.
 - **Working on:** background jobs with how far along they are, and your scheduled tasks.
 - **Today, Yesterday, Earlier:** every conversation and job, and what RemindMe sent or did elsewhere (the brief, nudges, reminders, Discord).
 - **Cats:** every conversation and job has its own cat (a ginger tabby, tuxedo, calico, siamese, grey or black cat, with a bow tie, beret, glasses, headphones, party hat or scarf). It shows how things stand: busy while a job works, a paw raised when it needs you, content when done, grey and dizzy when it stopped.
@@ -111,7 +111,8 @@ Work that takes many steps, such as comparing flights across sites, going throug
 - writes down each step in its thread, with progress when it knows it;
 - asks you when only you can decide, with options to tap in the inbox or to answer on Discord;
 - finishes with a result, sent to you on Discord as well;
-- stops after six runs of up to ten tool steps each to check in, so it can't run up the bill. Reply "carry on" to continue, or **Stop** it any time.
+- stops after six runs of up to ten tool steps each to check in, so it can't run up the bill. Reply "carry on" to continue, or **Stop** it any time;
+- for keep-me-updated requests (a parcel, a price, a reply), watches instead: it looks once, then sleeps until the time it set or until an email arrives whose sender or subject has its words (the carrier, an order number). It tells you only what changed, never looks during quiet hours, and stops after a week. A sleeping watch costs nothing; **Stop watching** ends it.
 
 Device changes, calendar events and the like still wait for your tap, as everywhere else.
 
@@ -123,7 +124,7 @@ RemindMe remembers things about you: what it picked up from what you told it ("m
 
 ## Data
 
-Everything lives in `/data`: reminders, chats, the inbox's threads and jobs (`threads.json`), what it remembers about you (`memory.json`), which heads-ups were sent (`triage.json`), the phone app's notification keys and devices (`push.json`) and Tailscale's state (`tailscale/`), the AI choice (`ai.json`), today's spend (`spend.json`), Discord chat history (`discord-chats.json`) and which nudges were sent (`proactive.json`). Notes stay in `/share/vault`, shared with the Vault editor app.
+Everything lives in `/data`: reminders, chats, the inbox's threads and jobs (`threads.json`), what it remembers about you (`memory.json`), which heads-ups were sent (`triage.json`), batteries you dealt with (`batteries.json`), the phone app's notification keys and devices (`push.json`) and Tailscale's state (`tailscale/`), the AI choice (`ai.json`), today's spend (`spend.json`), Discord chat history (`discord-chats.json`) and which nudges were sent (`proactive.json`). Notes stay in `/share/vault`, shared with the Vault editor app.
 
 ## Upgrading from 3.x
 

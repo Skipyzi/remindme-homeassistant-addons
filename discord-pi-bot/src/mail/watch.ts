@@ -39,6 +39,8 @@ export interface MailWatchDeps {
 	/** One plain AI answer, for reading bills and appointments out of new mail. */
 	ask(prompt: string): Promise<string | undefined>;
 	notify(text: string): Promise<boolean>;
+	/** Every new mail, as it's found: background jobs can wake on one. */
+	onNew?(mails: Array<{ from: string; subject: string }>): void;
 	nudges: boolean;
 	statePath?: string;
 	fetcher?: typeof fetch;
@@ -192,6 +194,7 @@ export class MailWatch {
 				return;
 			}
 			this.state.seen = [...this.state.seen, ...fresh.map((mail) => mail.id)].slice(-MAX_SEEN);
+			this.deps.onNew?.(fresh.map((mail) => ({ from: mail.from, subject: mail.subject })));
 			const labels = await sortMail(this.deps.sorterUrl, fresh, this.deps.fetcher);
 			const kept = fresh.filter((mail) => worthKnowing(mail, labels.get(mail.id)));
 			this.state.digest = [

@@ -84,10 +84,15 @@
               </div>
             </template>
             <template x-for="item in batteries" :key="item.entityId">
-              <div class="rm-need">
+              <div class="rm-need" :class="{ settled: item.done }">
                 <b x-text="`${item.name} battery at ${item.level}%`"></b>
-                <small>Time for a new battery.</small>
-                <div class="rm-need-acts"><button class="rm-btn" type="button" @click="remindBattery(item)">Remind me Saturday</button></div>
+                <small x-text="item.done || item.hint" role="status"></small>
+                <div class="rm-need-acts" x-show="!item.done">
+                  <template x-if="!item.rechargeable">
+                    <button class="rm-btn" type="button" :disabled="Boolean(item.busy)" @click="batteryAction(item, 'remind')">Remind me Saturday</button>
+                  </template>
+                  <button class="rm-btn" type="button" :disabled="Boolean(item.busy)" @click="batteryAction(item, 'hide')">Got it</button>
+                </div>
               </div>
             </template>
           </section>
@@ -145,8 +150,8 @@
               <button class="rm-back" type="button" @click="closeThread()">‹ Inbox</button>
               <span class="rm-cat rm-cat-head" x-show="!open.readOnly" x-effect="open.readOnly || drawCat($el, open.id, catState(open))"></span>
               <h1><span x-text="open.title"></span><small x-text="threadLine(open)"></small></h1>
-              <button class="rm-barlink" type="button" x-show="isRunning(open)" @click="stopJob(open)">Stop</button>
-              <button class="rm-barlink" type="button" x-show="!open.readOnly && !isRunning(open)" @click="deleteThread(open)">Delete</button>
+              <button class="rm-barlink" type="button" x-show="isRunning(open) || open.job?.status === 'waiting'" @click="stopJob(open)" x-text="open.job?.status === 'waiting' ? 'Stop watching' : 'Stop'"></button>
+              <button class="rm-barlink" type="button" x-show="!open.readOnly && !isRunning(open) && open.job?.status !== 'waiting'" @click="deleteThread(open)">Delete</button>
             </header>
             <div class="rm-scroll rm-messages" x-ref="messages">
               <template x-for="message in open.messages" :key="message.id">

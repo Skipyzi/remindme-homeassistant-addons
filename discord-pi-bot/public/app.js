@@ -52,7 +52,7 @@ const TOOL_WORDS = {
 	reply_to_job: "passing it to the job",
 };
 
-const JOB_WORDS = { queued: "Waiting its turn", working: "Working", needs_you: "Needs you", done: "Done", stopped: "Stopped" };
+const JOB_WORDS = { queued: "Waiting its turn", working: "Working", waiting: "Watching", needs_you: "Needs you", done: "Done", stopped: "Stopped" };
 /* The first word of a held action, when it is a plain verb, names its button. */
 const VERBS = new Set(["Unlock", "Lock", "Open", "Close", "Add", "Run", "Arm", "Disarm", "Send"]);
 
@@ -217,7 +217,9 @@ function remindme() {
 				const data = await response.json();
 				this.ai = { ...(this.ai || {}), ...data.ai };
 				this.waiting = data.waiting || [];
-				this.batteries = data.batteries || [];
+				// A battery just dealt with keeps its card a moment longer, to show what happened.
+				const settled = this.batteries.filter((item) => item.done);
+				this.batteries = [...(data.batteries || []).filter((item) => !settled.some((done) => done.entityId === item.entityId)), ...settled];
 				this.threads = data.threads || [];
 				this.scheduled = data.tasks || [];
 				this.activity = data.activity || [];
@@ -250,7 +252,7 @@ function remindme() {
 		},
 
 		get working() {
-			return this.threads.filter((thread) => thread.job && ["queued", "working"].includes(thread.job.status));
+			return this.threads.filter((thread) => thread.job && ["queued", "working", "waiting"].includes(thread.job.status));
 		},
 
 		get needsCount() {
@@ -323,7 +325,7 @@ function remindme() {
 			if (!thread || thread.readOnly) return "done";
 			const status = thread.job?.status;
 			if (status === "needs_you") return "asking";
-			if (status === "queued" || status === "working" || this.streaming?.threadId === thread.id) return "working";
+			if (status === "queued" || status === "working" || status === "waiting" || this.streaming?.threadId === thread.id) return "working";
 			if (status === "stopped") return "stopped";
 			return "done";
 		},
@@ -604,16 +606,22 @@ function remindme() {
 			await this.loadInbox();
 		},
 
-		async remindBattery(item) {
+		/* "Remind me Saturday" (10:00) or "Got it": the card says what happened, then goes. */
+		async batteryAction(item, action) {
 			const at = new Date(this.now);
 			at.setDate(at.getDate() + ((6 - at.getDay() + 7) % 7 || 7));
 			at.setHours(10, 0, 0, 0);
+			item.busy = true;
 			try {
-				await this.request("./api/reminders", "POST", { message: `Put a new battery in the ${item.name}`, at: at.toISOString() });
+				const data = await this.request(`./api/batteries/${encodeURIComponent(item.entityId)}/${action}`, "POST", action === "remind" ? { at: at.toISOString() } : {});
+				item.done = data.text;
+				setTimeout(() => {
+					this.batteries = this.batteries.filter((entry) => entry.entityId !== item.entityId);
+				}, 2500);
 			} catch (error) {
+				item.busy = false;
 				this.error = error.message;
 			}
-			await this.loadInbox();
 		},
 
 		/* ── History: the ledger ─────────────────────────────────────── */

@@ -908,6 +908,31 @@ function jobTools(ctx: ToolContext): AssistantTool[] {
 					return { content: "Finished. End your turn with one short line." };
 				},
 			},
+			{
+				spec: {
+					name: "check_back",
+					description:
+						"For a job that watches something over time (a parcel, a price, a reply): end this run and look again later, instead of looking again now. Space looks out by hours: every look costs money. Give mail_words (a carrier, shop or order number) to be woken sooner by a new email whose sender or subject has one of them. Put anything new for the user in tell, and leave it out when nothing changed. Once what you watch is over (delivered, answered), use finish_job instead. End your turn after this.",
+					parameters: object(
+						{
+							hours: { type: "number", description: "When to look again at the latest, in hours: 2 to 12 suits most things." },
+							mail_words: { type: "array", items: { type: "string" }, maxItems: 8, description: 'Words that wake the job early when a new email has one in its sender or subject, such as "DHL" or an order number.' },
+							tell: { type: "string", description: "What's new, for the user. Leave it out when nothing changed." },
+							note: { type: "string", description: 'Where it stands in a few words: "shipped, no delivery date yet".' },
+						},
+						["hours"],
+					),
+				},
+				async run(input) {
+					job.checkBack({
+						hours: typeof input.hours === "number" ? input.hours : 3,
+						mailWords: list(input, "mail_words", 8).map((word) => word.slice(0, 60)),
+						tell: text(input, "tell", 1_500, false) || undefined,
+						note: text(input, "note", 80, false) || undefined,
+					});
+					return { content: "The job sleeps until then. End your turn with one short line." };
+				},
+			},
 		];
 	const jobs = ctx.jobs;
 	if (!jobs) return [];
@@ -916,7 +941,7 @@ function jobTools(ctx: ToolContext): AssistantTool[] {
 			spec: {
 				name: "start_job",
 				description:
-					"Hand work that takes many steps or a while to a background job: comparing prices across sites, researching options, going through a lot of mail, checking something until it changes. It keeps working after this turn, writes down its steps, asks the user when it needs a decision, and reports back. Don't do that work in this turn as well.",
+					"Hand work that takes many steps or a while to a background job: comparing prices across sites, researching options, going through a lot of mail, checking something until it changes. It keeps working after this turn, writes down its steps, asks the user when it needs a decision, and reports back. For keep-me-updated requests (a parcel, a price, a reply) the job looks, then sleeps until a set time or a matching email, so it costs nothing in between; tell the user it looks every few hours and when an email arrives, and stops after a week. Don't do that work in this turn as well.",
 				parameters: object(
 					{
 						title: { type: "string", description: 'A short name, such as "Flights to Budapest, 12–15 Mar".' },

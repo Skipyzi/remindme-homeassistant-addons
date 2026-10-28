@@ -1,3 +1,4 @@
+import type { BatteryKind } from "../assistant/batteries";
 import { normalizeEntity, type EntityCard, type HassEntity } from "../harness/entities";
 import {
 	confirmationPolicy,
@@ -49,6 +50,7 @@ export interface CalendarEvent {
 export class HomeApi {
 	private statesCache?: { at: number; cards: EntityCard[] };
 	private areasCache?: { at: number; areas: Map<string, string> };
+	private batteryCache?: { at: number; kinds: Map<string, BatteryKind> };
 
 	constructor(
 		private readonly token: string,
@@ -96,6 +98,35 @@ export class HomeApi {
 		}
 		this.areasCache = { at: Date.now(), areas };
 		return areas;
+	}
+
+	/**
+	 * For each battery sensor: whether its device gets charged (it has a
+	 * charging or battery-state entity) and whether it is a phone with the
+	 * Companion app. One template render; devices change rarely.
+	 */
+	async batteryKinds(): Promise<Map<string, BatteryKind>> {
+		if (this.batteryCache && Date.now() - this.batteryCache.at < 600_000) return this.batteryCache.kinds;
+		const kinds = new Map<string, BatteryKind>();
+		try {
+			const response = await this.call("/template", {
+				method: "POST",
+				body: JSON.stringify({
+					template:
+						"{%- set mobile = integration_entities('mobile_app') -%}{%- for s in states.sensor if s.attributes.device_class == 'battery' -%}{%- set d = device_id(s.entity_id) -%}{%- set chargers = (device_entities(d) if d else []) | select('search', 'charg|battery_state') | reject('eq', s.entity_id) | list -%}{{ s.entity_id }}\t{{ 1 if s.entity_id in mobile else 0 }}\t{{ chargers | join(',') }}\n{% endfor -%}",
+				}),
+			});
+			for (const line of (await response.text()).split("\n")) {
+				const [entityId, companion, chargers] = line.split("\t");
+				if (!entityId?.trim()) continue;
+				const ids = (chargers || "").split(",").map((id) => id.trim()).filter(Boolean);
+				kinds.set(entityId.trim(), { companion: companion?.trim() === "1", rechargeable: companion?.trim() === "1" || ids.length > 0, chargers: ids });
+			}
+		} catch (error) {
+			console.warn("Battery lookup failed:", error instanceof Error ? error.message : error);
+		}
+		this.batteryCache = { at: Date.now(), kinds };
+		return kinds;
 	}
 
 	/** Every entity as a card, with its area. Cached briefly: one turn reads it twice. */

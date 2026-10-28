@@ -111,7 +111,7 @@ test("without the AI, the brief is a plain list of the same facts", () => {
 			today_and_tomorrow: [event("Dienstplan", "Early shift", "2026-10-28T06:00:00+01:00")],
 			bins_out_tonight: ["paper (Blaue Tonne)"],
 			weather: { now: "rainy, 11°C" },
-			low_batteries: ["IKEA remote battery 1%"],
+			low_batteries: ["IKEA remote 1% (new battery)"],
 		},
 		"Today's AI budget is used up.",
 	);
@@ -121,7 +121,7 @@ test("without the AI, the brief is a plain list of the same facts", () => {
 			"**2026-10-28 06:00** Early shift",
 			"**Tonight** paper (Blaue Tonne) out",
 			"**Weather** rainy, 11°C",
-			"**House** Low batteries: IKEA remote battery 1%",
+			"**House** Low batteries: IKEA remote 1% (new battery)",
 			"_Plain version: Today's AI budget is used up._",
 		].join("\n"),
 	);
