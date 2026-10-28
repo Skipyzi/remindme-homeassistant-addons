@@ -52,7 +52,7 @@ Nothing is sent during `quiet_hours` (default 22:30-07:00); nudges wait until th
 
 ## Connectors: your mail
 
-Add mail accounts in the console under **Settings → Connectors**: Gmail, GMX, WEB.DE, iCloud Mail, or any other IMAP server. Each one is tested before it's saved, shows its last check, and can be switched off or removed. Passwords stay in the app's private data on the Pi and are never shown again. RemindMe reads over IMAP and never sends, deletes, moves or marks mail as read.
+Add mail accounts in the console under **Settings → Connectors**: Gmail, GMX, WEB.DE, iCloud Mail, or any other IMAP server. Each one is tested before it's saved, shows its last check, and can be switched off or removed. Passwords stay in the app's private data on the Pi and are never shown again. RemindMe reads over IMAP and never sends, deletes, moves or marks mail as read. The one thing it writes is a draft, when you ask for one.
 
 - **Gmail** needs 2-step verification and an app password (Google Account → Security → App passwords).
 - **GMX** and **WEB.DE** need "POP3/IMAP Abruf" turned on in their mail settings.
@@ -62,14 +62,21 @@ Add mail accounts in the console under **Settings → Connectors**: Gmail, GMX, 
 Gmail and GMX set in the 4.2 app options are taken in as connectors once. Connectors are built so other kinds (calendars, feeds) can be added the same way.
 
 - **Ask about it:** "did the landlord reply?", "when is my dentist appointment?". Gmail searches all mail, archived included; GMX searches the inbox.
+- **Drafts:** "write the landlord that Tuesday works" saves a reply in that account's Drafts folder, threaded under their mail. You check it and send it yourself from Gmail or GMX; RemindMe never sends.
 - **The morning brief** gets a line or two on new mail worth knowing. Your inbox sorter app keeps newsletters and social mail out; without it, mailing-list headers do.
 - **Nudges** (`mail_nudges`, on by default) for new bills and appointment confirmations, and again the day before a bill is due. Reading those out of new mail takes one short AI request per batch, on the AI chosen under **AI** (not a CLI agent).
 
 Mail text reaches the AI only when a question or the brief needs it, and is treated as information, never as instructions.
 
+## Calendars
+
+RemindMe reads every calendar in Home Assistant and adds events to the one chosen under **Settings → Connectors → New events go to**. "Put the dentist on Friday at 10" comes back as a button; nothing is added until you tap it. With no calendar chosen, it asks which one.
+
+To use iCloud, add Home Assistant's **CalDAV** integration (Settings → Devices & services → Add integration): server `https://caldav.icloud.com`, your Apple ID, and an app-specific password from account.apple.com. Your iCloud calendars then show in Home Assistant, and events RemindMe adds show on your iPhone and Mac.
+
 ## What the assistant can do
 
-House overview, find and control devices, calendar events, weather forecasts, to-do lists (read, add, complete), reminders (set, list, cancel), notes in the shared vault (search, save when asked), web search (built into Claude and OpenAI; SearXNG or Exa for the others), reading a web page, parcel tracking (with `trackingmore_api_key`), documents in the console, and tools from MCP servers added in the console.
+House overview, find and control devices, calendar events (read, and add once you confirm), mail (search, read, save drafts), weather forecasts, to-do lists (read, add, complete), reminders (set, list, cancel), notes in the shared vault (search, save when asked), web search (built into Claude and OpenAI; SearXNG or Exa for the others), reading a web page, parcel tracking (with `trackingmore_api_key`), documents in the console, and tools from MCP servers added in the console.
 
 It only sees and changes devices through these tools. Each turn sends your recent chat, the tool results and any recalled notes to the provider you chose.
 

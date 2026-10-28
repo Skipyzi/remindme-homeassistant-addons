@@ -1,5 +1,6 @@
 import { ImapFlow } from "imapflow";
 import { simpleParser } from "mailparser";
+import MailComposer from "nodemailer/lib/mail-composer";
 
 export type AccountId = string;
 
@@ -34,6 +35,11 @@ export interface MailMessage extends MailSummary {
 	to: string;
 	text: string;
 	attachments: string[];
+	/** For threading a reply under this mail. */
+	messageId?: string;
+	references?: string[];
+	/** Where a reply goes: Reply-To, or else the sender. */
+	replyTo?: string;
 }
 
 /** Where the messages come from: IMAP in the app, a stand-in in tests. */
@@ -43,6 +49,8 @@ export interface MailSource {
 	search(account: MailAccount, query: string, since: Date, limit: number): Promise<MailSummary[]>;
 	recent(account: MailAccount, since: Date, limit: number): Promise<MailSummary[]>;
 	read(account: MailAccount, mailbox: string, uid: number): Promise<MailMessage | undefined>;
+	/** Put a finished message in the Drafts folder; answers the folder's name. */
+	saveDraft(account: MailAccount, raw: Buffer): Promise<string>;
 }
 
 function clip(text: string, max: number): string {
@@ -52,10 +60,13 @@ function clip(text: string, max: number): string {
 
 const SNIPPET_BYTES = 24_000;
 const MESSAGE_BYTES = 1_500_000;
+/* For servers that don't mark their Drafts folder: the usual names. */
+const DRAFT_NAMES = new Set(["drafts", "draft", "entwürfe", "entwurf", "brouillons"]);
 
 /**
  * IMAP, read-only: it opens mailboxes for reading and never sets flags, so
- * reading a message here doesn't mark it read on your phone.
+ * reading a message here doesn't mark it read on your phone. The one write is
+ * a new draft in the Drafts folder, when the user asks for one.
  */
 export class ImapSource implements MailSource {
 	private async open<T>(account: MailAccount, work: (client: ImapFlow) => Promise<T>): Promise<T> {
@@ -174,6 +185,7 @@ export class ImapSource implements MailSource {
 				if (!message || !message.source) return undefined;
 				const parsed = await simpleParser(message.source);
 				const sender = message.envelope?.from?.[0];
+				const answerTo = (parsed.replyTo?.value.length ? parsed.replyTo.value : parsed.from?.value || []).map((entry) => entry.address).filter(Boolean);
 				return {
 					id: `${account.id}|${mailbox}|${uid}`,
 					account: account.id,
@@ -186,12 +198,51 @@ export class ImapSource implements MailSource {
 					attachments: parsed.attachments.map((attachment) => attachment.filename || attachment.contentType),
 					unread: !message.flags?.has("\\Seen"),
 					bulk: parsed.headers.has("list-unsubscribe") || parsed.headers.has("list-id"),
+					messageId: parsed.messageId,
+					references: typeof parsed.references === "string" ? [parsed.references] : parsed.references,
+					replyTo: answerTo.join(", ") || sender?.address,
 				};
 			} finally {
 				lock.release();
 			}
 		});
 	}
+
+	async saveDraft(account: MailAccount, raw: Buffer): Promise<string> {
+		return this.open(account, async (client) => {
+			const boxes = await client.list();
+			const drafts = boxes.find((box) => box.specialUse === "\\Drafts") || boxes.find((box) => DRAFT_NAMES.has(box.name.toLowerCase()));
+			if (!drafts) throw new Error(`${account.label} has no Drafts folder.`);
+			await client.append(drafts.path, raw, ["\\Draft", "\\Seen"]);
+			return drafts.name;
+		});
+	}
+}
+
+/** A plain-text email as the bytes a Drafts folder stores. */
+export async function composeDraft(mail: { from?: string; to: string; subject: string; text: string; inReplyTo?: string; references?: string[]; date?: Date }): Promise<Buffer> {
+	return new MailComposer({
+		from: mail.from,
+		to: mail.to,
+		subject: mail.subject,
+		text: mail.text,
+		inReplyTo: mail.inReplyTo,
+		references: mail.references?.length ? mail.references : undefined,
+		date: mail.date || new Date(),
+	})
+		.compile()
+		.build();
+}
+
+function replySubject(subject: string): string {
+	return /^(re|aw|antw|sv):/i.test(subject.trim()) ? subject.trim() : `Re: ${subject.trim()}`;
+}
+
+export interface SavedDraft {
+	account: MailAccount;
+	folder: string;
+	to: string;
+	subject: string;
 }
 
 export interface AccountStatus {
@@ -285,12 +336,48 @@ export class Mailboxes {
 		return { mails: lists.flat().sort((a, b) => a.date.localeCompare(b.date)), problems };
 	}
 
-	async read(id: string): Promise<MailMessage | undefined> {
+	private locate(id: string): { account: MailAccount; mailbox: string; uid: number } {
 		const [accountId, ...rest] = id.split("|");
 		const uid = Number(rest.pop());
 		const mailbox = rest.join("|");
 		const account = this.accounts.find((entry) => entry.id === accountId);
 		if (!account || !mailbox || !Number.isInteger(uid) || uid <= 0) throw new Error("That isn't a mail id from search_mail.");
+		return { account, mailbox, uid };
+	}
+
+	async read(id: string): Promise<MailMessage | undefined> {
+		const { account, mailbox, uid } = this.locate(id);
 		return this.tracked(account, () => this.source.read(account, mailbox, uid));
+	}
+
+	/**
+	 * Save an email in Drafts for the user to check and send. A reply goes to
+	 * the account it came to, threaded under it; a new mail to the chosen
+	 * account. Nothing is ever sent from here.
+	 */
+	async draft(input: { text: string; replyTo?: string; account?: string; to?: string; subject?: string }): Promise<SavedDraft> {
+		let account: MailAccount;
+		let to = (input.to || "").trim();
+		let subject = (input.subject || "").trim();
+		let inReplyTo: string | undefined;
+		let references: string[] = [];
+		if (input.replyTo) {
+			const { account: owner, mailbox, uid } = this.locate(input.replyTo);
+			const original = await this.tracked(owner, () => this.source.read(owner, mailbox, uid));
+			if (!original) throw new Error("That email is gone.");
+			account = owner;
+			to ||= original.replyTo || "";
+			subject ||= replySubject(original.subject);
+			inReplyTo = original.messageId;
+			references = [...(original.references || []), ...(original.messageId ? [original.messageId] : [])];
+		} else {
+			account = this.pick(input.account)[0];
+			if (!account) throw new Error("No mail account is connected.");
+		}
+		if (!/@/.test(to)) throw new Error("Give the address it goes to.");
+		if (!subject) throw new Error("Give it a subject.");
+		const raw = await composeDraft({ from: account.user.includes("@") ? account.user : undefined, to, subject, text: input.text, inReplyTo, references });
+		const folder = await this.tracked(account, () => this.source.saveDraft(account, raw));
+		return { account, folder, to, subject };
 	}
 }

@@ -3,6 +3,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { simpleParser } from "mailparser";
 import { Mailboxes, type MailAccount, type MailMessage, type MailSource, type MailSummary } from "../src/mail/mailboxes.ts";
 import { ConnectorStore, publicView } from "../src/connectors/store.ts";
 import { checkMailInput, importMailOptions, mailAccount } from "../src/connectors/mail.ts";
@@ -43,7 +44,14 @@ class FakeSource implements MailSource {
 	}
 	async read(account: MailAccount, mailbox: string, uid: number): Promise<MailMessage | undefined> {
 		const found = this.inbox.find((item) => item.id === `${account.id}|${mailbox}|${uid}`);
-		return found ? { ...found, to: "me@example.com", text: "Your bill is 39,99 €.", attachments: ["rechnung.pdf"] } : undefined;
+		return found
+			? { ...found, to: "me@example.com", text: "Your bill is 39,99 €.", attachments: ["rechnung.pdf"], messageId: "<bill-5@stadtwerke.de>", references: ["<earlier@stadtwerke.de>"], replyTo: "kundenservice@stadtwerke.de" }
+			: undefined;
+	}
+	drafts: Array<{ account: string; raw: Buffer }> = [];
+	async saveDraft(account: MailAccount, raw: Buffer) {
+		this.drafts.push({ account: account.id, raw });
+		return account.id === "gmail" ? "Drafts" : "Entwürfe";
 	}
 }
 
@@ -215,4 +223,38 @@ test("each account's last check is kept for the console", async () => {
 	assert.equal(boxes.status("gmx")?.ok, false);
 	assert.match(boxes.status("gmx")?.error || "", /refused/);
 	assert.equal(await boxes.test(accounts[0]), "Connected: 3 messages in the inbox.");
+});
+
+test("a reply is saved as a draft under the original, and nothing is sent", async () => {
+	const source = new FakeSource();
+	source.inbox = [mail("gmx", 5, { subject: "Ihre Rechnung", from: "Stadtwerke <billing@stadtwerke.de>" })];
+	const tools = await buildTools({ confirmations: new ConfirmationStore(), reminders: { add: async () => ({ id: "r" }), list: async () => [], cancel: async () => false }, mail: new Mailboxes(accounts, source) }, { nativeWebSearch: true });
+	const effects = newEffects();
+	const result = await runTool(tools, { id: "1", name: "draft_mail", input: { reply_to: "gmx|INBOX|5", text: "Danke, ich überweise morgen.\nGabor" } }, effects);
+	assert.ok(!result.isError, result.content);
+	assert.deepEqual(JSON.parse(result.content), { saved: true, account: "GMX", folder: "Entwürfe", to: "kundenservice@stadtwerke.de", subject: "Re: Ihre Rechnung", sent: false });
+	assert.equal(source.drafts.length, 1);
+	assert.equal(source.drafts[0].account, "gmx", "a reply goes to the mailbox the mail came to");
+	const draft = await simpleParser(source.drafts[0].raw);
+	assert.equal(draft.subject, "Re: Ihre Rechnung");
+	assert.equal(draft.from?.text, "me@gmx.de");
+	assert.equal((Array.isArray(draft.to) ? draft.to[0] : draft.to)?.text, "kundenservice@stadtwerke.de", "Reply-To wins over the sender");
+	assert.equal(draft.inReplyTo, "<bill-5@stadtwerke.de>");
+	assert.deepEqual(draft.references, ["<earlier@stadtwerke.de>", "<bill-5@stadtwerke.de>"]);
+	assert.equal(draft.text?.trim(), "Danke, ich überweise morgen.\nGabor");
+	assert.deepEqual(effects.did, [{ text: "Saved a draft to kundenservice@stadtwerke.de in GMX Entwürfe" }]);
+});
+
+test("a new mail needs an address and a subject, and goes to the chosen mailbox", async () => {
+	const source = new FakeSource();
+	source.inbox = [mail("gmail", 6, { subject: "AW: Termin" })];
+	const boxes = new Mailboxes(accounts, source);
+	await assert.rejects(boxes.draft({ text: "Hallo", subject: "Hallo" }), /address it goes to/);
+	await assert.rejects(boxes.draft({ text: "Hallo", to: "anna@example.com" }), /subject/);
+	await assert.rejects(boxes.draft({ text: "Hallo", to: "anna@example.com", subject: "Hi", account: "Yahoo" }), /No mailbox called Yahoo/);
+	const saved = await boxes.draft({ text: "Hallo Anna", to: "anna@example.com", subject: "Samstag", account: "Gmail" });
+	assert.deepEqual([saved.account.id, saved.folder, saved.to, saved.subject], ["gmail", "Drafts", "anna@example.com", "Samstag"]);
+	const reply = await boxes.draft({ text: "Passt.", replyTo: "gmail|INBOX|6" });
+	assert.equal(reply.subject, "AW: Termin", "an answered subject isn't prefixed twice");
+	assert.ok(!(await simpleParser(source.drafts[0].raw)).inReplyTo, "a new mail isn't threaded");
 });

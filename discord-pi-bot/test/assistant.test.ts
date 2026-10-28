@@ -299,3 +299,45 @@ test("each turn lands in the ledger: what changed, what waits, then the answer",
 	assert.equal(activity.recent()[1].kind, "confirmed");
 	assert.equal(activity.recent()[1].token, undefined);
 });
+
+test("a calendar event waits for a tap, then goes to the chosen calendar", async () => {
+	const { home, calls, states } = fakeHome();
+	states.push(
+		{ entity_id: "calendar.abfall", state: "off", attributes: { friendly_name: "Abfall Leipzig", supported_features: 0 } },
+		{ entity_id: "calendar.icloud_home", state: "off", attributes: { friendly_name: "Home", supported_features: 1 } },
+		{ entity_id: "calendar.ordio_work", state: "off", attributes: { friendly_name: "Ordio Work", supported_features: 7 } },
+	);
+	let chosen: string | undefined;
+	const ctx = context(home, { calendar: { newEvents: () => chosen } });
+	const tools = await buildTools(ctx, { nativeWebSearch: true });
+	const ask = (input: Record<string, unknown>, effects = newEffects()) => runTool(tools, { id: "c", name: "add_calendar_event", input }, effects);
+
+	const unset = await ask({ title: "Dentist", start: "2026-10-30T10:00" });
+	assert.equal(unset.isError, true);
+	assert.deepEqual(JSON.parse(unset.content).calendars, ["Home", "Ordio Work"], "it asks rather than guessing, and only offers calendars that take events");
+
+	chosen = "calendar.icloud_home";
+	const effects = newEffects();
+	const held = await ask({ title: "Dentist", start: "2026-10-30T10:00", location: "Praxis Dr. Weber" }, effects);
+	assert.deepEqual(JSON.parse(held.content), { waiting_for_user_to_confirm: 'Add "Dentist" to Home: Fri 30 Oct, 10:00–11:00' });
+	assert.equal(effects.confirms.length, 1);
+	assert.equal(calls.length, 0, "nothing is added before the tap");
+	const confirmed = ctx.confirmations.take(effects.confirms[0].token);
+	assert.ok(confirmed);
+	await home.service(confirmed.action);
+	assert.deepEqual(calls.at(-1), {
+		path: "/services/calendar/create_event",
+		body: { summary: "Dentist", start_date_time: "2026-10-30 10:00:00", end_date_time: "2026-10-30 11:00:00", location: "Praxis Dr. Weber", entity_id: "calendar.icloud_home" },
+	});
+
+	const named = newEffects();
+	await ask({ title: "Shift swap", start: "2026-11-02", calendar: "ordio work" }, named);
+	assert.equal(named.confirms[0].message, 'Add "Shift swap" to Ordio Work: Mon 2 Nov, all day');
+	assert.deepEqual(ctx.confirmations.take(named.confirms[0].token)?.action.serviceData, { summary: "Shift swap", start_date: "2026-11-02", end_date: "2026-11-03" });
+
+	const readOnly = await ask({ title: "Bins", start: "2026-11-02", calendar: "Abfall Leipzig" });
+	assert.equal(readOnly.isError, true);
+	assert.match(readOnly.content, /No calendar called abfall leipzig takes new events/);
+	const badTime = await ask({ title: "Dentist", start: "next Friday" });
+	assert.match(badTime.content, /^Invalid input: Give the start/);
+});

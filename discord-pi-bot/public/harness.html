@@ -207,6 +207,29 @@
                 <p class="rm-note" x-show="!connectors.length">Nothing connected yet.</p>
               </div>
 
+              <h3>Calendars</h3>
+              <p>RemindMe reads every calendar in Home Assistant, and adds events, once you confirm, to the one chosen here.</p>
+              <div>
+                <template x-for="calendar in calendars.list" :key="calendar.entityId">
+                  <div class="rm-item">
+                    <div class="rm-item-head">
+                      <span><b x-text="calendar.name"></b><br /><span class="rm-mute" x-text="calendar.writable ? 'Takes new events' : 'Read only'"></span></span>
+                    </div>
+                  </div>
+                </template>
+                <p class="rm-note" x-show="!calendars.list.length" x-text="calendars.error || 'Home Assistant has no calendars.'"></p>
+              </div>
+              <label class="rm-field">New events go to
+                <select @change="chooseCalendar($event.target.value)" :disabled="!calendars.list.some((calendar) => calendar.writable)">
+                  <option value="" :selected="!calendars.newEvents">Ask me each time</option>
+                  <template x-for="calendar in calendars.list.filter((entry) => entry.writable)" :key="calendar.entityId">
+                    <option :value="calendar.entityId" :selected="calendar.entityId === calendars.newEvents" x-text="calendar.name"></option>
+                  </template>
+                </select>
+              </label>
+              <p class="rm-note" x-show="calendars.note" x-text="calendars.note"></p>
+              <p class="rm-note">iCloud: in Home Assistant, Settings, Devices &amp; services, add CalDAV with server https://caldav.icloud.com, your Apple ID and an app-specific password from account.apple.com. Events then show in both.</p>
+
               <h3>Add a mail account</h3>
               <p x-text="connectorKinds[0]?.description"></p>
               <div class="rm-two">

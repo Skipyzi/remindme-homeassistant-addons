@@ -64,6 +64,7 @@ import { DiscordChats } from "./discord/chats";
 import { Mailboxes, type MailAccount } from "./mail/mailboxes";
 import { ConnectorStore, publicView } from "./connectors/store";
 import { CONNECTOR_KINDS, checkMailInput, importMailOptions, mailAccount } from "./connectors/mail";
+import { CalendarChoice, listCalendars } from "./connectors/calendar";
 import type { CalendarEvent } from "./agent/home";
 import { buildTools, type McpTool, type ToolContext } from "./assistant/tools";
 import { registerBridge, chatgptFetch } from "./agents/bridge";
@@ -96,9 +97,11 @@ export const mailboxes = new Mailboxes(() =>
 		.map(mailAccount)
 		.filter((account): account is MailAccount => Boolean(account)),
 );
+/* The calendar new events go to; the calendars themselves live in Home Assistant. */
+const calendarChoice = new CalendarChoice();
 /* Load the connectors, taking in Gmail and GMX from the 4.2 app options once. */
 export async function loadConnectors(): Promise<void> {
-	await connectors.load();
+	await Promise.all([connectors.load(), calendarChoice.load()]);
 	await importMailOptions(connectors).catch((error) => console.warn("Could not import the mail options:", error instanceof Error ? error.message : error));
 }
 /* The console's running chat, kept here like a Discord DM's. */
@@ -1119,6 +1122,24 @@ app.patch("/api/connectors/:id", async (request, response) => {
 app.delete("/api/connectors/:id", async (request, response) => {
 	response.status((await connectors.remove(request.params.id)) ? 204 : 404).end();
 });
+/* Home Assistant's calendars, and which one takes new events. */
+app.get("/api/calendars", async (_request, response) => {
+	if (!home) return response.json({ calendars: [], newEvents: null });
+	try {
+		response.set("Cache-Control", "no-store").json({ calendars: await listCalendars(home), newEvents: calendarChoice.newEvents() ?? null });
+	} catch (error) {
+		response.status(502).json({ error: error instanceof Error ? error.message : "Home Assistant didn't answer" });
+	}
+});
+app.put("/api/calendars/new-events", async (request, response) => {
+	const entityId = typeof request.body?.entityId === "string" ? request.body.entityId : "";
+	if (entityId) {
+		const calendar = home && (await listCalendars(home).catch(() => [])).find((entry) => entry.entityId === entityId);
+		if (!calendar?.writable) return response.status(400).json({ error: "That calendar doesn't take new events." });
+	}
+	await calendarChoice.choose(entityId || undefined);
+	response.json({ newEvents: calendarChoice.newEvents() ?? null });
+});
 app.post("/api/connectors/:id/test", async (request, response) => {
 	const connector = connectors.get(request.params.id);
 	const account = connector && mailAccount(connector);
@@ -1349,6 +1370,7 @@ export function toolContext(): ToolContext {
 			: undefined,
 		artifacts,
 		mail: mailboxes,
+		calendar: calendarChoice,
 		mcp: {
 			/* A server that is down must not take the turn with it. */
 			async tools() {

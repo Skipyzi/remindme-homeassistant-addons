@@ -27,7 +27,7 @@ export const CONNECTOR_KINDS = [
 	{
 		id: "mail",
 		label: "Mail account",
-		description: "Read-only. RemindMe can search and read it, mention new mail in the brief and nudge you about bills and appointments. It never sends, deletes, moves or marks mail as read.",
+		description: "RemindMe can search and read it, mention new mail in the brief, nudge you about bills and appointments, and save a reply in your Drafts folder when you ask. It never sends, deletes, moves or marks mail as read.",
 		presets: MAIL_PRESETS,
 	},
 ];

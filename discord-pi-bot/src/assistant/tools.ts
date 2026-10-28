@@ -13,6 +13,8 @@ import {
 	type HomeCommand,
 } from "../agent/home";
 import type { Mailboxes } from "../mail/mailboxes";
+import { eventTimes, listCalendars } from "../connectors/calendar";
+import type { ValidatedEntityAction } from "../harness/entityActions";
 import type { Receipt } from "./activity";
 import type { Confirmation, ConfirmationStore } from "./confirmations";
 
@@ -54,8 +56,10 @@ export interface ToolContext {
 		tools(): Promise<McpTool[]>;
 		call(name: string, args: Record<string, unknown>): Promise<unknown>;
 	};
-	/** Gmail and GMX, read-only. */
+	/** The connected mail accounts: read, and drafts saved when the user asks. */
 	mail?: Mailboxes;
+	/** The calendar the user chose for new events, if any. */
+	calendar?: { newEvents(): string | undefined };
 }
 
 /** What a turn's tools produced besides text for the model. */
@@ -343,6 +347,63 @@ function deviceTools(ctx: ToolContext): AssistantTool[] {
 				if (end.getTime() - start.getTime() > 62 * 86_400_000) throw new InputError("Ask for two months at most");
 				const events = await home.calendarEvents(start, end);
 				return { content: events.length ? json(events.slice(0, 60)) : "No events in that range." };
+			},
+		},
+		{
+			spec: {
+				name: "add_calendar_event",
+				description:
+					"Put an appointment in the user's calendar. Nothing is added until the user confirms. Times are local, as the user says them. It goes to the calendar the user chose for new events, unless they name another.",
+				parameters: object(
+					{
+						title: { type: "string", description: 'What it is, such as "Dentist".' },
+						start: { type: "string", description: "Local start as YYYY-MM-DDTHH:MM, or YYYY-MM-DD alone for an all-day event." },
+						end: { type: "string", description: "Local end as YYYY-MM-DDTHH:MM or HH:MM; the last day for an all-day event. Defaults to an hour, or the one day." },
+						location: { type: "string" },
+						notes: { type: "string" },
+						calendar: { type: "string", description: "A calendar's name, only when the user names one." },
+					},
+					["title", "start"],
+				),
+			},
+			async run(input, effects) {
+				const title = text(input, "title", 120);
+				let times;
+				try {
+					times = eventTimes(text(input, "start", 25), text(input, "end", 25, false));
+				} catch (error) {
+					throw new InputError(error instanceof Error ? error.message : String(error));
+				}
+				const writable = (await listCalendars(home)).filter((calendar) => calendar.writable);
+				if (!writable.length)
+					return { content: "None of the user's calendars takes new events. iCloud joins through Home Assistant's CalDAV integration (Settings, Devices & services).", isError: true };
+				const named = text(input, "calendar", 80, false).toLowerCase();
+				const chosen = ctx.calendar?.newEvents();
+				const target = named
+					? writable.find((calendar) => calendar.entityId === named || calendar.name.toLowerCase() === named) ||
+						writable.find((calendar) => calendar.name.toLowerCase().includes(named))
+					: writable.find((calendar) => calendar.entityId === chosen);
+				if (!target)
+					return {
+						content: json({
+							problem: named ? `No calendar called ${named} takes new events.` : "No calendar is chosen for new events. Ask the user which one; they can also set it under Settings, Connectors.",
+							calendars: writable.map((calendar) => calendar.name),
+						}),
+						isError: true,
+					};
+				const location = text(input, "location", 200, false);
+				const notes = text(input, "notes", 1_000, false);
+				const action: ValidatedEntityAction = {
+					domain: "calendar",
+					service: "create_event",
+					entityId: target.entityId,
+					serviceData: { summary: title, ...times.data, ...(location ? { location } : {}), ...(notes ? { description: notes } : {}) },
+					requiresConfirmation: true,
+					destructive: false,
+				};
+				const label = `Add "${title}" to ${target.name}: ${times.label}`;
+				effects.confirms.push(ctx.confirmations.hold(action, label));
+				return { content: json({ waiting_for_user_to_confirm: label }) };
 			},
 		},
 		{
@@ -693,6 +754,34 @@ function mailTools(ctx: ToolContext): AssistantTool[] {
 				const message = await mail.read(text(input, "id", 400));
 				if (!message) return { content: "That email is gone.", isError: true };
 				return { content: json({ from: message.from, to: message.to, date: message.date, subject: message.subject, attachments: message.attachments, text: message.text }, 14_000) };
+			},
+		},
+		{
+			spec: {
+				name: "draft_mail",
+				description:
+					"Write an email and save it in the user's Drafts folder, where they check it and send it themselves; nothing is ever sent from here. Only when the user asks for a reply or an email. For a reply, give reply_to and it goes to the sender, threaded under the original. Write in the language of the mail being answered, signed as the user.",
+				parameters: object(
+					{
+						text: { type: "string", description: "The body, plain text." },
+						reply_to: { type: "string", description: "The id (from search_mail) of the mail to answer." },
+						to: { type: "string", description: "Address or addresses for a new mail, comma separated. Leave empty on a reply to answer the sender." },
+						subject: { type: "string", description: "For a new mail; a reply keeps the original's subject." },
+						account: { type: "string", enum: accounts, description: "Which mailbox a new mail is from; a reply uses the one it came to." },
+					},
+					["text"],
+				),
+			},
+			async run(input, effects) {
+				const saved = await mail.draft({
+					text: text(input, "text", 20_000),
+					replyTo: text(input, "reply_to", 400, false) || undefined,
+					to: text(input, "to", 500, false) || undefined,
+					subject: text(input, "subject", 200, false) || undefined,
+					account: text(input, "account", 40, false) || undefined,
+				});
+				effects.did.push({ text: `Saved a draft to ${saved.to} in ${saved.account.label} ${saved.folder}` });
+				return { content: json({ saved: true, account: saved.account.label, folder: saved.folder, to: saved.to, subject: saved.subject, sent: false }) };
 			},
 		},
 	];

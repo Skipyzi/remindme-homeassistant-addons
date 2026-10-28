@@ -117,6 +117,7 @@ function remindme() {
 		newConnector: { preset: "gmail", name: "", address: "", password: "", host: "", port: "993" },
 		connectorBusy: false,
 		connectorResult: null,
+		calendars: { list: [], newEvents: null, note: "", error: "" },
 		/* The CLI agents' sign-in console (account-console.js) */
 		authConsole: { id: "", backend: "", running: false, output: "", urls: [] },
 		authConsoleOpen: false,
@@ -612,9 +613,23 @@ function remindme() {
 
 		/* Connectors */
 		async loadConnectors() {
-			const data = await this.getJson("./api/connectors", { kinds: [], connectors: [] });
+			const [data, calendars] = await Promise.all([
+				this.getJson("./api/connectors", { kinds: [], connectors: [] }),
+				this.getJson("./api/calendars", { calendars: [], newEvents: null, error: "Home Assistant's calendars didn't load." }),
+			]);
 			this.connectorKinds = data.kinds || [];
 			this.connectors = (data.connectors || []).map((connector) => ({ ...connector, newPassword: "", probe: "", editing: false }));
+			this.calendars = { list: calendars.calendars || [], newEvents: calendars.newEvents || null, note: "", error: calendars.error || "" };
+		},
+		async chooseCalendar(entityId) {
+			try {
+				const data = await this.request("./api/calendars/new-events", "PUT", { entityId });
+				this.calendars.newEvents = data.newEvents;
+				const name = this.calendars.list.find((calendar) => calendar.entityId === data.newEvents)?.name;
+				this.calendars.note = name ? `New events go to ${name}.` : "RemindMe will ask which calendar each time.";
+			} catch (error) {
+				this.calendars.note = `Not saved: ${error.message}`;
+			}
 		},
 		presetOf(id) {
 			return this.connectorKinds[0]?.presets?.find((preset) => preset.id === id);
