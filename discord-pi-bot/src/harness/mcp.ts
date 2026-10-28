@@ -1,6 +1,7 @@
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { randomUUID } from "node:crypto";
+import type { McpSignIn } from "./mcp-auth";
 
 /**
  * Minimal Model Context Protocol client over Streamable HTTP.
@@ -20,6 +21,10 @@ export interface McpServer {
 	url: string;
 	/** Optional "Authorization: ..." style header value. */
 	authorization?: string;
+	/** Signed in through the server's own sign-in: the client and its tokens. */
+	oauth?: McpSignIn;
+	/** It answered 401 last time: the console offers Sign in. */
+	wantsSignIn?: boolean;
 	enabled: boolean;
 	createdAt: string;
 	updatedAt: string;
@@ -33,6 +38,13 @@ export interface McpTool {
 
 /** Namespaced so an MCP tool can never shadow a built-in one. */
 export const MCP_PREFIX = "mcp__";
+
+/** The server said no over HTTP; 401 means it wants a (new) sign-in. */
+export class McpHttpError extends Error {
+	constructor(readonly status: number) {
+		super(status === 401 ? "The server wants you to sign in." : `MCP server returned HTTP ${status}`);
+	}
+}
 
 export function toolCallName(serverId: string, tool: string): string {
 	return `${MCP_PREFIX}${serverId}__${tool}`;
@@ -76,16 +88,14 @@ export class McpServerStore {
 	private async persist(): Promise<void> {
 		await mkdir(dirname(this.path), { recursive: true });
 		const temporary = `${this.path}.tmp`;
-		await writeFile(temporary, JSON.stringify(this.servers, null, 2), "utf8");
+		await writeFile(temporary, JSON.stringify(this.servers, null, 2), { encoding: "utf8", mode: 0o600 });
 		await rename(temporary, this.path);
+		await chmod(this.path, 0o600).catch(() => {});
 	}
 
 	/** Never leaks the stored credential to the browser. */
-	list(): Array<Omit<McpServer, "authorization"> & { hasAuth: boolean }> {
-		return this.servers.map(({ authorization, ...rest }) => ({
-			...rest,
-			hasAuth: Boolean(authorization),
-		}));
+	list(): PublicMcpServer[] {
+		return this.servers.map(publicMcp);
 	}
 
 	get(id: string): McpServer | undefined {
@@ -121,14 +131,35 @@ export class McpServerStore {
 		const server = this.get(id);
 		if (!server) return undefined;
 		if (typeof values.name === "string") server.name = values.name.slice(0, 60);
-		if (typeof values.url === "string")
+		if (typeof values.url === "string" && validateServerUrl(values.url) !== server.url) {
 			server.url = validateServerUrl(values.url);
+			// A sign-in belongs to the address it was made for.
+			server.oauth = undefined;
+			server.wantsSignIn = undefined;
+		}
 		if (typeof values.authorization === "string")
 			server.authorization = values.authorization || undefined;
 		if (typeof values.enabled === "boolean") server.enabled = values.enabled;
 		server.updatedAt = new Date().toISOString();
 		await this.persist();
 		return server;
+	}
+
+	/** Save a sign-in (or drop it), and whether the server still wants one. */
+	async setSignIn(id: string, oauth: McpSignIn | undefined): Promise<void> {
+		const server = this.get(id);
+		if (!server) return;
+		server.oauth = oauth;
+		server.wantsSignIn = !oauth?.accessToken;
+		server.updatedAt = new Date().toISOString();
+		await this.persist();
+	}
+
+	async markWantsSignIn(id: string, wants: boolean): Promise<void> {
+		const server = this.get(id);
+		if (!server || Boolean(server.wantsSignIn) === wants) return;
+		server.wantsSignIn = wants;
+		await this.persist();
 	}
 
 	async delete(id: string): Promise<boolean> {
@@ -138,6 +169,13 @@ export class McpServerStore {
 		await this.persist();
 		return true;
 	}
+}
+
+export type PublicMcpServer = Omit<McpServer, "authorization" | "oauth"> & { hasAuth: boolean; signedIn: boolean };
+
+/** What the console may see: whether there is a token or sign-in, never the thing itself. */
+export function publicMcp({ authorization, oauth, ...rest }: McpServer): PublicMcpServer {
+	return { ...rest, hasAuth: Boolean(authorization), signedIn: Boolean(oauth?.accessToken) };
 }
 
 export function validateServerUrl(value: string): string {
@@ -180,8 +218,10 @@ async function rpc(
 	});
 	const returnedSession =
 		response.headers.get("Mcp-Session-Id") || sessionId || undefined;
-	if (!response.ok)
-		throw new Error(`MCP server returned HTTP ${response.status}`);
+	if (!response.ok) {
+		await response.body?.cancel().catch(() => undefined);
+		throw new McpHttpError(response.status);
+	}
 
 	const type = response.headers.get("Content-Type") || "";
 	if (!type.includes("text/event-stream")) {

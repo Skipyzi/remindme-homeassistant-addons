@@ -667,6 +667,39 @@ a {
 .rm-note {
 	color: var(--mute);
 }
+/* Sign-in set-up: numbered steps, and the values to copy into Google */
+.rm-steps {
+	display: grid;
+	gap: 10px;
+	margin: 0;
+	padding-left: 24px;
+	list-style: decimal;
+	color: var(--mute);
+	max-width: 72ch;
+}
+.rm-steps a {
+	color: #fff;
+}
+.rm-copy {
+	display: block;
+	margin-top: 6px;
+	padding: 6px 8px;
+	border: 1px solid var(--rule);
+	color: #fff;
+	font: inherit;
+	overflow-wrap: anywhere;
+	user-select: all;
+	-webkit-user-select: all;
+}
+.rm-btn-link {
+	display: inline-flex;
+	align-items: center;
+	text-decoration: none;
+}
+.rm-pick {
+	margin-left: 10px;
+	color: #fff;
+}
 .rm-result {
 	padding: 10px 12px;
 	border: 1px solid #fff;

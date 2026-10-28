@@ -69,7 +69,7 @@ export class ConnectorStore {
 	/** Blank secrets keep the stored ones: the console never has them to send back. */
 	async update(
 		id: string,
-		patch: { name?: string; enabled?: boolean; values?: Record<string, string>; secrets?: Record<string, string> },
+		patch: { name?: string; enabled?: boolean; values?: Record<string, string>; secrets?: Record<string, string>; dropSecrets?: string[] },
 	): Promise<StoredConnector | undefined> {
 		const connector = this.get(id);
 		if (!connector) return undefined;
@@ -77,6 +77,7 @@ export class ConnectorStore {
 		if (patch.enabled !== undefined) connector.enabled = patch.enabled;
 		if (patch.values) connector.values = { ...connector.values, ...patch.values };
 		for (const [key, value] of Object.entries(patch.secrets || {})) if (value) connector.secrets[key] = value;
+		for (const key of patch.dropSecrets || []) delete connector.secrets[key];
 		await this.save();
 		return connector;
 	}

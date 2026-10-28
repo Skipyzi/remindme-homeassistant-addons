@@ -47,6 +47,9 @@ import {
 	McpServerStore,
 	callTool as callMcpTool,
 	connect as connectMcp,
+	McpHttpError,
+	publicMcp,
+	type McpServer,
 	parseToolCallName,
 	toolCallName,
 } from "./harness/mcp";
@@ -65,6 +68,9 @@ import { Mailboxes, type MailAccount } from "./mail/mailboxes";
 import { ConnectorStore, publicView } from "./connectors/store";
 import { CONNECTOR_KINDS, checkMailInput, importMailOptions, mailAccount } from "./connectors/mail";
 import { CalendarChoice, listCalendars } from "./connectors/calendar";
+import { GoogleApp, GoogleContacts, GoogleTokens, signedInWithGoogle } from "./connectors/google";
+import { signInRoutes } from "./connectors/signin-routes";
+import { McpAuth } from "./harness/mcp-auth";
 import { modelTable } from "./ai/catalog";
 import { ThreadStore, titleFrom, type Thread } from "./assistant/threads";
 import { JobRunner } from "./assistant/jobs";
@@ -112,19 +118,30 @@ export const activity = new ActivityLog();
 void activity.load();
 /* Connectors: the mail accounts (and later other sources) added in the console. */
 const connectors = new ConnectorStore();
+/* The user's own Google app, and the tokens of the Gmail accounts signed in with it. */
+const googleApp = new GoogleApp();
+const googleTokens = new GoogleTokens(googleApp);
+const withSignIn = (connector: Parameters<typeof mailAccount>[0]) => mailAccount(connector, (signedIn) => googleTokens.token(signedIn));
 /* Every switched-on mail connector, read fresh on each use. */
 export const mailboxes = new Mailboxes(() =>
 	connectors
 		.list("mail")
 		.filter((connector) => connector.enabled)
-		.map(mailAccount)
+		.map(withSignIn)
 		.filter((account): account is MailAccount => Boolean(account)),
+);
+/* Names to addresses, from the Google accounts that allowed contacts. */
+const contacts = new GoogleContacts(() =>
+	connectors
+		.list("mail")
+		.filter((connector) => connector.enabled && signedInWithGoogle(connector) && connector.secrets.refreshToken)
+		.map((connector) => ({ label: connector.name, scope: connector.values.scope || "", token: () => googleTokens.token(connector) })),
 );
 /* The calendar new events go to; the calendars themselves live in Home Assistant. */
 const calendarChoice = new CalendarChoice();
 /* Load the connectors, taking in Gmail and GMX from the 4.2 app options once. */
 export async function loadConnectors(): Promise<void> {
-	await Promise.all([connectors.load(), calendarChoice.load()]);
+	await Promise.all([connectors.load(), calendarChoice.load(), googleApp.load()]);
 	await importMailOptions(connectors).catch((error) => console.warn("Could not import the mail options:", error instanceof Error ? error.message : error));
 }
 /* The console's running chat, kept here like a Discord DM's. */
@@ -174,6 +191,25 @@ const artifacts = new ArtifactStore();
 void artifacts.load();
 const mcpServers = new McpServerStore();
 void mcpServers.load();
+const mcpAuth = new McpAuth((id, signIn) => mcpServers.setSignIn(id, signIn));
+/*
+ * Work against a Connected tool with its sign-in. A 401 refreshes the token
+ * once; after that the server is marked as wanting a sign-in.
+ */
+async function withMcpAuth<T>(server: McpServer, work: (server: McpServer) => Promise<T>): Promise<T> {
+	const current = () => mcpServers.get(server.id) || server;
+	const attempt = async () => work({ ...current(), authorization: await mcpAuth.header(current()) });
+	try {
+		const result = await attempt();
+		await mcpServers.markWantsSignIn(server.id, false);
+		return result;
+	} catch (error) {
+		if (!(error instanceof McpHttpError && error.status === 401)) throw error;
+		if (current().oauth?.refreshToken && (await mcpAuth.refresh(current()).catch(() => false))) return attempt();
+		await mcpServers.markWantsSignIn(server.id, true);
+		throw new Error(`${server.name} wants you to sign in${current().oauth ? " again" : ""}: Settings, Connected tools, Sign in.`);
+	}
+}
 
 /*
  * The Markdown vault at /share/vault, doubling as the model's editable
@@ -274,8 +310,7 @@ app.get("/api/mcp", (_request, response) => {
 app.post("/api/mcp", async (request, response) => {
 	try {
 		const created = await mcpServers.create(request.body || {});
-		const { authorization, ...safe } = created;
-		response.status(201).json({ ...safe, hasAuth: Boolean(authorization) });
+		response.status(201).json(publicMcp(created));
 	} catch (error) {
 		response.status(400).json({
 			error: error instanceof Error ? error.message : "Invalid MCP server",
@@ -286,8 +321,7 @@ app.patch("/api/mcp/:id", async (request, response) => {
 	try {
 		const updated = await mcpServers.update(request.params.id, request.body || {});
 		if (!updated) return response.status(404).json({ error: "Not found" });
-		const { authorization, ...safe } = updated;
-		response.json({ ...safe, hasAuth: Boolean(authorization) });
+		response.json(publicMcp(updated));
 	} catch (error) {
 		response.status(400).json({
 			error: error instanceof Error ? error.message : "Invalid MCP server",
@@ -303,7 +337,7 @@ app.post("/api/mcp/:id/test", async (request, response) => {
 	const server = mcpServers.get(request.params.id);
 	if (!server) return response.status(404).json({ error: "Not found" });
 	try {
-		const session = await connectMcp(server);
+		const session = await withMcpAuth(server, (signedIn) => connectMcp(signedIn));
 		response.json({
 			ok: true,
 			serverName: session.serverName,
@@ -313,12 +347,37 @@ app.post("/api/mcp/:id/test", async (request, response) => {
 			})),
 		});
 	} catch (error) {
-		response.status(502).json({
+		// Answered, not thrown: the console shows Sign in when the server wants one.
+		response.json({
 			ok: false,
 			error: error instanceof Error ? error.message : "Could not reach server",
+			wantsSignIn: Boolean(mcpServers.get(server.id)?.wantsSignIn),
 		});
 	}
 });
+/* Signing in to Google and to Connected tools. */
+app.use(
+	signInRoutes({
+		redirectBase: async () => process.env.OAUTH_REDIRECT_BASE || phoneUrl || (await tailscale.status()).url,
+		googleApp,
+		googleTokens,
+		connectors,
+		async testMail(connector) {
+			const account = withSignIn(connector);
+			if (!account) throw new Error("The connector is incomplete.");
+			return mailboxes.test(account);
+		},
+		mcp: {
+			store: mcpServers,
+			async test(server) {
+				const session = await withMcpAuth(server, (signedIn) => connectMcp(signedIn));
+				const names = session.tools.map((tool) => tool.name);
+				return `${names.length} tool${names.length === 1 ? "" : "s"}: ${names.slice(0, 6).join(", ")}${names.length > 6 ? ", …" : ""}. ${server.enabled ? "RemindMe can use it now." : "Turn it on to use it."}`;
+			},
+		},
+		note: (text) => activity.add({ kind: "did", channel: "console", text, receipts: [{ text }] }),
+	}),
+);
 /* Which AI answers. Keys only ever come from the app options; this picks among them. */
 function searchFallback(): boolean {
 	return Boolean(getSearxngUrl() || process.env.EXA_API_KEY);
@@ -1267,7 +1326,7 @@ app.patch("/api/connectors/:id", async (request, response) => {
 			patch.secrets = input.secrets;
 			// New credentials are tested before they replace the working ones.
 			if (input.secrets.password || body.values) {
-				const account = mailAccount({ ...existing, values: input.values, secrets: { ...existing.secrets, ...input.secrets } });
+				const account = withSignIn({ ...existing, values: { ...existing.values, ...input.values }, secrets: { ...existing.secrets, ...input.secrets } });
 				if (!account) throw new Error("Enter the address and password.");
 				await mailboxes.test(account);
 			}
@@ -1279,6 +1338,10 @@ app.patch("/api/connectors/:id", async (request, response) => {
 	}
 });
 app.delete("/api/connectors/:id", async (request, response) => {
+	const connector = connectors.get(request.params.id);
+	// A Google sign-in is taken back too, so it doesn't linger in the Google account.
+	if (connector && signedInWithGoogle(connector) && connector.secrets.refreshToken) await googleTokens.revoke(connector.secrets.refreshToken);
+	if (connector) googleTokens.forget(connector.id);
 	response.status((await connectors.remove(request.params.id)) ? 204 : 404).end();
 });
 /* Home Assistant's calendars, and which one takes new events. */
@@ -1301,8 +1364,8 @@ app.put("/api/calendars/new-events", async (request, response) => {
 });
 app.post("/api/connectors/:id/test", async (request, response) => {
 	const connector = connectors.get(request.params.id);
-	const account = connector && mailAccount(connector);
-	if (!account) return response.status(404).json({ ok: false, error: "No such connector, or it has no password." });
+	const account = connector && withSignIn(connector);
+	if (!account) return response.status(404).json({ ok: false, error: "No such connector, or it has no password or sign-in." });
 	try {
 		response.json({ ok: true, message: await mailboxes.test(account) });
 	} catch (error) {
@@ -1529,6 +1592,7 @@ export function toolContext(): ToolContext {
 			: undefined,
 		artifacts,
 		mail: mailboxes,
+		contacts,
 		calendar: calendarChoice,
 		jobs: { start: (input) => jobs.start(input), answer: (id, text) => jobs.answer(id, text) },
 		mcp: {
@@ -1537,7 +1601,7 @@ export function toolContext(): ToolContext {
 				const refs: McpTool[] = [];
 				for (const server of mcpServers.enabled()) {
 					try {
-						const session = await connectMcp(server, 5000);
+						const session = await withMcpAuth(server, (signedIn) => connectMcp(signedIn, 5000));
 						for (const tool of session.tools)
 							refs.push({
 								name: toolCallName(server.id, tool.name),
@@ -1558,7 +1622,7 @@ export function toolContext(): ToolContext {
 				const server = parsed ? mcpServers.get(parsed.serverId) : undefined;
 				if (!parsed || !server || !server.enabled)
 					throw new Error("That MCP server is not enabled.");
-				return callMcpTool(server, parsed.tool, args);
+				return withMcpAuth(server, (signedIn) => callMcpTool(signedIn, parsed.tool, args));
 			},
 		},
 	};

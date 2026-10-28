@@ -14,7 +14,10 @@ export interface MailAccount {
 	host: string;
 	port: number;
 	user: string;
+	/** Empty for an account signed in with Google, which has `token` instead. */
 	pass: string;
+	/** A Google sign-in: a fresh access token for each connection. */
+	token?: () => Promise<string>;
 	/** Gmail searches all its mail with its own search words; others search the inbox. */
 	provider: "gmail" | "imap";
 	/** Where it sends from, when it can: SMTP with the same address and password. */
@@ -83,7 +86,7 @@ export class ImapSource implements MailSource {
 			host: account.host,
 			port: account.port,
 			secure: true,
-			auth: { user: account.user, pass: account.pass },
+			auth: account.token ? { user: account.user, accessToken: await account.token() } : { user: account.user, pass: account.pass },
 			logger: false,
 			disableAutoIdle: true,
 		});
@@ -91,7 +94,8 @@ export class ImapSource implements MailSource {
 			await client.connect();
 		} catch (error) {
 			const reason = error instanceof Error ? error.message : String(error);
-			throw new Error(`${account.label} refused the connection (${reason}). Check the address, password and server under Settings, Connectors.`);
+			const check = account.token ? "Sign in again under Settings, Connectors if it keeps failing." : "Check the address, password and server under Settings, Connectors.";
+			throw new Error(`${account.label} refused the connection (${reason}). ${check}`);
 		}
 		try {
 			return await work(client);
@@ -229,7 +233,7 @@ export class ImapSource implements MailSource {
 
 	async send(account: MailAccount, raw: Buffer, envelope: { from: string; to: string[] }): Promise<void> {
 		if (!account.smtp) throw new Error(`${account.label} has no SMTP server set, so RemindMe can't send from it.`);
-		const transport = createTransport({ host: account.smtp.host, port: account.smtp.port, secure: account.smtp.secure, requireTLS: !account.smtp.secure, auth: { user: account.user, pass: account.pass }, connectionTimeout: 20_000 });
+		const transport = createTransport({ host: account.smtp.host, port: account.smtp.port, secure: account.smtp.secure, requireTLS: !account.smtp.secure, auth: account.token ? { type: "OAuth2", user: account.user, accessToken: await account.token() } : { user: account.user, pass: account.pass }, connectionTimeout: 20_000 });
 		try {
 			await transport.sendMail({ envelope, raw });
 		} catch (error) {

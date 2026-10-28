@@ -143,6 +143,12 @@ function remindme() {
 		newMcpUrl: "",
 		newMcpAuth: "",
 		mcpError: "",
+		/* Connected tools that only need their address and a sign-in. */
+		mcpPicks: [
+			{ name: "Notion", url: "https://mcp.notion.com/mcp" },
+			{ name: "Linear", url: "https://mcp.linear.app/mcp" },
+			{ name: "Todoist", url: "https://ai.todoist.net/mcp" },
+		],
 		tasks: [],
 		newTaskWhat: "",
 		newTaskWhen: "",
@@ -150,7 +156,10 @@ function remindme() {
 		documents: [],
 		connectors: [],
 		connectorKinds: [],
-		newConnector: { preset: "gmail", name: "", address: "", password: "", host: "", port: "993", smtpHost: "", smtpPort: "587" },
+		newConnector: { preset: "gmail", how: "google", name: "", address: "", password: "", host: "", port: "993", smtpHost: "", smtpPort: "587" },
+		/* The user's own Google app, for signing in with Google. */
+		googleApp: { set: false, clientId: "", redirectUri: "", domain: "", host: "", editing: false },
+		googleForm: { clientId: "", clientSecret: "" },
 		connectorBusy: false,
 		connectorResult: null,
 		calendars: { list: [], newEvents: null, note: "", error: "" },
@@ -953,6 +962,8 @@ function remindme() {
 				this.newMcpUrl = "";
 				this.newMcpAuth = "";
 				this.mcpError = "";
+				// Check it at once, so a server that wants a sign-in offers one.
+				await this.testMcp(this.mcpServers[0]);
 			} catch (error) {
 				this.mcpError = `Not added: ${error.message}`;
 			}
@@ -968,7 +979,8 @@ function remindme() {
 			server.probe = "Connecting";
 			try {
 				const data = await this.request(`./api/mcp/${encodeURIComponent(server.id)}/test`);
-				server.probe = data.ok ? `Connected to ${data.serverName || server.name}: ${data.tools.map((tool) => tool.name).join(", ") || "no tools"}` : `Failed: ${data.error}`;
+				server.wantsSignIn = Boolean(data.wantsSignIn);
+				server.probe = data.ok ? `Connected to ${data.serverName || server.name}: ${data.tools.map((tool) => tool.name).join(", ") || "no tools"}` : data.wantsSignIn ? `${server.name} wants you to sign in: tap Sign in.` : `Failed: ${data.error}`;
 			} catch (error) {
 				server.probe = `Failed: ${error.message}`;
 			}
@@ -1103,10 +1115,13 @@ function remindme() {
 
 		/* Connectors */
 		async loadConnectors() {
-			const [data, calendars] = await Promise.all([
+			const [data, calendars, google] = await Promise.all([
 				this.getJson("./api/connectors", { kinds: [], connectors: [] }),
 				this.getJson("./api/calendars", { calendars: [], newEvents: null, error: "Home Assistant's calendars didn't load." }),
+				this.getJson("./api/oauth/google-app", { set: false }),
 			]);
+			this.googleApp = { set: Boolean(google.set), clientId: google.clientId || "", redirectUri: google.redirectUri || "", domain: google.domain || "", host: google.redirectUri ? new URL(google.redirectUri).host : "", editing: false };
+			this.googleForm = { clientId: google.clientId || "", clientSecret: "" };
 			this.connectorKinds = data.kinds || [];
 			this.connectors = (data.connectors || []).map((connector) => ({ ...connector, newPassword: "", probe: "", editing: false }));
 			this.calendars = { list: calendars.calendars || [], newEvents: calendars.newEvents || null, note: "", error: calendars.error || "" };
@@ -1124,6 +1139,62 @@ function remindme() {
 		presetOf(id) {
 			return this.connectorKinds[0]?.presets?.find((preset) => preset.id === id);
 		},
+		get googleWay() {
+			return this.newConnector.preset === "gmail" && this.newConnector.how === "google";
+		},
+		async saveGoogleApp() {
+			try {
+				await this.request("./api/oauth/google-app", "PUT", { clientId: this.googleForm.clientId.trim(), clientSecret: this.googleForm.clientSecret.trim() });
+				await this.loadConnectors();
+				this.connectorResult = { ok: true, text: "Google app saved. Now sign in with Google." };
+			} catch (error) {
+				this.connectorResult = { ok: false, text: error.message };
+			}
+		},
+		async removeGoogleApp() {
+			const signedIn = this.connectors.some((connector) => connector.values.auth === "google");
+			if (!window.confirm(signedIn ? "Remove your Google app? Gmail accounts signed in with it stop working until you add it again." : "Remove your Google app?")) return;
+			await fetch("./api/oauth/google-app", { method: "DELETE" });
+			await this.loadConnectors();
+		},
+		/*
+		 * A sign-in opens in a new tab (Safari, on an iPhone) through the link's
+		 * own href, so no popup blocker stops it; this page then asks how it went.
+		 */
+		signInLink(event, params, show) {
+			const handle = Array.from(crypto.getRandomValues(new Uint8Array(12)), (byte) => byte.toString(16).padStart(2, "0")).join("");
+			event.currentTarget.href = `./api/oauth/start?${new URLSearchParams({ ...params, handle })}`;
+			this.watchSignIn(handle, show);
+		},
+		async watchSignIn(handle, show) {
+			show({ state: "waiting", text: "Finish signing in in the new tab. This updates when you're done." });
+			for (let tries = 0; tries < 300; tries++) {
+				await new Promise((done) => setTimeout(done, 2000));
+				const result = await this.getJson(`./api/oauth/result/${handle}`, null);
+				if (result && result.state !== "waiting") return show(result);
+			}
+			show({ state: "failed", text: "The sign-in took too long. Start it again." });
+		},
+		signInGoogle(event, hint) {
+			this.signInLink(event, { for: "google", ...(hint ? { hint } : {}) }, async (result) => {
+				this.connectorResult = { ok: result.state !== "failed", text: result.text };
+				if (result.state === "done") {
+					await this.loadConnectors();
+					await this.loadLedger();
+					this.connectorResult = { ok: true, text: result.text };
+				}
+			});
+		},
+		signInMcp(event, server) {
+			this.signInLink(event, { for: "mcp", id: server.id }, async (result) => {
+				const shown = this.mcpServers.find((entry) => entry.id === server.id) || server;
+				shown.probe = result.text;
+				if (result.state === "done") {
+					const fresh = (await this.getJson("./api/mcp", [])).find((entry) => entry.id === server.id);
+					if (fresh) Object.assign(shown, fresh, { probe: result.text });
+				}
+			});
+		},
 		connectorLine(connector) {
 			const service = this.presetOf(connector.preset)?.label || connector.preset;
 			const status = connector.status
@@ -1133,7 +1204,9 @@ function remindme() {
 				: connector.enabled
 					? "Not checked yet."
 					: "Off.";
-			return `${connector.values.address}, ${service}. ${status}`;
+			const google = connector.values.auth === "google";
+			const how = google ? `, signed in with Google${/contacts/.test(connector.values.scope || "") ? ", contacts too" : ""}` : "";
+			return `${connector.values.address}, ${service}${how}. ${status}`;
 		},
 		async addConnector() {
 			this.connectorBusy = true;
@@ -1148,7 +1221,7 @@ function remindme() {
 					secrets: { password: form.password },
 				});
 				this.connectorResult = { ok: true, text: `${data.connector.name} added. ${data.result}` };
-				this.newConnector = { preset: form.preset, name: "", address: "", password: "", host: "", port: "993", smtpHost: "", smtpPort: "587" };
+				this.newConnector = { preset: form.preset, how: form.how, name: "", address: "", password: "", host: "", port: "993", smtpHost: "", smtpPort: "587" };
 				await this.loadConnectors();
 				await this.loadLedger();
 			} catch (error) {

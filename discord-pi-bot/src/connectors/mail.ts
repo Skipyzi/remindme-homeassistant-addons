@@ -17,7 +17,7 @@ export interface MailPreset {
  * (it wants Microsoft sign-in), so it isn't here.
  */
 export const MAIL_PRESETS: MailPreset[] = [
-	{ id: "gmail", label: "Gmail", host: "imap.gmail.com", port: 993, smtp: { host: "smtp.gmail.com", port: 465, secure: true }, help: "Needs 2-step verification and an app password: Google Account, Security, App passwords. Not your normal password." },
+	{ id: "gmail", label: "Gmail", host: "imap.gmail.com", port: 993, smtp: { host: "smtp.gmail.com", port: 465, secure: true }, help: "Sign in with Google once your Google app is set up below, or use an app password: Google Account, Security, App passwords (needs 2-step verification). Not your normal password." },
 	{ id: "gmx", label: "GMX", host: "imap.gmx.net", port: 993, smtp: { host: "mail.gmx.net", port: 465, secure: true }, help: "Turn on \"POP3/IMAP Abruf\" in GMX's mail settings first. Your GMX password, or an app password if you use 2-factor sign-in." },
 	{ id: "webde", label: "WEB.DE", host: "imap.web.de", port: 993, smtp: { host: "smtp.web.de", port: 587, secure: false }, help: "Turn on \"POP3/IMAP Abruf\" in WEB.DE's mail settings first. Your WEB.DE password, or an app password if you use 2-factor sign-in." },
 	{ id: "icloud", label: "iCloud Mail", host: "imap.mail.me.com", port: 993, smtp: { host: "smtp.mail.me.com", port: 587, secure: false }, help: "Needs an app-specific password from account.apple.com, Sign-In and Security." },
@@ -34,19 +34,25 @@ export const CONNECTOR_KINDS = [
 	},
 ];
 
-/** A saved mail connector as an account the mail code can open. */
-export function mailAccount(connector: StoredConnector): MailAccount | undefined {
+/**
+ * A saved mail connector as an account the mail code can open. A Gmail
+ * connector signed in with Google gets its tokens from `signIn`.
+ */
+export function mailAccount(connector: StoredConnector, signIn?: (connector: StoredConnector) => Promise<string>): MailAccount | undefined {
 	const preset = MAIL_PRESETS.find((entry) => entry.id === connector.preset);
 	const host = connector.values.host || preset?.host || "";
 	const port = Number(connector.values.port || preset?.port || 993);
 	const user = connector.values.address || "";
-	const raw = connector.secrets.password || "";
+	const google = connector.values.auth === "google";
+	if (google && (!signIn || !connector.secrets.refreshToken)) return undefined;
+	const raw = google ? "" : connector.secrets.password || "";
 	// Google shows app passwords in groups of four; the spaces aren't part of it.
 	const pass = connector.preset === "gmail" ? raw.replace(/\s+/g, "") : raw;
-	if (!host || !user || !pass || !Number.isInteger(port)) return undefined;
+	const token = google && signIn ? () => signIn(connector) : undefined;
+	if (!host || !user || !(pass || token) || !Number.isInteger(port)) return undefined;
 	const smtpPort = Number(connector.values.smtpPort || 587);
 	const smtp = preset?.smtp || (connector.values.smtpHost ? { host: connector.values.smtpHost, port: smtpPort, secure: smtpPort === 465 } : undefined);
-	return { id: connector.id, label: connector.name, host, port, user, pass, provider: host === "imap.gmail.com" ? "gmail" : "imap", ...(smtp ? { smtp } : {}) };
+	return { id: connector.id, label: connector.name, host, port, user, pass, ...(token ? { token } : {}), provider: host === "imap.gmail.com" ? "gmail" : "imap", ...(smtp ? { smtp } : {}) };
 }
 
 /** Check what the console sent before anything is saved or tested. */

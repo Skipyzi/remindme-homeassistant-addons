@@ -404,7 +404,7 @@
             <!-- Connectors -->
             <div class="rm-panel" x-show="settingsTab === 'connectors'">
               <h3>Connectors</h3>
-              <p>Outside sources RemindMe reads, such as your mail. Passwords stay on the Pi and are never shown again.</p>
+              <p>Outside sources RemindMe reads, such as your mail. Passwords and sign-ins stay on the Pi and are never shown again.</p>
               <div>
                 <template x-for="connector in connectors" :key="connector.id">
                   <div class="rm-item">
@@ -412,7 +412,12 @@
                       <span><b x-text="connector.name"></b><br /><span class="rm-mute" x-text="connectorLine(connector)"></span></span>
                       <label class="rm-toggle"><input type="checkbox" :checked="connector.enabled" @change="updateConnector(connector, { enabled: $event.target.checked })" /><span x-text="connector.enabled ? 'On' : 'Off'"></span></label>
                       <button class="rm-link" type="button" @click="testConnector(connector)">Test</button>
-                      <button class="rm-link" type="button" @click="connector.editing = !connector.editing">Password</button>
+                      <template x-if="connector.values.auth === 'google'">
+                        <a class="rm-link" href="./api/oauth/start" target="_blank" rel="noopener" @click="signInGoogle($event, connector.values.address)">Sign in again</a>
+                      </template>
+                      <template x-if="connector.values.auth !== 'google'">
+                        <button class="rm-link" type="button" @click="connector.editing = !connector.editing">Password</button>
+                      </template>
                       <button class="rm-link" type="button" @click="removeConnector(connector)">Remove</button>
                     </div>
                     <p class="rm-note" x-show="connector.probe" x-text="connector.probe"></p>
@@ -456,7 +461,51 @@
                     <template x-for="preset in connectorKinds[0]?.presets || []" :key="preset.id"><option :value="preset.id" x-text="preset.label"></option></template>
                   </select>
                 </label>
-                <label class="rm-field">Name<input x-model="newConnector.name" :placeholder="presetOf(newConnector.preset)?.label" /></label>
+                <template x-if="!googleWay">
+                  <label class="rm-field">Name<input x-model="newConnector.name" :placeholder="presetOf(newConnector.preset)?.label" /></label>
+                </template>
+              </div>
+              <div class="rm-choices" x-show="newConnector.preset === 'gmail'">
+                <button class="rm-choice" type="button" :class="{ on: newConnector.how === 'google' }" @click="newConnector.how = 'google'"><span>Sign in with Google</span><small>adds contacts</small><span></span></button>
+                <button class="rm-choice" type="button" :class="{ on: newConnector.how === 'password' }" @click="newConnector.how = 'password'"><span>App password</span><small>quicker to set up</small><span></span></button>
+              </div>
+              <template x-if="googleWay">
+                <div class="rm-stack">
+                  <template x-if="googleApp.set && !googleApp.editing">
+                    <div class="rm-stack">
+                      <div class="rm-actions">
+                        <a class="rm-btn solid rm-btn-link" href="./api/oauth/start" target="_blank" rel="noopener" @click="signInGoogle($event)">Sign in with Google</a>
+                      </div>
+                      <p class="rm-note">Google opens in a new tab and asks what RemindMe may use: tick Gmail, and contacts if RemindMe should look up addresses. Google warns that it hasn't verified the app; it's your own, so tap Advanced, then go on. It sends you back to <span x-text="googleApp.host"></span>, so sign in on a device with Tailscale on.</p>
+                      <p class="rm-note">Your Google app: <span x-text="googleApp.clientId"></span>. <button class="rm-link" type="button" @click="googleApp.editing = true">Change</button></p>
+                    </div>
+                  </template>
+                  <template x-if="!googleApp.set || googleApp.editing">
+                    <div class="rm-stack">
+                      <p class="rm-note" x-show="!googleApp.redirectUri">Signing in with Google needs the phone app's address first, because Google sends you back there. Turn it on under Phone app.</p>
+                      <ol class="rm-steps" x-show="googleApp.redirectUri">
+                        <li>Make a project in <a class="rm-link" href="https://console.cloud.google.com/projectcreate" target="_blank" rel="noopener">Google Cloud</a>, named RemindMe. It's free.</li>
+                        <li>Turn on the <a class="rm-link" href="https://console.cloud.google.com/apis/library/people.googleapis.com" target="_blank" rel="noopener">People API</a>, for contacts.</li>
+                        <li>In <a class="rm-link" href="https://console.cloud.google.com/auth/overview" target="_blank" rel="noopener">Google Auth Platform</a>, tap Get started: name RemindMe, audience External, your email.</li>
+                        <li>Under Audience, tap Publish app. Left in Testing, Google ends the sign-in every 7 days.</li>
+                        <li>Under Branding, add this authorized domain: <code class="rm-copy" x-text="googleApp.domain"></code></li>
+                        <li>Under Clients, create a client: Web application, with this authorized redirect URI: <code class="rm-copy" x-text="googleApp.redirectUri"></code></li>
+                        <li>Paste the client's ID and secret here.</li>
+                      </ol>
+                      <div class="rm-two" x-show="googleApp.redirectUri">
+                        <label class="rm-field">Client ID<input x-model="googleForm.clientId" autocomplete="off" placeholder="…apps.googleusercontent.com" /></label>
+                        <label class="rm-field">Client secret<input type="password" x-model="googleForm.clientSecret" autocomplete="new-password" :placeholder="googleApp.set ? 'Unchanged' : 'GOCSPX-…'" /></label>
+                      </div>
+                      <div class="rm-actions" x-show="googleApp.redirectUri">
+                        <button class="rm-btn solid" type="button" :disabled="!googleForm.clientId.trim()" @click="saveGoogleApp()">Save Google app</button>
+                        <button class="rm-btn ghost" type="button" x-show="googleApp.editing" @click="googleApp.editing = false">Cancel</button>
+                        <button class="rm-btn ghost" type="button" x-show="googleApp.editing" @click="removeGoogleApp()">Remove</button>
+                      </div>
+                    </div>
+                  </template>
+                </div>
+              </template>
+              <div class="rm-two" x-show="!googleWay">
                 <label class="rm-field">Address<input type="email" x-model="newConnector.address" autocomplete="off" placeholder="you@example.com" /></label>
                 <label class="rm-field">Password<input type="password" x-model="newConnector.password" autocomplete="new-password" /></label>
                 <template x-if="newConnector.preset === 'imap'">
@@ -472,8 +521,8 @@
                   <label class="rm-field">SMTP port<input x-model="newConnector.smtpPort" inputmode="numeric" /></label>
                 </template>
               </div>
-              <p class="rm-note" x-text="presetOf(newConnector.preset)?.help"></p>
-              <div class="rm-actions">
+              <p class="rm-note" x-show="!googleWay" x-text="newConnector.preset === 'gmail' ? 'Google Account, Security, App passwords (needs 2-step verification). Not your normal password.' : presetOf(newConnector.preset)?.help"></p>
+              <div class="rm-actions" x-show="!googleWay">
                 <button class="rm-btn solid" type="button" :disabled="connectorBusy || !newConnector.address || !newConnector.password" @click="addConnector()" x-text="connectorBusy ? 'Testing the connection' : 'Test and add'"></button>
               </div>
               <p class="rm-result" x-show="connectorResult" x-cloak :class="{ bad: connectorResult && !connectorResult.ok }" x-text="connectorResult?.text"></p>
@@ -545,7 +594,7 @@
             <!-- MCP -->
             <div class="rm-panel" x-show="settingsTab === 'mcp'">
               <h3>Connected tools</h3>
-              <p>Tools from MCP servers, offered to the AI next to its own. Turn on only what you use: each one costs a little on every message.</p>
+              <p>Tools from MCP servers, offered to the AI next to its own. Many, such as Notion, Linear and Todoist, only need the address and a sign-in. Turn on only what you use: each one costs a little on every message.</p>
               <div>
                 <template x-for="server in mcpServers" :key="server.id">
                   <div class="rm-item">
@@ -553,20 +602,26 @@
                       <input class="rm-input" :value="server.name" aria-label="Server name" @change="updateMcp(server, { name: $event.target.value })" />
                       <label class="rm-toggle"><input type="checkbox" :checked="server.enabled" @change="updateMcp(server, { enabled: $event.target.checked })" /><span x-text="server.enabled ? 'On' : 'Off'"></span></label>
                       <button class="rm-link" type="button" @click="testMcp(server)">Test</button>
+                      <template x-if="server.wantsSignIn || server.signedIn">
+                        <a class="rm-link" href="./api/oauth/start" target="_blank" rel="noopener" @click="signInMcp($event, server)" x-text="server.signedIn ? 'Sign in again' : 'Sign in'"></a>
+                      </template>
                       <button class="rm-link" type="button" @click="deleteMcp(server)">Remove</button>
                     </div>
                     <input class="rm-input" :value="server.url" aria-label="Server URL" @change="updateMcp(server, { url: $event.target.value })" />
-                    <p class="rm-note" x-show="server.probe" x-text="server.probe"></p>
+                    <p class="rm-note" x-show="server.probe || server.signedIn || server.wantsSignIn" x-text="server.probe || (server.wantsSignIn ? 'Wants you to sign in.' : 'Signed in.')"></p>
                   </div>
                 </template>
                 <p class="rm-note" x-show="!mcpServers.length">No servers yet.</p>
               </div>
               <div class="rm-item">
+                <p class="rm-note">Ready to add:
+                  <template x-for="pick in mcpPicks" :key="pick.name"><button class="rm-link rm-pick" type="button" @click="newMcpName = pick.name; newMcpUrl = pick.url" x-text="pick.name"></button></template>
+                </p>
                 <div class="rm-two">
                   <label class="rm-field">Name<input x-model="newMcpName" placeholder="Weather" /></label>
                   <label class="rm-field">Address<input x-model="newMcpUrl" placeholder="https://host/mcp" /></label>
                 </div>
-                <label class="rm-field">Authorization header (optional)<input type="password" x-model="newMcpAuth" autocomplete="off" /></label>
+                <label class="rm-field">Token, only if the server gave you one instead of a sign-in (optional)<input type="password" x-model="newMcpAuth" autocomplete="off" placeholder="Bearer …" /></label>
                 <div class="rm-actions"><button class="rm-btn solid" type="button" @click="addMcp()">Add server</button></div>
               </div>
               <p class="rm-note" x-show="mcpError" x-text="mcpError"></p>

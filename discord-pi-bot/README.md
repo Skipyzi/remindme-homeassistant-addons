@@ -51,9 +51,9 @@ Nothing is sent during `quiet_hours` (default 22:30-07:00); nudges wait until th
 
 ## Connectors: your mail
 
-Add mail accounts in the console under **Settings → Connectors**: Gmail, GMX, WEB.DE, iCloud Mail, or any other IMAP server. Each one is tested before it's saved, shows its last check, and can be switched off or removed. Passwords stay in the app's private data on the Pi and are never shown again. RemindMe reads over IMAP and never sends, deletes, moves or marks mail as read. The one thing it writes is a draft, when you ask for one.
+Add mail accounts in the console under **Settings → Connectors**: Gmail, GMX, WEB.DE, iCloud Mail, or any other IMAP server. Each one is tested before it's saved, shows its last check, and can be switched off or removed. Passwords and sign-ins stay in the app's private data on the Pi and are never shown again. RemindMe reads over IMAP and never deletes, moves or marks mail as read. It writes a draft when you ask for one, and sends an email only after you tap Send.
 
-- **Gmail** needs 2-step verification and an app password (Google Account → Security → App passwords).
+- **Gmail** can sign in with Google, or use an app password (Google Account → Security → App passwords; needs 2-step verification). Signing in also lets RemindMe look up addresses in your Google contacts. It needs your own Google app, made once: the console walks through it and shows the two values Google asks for. Publish the app ("In production"), or Google ends the sign-in after 7 days, and sign in from a device with Tailscale on, since Google sends you back to the phone app's address.
 - **GMX** and **WEB.DE** need "POP3/IMAP Abruf" turned on in their mail settings.
 - **iCloud Mail** needs an app-specific password from account.apple.com.
 - **Outlook.com** isn't offered: Microsoft no longer accepts passwords over IMAP.
@@ -76,7 +76,7 @@ To use iCloud, add Home Assistant's **CalDAV** integration (Settings → Devices
 
 ## What the assistant can do
 
-House overview, find and control devices, calendar events (read, and add once you confirm), mail (search, read, save drafts), weather forecasts, to-do lists (read, add, complete), reminders (set, list, cancel), notes in the shared vault (search, save when asked), web search (built into Claude, OpenAI and ChatGPT; SearXNG or Exa for the Claude Code and Codex agents), reading a web page, parcel tracking (with `trackingmore_api_key`), documents in the console, and tools from MCP servers added in the console.
+House overview, find and control devices, calendar events (read, and add once you confirm), mail (search, read, save drafts), weather forecasts, to-do lists (read, add, complete), reminders (set, list, cancel), notes in the shared vault (search, save when asked), web search (built into Claude, OpenAI and ChatGPT; SearXNG or Exa for the Claude Code and Codex agents), reading a web page, parcel tracking (with `trackingmore_api_key`), documents in the console, and tools from MCP servers added in the console. Servers with their own sign-in, such as Notion, Linear and Todoist, need only their address and a tap on Sign in.
 
 It only sees and changes devices through these tools. Each turn sends your recent chat, the tool results and any recalled notes to the provider you chose.
 
