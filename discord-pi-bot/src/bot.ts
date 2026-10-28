@@ -1,25 +1,26 @@
-import "dotenv/config";
-import { Client, GatewayIntentBits } from "discord.js";
+import { Client, GatewayIntentBits, Partials } from "discord.js";
 import { config, validateConfig } from "./config";
 import { setupCommands } from "./commands";
-import { setupAIChat } from "./chat";
-import { setupPiBridge } from "./piBridge";
 import { startReminderScheduler } from "./utils/reminderManager";
 import { startPresenceMonitor } from "./presence";
 import { deliverReminder, deliveryTargets } from "./harness/reminderDelivery";
+import { setupAssistantChat, type ChatDeps } from "./discord/assistantChat";
+import { OwnerMessenger } from "./discord/messenger";
 
-async function main() {
-	// Validate configuration
+/**
+ * The Discord side: slash commands, the assistant in DMs, and reminder
+ * delivery. Returns the messenger the brief and nudges use, or undefined
+ * when no bot token is set (the console still works without Discord).
+ */
+export function startBot(deps: ChatDeps): OwnerMessenger | undefined {
 	const errors = validateConfig();
 	if (errors.length > 0) {
-		console.error("Configuration errors:");
-		errors.forEach((error) => console.error(`  - ${error}`));
-		process.exit(1);
+		console.warn(`Discord is off: ${errors.join("; ")}. The console still works.`);
+		return undefined;
 	}
 
 	console.log("Starting Discord bot...");
 
-	// Create client
 	const client = new Client({
 		intents: [
 			GatewayIntentBits.Guilds,
@@ -27,19 +28,15 @@ async function main() {
 			GatewayIntentBits.MessageContent,
 			GatewayIntentBits.DirectMessages,
 		],
+		// DMs arrive on channels the bot has not cached; without this they are dropped.
+		partials: [Partials.Channel, Partials.Message],
 	});
 
-	// Set up commands
 	setupCommands(client);
+	setupAssistantChat(client, deps);
+	const messenger = new OwnerMessenger(client, config.ownerId, deps.chats);
 
-	// Set up AI chat (pi agent bridge)
-	setupAIChat(client);
-
-	// Set up pi agent bridge
-	setupPiBridge();
-
-	// Login
-	client.login(config.token);
+	client.login(config.token).catch((error) => console.error("Discord login failed:", error));
 
 	client.once("clientReady", async () => {
 		if (client.user) {
@@ -154,9 +151,5 @@ async function main() {
 	client.on("error", (error: Error) => {
 		console.error("Client error:", error);
 	});
+	return messenger;
 }
-
-main().catch((error: Error) => {
-	console.error("Fatal error:", error);
-	process.exit(1);
-});

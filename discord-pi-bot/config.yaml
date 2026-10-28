@@ -1,7 +1,7 @@
-name: RemindMe Discord Bot
-version: "3.0.2"
+name: RemindMe
+version: "4.0.0"
 slug: remindme_discord_bot
-description: Discord bot with reminders, pi-agent bridge, and local LLM support
+description: Your personal assistant in Home Assistant and Discord, powered by Claude, OpenAI or OpenCode
 arch:
   - aarch64
 startup: application
@@ -12,22 +12,25 @@ hassio_api: true
 ingress: true
 ingress_port: 8090
 panel_icon: mdi:robot-outline
-panel_title: RemindMe AI
+panel_title: RemindMe
 panel_admin: false
 options:
   discord_token: ""
   owner_id: ""
   guild_id: ""
+  ai_provider: claude
+  anthropic_api_key: ""
+  openai_api_key: ""
+  opencode_api_key: ""
+  ai_model: ""
+  ai_effort: low
+  daily_ai_budget: 2
+  morning_brief_time: "07:00"
+  bin_reminder_time: "19:00"
+  quiet_hours: "22:30-07:00"
+  battery_nudge_percent: 15
   playful_placeholders: true
   reminder_color: "5865f2"
-  pi_agent_webhook_url: ""
-  local_llm_enabled: true
-  local_llm_url: http://homeassistant:8080/v1/chat/completions
-  local_llm_model: qwen3-1.7b
-  local_llm_context_size: 8192
-  local_llm_vision: false
-  model_manager_enabled: true
-  model_manager_url: http://homeassistant:8080/manager/v1
   searxng_url: ""
   exa_api_key: ""
   ha_notify_target: ""
@@ -37,28 +40,34 @@ schema:
   discord_token: password
   owner_id: str
   guild_id: str?
+  ai_provider: list(claude|openai|opencode|custom)
+  anthropic_api_key: password?
+  openai_api_key: password?
+  opencode_api_key: password?
+  opencode_url: url?
+  custom_ai_url: url?
+  custom_ai_key: password?
+  ai_model: str?
+  ai_effort: list(low|medium|high)
+  daily_ai_budget: float(0,1000)
+  morning_brief_time: str?
+  bin_reminder_time: str?
+  quiet_hours: str?
+  battery_nudge_percent: int(0,100)
   playful_placeholders: bool
   reminder_color: str
-  pi_agent_webhook_url: str
-  local_llm_enabled: bool
-  local_llm_url: str
-  local_llm_model: str
-  local_llm_context_size: int(1024,32768)
-  local_llm_vision: bool
-  model_manager_enabled: bool
-  model_manager_url: str
   searxng_url: str?
-  exa_api_key: password
-  ha_notify_target: str
+  exa_api_key: password?
+  ha_notify_target: str?
   vault_url: str?
-  trackingmore_api_key: password
+  trackingmore_api_key: password?
 map:
   - type: data
     read_only: false
     path: /data
   # The Markdown vault lives here so the remindme-vault editor add-on and this
-  # add-on share the same files; the bot both reads and writes notes (model
-  # memory), so rw.
+  # add-on share the same files; the assistant both reads and writes notes
+  # (its memory), so rw.
   - type: share
     read_only: false
     path: /share

@@ -5,7 +5,6 @@ import {
 	EmbedBuilder,
 	MessageFlags,
 } from "discord.js";
-import { askLocalLlm } from "../localLlm";
 import { config } from "../config";
 import {
 	deleteReminder,
@@ -184,14 +183,21 @@ export function parseWhen(input: string): number | null {
 	return null;
 }
 
+/* One plain AI answer, set by the app once the assistant exists. */
+let askAi: ((prompt: string) => Promise<string | undefined>) | undefined;
+export function setReminderAi(ask: (prompt: string) => Promise<string | undefined>): void {
+	askAi = ask;
+}
+
 export async function reviewReminderIntent(
 	input: string,
 ): Promise<{ text: string; delayMs: number } | null> {
-	if (!config.localLlmEnabled) return null;
+	if (!askAi) return null;
 	try {
-		const result = await askLocalLlm(
+		const result = await askAi(
 			`Decide whether this is a reminder request. Return JSON only: {"isReminder":boolean,"text":string,"delayMinutes":number}. Current time is ${new Date().toISOString()}. If it is not a reminder or has no reliable future time, use isReminder false. Request: ${input}`,
 		);
+		if (!result) return null;
 		const json = JSON.parse(
 			result.replace(/^```json\s*|\s*```$/g, "").trim(),
 		) as {
@@ -219,7 +225,7 @@ export async function reviewReminderIntent(
  * Resolve the /remind fields into a message and a delay. The `when` field is a
  * standalone time phrase, so it is parsed directly — no "in", no model. Only a
  * genuinely freeform phrase the parser cannot read ("after lunch") falls back
- * to the local model, and only if one is enabled.
+ * to the AI, and only if one is set up.
  */
 export async function resolveReminder(
 	text: string,

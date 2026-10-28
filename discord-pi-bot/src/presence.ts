@@ -1,5 +1,4 @@
 import { ActivityType, type Client } from "discord.js";
-import { config } from "./config";
 import {
 	PresenceUptimeTracker,
 	type UptimeSnapshot,
@@ -7,32 +6,11 @@ import {
 import { countReminders } from "./utils/reminderManager";
 
 const CHECK_INTERVAL_MS = 60_000;
-let bridgeUrl: URL | undefined;
-if (config.webhookUrl) {
-	try {
-		const parsed = new URL(config.webhookUrl);
-		if (parsed.protocol !== "http:" && parsed.protocol !== "https:")
-			throw new Error("PI_AGENT_WEBHOOK_URL must use HTTP or HTTPS");
-		bridgeUrl = parsed;
-	} catch (error) {
-		console.error(
-			"Invalid PI_AGENT_WEBHOOK_URL; presence monitoring disabled:",
-			error,
-		);
-	}
-}
 
-async function piAgentIsReachable(): Promise<boolean> {
-	if (!bridgeUrl) return false;
-	try {
-		const response = await fetch(bridgeUrl, {
-			method: "GET",
-			signal: AbortSignal.timeout(5_000),
-		});
-		return response.ok || response.status < 500;
-	} catch {
-		return false;
-	}
+/* Whether the assistant can answer. Set by the app once the AI settings load. */
+let aiReady: () => Promise<boolean> = async () => false;
+export function setAiReadiness(check: () => Promise<boolean>): void {
+	aiReady = check;
 }
 
 interface UptimeTrackerLike {
@@ -70,7 +48,7 @@ export function formatPresenceActivity(
 		? Math.max(0, Math.floor(reminderCount))
 		: 0;
 	return {
-		name: `RemindMe • ${connected ? "Pi connected" : "Pi offline"}`,
+		name: `RemindMe • ${connected ? "AI ready" : "AI not set up"}`,
 		state: `Up ${formatPresenceDuration(snapshot.totalOnlineMs)} • ${availability}% • ${count} ${count === 1 ? "reminder" : "reminders"}`,
 	};
 }
@@ -78,7 +56,7 @@ export function formatPresenceActivity(
 export async function updatePresence(
 	client: Client,
 	snapshot: UptimeSnapshot,
-	reachable: () => Promise<boolean> = piAgentIsReachable,
+	reachable: () => Promise<boolean> = () => aiReady(),
 	reminderCount: () => number | Promise<number> = () => {
 		const ownerId = process.env.OWNER_ID || "";
 		return ownerId ? countReminders(ownerId) : 0;
@@ -127,7 +105,7 @@ export async function startPresenceMonitor(
 				logError: (message) => console.error(message),
 			},
 		);
-	const reachable = dependencies.reachable || piAgentIsReachable;
+	const reachable = dependencies.reachable || (() => aiReady());
 	const reminderCount = dependencies.reminderCount;
 	const schedule = dependencies.schedule || setInterval;
 	let running = false;

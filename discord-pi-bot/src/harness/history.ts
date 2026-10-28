@@ -1,4 +1,7 @@
-import { estimateTokens } from "./modelPhases";
+/** About four characters a token: close enough to budget a conversation. */
+function estimateTokens(text: string): number {
+	return Math.ceil(text.length / 4);
+}
 
 export interface HistoryTurn {
 	role: "user" | "assistant";

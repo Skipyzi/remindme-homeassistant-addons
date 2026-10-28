@@ -43,11 +43,11 @@ test("formats health name and bot metrics state", () => {
 	);
 	const invalid = formatPresenceActivity(true, snapshot, Number.NaN);
 	assert.deepEqual(connected, {
-		name: "RemindMe • Pi connected",
+		name: "RemindMe • AI ready",
 		state: "Up 12d 4h • 99.99% • 1 reminder",
 	});
 	assert.deepEqual(offline, {
-		name: "RemindMe • Pi offline",
+		name: "RemindMe • AI not set up",
 		state: "Up 12d 4h • 100.00% • 3 reminders",
 	});
 	assert.match(invalid.state, /0 reminders$/);
@@ -66,7 +66,7 @@ test("reachability still controls Discord status", async () => {
 		() => 2,
 	);
 	assert.equal(calls[0].status, "online");
-	assert.match(JSON.stringify(calls[0]), /RemindMe • Pi connected/);
+	assert.match(JSON.stringify(calls[0]), /RemindMe • AI ready/);
 	assert.match(JSON.stringify(calls[0]), /2 reminders/);
 });
 

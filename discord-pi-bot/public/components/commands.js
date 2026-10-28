@@ -483,24 +483,16 @@
 		{
 			name: "/diagnose",
 			usage: "/diagnose",
-			blurb: "probe the model manager",
+			blurb: "check the AI connection",
 			async run(app) {
-				const response = await fetch("./api/models/diagnostics");
-				const report = await response.json();
+				const status = await fetch("./api/ai").then((r) => r.json());
+				if (!status.ready) return app.add("answer", status.problem || "The AI isn't set up.");
+				const test = await fetch("./api/ai/test", { method: "POST" }).then((r) => r.json());
 				app.add(
 					"answer",
-					[
-						`Model manager: ${report.ok ? "healthy" : "**not healthy**"}`,
-						"",
-						...(report.checks || []).map((check) =>
-							[
-								`- ${check.ok ? "pass" : "**fail**"} — ${check.step}: ${check.detail || ""}`,
-								check.hint ? `    ${check.hint}` : "",
-							]
-								.filter(Boolean)
-								.join("\n"),
-						),
-					].join("\n"),
+					test.ok
+						? `${status.label} · ${status.model} answers: "${test.reply}".`
+						: `${status.label} · ${status.model} failed: ${test.error}`,
 				);
 			},
 		},

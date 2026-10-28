@@ -9,10 +9,8 @@ import {
 	deleteReminder,
 	listReminders,
 } from "./utils/reminderManager";
-import type { ActiveModelMetadata } from "./harness/modelPhases";
 import { createSseSender } from "./harness/sse";
-import { validateHistory, type HistoryTurn } from "./harness/history";
-import { measureTokenUsage, tokenizerUrl } from "./harness/tokenizer";
+import { validateHistory } from "./harness/history";
 import { normalizeEntity, type HassEntity } from "./harness/entities";
 import { resolveEntities } from "./harness/entityResolver";
 import {
@@ -22,7 +20,6 @@ import {
 import { ConversationStore } from "./harness/conversations";
 import { SkillStore, skillPrompt } from "./harness/skills";
 import { DEFAULT_PERSONA, PersonaStore } from "./harness/persona";
-import { ChatModelStore } from "./harness/chatModel";
 import { VaultStore, type VaultNote } from "./harness/vault";
 import {
 	TaskStore,
@@ -45,7 +42,6 @@ import {
 } from "./harness/trackingmore";
 import { readSystemStats } from "./harness/systemStats";
 import { ArtifactStore, toDocument } from "./harness/artifacts";
-import { EndpointStore } from "./harness/endpoints";
 import { readablePage, ReaderError } from "./harness/reader";
 import { describeWhen } from "./harness/reminderParser";
 import {
@@ -55,46 +51,29 @@ import {
 	parseToolCallName,
 	toolCallName,
 } from "./harness/mcp";
-import {
-	describeTransportError,
-	invalidateManagerToken,
-} from "./harness/modelManager";
-
-import type { McpToolRef } from "./agent/actions";
+import { validateAttachments } from "./harness/attachments";
 import { HomeApi } from "./agent/home";
-import { describeActions } from "./agent/prompts";
-import { runTurn, type TurnDeps } from "./agent/turn";
-import {
-	getThinkingProfile,
-	thinkingProfilesForHardware,
-	type ThinkingMode,
-} from "./harness/thinkingProfiles";
-import { validateAttachments, type ImageAttachment } from "./harness/attachments";
-import {
-	ModelManagerClient,
-	ModelManagerError,
-	deriveManagerUrl,
-	managerPairingConfigured,
-	pairModelManager,
-	readManagerToken,
-} from "./harness/modelManager";
+import { AiSettings, PROVIDERS } from "./ai/settings";
+import { SpendLedger } from "./ai/spend";
+import type { Effort, ImageInput, ProviderId } from "./ai/types";
+import { Assistant, type AskEvents } from "./assistant/agent";
+import { ConfirmationStore } from "./assistant/confirmations";
+import { buildTools, type McpTool, type ToolContext } from "./assistant/tools";
 
 const app = express();
 const port = Number(process.env.HARNESS_PORT || 8090);
 const supervisorToken = process.env.SUPERVISOR_TOKEN || "";
-const homeAssistantUrl = "http://supervisor/core/api";
+/* Home Assistant through the Supervisor; HA_API_URL points elsewhere for local runs. */
+const homeAssistantUrl = process.env.HA_API_URL || "http://supervisor/core/api";
 const instanceId = randomUUID();
-const pendingReminders = new Map<string, { message: string; at: string }>();
-const pendingActions = new Map<
-	string,
-	{
-		domain: string;
-		service: string;
-		entityId: string;
-		serviceData: Record<string, unknown>;
-		destructive: boolean;
-	}
->();
+/* Device actions waiting for the owner's tap, shared with the Discord bot. */
+export const confirmations = new ConfirmationStore();
+/* Which AI answers, and what it has cost today. */
+export const aiSettings = new AiSettings();
+void aiSettings.load();
+export const spend = new SpendLedger();
+void spend.load();
+export const home = supervisorToken ? new HomeApi(supervisorToken, homeAssistantUrl) : undefined;
 const conversations = new ConversationStore();
 void conversations.load();
 const skills = new SkillStore();
@@ -103,8 +82,7 @@ const artifacts = new ArtifactStore();
 void artifacts.load();
 const mcpServers = new McpServerStore();
 void mcpServers.load();
-const endpoints = new EndpointStore();
-void endpoints.load();
+
 /*
  * The Markdown vault at /share/vault, doubling as the model's editable
  * long-term memory. The companion remindme-vault add-on edits the very same
@@ -128,8 +106,7 @@ void tasks.load();
 /* The editable base system prompt. Persisted so an edit survives restarts; the
  * capability instructions are always appended on top of it. */
 const persona = new PersonaStore();
-const chatModel = new ChatModelStore();
-void chatModel.load();
+
 void persona.load();
 /*
  * Tracked parcels. TrackingMore registers each number once and polls the carrier
@@ -189,15 +166,6 @@ function summariseNote(note: VaultNote) {
 	};
 }
 
-/** The endpoint every request resolves against, custom or the local default. */
-function resolveEndpoint() {
-	return endpoints.resolve({
-		url: process.env.LOCAL_LLM_URL || "http://homeassistant:8080/v1/chat/completions",
-		// The chosen chat model, by name; the add-on routes unnamed or unknown
-		// names to its default, so an empty choice still works.
-		model: chatModel.get() || config.localLlmModel,
-	});
-}
 
 /*
  * A chat request carries the conversation so far, and a transcript with a
@@ -259,82 +227,44 @@ app.post("/api/mcp/:id/test", async (request, response) => {
 		});
 	}
 });
-/* Inference endpoints: the switchable list of where the model runs. */
-app.get("/api/endpoints", (_request, response) => {
-	response.json(endpoints.config());
+/* Which AI answers. Keys only ever come from the app options; this picks among them. */
+function searchFallback(): boolean {
+	return Boolean(getSearxngUrl() || process.env.EXA_API_KEY);
+}
+app.get("/api/ai", (_request, response) => {
+	response.set("Cache-Control", "no-store").json({
+		...aiSettings.status(searchFallback()),
+		spend: spend.today(),
+		budget: aiSettings.dailyBudget(),
+	});
 });
-app.post("/api/endpoints", async (request, response) => {
+app.put("/api/ai", async (request, response) => {
 	try {
-		response.status(201).json(await endpoints.create(request.body || {}));
+		await aiSettings.choose(request.body || {});
+		response.json(aiSettings.status(searchFallback()));
 	} catch (error) {
-		response.status(400).json({
-			error: error instanceof Error ? error.message : "Invalid endpoint",
-		});
+		response.status(400).json({ error: error instanceof Error ? error.message : "Invalid choice" });
 	}
 });
-app.patch("/api/endpoints/:id", async (request, response) => {
+app.get("/api/ai/models", async (request, response) => {
+	const id = String(request.query.provider || aiSettings.providerId());
+	if (!PROVIDERS.some((provider) => provider.id === id))
+		return response.status(400).json({ error: "Unknown provider" });
 	try {
-		const updated = await endpoints.update(request.params.id, request.body || {});
-		if (!updated) return response.status(404).json({ error: "Not found" });
-		response.json(updated);
+		response.json({ models: await aiSettings.listModels(id as ProviderId) });
 	} catch (error) {
-		response.status(400).json({
-			error: error instanceof Error ? error.message : "Invalid endpoint",
-		});
+		response.status(502).json({ error: error instanceof Error ? error.message : "Could not list models" });
 	}
 });
-app.delete("/api/endpoints/:id", async (request, response) => {
-	response.status((await endpoints.delete(request.params.id)) ? 204 : 404).end();
-});
-/* Empty id in the body restores the local default. */
-app.post("/api/endpoints/active", async (request, response) => {
-	const id = typeof request.body?.id === "string" ? request.body.id : "";
-	if (!(await endpoints.setActive(id)))
-		return response.status(404).json({ error: "No such endpoint" });
-	response.json(endpoints.config());
-});
-/*
- * A one-message round trip to prove an endpoint answers before it is
- * trusted with a turn. Tests the record as saved, including its key, so a
- * bad URL or a rejected key is caught here rather than mid-conversation.
- */
-app.post("/api/endpoints/:id/test", async (request, response) => {
-	const endpoint = endpoints.get(request.params.id);
-	if (!endpoint) return response.status(404).json({ error: "Not found" });
+/* One tiny request, to prove the key and model work before trusting them with a turn. */
+app.post("/api/ai/test", async (_request, response) => {
+	const status = aiSettings.status(searchFallback());
+	if (!status.ready) return response.json({ ok: false, error: status.problem });
 	try {
-		const headers: Record<string, string> = { "Content-Type": "application/json" };
-		if (endpoint.apiKey) headers.Authorization = `Bearer ${endpoint.apiKey}`;
-		const probe = await fetch(new URL(endpoint.url), {
-			method: "POST",
-			headers,
-			body: JSON.stringify({
-				model: endpoint.model,
-				messages: [{ role: "user", content: "Reply with the single word: ok" }],
-				max_tokens: 5,
-				stream: false,
-			}),
-			signal: AbortSignal.timeout(15_000),
-		});
-		if (!probe.ok) {
-			const detail = (await probe.text()).slice(0, 200);
-			return response.status(502).json({
-				ok: false,
-				error: `HTTP ${probe.status}: ${detail}`,
-			});
-		}
-		const data = (await probe.json()) as {
-			choices?: Array<{ message?: { content?: string } }>;
-		};
-		const reply = data.choices?.[0]?.message?.content;
-		response.json({
-			ok: true,
-			reply: typeof reply === "string" ? reply.slice(0, 120) : "(no text)",
-		});
+		const reply = await assistant.quick("Reply with the single word: ok", AbortSignal.timeout(60_000));
+		response.json({ ok: Boolean(reply), reply: reply?.slice(0, 120) || "", model: status.model });
 	} catch (error) {
-		response.status(502).json({
-			ok: false,
-			error: error instanceof Error ? error.message : "Could not reach endpoint",
-		});
+		response.json({ ok: false, error: error instanceof Error ? error.message : "The test failed" });
 	}
 });
 /* The editable base system prompt. GET returns the prompt in effect plus the
@@ -648,9 +578,16 @@ app.get("/api/reader", async (request, response) => {
 		response.status(502).json({ error: "The page could not be fetched." });
 	}
 });
-app.get("/api/tools", (_request, response) => {
-	// The agent has no tool list any more; these are the actions it chooses between.
-	response.json(describeActions());
+app.get("/api/tools", async (_request, response) => {
+	const provider = aiSettings.provider();
+	const tools = await buildTools(toolContext(), { nativeWebSearch: Boolean(provider?.nativeWebSearch) });
+	response.json(
+		tools.map(({ spec }) => ({
+			name: spec.name,
+			description: spec.description,
+			parameters: Object.keys((spec.parameters as { properties?: object }).properties || {}),
+		})),
+	);
 });
 app.get("/api/conversations", (request, response) => {
 	response.json(
@@ -675,327 +612,9 @@ app.delete("/api/conversations/:id", async (request, response) => {
 	const deleted = await conversations.delete(request.params.id);
 	response.status(deleted ? 204 : 404).end();
 });
-app.post("/api/tokenize", async (request, response) => {
-	const prompt =
-		typeof request.body?.prompt === "string" ? request.body.prompt : "";
-	const messages = Array.isArray(request.body?.messages)
-		? request.body.messages.slice(-100)
-		: [];
-	/*
-	 * Exact counts come from llama.cpp's /tokenize, which a custom or
-	 * OpenAI-style endpoint does not offer. When one is active, say the
-	 * count is inexact and let the client fall back to its estimate rather
-	 * than tokenising against the wrong model.
-	 */
-	if (endpoints.active()) {
-		response.json({ exact: false });
-		return;
-	}
-	try {
-		const usage = await measureTokenUsage(
-			tokenizerUrl(getLocalLlmUrl()),
-			prompt.slice(0, 32_000),
-			messages,
-			Number(process.env.LOCAL_LLM_CONTEXT_SIZE || 8192),
-		);
-		response.json(usage);
-	} catch (error) {
-		response.status(503).json({
-			exact: false,
-			error: error instanceof Error ? error.message : "Tokenizer unavailable",
-		});
-	}
-});
-/**
- * Probe each layer between the harness and the model manager and report them
- * separately, so "unreachable" can be attributed rather than guessed at.
- *
- * The manager owns port 8080 and reverse-proxies anything that is not
- * /manager/v1/* to llama-server, so working inference already proves the
- * manager process is up — which is why these are reported apart.
- */
-app.get("/api/models/diagnostics", async (_request, response) => {
-	const managerUrl = process.env.MODEL_MANAGER_URL || "";
-	const checks: Array<Record<string, unknown>> = [];
-
-	const enabled = process.env.MODEL_MANAGER_ENABLED === "true";
-	checks.push({
-		step: "enabled",
-		ok: enabled,
-		detail: `MODEL_MANAGER_ENABLED=${process.env.MODEL_MANAGER_ENABLED ?? "(unset)"}`,
-		// A hint is a remedy, so it only belongs on a failing check.
-		hint: enabled
-			? undefined
-			: "Set 'model_manager_enabled' in the add-on configuration.",
-	});
-	checks.push({
-		step: "url",
-		ok: Boolean(managerUrl),
-		detail: managerUrl || "(unset)",
-	});
-
-	const paired = await managerPairingConfigured(managerTokenPath());
-	checks.push({
-		step: "paired",
-		ok: paired,
-		detail: paired ? "token present" : `no token at ${managerTokenPath()}`,
-		hint: paired
-			? undefined
-			: "Read the pairing code from the Local llama.cpp add-on log and enter it in Models.",
-	});
-
-	// Unauthenticated probe: a 401 proves the manager is listening and routing.
-	if (managerUrl) {
-		try {
-			const probe = await fetch(`${managerUrl}/status`, {
-				signal: AbortSignal.timeout(4000),
-			});
-			const body = await probe.text().catch(() => "");
-			checks.push({
-				step: "reachable",
-				ok: probe.status === 401 || probe.ok,
-				status: probe.status,
-				detail:
-					probe.status === 401
-						? "manager responded 401 — it is running; this is an auth/pairing issue"
-						: probe.ok
-							? "manager responded without auth (unexpected)"
-							: `unexpected status; body starts: ${body.slice(0, 120)}`,
-				hint:
-					probe.status === 404
-						? "404 suggests the Local llama.cpp add-on predates the model manager. Update it."
-						: undefined,
-			});
-		} catch (error) {
-			checks.push({
-				step: "reachable",
-				ok: false,
-				detail: describeTransportError(error),
-				hint: "Is the Local llama.cpp add-on running, and is port 8080 mapped?",
-			});
-		}
-	}
-
-	// Authenticated call — the one the Models tab actually makes.
-	try {
-		const status = await (await getModelManagerClient()).request("/status");
-		checks.push({ step: "authenticated", ok: true, detail: "status returned", status });
-	} catch (error) {
-		const code = error instanceof ModelManagerError ? error.code : "unknown";
-		const rejected =
-			error instanceof ModelManagerError && error.status === 401 && paired;
-		checks.push({
-			step: "authenticated",
-			ok: false,
-			code,
-			detail:
-				error instanceof ModelManagerError
-					? error.detail || error.message
-					: String(error),
-			hint: rejected
-				? "The stored token is no longer accepted — the add-ons keep separate /data, so reinstalling Local llama.cpp regenerates its token. Re-pair with a fresh code from its log."
-				: undefined,
-		});
-	}
-
-	response.set("Cache-Control", "no-store").json({
-		ok: checks.every((check) => check.ok),
-		checks,
-	});
-});
-app.get("/api/models/pairing", async (_request, response) => {
-	response.set("Cache-Control", "no-store").json({
-		configured: await managerPairingConfigured(managerTokenPath()),
-	});
-});
-app.post("/api/models/pair", async (request, response) => {
-	const code =
-		typeof request.body?.code === "string"
-			? request.body.code.trim().toUpperCase()
-			: "";
-	try {
-		await pairModelManager(modelManagerUrl(), code, managerTokenPath());
-		modelManagerClientPromise = undefined;
-		response.json({ configured: true });
-	} catch (error) {
-		sendModelManagerError(response, error);
-	}
-});
-app.get("/api/models", async (_request, response) => {
-	await proxyModelManager(response, "/catalog");
-});
-app.get("/api/models/status", async (_request, response) => {
-	try {
-		const status = await (await getModelManagerClient()).request<ManagerStatus>("/status");
-		const chosen = chatModel.get();
-		response.json({
-			...status,
-			/* What the console chats with, and whether that was a choice. */
-			chatModel: chosen && status.models?.includes(chosen) ? chosen : status.defaultModel || "",
-			chatModelChosen: Boolean(chosen && status.models?.includes(chosen)),
-		});
-	} catch (error) {
-		await forgetRejectedPairing(error);
-		sendModelManagerError(response, error);
-	}
-});
-/*
- * Choose the console's chat model. This never touches the add-on's default,
- * so other apps using the add-on keep the model they expect.
- */
-app.put("/api/models/chat", async (request, response) => {
-	const id = typeof request.body?.id === "string" ? request.body.id.trim() : "";
-	if (id && !/^[a-z0-9._-]{1,120}$/i.test(id))
-		return response.status(400).json(safeModelError("invalid_model", "Model selection is invalid."));
-	if (id) {
-		const status = await managerStatus(true);
-		if (status?.models && !status.models.includes(id))
-			return response
-				.status(409)
-				.json(safeModelError("model_not_served", "That model is not downloaded in the llama.cpp add-on yet."));
-	}
-	await chatModel.set(id);
-	managerStatusCache = undefined;
-	response.json({ chatModel: id });
-});
-app.get("/api/models/inventory", async (_request, response) => {
-	await proxyModelManager(response, "/models/inventory");
-});
-app.delete("/api/models/inventory/:id", async (request, response) => {
-	if (!/^[a-f0-9]{32}$/.test(request.params.id))
-		return response
-			.status(400)
-			.json(
-				safeModelError(
-					"invalid_inventory_target",
-					"Inventory item is invalid.",
-				),
-			);
-	await proxyModelManager(
-		response,
-		`/models/inventory/${encodeURIComponent(request.params.id)}`,
-		"DELETE",
-	);
-});
-app.post("/api/models/preflight", async (request, response) => {
-	const body = modelSelectionBody(request.body);
-	if (!body)
-		return response
-			.status(400)
-			.json(safeModelError("invalid_model", "Model selection is invalid."));
-	await proxyModelManager(response, "/preflight", "POST", body);
-});
-app.post("/api/models/install", async (request, response) => {
-	const body = modelSelectionBody(request.body);
-	if (!body)
-		return response
-			.status(400)
-			.json(safeModelError("invalid_model", "Model selection is invalid."));
-	await proxyModelManager(response, "/install", "POST", body);
-});
-app.post("/api/models/activate", async (request, response) => {
-	const body = modelSelectionBody(request.body);
-	if (!body)
-		return response
-			.status(400)
-			.json(safeModelError("invalid_model", "Model selection is invalid."));
-	await proxyModelManager(response, "/activate", "POST", body);
-});
-app.post("/api/models/cancel", async (_request, response) => {
-	await proxyModelManager(response, "/cancel", "POST", {});
-});
-app.get("/api/models/:id/options.yaml", async (request, response) => {
-	const id = request.params.id;
-	if (!/^[a-z0-9][a-z0-9.-]{0,127}$/.test(id))
-		return response
-			.status(400)
-			.json(safeModelError("invalid_model", "Model identifier is invalid."));
-	try {
-		const result = await (await getModelManagerClient()).requestText(
-			`/models/${encodeURIComponent(id)}/options.yaml`,
-		);
-		response
-			.status(200)
-			.set({
-				"Content-Type": result.contentType,
-				"Content-Disposition": `attachment; filename="${id}-options.yaml"`,
-				"Cache-Control": "no-store",
-			})
-			.send(result.body);
-	} catch (error) {
-		sendModelManagerError(response, error);
-	}
-});
-app.delete("/api/models/:id", async (request, response) => {
-	if (!/^[a-z0-9][a-z0-9.-]{0,127}$/.test(request.params.id))
-		return response
-			.status(400)
-			.json(safeModelError("invalid_model", "Model identifier is invalid."));
-	await proxyModelManager(
-		response,
-		`/models/${encodeURIComponent(request.params.id)}`,
-		"DELETE",
-	);
-});
-app.post("/api/models/custom", async (request, response) => {
-	const repo =
-		typeof request.body?.repo === "string" ? request.body.repo.trim() : "";
-	const file =
-		typeof request.body?.file === "string" ? request.body.file.trim() : "";
-	if (
-		!/^[A-Za-z0-9][A-Za-z0-9_.-]*\/[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(repo) ||
-		!/^[A-Za-z0-9][A-Za-z0-9_.-]*\.gguf$/.test(file)
-	)
-		return response
-			.status(400)
-			.json(
-				safeModelError(
-					"invalid_custom_model",
-					"Enter one Hugging Face repository and GGUF filename.",
-				),
-			);
-	await proxyModelManager(response, "/catalog/custom", "POST", { repo, file });
-});
-app.put("/api/models/credentials", async (request, response) => {
-	const token =
-		typeof request.body?.token === "string" ? request.body.token.trim() : "";
-	if (!/^hf_[A-Za-z0-9_]{20,}$/.test(token))
-		return response
-			.status(400)
-			.json(
-				safeModelError(
-					"invalid_token",
-					"Enter a valid Hugging Face access token.",
-				),
-			);
-	await proxyModelManager(response, "/credentials/huggingface", "PUT", {
-		token,
-	});
-});
-app.get("/api/models/events", async (request, response) => {
-	const controller = new AbortController();
-	request.on("close", () => controller.abort());
-	try {
-		const upstream = await (await getModelManagerClient()).openEvents(
-			controller.signal,
-		);
-		response.status(200).set({
-			"Content-Type": "text/event-stream",
-			"Cache-Control": "no-store",
-			"X-Accel-Buffering": "no",
-		});
-		response.flushHeaders();
-		const reader = upstream.body?.getReader();
-		while (reader) {
-			const { done, value } = await reader.read();
-			if (done) break;
-			response.write(Buffer.from(value));
-		}
-	} catch (error) {
-		if (!response.headersSent) sendModelManagerError(response, error);
-	} finally {
-		if (!response.writableEnded) response.end();
-	}
+/* Cloud models have no public tokenizer; the console falls back to its estimate. */
+app.post("/api/tokenize", (_request, response) => {
+	response.json({ exact: false });
 });
 app.get("/api/entities/:id", async (request, response) => {
 	const result = await hassRequest(
@@ -1088,14 +707,9 @@ app.post("/api/entities/action", async (request, response) => {
 			request.body?.value,
 		);
 		if (validated.requiresConfirmation) {
-			const token = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-			pendingActions.set(token, validated);
-			response.json({
-				confirmation_required: true,
-				token,
-				destructive: validated.destructive,
-				message: `Confirm ${validated.service} for ${validated.entityId}`,
-			});
+			response.json(
+				confirmations.hold(validated, `${validated.service.replace(/_/g, " ")} ${validated.entityId}`),
+			);
 			return;
 		}
 		await hassRequest(
@@ -1183,39 +797,32 @@ app.delete("/api/reminders/:id", async (_request, response) => {
 	);
 	response.status(deleted ? 204 : 404).end();
 });
-app.get("/api/status", async (_request, response) => {
-	/*
-	 * A custom endpoint runs its own model, so the local model manager's
-	 * view does not apply — the badge and profiles come from the endpoint
-	 * instead. The manager is only consulted when inference is local.
-	 */
-	const activeEndpoint = endpoints.active();
-	const managed = activeEndpoint ? undefined : await managedActiveModel(true);
-	const contextSize =
-		managed?.recommendedContext ||
-		Number(process.env.LOCAL_LLM_CONTEXT_SIZE || 8192);
+/* The composer's thinking choices, as effort levels. The ids are the old ones,
+ * so a choice saved in the browser keeps working. */
+const EFFORT_PROFILES: Array<{ id: string; name: string; effort: Effort; description: string }> = [
+	{ id: "fast", name: "Quick", effort: "low", description: "Short thinking. Best for the house and quick questions." },
+	{ id: "balanced", name: "Normal", effort: "medium", description: "Thinks a little longer." },
+	{ id: "deep", name: "Deep", effort: "high", description: "Thinks hardest. Slower and costs more." },
+];
+function effortFor(mode: unknown): Effort | undefined {
+	return EFFORT_PROFILES.find((profile) => profile.id === mode)?.effort;
+}
+app.get("/api/status", (_request, response) => {
+	const status = aiSettings.status(searchFallback());
 	response.set("Cache-Control", "no-store").json({
 		instanceId,
-		model: activeEndpoint?.model || managed?.id || config.localLlmModel || "runtime-unavailable",
-		modelName: activeEndpoint
-			? `${activeEndpoint.name} · ${activeEndpoint.model}`
-			: managed
-				? `${managed.family} ${managed.quantization}`.trim()
-				: config.localLlmModel || "Runtime unavailable",
-		/* Whether the manager is driving the endpoint, distinct from whether
-		 * inference works at all. */
-		managed: Boolean(managed),
-		capabilities: managed?.capabilities || [],
-		llmUrl:
-			process.env.LOCAL_LLM_URL ||
-			"http://homeassistant:8080/v1/chat/completions",
-		vision:
-			process.env.LOCAL_LLM_VISION === "true" &&
-			Boolean(managed?.capabilities.includes("vision")),
+		model: status.model,
+		modelName: status.ready ? `${status.label} · ${status.model}` : "AI not set up",
+		ai: status,
+		capabilities: status.vision ? ["vision"] : [],
+		vision: status.vision,
 		/* The companion remindme-vault editor's URL, if configured — lets the
 		 * console deep-link a note into that add-on. Empty means no link shown. */
 		vaultUrl: process.env.VAULT_UI_URL || "",
-		profiles: thinkingProfilesForHardware(os.totalmem(), contextSize),
+		profiles: EFFORT_PROFILES.map((profile) => ({
+			...profile,
+			recommended: profile.effort === aiSettings.effort(),
+		})),
 		hardware: {
 			architecture: process.arch,
 			cpuCores: os.cpus().length,
@@ -1232,44 +839,17 @@ app.get("/", (_request, response) =>
 app.post("/api/confirm", async (request, response) => {
 	const token =
 		typeof request.body?.token === "string" ? request.body.token : "";
-	const reminder = pendingReminders.get(token);
-	if (reminder) {
-		pendingReminders.delete(token);
-		/*
-		 * The manager schedules by delay, so the absolute time is converted
-		 * here. Delivery is the bot process's job — it owns the Discord client
-		 * and the notify target — so this hands off rather than duplicating it.
-		 */
-		const delayMinutes = Math.max(
-			0,
-			(new Date(reminder.at).getTime() - Date.now()) / 60_000,
-		);
-		const created = await addReminder(
-			reminder.message,
-			delayMinutes,
-			process.env.OWNER_ID || "",
-			"",
-		);
-		response.json({
-			scheduled: true,
-			id: created?.id,
-			message: reminder.message,
-			at: reminder.at,
-		});
-		return;
-	}
-	const action = pendingActions.get(token);
-	if (!action) {
+	const held = confirmations.take(token);
+	if (!held || !home) {
 		response.status(404).json({ error: "Action expired or not found" });
 		return;
 	}
-	pendingActions.delete(token);
-	response.json(
-		await hassRequest(`/services/${action.domain}/${action.service}`, "POST", {
-			...action.serviceData,
-			entity_id: action.entityId,
-		}),
-	);
+	try {
+		await home.service(held.action);
+		response.json({ done: true, message: held.label });
+	} catch (error) {
+		response.status(502).json({ error: error instanceof Error ? error.message : "Home Assistant refused" });
+	}
 });
 
 app.post("/api/chat", async (request, response) => {
@@ -1277,13 +857,6 @@ app.post("/api/chat", async (request, response) => {
 		typeof request.body?.message === "string"
 			? request.body.message.trim()
 			: "";
-	const thinkingMode = getThinkingProfile(
-		typeof request.body?.thinkingMode === "string"
-			? request.body.thinkingMode
-			: "fast",
-		os.totalmem(),
-		Number(process.env.LOCAL_LLM_CONTEXT_SIZE || 8192),
-	).id;
 	if (!prompt) {
 		response.status(400).json({ error: "message is required" });
 		return;
@@ -1300,23 +873,19 @@ app.post("/api/chat", async (request, response) => {
 		if (!response.writableFinished) abort.abort();
 	});
 	try {
-		const attachments = validateAttachments(
-			request.body?.attachments,
-			process.env.LOCAL_LLM_VISION === "true",
-		);
-		await runAgent(
+		const attachments = validateAttachments(request.body?.attachments, true);
+		const artifactId = typeof request.body?.artifactId === "string" ? request.body.artifactId : "";
+		await runConsoleTurn(send, `request-${Date.now()}`, {
 			prompt,
-			thinkingMode,
-			send,
-			`request-${Date.now()}`,
-			attachments,
-			validateHistory(request.body?.history),
+			history: validateHistory(request.body?.history).map((turn) => ({ role: turn.role, text: turn.content })),
+			images: attachments.map(
+				(image): ImageInput => ({ mediaType: image.mediaType, data: image.dataUrl.slice(image.dataUrl.indexOf(",") + 1) }),
+			),
 			// Which document is on the bench, so edits have a default target.
-			typeof request.body?.artifactId === "string"
-				? request.body.artifactId
-				: "",
-			abort.signal,
-		);
+			openDocument: artifactId ? artifacts.get(artifactId) : undefined,
+			effort: effortFor(request.body?.thinkingMode),
+			signal: abort.signal,
+		});
 		send("complete", {});
 	} catch (error) {
 		if (abort.signal.aborted) return;
@@ -1424,8 +993,6 @@ async function purgeParcel(parcel: Parcel): Promise<void> {
 
 /* ── Agent ──────────────────────────────────────────────────────────── */
 
-const home = supervisorToken ? new HomeApi(supervisorToken, homeAssistantUrl) : undefined;
-
 function parcelLine(card: ReturnType<typeof parcelCard>): string {
 	const name = card.label || card.trackingNumber;
 	const where = card.location ? ` — ${card.location}` : "";
@@ -1436,32 +1003,39 @@ function parcelLine(card: ReturnType<typeof parcelCard>): string {
 	return `${name}: ${card.status}${where}${eta}`;
 }
 
+let homeName: string | undefined;
+async function loadHomeName(): Promise<void> {
+	if (!home) return;
+	try {
+		const settings = await home.config();
+		homeName = settings.location_name;
+		// The app container may not carry the house's time zone; Home Assistant knows it.
+		if (!process.env.TZ && settings.time_zone) process.env.TZ = settings.time_zone;
+	} catch (error) {
+		console.warn("Could not read Home Assistant's settings:", error instanceof Error ? error.message : error);
+	}
+}
+
 /**
- * The agent's view of this add-on: every store and service it may act
- * through. Built per turn so option changes (search, TrackingMore, MCP
- * servers) apply without a restart.
+ * Everything the assistant's tools reach. Built per turn so option changes
+ * (search, TrackingMore, MCP servers) apply without a restart.
  */
-function agentDeps(): TurnDeps {
+export function toolContext(): ToolContext {
+	const ownerId = process.env.OWNER_ID || "";
 	return {
-		endpoint: resolveEndpoint,
-		activeModel: activeModelMetadata,
-		contextSize: Number(process.env.LOCAL_LLM_CONTEXT_SIZE || 8192),
-		systemPrompt: () => persona.get() + skillPrompt(skills.enabled()),
-		recall: (prompt) => vault.recall(prompt, 5),
 		home,
-		holdAction(action) {
-			const token = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-			pendingActions.set(token, action);
-			return token;
+		confirmations,
+		reminders: {
+			add: (message, at) => addReminder(message, Math.max(0, (at.getTime() - Date.now()) / 60_000), ownerId, ""),
+			list: () => listReminders(ownerId),
+			cancel: (id) => deleteReminder(id, ownerId),
 		},
-		holdReminder(reminder) {
-			const token = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-			pendingReminders.set(token, reminder);
-			return token;
-		},
-		listReminders: () => listReminders(process.env.OWNER_ID || ""),
-		webSearch: getSearxngUrl() || process.env.EXA_API_KEY ? webSearch : undefined,
 		vault,
+		webSearch: searchFallback() ? webSearch : undefined,
+		async readPage(url) {
+			const page = await readablePage(url);
+			return { title: page.title, url: page.finalUrl, text: page.text };
+		},
 		parcels: config.trackingMoreApiKey
 			? {
 					async track(number, label) {
@@ -1484,311 +1058,163 @@ function agentDeps(): TurnDeps {
 					},
 				}
 			: undefined,
-		/*
-		 * MCP tools join the decision as one grammar branch each. A server
-		 * that is down must not take the turn with it.
-		 */
-		async mcpTools() {
-			const refs: McpToolRef[] = [];
-			for (const server of mcpServers.enabled()) {
-				try {
-					const session = await connectMcp(server, 5000);
-					for (const tool of session.tools)
-						refs.push({
-							name: toolCallName(server.id, tool.name),
-							description: tool.description || `MCP tool ${tool.name}`,
-							inputSchema: tool.inputSchema || { type: "object", properties: {} },
-						});
-				} catch (error) {
-					console.warn(
-						`MCP server ${server.name} unavailable:`,
-						error instanceof Error ? error.message : error,
-					);
-				}
-			}
-			return refs;
-		},
-		async callMcp(name, args) {
-			const parsed = parseToolCallName(name);
-			const server = parsed ? mcpServers.get(parsed.serverId) : undefined;
-			if (!parsed || !server || !server.enabled)
-				throw new Error("That MCP server is not enabled.");
-			return callMcpTool(server, parsed.tool, args);
-		},
 		artifacts,
-		features: { reminders: true, parcels: Boolean(config.trackingMoreApiKey) },
+		mcp: {
+			/* A server that is down must not take the turn with it. */
+			async tools() {
+				const refs: McpTool[] = [];
+				for (const server of mcpServers.enabled()) {
+					try {
+						const session = await connectMcp(server, 5000);
+						for (const tool of session.tools)
+							refs.push({
+								name: toolCallName(server.id, tool.name),
+								description: tool.description || `MCP tool ${tool.name}`,
+								inputSchema: tool.inputSchema || { type: "object", properties: {} },
+							});
+					} catch (error) {
+						console.warn(
+							`MCP server ${server.name} unavailable:`,
+							error instanceof Error ? error.message : error,
+						);
+					}
+				}
+				return refs;
+			},
+			async call(name, args) {
+				const parsed = parseToolCallName(name);
+				const server = parsed ? mcpServers.get(parsed.serverId) : undefined;
+				if (!parsed || !server || !server.enabled)
+					throw new Error("That MCP server is not enabled.");
+				return callMcpTool(server, parsed.tool, args);
+			},
+		},
 	};
 }
 
-async function runAgent(
-	prompt: string,
-	thinkingMode: ThinkingMode,
+export const assistant = new Assistant({
+	settings: aiSettings,
+	spend,
+	persona: () => persona.get() + skillPrompt(skills.enabled()),
+	tools: toolContext,
+	recall: (prompt) => vault.recall(prompt, 5),
+	home: () => homeName,
+	searchFallback,
+});
+
+/** Parcels still on their way, as lines for the morning brief. */
+export function parcelSummary(): string {
+	const cards = parcels.list().filter((parcel) => !parcel.delivered).map(parcelCard);
+	return cards.length ? cards.map((card) => `- ${parcelLine(card)}`).join("\n") : "No parcels are being tracked.";
+}
+
+/* The morning brief on demand; set by the app when the Discord bot runs. */
+let briefSender: (() => Promise<string>) | undefined;
+export function setBriefSender(send: () => Promise<string>): void {
+	briefSender = send;
+}
+app.post("/api/brief", async (_request, response) => {
+	if (!briefSender) return response.status(503).json({ error: "The brief is sent on Discord, and the Discord bot isn't running." });
+	try {
+		response.json({ text: await briefSender() });
+	} catch (error) {
+		response.status(502).json({ error: error instanceof Error ? error.message : "The brief failed" });
+	}
+});
+
+/**
+ * One console turn, streamed as the events the console's timeline already
+ * knows: a phase per model round, a row per tool call, the answer last.
+ */
+async function runConsoleTurn(
 	send: Send,
 	requestId: string,
-	attachments: ImageAttachment[],
-	history: HistoryTurn[] = [],
-	openArtifactId = "",
-	signal?: AbortSignal,
+	input: Omit<Parameters<Assistant["ask"]>[0], "channel">,
 ): Promise<void> {
-	await runTurn(
-		{ prompt, thinkingMode, requestId, attachments, history, openArtifactId, signal },
-		agentDeps(),
-		send,
-	);
-}
-
-function getLocalLlmUrl(): URL {
-	try {
-		const url = new URL(
-			process.env.LOCAL_LLM_URL ||
-				"http://homeassistant:8080/v1/chat/completions",
-		);
-		// Must match the allowlist in localLlm.ts — both gate the same endpoint.
-		if (
-			url.protocol !== "http:" ||
-			!["homeassistant", "localhost", "127.0.0.1", "::1", "local-llama-cpp"].includes(
-				url.hostname,
-			)
-		)
-			throw new Error("LOCAL_LLM_URL must target the local model");
-		return url;
-	} catch (error) {
-		console.error("Invalid LOCAL_LLM_URL:", error);
-		throw new Error("Invalid LOCAL_LLM_URL");
-	}
-}
-
-type ManagedActiveModel = {
-	id: string;
-	family: string;
-	file: string;
-	quantization: string;
-	recommendedContext: number;
-	capabilities: string[];
-};
-
-type ManagerStatus = {
-	activeModel?: ManagedActiveModel;
-	/* Every model the add-on's router serves, and the one unnamed requests get. */
-	models?: string[];
-	defaultModel?: string;
-};
-
-let managerStatusCache: { at: number; value?: ManagerStatus } | undefined;
-async function managerStatus(fresh = false): Promise<ManagerStatus | undefined> {
-	if (process.env.MODEL_MANAGER_ENABLED !== "true") return undefined;
-	// A chat turn may reuse a status a few seconds old; the status route and a
-	// model choice always ask fresh.
-	if (!fresh && managerStatusCache && Date.now() - managerStatusCache.at < 3_000)
-		return managerStatusCache.value;
-	let value: ManagerStatus | undefined;
-	try {
-		value = await (await getModelManagerClient()).request<ManagerStatus>("/status", {
-			signal: AbortSignal.timeout(2_000),
-		});
-	} catch {
-		value = undefined;
-	}
-	managerStatusCache = { at: Date.now(), value };
-	return value;
-}
-
-let catalogCache: { at: number; variants: Array<{ model: ManagedActiveModel }> } | undefined;
-async function catalogModels(): Promise<Array<{ model: ManagedActiveModel }>> {
-	if (catalogCache && Date.now() - catalogCache.at < 60_000) return catalogCache.variants;
-	try {
-		const catalog = await (await getModelManagerClient()).request<{
-			variants?: Array<{ model: ManagedActiveModel }>;
-		}>("/catalog", { signal: AbortSignal.timeout(4_000) });
-		catalogCache = { at: Date.now(), variants: catalog.variants || [] };
-	} catch {
-		catalogCache = { at: Date.now(), variants: catalogCache?.variants || [] };
-	}
-	return catalogCache.variants;
-}
-
-/**
- * The model the console actually chats with: the chosen chat model when the
- * add-on serves it, otherwise the add-on's default (which is what an unnamed
- * or unknown name is routed to).
- */
-async function managedActiveModel(fresh = false): Promise<ManagedActiveModel | undefined> {
-	const status = await managerStatus(fresh);
-	if (!status) return undefined;
-	const chosen = chatModel.get();
-	const serving = chosen && status.models?.includes(chosen) ? chosen : status.defaultModel;
-	// The default's metadata is what the manager reports as active.
-	if (!serving || serving === status.defaultModel) return status.activeModel;
-	const variant = (await catalogModels()).find((entry) => entry.model.id === serving);
-	return (
-		variant?.model || {
-			id: serving,
-			family: serving,
-			file: "",
-			quantization: "",
-			recommendedContext: Number(process.env.LOCAL_LLM_CONTEXT_SIZE || 8192),
-			capabilities: [],
+	const phase = (round: number) => `${requestId}-${round}`;
+	const thinkingOpen = new Set<number>();
+	const toolNames = new Map<string, string>();
+	let lastRound = 0;
+	const rowName = (round: number, id: string, name: string) => {
+		const key = `${round}:${id}`;
+		if (!toolNames.has(key)) {
+			const taken = [...toolNames.entries()].filter(([entry, value]) => entry.startsWith(`${round}:`) && value.startsWith(name)).length;
+			toolNames.set(key, taken ? `${name} · ${taken + 1}` : name);
 		}
-	);
-}
-
-/**
- * Identify the model actually serving the console's requests.
- *
- * The model manager is optional — when it is disabled, inference still runs
- * against LOCAL_LLM_URL with LOCAL_LLM_MODEL, so fall back to the configured
- * model, which is what the requests are sent with.
- */
-async function activeModelMetadata(): Promise<ActiveModelMetadata> {
-	const active = await managedActiveModel();
-	if (active)
-		return {
-			modelId: active.id,
-			modelName: `${active.family} ${active.quantization}`.trim(),
-		};
-	const configured = config.localLlmModel;
-	return configured
-		? { modelId: configured, modelName: configured }
-		: { modelId: "runtime-unavailable", modelName: "Runtime unavailable" };
-}
-
-let modelManagerClientPromise: Promise<ModelManagerClient> | undefined;
-
-type ModelSelectionBody = {
-	id: string;
-	context?: number;
-	override?: boolean;
-};
-
-function modelSelectionBody(value: unknown): ModelSelectionBody | undefined {
-	if (!value || typeof value !== "object") return undefined;
-	const input = value as Record<string, unknown>;
-	const id = typeof input.id === "string" ? input.id.trim() : "";
-	if (!/^[a-z0-9][a-z0-9.-]{0,127}$/.test(id)) return undefined;
-	const result: ModelSelectionBody = { id };
-	if (input.context !== undefined) {
-		const context = Number(input.context);
-		if (!Number.isInteger(context) || context < 1024 || context > 131072)
-			return undefined;
-		result.context = context;
-	}
-	if (input.override !== undefined) result.override = input.override === true;
-	return result;
-}
-
-function safeModelError(code: string, message: string, retryable = false) {
-	return { code, message, retryable };
-}
-
-function managerTokenPath(): string {
-	return process.env.MODEL_MANAGER_TOKEN_PATH || "/data/model-manager-token";
-}
-
-function modelManagerUrl(): string {
-	return (
-		process.env.MODEL_MANAGER_URL ||
-		deriveManagerUrl(getLocalLlmUrl().toString())
-	);
-}
-
-async function getModelManagerClient(): Promise<ModelManagerClient> {
-	if (process.env.MODEL_MANAGER_ENABLED !== "true")
-		throw new ModelManagerError(
-			"manager_disabled",
-			"Local model management is disabled.",
-			503,
-		);
-	if (!(await managerPairingConfigured(managerTokenPath())))
-		throw new ModelManagerError(
-			"manager_unpaired",
-			"Pair RemindMe with the local model manager first.",
-			401,
-		);
-	if (!modelManagerClientPromise) {
+		return toolNames.get(key)!;
+	};
+	const parse = (content: string): unknown => {
 		try {
-			modelManagerClientPromise = Promise.resolve(
-				new ModelManagerClient(modelManagerUrl(), () =>
-					readManagerToken(managerTokenPath()),
-				),
-			);
-		} catch (error) {
-			/*
-			 * The endpoint allowlist rejected the configured URL. That is a
-			 * configuration fault, not a transport one — reporting it as
-			 * "unavailable" sends you looking for a network problem that is
-			 * not there.
-			 */
-			throw new ModelManagerError(
-				"manager_misconfigured",
-				error instanceof Error ? error.message : "Manager endpoint is invalid.",
-				500,
-				false,
-				`MODEL_MANAGER_URL=${process.env.MODEL_MANAGER_URL ?? "(unset)"}`,
-			);
+			return JSON.parse(content);
+		} catch {
+			return content;
 		}
-	}
-	return modelManagerClientPromise;
-}
-
-async function proxyModelManager(
-	response: Response,
-	path: string,
-	method = "GET",
-	body?: unknown,
-) {
-	try {
-		const result = await (await getModelManagerClient()).request<unknown>(
-			path,
-			{
-				method,
-				body: body === undefined ? undefined : JSON.stringify(body),
-			},
-		);
-		if (method === "DELETE") response.status(204).end();
-		else response.json(result);
-	} catch (error) {
-		await forgetRejectedPairing(error);
-		sendModelManagerError(response, error);
-	}
-}
-
-/**
- * A 401 from the manager means the stored token is dead, not that the request
- * was malformed. Drop it so the Models tab falls back to the pairing form and
- * the user can recover with a fresh code.
- */
-async function forgetRejectedPairing(error: unknown): Promise<void> {
-	if (!(error instanceof ModelManagerError) || error.status !== 401) return;
-	if (error.code === "manager_unpaired" || error.code === "manager_disabled")
+	};
+	const events: AskEvents = {
+		roundStart(round) {
+			lastRound = round;
+		},
+		thinking(delta, round) {
+			if (!thinkingOpen.has(round)) {
+				thinkingOpen.add(round);
+				send("phase_start", { phaseId: phase(round), iteration: round, kind: "thinking", state: "active" });
+			}
+			send("thinking_delta", { phaseId: phase(round), iteration: round, kind: "thinking", text: delta });
+		},
+		text(delta, round) {
+			send("answer_delta", { phaseId: phase(round), iteration: round, kind: "answer", text: delta });
+		},
+		toolStart(call, round) {
+			send("tool_start", { phaseId: phase(round), iteration: round, kind: "tool", state: "active", name: rowName(round, call.id, call.name), arguments: call.input });
+		},
+		toolEnd(call, result, round) {
+			send("tool_complete", {
+				phaseId: phase(round),
+				iteration: round,
+				kind: "tool",
+				state: "complete",
+				name: rowName(round, call.id, call.name),
+				result: result.isError ? { error: result.content } : parse(result.content),
+				view: result.view,
+			});
+		},
+		searched(query, round) {
+			const name = rowName(round, `search-${query}`, "web_search");
+			send("tool_start", { phaseId: phase(round), iteration: round, kind: "tool", state: "active", name, arguments: { query } });
+			send("tool_complete", { phaseId: phase(round), iteration: round, kind: "tool", state: "complete", name, result: { searched: query } });
+		},
+		confirm(confirmation, round) {
+			const name = `confirm · ${confirmation.message}`;
+			send("tool_start", { phaseId: phase(round), iteration: round, kind: "tool", state: "active", name, arguments: {} });
+			send("tool_complete", { phaseId: phase(round), iteration: round, kind: "tool", state: "complete", name, result: confirmation });
+		},
+		roundEnd(round, step) {
+			const metrics = { inputTokens: step.usage.inputTokens + step.usage.cacheReadTokens + step.usage.cacheWriteTokens, outputTokens: step.usage.outputTokens, modelId: step.model, modelName: step.model };
+			send("phase_complete", { phaseId: phase(round), iteration: round, kind: step.calls.length ? "tool" : "answer", state: "complete", metrics });
+		},
+	};
+	const result = await assistant.ask({ ...input, channel: "console" }, events);
+	const final = phase(lastRound);
+	if (result.problem) {
+		send("phase_start", { phaseId: `${final}-problem`, iteration: lastRound + 1, kind: "answer", state: "active" });
+		send("answer_delta", { phaseId: `${final}-problem`, iteration: lastRound + 1, kind: "answer", text: result.text });
+		send("phase_complete", { phaseId: `${final}-problem`, iteration: lastRound + 1, kind: "answer", state: "complete" });
 		return;
-	await invalidateManagerToken(managerTokenPath());
-	modelManagerClientPromise = undefined;
-	console.warn(
-		"Model manager rejected the stored token; pairing cleared so it can be re-established.",
-	);
-}
-
-function sendModelManagerError(response: Response, error: unknown) {
-	if (error instanceof ModelManagerError) {
-		response.status(error.status).json({
-			...safeModelError(error.code, error.message, error.retryable),
-			// errno/hostname only — no token, no user data.
-			detail: error.detail,
-		});
-		return;
 	}
-	// Anything else is a bug rather than a transport fault; say so, and log it
-	// instead of pretending the manager is merely unavailable.
-	console.error("Model manager request failed unexpectedly:", error);
-	response
-		.status(503)
-		.json(
-			safeModelError(
-				"manager_unavailable",
-				"Local model manager is unavailable.",
-				true,
-			),
-		);
+	send("answer", { phaseId: final, iteration: lastRound, text: result.text, cards: result.cards });
+	send("phase_metrics", {
+		phaseId: final,
+		iteration: lastRound,
+		kind: "answer",
+		metrics: {
+			modelId: result.model,
+			modelName: result.model,
+			inputTokens: result.usage.inputTokens + result.usage.cacheReadTokens + result.usage.cacheWriteTokens,
+			outputTokens: result.usage.outputTokens,
+			...(result.costUsd !== undefined ? { costUsd: result.costUsd } : {}),
+		},
+	});
+	send("phase_complete", { phaseId: final, iteration: lastRound, kind: "answer", state: "complete" });
 }
 
 async function hassRequest(path: string, method = "GET", body?: unknown) {
@@ -1914,21 +1340,9 @@ async function webSearch(query: string) {
  * scheduled run reuses exactly the tools and reasoning a chat turn gets.
  */
 async function runTaskPrompt(prompt: string): Promise<string> {
-	const answers: string[] = [];
-	const collect: Send = (event, data) => {
-		if (event === "answer") {
-			const text = (data as { text?: unknown })?.text;
-			if (typeof text === "string" && text.trim()) answers.push(text.trim());
-		}
-	};
-	const mode = getThinkingProfile(
-		"balanced",
-		os.totalmem(),
-		Number(process.env.LOCAL_LLM_CONTEXT_SIZE || 8192),
-	).id;
-	await runAgent(prompt, mode, collect, `task-${Date.now()}`, [], [], "");
-	// The last answer is the turn's conclusion; earlier ones are pre-tool asides.
-	return answers[answers.length - 1] || "";
+	const result = await assistant.ask({ prompt, channel: "task", effort: "medium" });
+	if (result.problem) throw new Error(result.problem);
+	return result.text;
 }
 
 /** A one-line headline from a report, for the notification and the UI. */
@@ -2139,13 +1553,15 @@ export function createHarnessApp(): Express {
 	return app;
 }
 
-if (require.main === module) {
-	app.listen(port, () =>
-		console.log(`RemindMe harness listening on port ${port}`),
-	);
-	// Only the running server sweeps for due tasks; importing the app for a
-	// test must not start firing model turns.
+/**
+ * Serve the console and start the task and parcel sweeps. Resolves once Home
+ * Assistant has said which time zone the house is in, so nothing scheduled
+ * runs on the container's clock.
+ */
+export async function startHarness(): Promise<void> {
+	app.listen(port, () => console.log(`RemindMe console listening on port ${port}`));
+	await loadHomeName();
 	startTaskScheduler();
-	// Parcel polling starts only when an TrackingMore key is configured.
+	// Parcel polling starts only when a TrackingMore key is configured.
 	startParcelScheduler();
 }

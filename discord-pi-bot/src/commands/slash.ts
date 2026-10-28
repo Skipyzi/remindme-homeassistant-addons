@@ -137,7 +137,7 @@ async function runRemind(
 	/*
 	 * Acknowledge first with a real message, not deferReply — its placeholder
 	 * is Discord's "is thinking…", which reads oddly for a reminder. Parsing
-	 * the time can call the local model and the store write touches a locked
+	 * the time can call the AI and the store write touches a locked
 	 * file; either can outrun Discord's 3-second window and kill the token
 	 * (10062). Replying now acks in time and the result edits this message.
 	 */
@@ -239,7 +239,7 @@ function runHelp(interaction: ChatInputCommandInteraction): Promise<unknown> {
 **/ping** — check latency
 **/info** — bot status
 
-Talk to the AI assistant with the \`${"!chat"}\` prefix or by mentioning me.`,
+To talk to the assistant, just DM me (or mention me in a server). Say \`new\` to start a fresh chat.`,
 		...ephemeral,
 	});
 }

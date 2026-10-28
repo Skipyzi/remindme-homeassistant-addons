@@ -8,34 +8,11 @@ function harness() {
 		attachments: [],
 		attachmentError: "",
 		visionEnabled: false,
+		/* Replaced by /api/status: how hard the AI thinks, per message. */
 		thinkingProfiles: [
-			{
-				id: "fast",
-				name: "Fast",
-				reasoningBudget: 0,
-				answerReserve: 512,
-				description: "No visible reasoning.",
-				estimatedMaxSeconds: 0,
-				recommended: false,
-			},
-			{
-				id: "balanced",
-				name: "Balanced",
-				reasoningBudget: 384,
-				answerReserve: 768,
-				description: "Short bounded reasoning.",
-				estimatedMaxSeconds: 55,
-				recommended: true,
-			},
-			{
-				id: "deep",
-				name: "Deep",
-				reasoningBudget: 1024,
-				answerReserve: 1024,
-				description: "Longer reasoning for difficult questions.",
-				estimatedMaxSeconds: 147,
-				recommended: false,
-			},
+			{ id: "fast", name: "Quick", description: "Short thinking. Best for the house and quick questions.", recommended: true },
+			{ id: "balanced", name: "Normal", description: "Thinks a little longer.", recommended: false },
+			{ id: "deep", name: "Deep", description: "Thinks hardest. Slower and costs more.", recommended: false },
 		],
 		thinking: localStorage.getItem("remindme.profile") || "fast",
 		profile: localStorage.getItem("remindme.profile") || "fast",
@@ -50,7 +27,6 @@ function harness() {
 		newSkillName: "",
 		newSkillBody: "",
 		skillError: "",
-		modelDiagnostics: null,
 		mcpOpen: false,
 		mcpServers: [],
 		newMcpName: "",
@@ -81,8 +57,15 @@ function harness() {
 		offline: false,
 		scanlines: true,
 		glow: 55,
-		...window.RemindMeModelCookbook.state(),
-		modelBadge: "LOCAL • QWEN",
+		/** The AI settings panel: which provider and model answer. */
+		ai: null,
+		aiModels: [],
+		aiModel: "",
+		aiEffort: "low",
+		aiBusy: false,
+		aiError: "",
+		aiTest: null,
+		modelBadge: "AI",
 		sessionLabel: "ready // private network",
 		hardware: "raspberry pi profile",
 		/** The companion remindme-vault editor's URL, from /api/status. Empty hides deep-links. */
@@ -105,13 +88,6 @@ function harness() {
 		artifactSaving: false,
 		/** What the frame last reported: a compile error, or nothing. */
 		artifactStatus: "",
-		/** Inference endpoints: the switchable list of where the model runs. */
-		endpoints: [],
-		endpointActiveId: "",
-		endpointDraft: null,
-		endpointError: "",
-		endpointTest: null,
-		endpointBusy: false,
 		tokenUsage: {
 			exact: false,
 			promptTokens: 0,
@@ -140,23 +116,6 @@ function harness() {
 							100,
 					)
 				: 0;
-		},
-		get modelOperationBusy() {
-			return [
-				"preflight",
-				"downloading",
-				"verifying",
-				"activating",
-				"probing",
-				"rollback",
-			].includes(this.modelOperation?.phase);
-		},
-		/* A model swap unloads the running model, so inference is briefly down.
-		 * Sending is blocked during these phases (a download does not stop it). */
-		get modelSwitching() {
-			return ["activating", "probing", "rollback"].includes(
-				this.modelOperation?.phase,
-			);
 		},
 		applyTheme(id) {
 			const root = document.documentElement;
@@ -220,8 +179,9 @@ function harness() {
 			window.RemindMeConversations.load(this).catch(() => {});
 			this.refreshStatus();
 			this.loadPulse();
-			window.RemindMeModelCookbook.load(this);
-			window.RemindMeEndpoints.load(this);
+			this.$watch("modelsOpen", (open) => {
+				if (open) this.loadAi();
+			});
 			this.startSystemPolling();
 			/*
 			 * The artifact frame reports what happened when it ran. It holds
@@ -254,7 +214,6 @@ function harness() {
 			return fetch("./api/status")
 				.then((r) => r.json())
 				.then((d) => {
-					const custom = this.endpointActiveId;
 					this.modelBadge =
 						d.modelName || d.model || "No model";
 					this.visionEnabled = Boolean(d.vision);
@@ -312,27 +271,86 @@ function harness() {
 			await this.savePersona();
 			this.persona = this.personaDefault;
 		},
-		/* ── Inference endpoints ──────────────────────────────────────── */
-		editEndpoint(endpoint) {
-			window.RemindMeEndpoints.edit(this, endpoint);
+		/* ── AI settings ──────────────────────────────────────────────── */
+		async loadAi() {
+			this.aiError = "";
+			try {
+				const response = await fetch("./api/ai");
+				this.ai = await response.json();
+				this.aiModel = this.ai.model || "";
+				this.aiEffort = this.ai.effort || "low";
+				await this.loadAiModels();
+			} catch (error) {
+				this.aiError = `Could not load the AI settings: ${error.message || error}`;
+			}
 		},
-		newEndpoint() {
-			window.RemindMeEndpoints.edit(this, null);
+		async loadAiModels() {
+			this.aiModels = [];
+			const option = this.ai?.providers?.find((entry) => entry.id === this.ai.provider);
+			if (!option?.configured) return;
+			const response = await fetch(`./api/ai/models?provider=${encodeURIComponent(option.id)}`);
+			const data = await response.json().catch(() => ({}));
+			if (response.ok) this.aiModels = data.models || [];
+			else this.aiError = data.error || "Could not list the models.";
 		},
-		cancelEndpoint() {
-			window.RemindMeEndpoints.cancel(this);
+		/** Switch provider, model or effort. The server saves it; no restart. */
+		async chooseAi(change) {
+			this.aiBusy = true;
+			this.aiError = "";
+			this.aiTest = null;
+			try {
+				const response = await fetch("./api/ai", {
+					method: "PUT",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify(change),
+				});
+				const data = await response.json();
+				if (!response.ok) throw new Error(data.error || "Could not save");
+				await this.loadAi();
+				this.refreshStatus();
+			} catch (error) {
+				this.aiError = error.message || String(error);
+			} finally {
+				this.aiBusy = false;
+			}
 		},
-		saveEndpoint() {
-			return window.RemindMeEndpoints.save(this);
+		async testAi() {
+			this.aiBusy = true;
+			this.aiTest = null;
+			try {
+				const response = await fetch("./api/ai/test", { method: "POST" });
+				this.aiTest = await response.json();
+			} catch (error) {
+				this.aiTest = { ok: false, error: error.message || String(error) };
+			} finally {
+				this.aiBusy = false;
+			}
 		},
-		deleteEndpoint(endpoint) {
-			return window.RemindMeEndpoints.remove(this, endpoint);
+		async sendBrief() {
+			this.aiBusy = true;
+			this.aiTest = null;
+			try {
+				const response = await fetch("./api/brief", { method: "POST" });
+				const data = await response.json();
+				this.aiTest = response.ok ? { ok: true, reply: "the brief is on its way to Discord." } : { ok: false, error: data.error };
+			} catch (error) {
+				this.aiTest = { ok: false, error: error.message || String(error) };
+			} finally {
+				this.aiBusy = false;
+			}
 		},
-		activateEndpoint(id) {
-			return window.RemindMeEndpoints.activate(this, id);
+		aiSpendLine() {
+			const spend = this.ai?.spend;
+			if (!spend) return "";
+			const budget = this.ai.budget ? ` of the $${this.ai.budget.toFixed(2)} daily budget` : "";
+			const tokens = `${Math.round((spend.inputTokens + spend.outputTokens) / 1000)}k tokens`;
+			return `Today: $${spend.usd.toFixed(2)}${budget}, ${tokens}${spend.unpriced ? " (some on a model without a known price)" : ""}.`;
 		},
-		testEndpoint() {
-			return window.RemindMeEndpoints.test(this);
+		aiSearchLine() {
+			const search = this.ai?.webSearch;
+			if (search === "provider") return "Web search: built into this provider.";
+			if (search === "searxng") return "Web search: through SearXNG or Exa.";
+			return "Web search: off. Add a SearXNG URL or an Exa key in the app options to search with OpenCode.";
 		},
 		persist() {
 			localStorage.setItem(
@@ -1154,21 +1172,6 @@ function harness() {
 				.join("\n");
 			return Math.ceil(text.length / 4);
 		},
-		/** Probe each layer to the model manager and show where it breaks. */
-		async runModelDiagnostics() {
-			this.modelDiagnostics = null;
-			try {
-				const response = await fetch("./api/models/diagnostics");
-				this.modelDiagnostics = await response.json();
-			} catch (error) {
-				this.modelDiagnostics = {
-					ok: false,
-					checks: [
-						{ step: "harness", ok: false, detail: String(error.message || error) },
-					],
-				};
-			}
-		},
 		async openMcp() {
 			this.mcpOpen = true;
 			await this.loadMcp();
@@ -1434,7 +1437,7 @@ function harness() {
 					}),
 				});
 				if (!r.ok || !r.body)
-					throw new Error("The local model stream did not start.");
+					throw new Error("The answer stream did not start.");
 				const reader = r.body.getReader(),
 					decoder = new TextDecoder();
 				let buffer = "",
@@ -1928,53 +1931,6 @@ function harness() {
 				m.items ? { ...m, items: m.items.filter((i) => i.id !== id) } : m,
 			);
 			this.persist();
-		},
-		async reloadModels() {
-			return window.RemindMeModelCookbook.load(this);
-		},
-		async pairModelManager() {
-			return window.RemindMeModelCookbook.pair(this);
-		},
-		async downloadModel(id) {
-			return window.RemindMeModelCookbook.download(this, id);
-		},
-		/** One click: chat with a model, downloading and verifying first if needed. */
-		async useModel(id) {
-			return window.RemindMeModelCookbook.use(this, id);
-		},
-		/** Make a model the add-on's default — what other apps get. */
-		async makeDefaultModel(id) {
-			return window.RemindMeModelCookbook.activate(this, id);
-		},
-		isChatModel(variant) {
-			return this.modelStatus?.chatModel === variant?.model?.id;
-		},
-		async copyModelYaml(id) {
-			return window.RemindMeModelCookbook.copyYaml(this, id);
-		},
-		async downloadModelYaml(id) {
-			return window.RemindMeModelCookbook.downloadYaml(this, id);
-		},
-		async cancelModelOperation() {
-			return window.RemindMeModelCookbook.cancel(this);
-		},
-		async removeModel(id) {
-			return window.RemindMeModelCookbook.remove(this, id);
-		},
-		async removeInventoryItem(item) {
-			return window.RemindMeModelCookbook.removeInventoryItem(this, item);
-		},
-		async saveModelToken() {
-			return window.RemindMeModelCookbook.saveToken(this);
-		},
-		async saveCustomModel() {
-			return window.RemindMeModelCookbook.saveCustom(this);
-		},
-		formatModelBytes(bytes) {
-			return window.RemindMeModelCookbook.formatBytes(bytes);
-		},
-		modelProgressPercent() {
-			return window.RemindMeModelCookbook.progressPercent(this.modelOperation);
 		},
 	};
 }

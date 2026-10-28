@@ -1,0 +1,73 @@
+configuration:
+  discord_token:
+    name: Discord bot token
+    description: The token of your Discord bot. Without it, only the console works.
+  owner_id:
+    name: Your Discord user ID
+    description: The assistant answers only you, and sends the brief and nudges to your DMs.
+  guild_id:
+    name: Discord server ID
+    description: Optional. Registers the slash commands on this server straight away.
+  ai_provider:
+    name: AI provider
+    description: Which AI answers by default. You can switch in the console's AI settings without a restart.
+  anthropic_api_key:
+    name: Claude API key
+    description: From console.anthropic.com. Billed per use, separate from a Claude subscription.
+  openai_api_key:
+    name: OpenAI API key
+    description: From platform.openai.com.
+  opencode_api_key:
+    name: OpenCode API key
+    description: Your OpenCode Go or Zen key.
+  opencode_url:
+    name: OpenCode server
+    description: Optional. Defaults to OpenCode Go (https://opencode.ai/zen/go/v1). Use https://opencode.ai/zen/v1 for Zen.
+  custom_ai_url:
+    name: Custom AI server
+    description: Optional. Any OpenAI-compatible server, such as OpenRouter. Its base URL, ending in /v1.
+  custom_ai_key:
+    name: Custom AI server key
+    description: Optional. The key for the custom server.
+  ai_model:
+    name: Model
+    description: Optional. The default provider's model. Blank uses Claude Opus 5.5 for Claude; pick one in the console for the others.
+  ai_effort:
+    name: Thinking effort
+    description: How hard the AI thinks before answering on Discord and in tasks. Low is quick and cheap; high is slower and costs more.
+  daily_ai_budget:
+    name: Daily AI budget (USD)
+    description: The assistant pauses for the day when it reaches this. Counted for Claude models only; 0 means no limit.
+  morning_brief_time:
+    name: Morning brief
+    description: When to send your morning brief on Discord, as HH:MM. Blank turns it off.
+  bin_reminder_time:
+    name: Bin reminder
+    description: When to remind you to put the bins out, the evening before collection, as HH:MM. Blank turns it off.
+  quiet_hours:
+    name: Quiet hours
+    description: No nudges in this window, as HH:MM-HH:MM. They wait until it ends.
+  battery_nudge_percent:
+    name: Battery nudge
+    description: Tell you when a device battery is at or below this percentage, once a week per device. 0 turns it off.
+  playful_placeholders:
+    name: Playful placeholders
+    description: Random placeholder text while a slash command is working.
+  reminder_color:
+    name: Reminder colour
+    description: Accent colour of the reminder card, as a hex code.
+  searxng_url:
+    name: SearXNG URL
+    description: Optional. Web search for OpenCode and custom servers. Claude and OpenAI search the web themselves.
+  exa_api_key:
+    name: Exa API key
+    description: Optional. Web search fallback for OpenCode and custom servers.
+  ha_notify_target:
+    name: Phone notifications
+    description: Optional. A notify service such as mobile_app_iphone, for reminders on your phone.
+  vault_url:
+    name: Vault editor URL
+    description: Optional. Links notes to the RemindMe Vault editor app.
+  trackingmore_api_key:
+    name: TrackingMore API key
+    description: Optional. Turns on parcel tracking.

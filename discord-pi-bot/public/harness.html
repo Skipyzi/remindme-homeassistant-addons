@@ -29,9 +29,7 @@
     <script defer src="./components/commands.js"></script>
     <script defer src="./components/entityControls.js"></script>
     <script defer src="./components/conversations.js"></script>
-    <script defer src="./components/endpoints.js"></script>
     <script defer src="./components/attachments.js"></script>
-    <script defer src="./components/model-cookbook.js"></script>
     <script defer src="./app.js"></script>
     <script defer src="./vendor/alpine.min.js"></script>
     <link rel="stylesheet" href="./styles.css" />
@@ -136,7 +134,7 @@
           </p>
         </div>
         <nav class="drawer-nav" aria-label="Console">
-          <button @click="modelsOpen=true">Models</button>
+          <button @click="modelsOpen=true">AI</button>
           <button @click="openSkills()">Skills</button>
           <button @click="openMcp()">MCP</button>
           <button @click="openSettings()">Settings</button>
@@ -146,7 +144,7 @@
           <div
             class="status"
             :class="{'offline': offline}"
-            x-text="offline ? 'Local tools offline' : 'Local tools ready'"
+            x-text="offline ? 'RemindMe offline' : 'RemindMe ready'"
           ></div>
           <!-- Host telemetry: inference and Home Assistant share this Pi, so
                these are the numbers that explain a slow reply. -->
@@ -209,27 +207,10 @@
             <div class="top-title">
               <svg class="emblem" viewBox="0 0 32 32" aria-hidden="true"><ellipse cx="16" cy="10" rx="12" ry="3.4" /><path d="M16 3v4M13 13.2 11 29h10l-2-15.8M11 29h10M14 19h4M13.4 24h5.2" /></svg><b>RemindMe</b>
             </div>
-            <!-- Global model-operation indicator: visible from anywhere while a
-                 download or switch is running, so long jobs are never silent. -->
-            <button
-              class="model-working"
-              x-show="modelOperationBusy"
-              x-cloak
-              @click="modelsOpen=true"
-              :title="`Model ${(modelOperation?.phase||'').replaceAll('_',' ')} — open Models`"
-              aria-live="polite"
-            >
-              <span class="model-working-spin" aria-hidden="true"></span>
-              <span x-text="(modelOperation?.phase||'working').replaceAll('_',' ')"></span>
-              <span
-                x-show="modelOperation?.bytesTotal"
-                x-text="` ${Math.round(modelProgressPercent())}%`"
-              ></span>
-            </button>
             <button
               type="button"
               class="badge"
-              title="Models"
+              title="AI settings"
               @click="modelsOpen=true"
               x-text="modelBadge"
             ></button>
@@ -720,16 +701,14 @@
               >
                 <div class="ring" aria-hidden="true"></div>
                 <div class="gauge-readout">
-                  <b
-                    x-text="`${message.metrics?.estimated ? '~' : ''}${message.metrics?.outputTokens || 0}`"
-                  ></b>
-                  tok total &middot;
-                  <b
-                    x-text="Number(message.metrics?.decodeTokensPerSecond || 0).toFixed(1)"
-                  ></b>
-                  tok/s &middot;
-                  <b x-text="`${message.metrics?.firstTokenMs || 0}ms`"></b>
-                  first signal
+                  <b x-text="message.metrics?.inputTokens || 0"></b>
+                  in &middot;
+                  <b x-text="message.metrics?.outputTokens || 0"></b>
+                  out
+                  <template x-if="message.metrics?.costUsd !== undefined"
+                    ><span
+                      >&middot; <b x-text="`$${Number(message.metrics.costUsd).toFixed(3)}`"></b></span
+                  ></template>
                   <template x-if="message.metrics?.modelName || message.metrics?.modelId"
                     ><span
                       >&middot;
@@ -1013,9 +992,7 @@
                   class="send"
                   :class="{cancel: busy}"
                   type="button"
-                  :disabled="modelSwitching && !busy"
                   @click="busy ? cancel() : send()"
-                  :title="modelSwitching && !busy ? 'Switching model — inference is briefly unavailable' : ''"
                   :aria-label="busy ? 'Cancel the current turn' : 'Send message'"
                 >
                   <svg x-show="!busy" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7" /></svg>
@@ -1032,7 +1009,7 @@
                 ></label>
                 <span
                   class="thinking-hint"
-                  x-text="`${currentThinkingProfile.reasoningBudget} thought · ${currentThinkingProfile.answerReserve} answer tokens${currentThinkingProfile.estimatedMaxSeconds ? ` · up to ${formatDuration(currentThinkingProfile.estimatedMaxSeconds * 1000)}` : ''}`"
+                  x-text="currentThinkingProfile.description || ''"
                 ></span>
                 <span
                   class="context-label"
@@ -1483,459 +1460,77 @@
       >
         <section class="settings-card" @click.outside="modelsOpen=false">
           <button type="button" class="sheet-close" aria-label="Close" @click="modelsOpen=false">✕</button>
-          <h2>Inference endpoint</h2>
+          <h2>AI</h2>
           <p class="settings-copy">
-            Where the model runs. The local llama.cpp is the default; point at
-            a stronger box on your network or an OpenAI-compatible API to run
-            faster than a Pi can.
+            Which AI answers, here and on Discord. API keys go in the RemindMe
+            app's options in Home Assistant; switch between the ones you've
+            added here, without a restart.
           </p>
           <div class="endpoint-list">
-            <!-- The built-in local model is always the first choice. -->
-            <button
-              class="endpoint-row"
-              :class="{active: !endpointActiveId}"
-              @click="activateEndpoint('')"
-            >
-              <span class="endpoint-dot" aria-hidden="true"></span>
-              <span class="endpoint-name">Local llama.cpp</span>
-              <span class="endpoint-model">on this device</span>
-            </button>
-            <template x-for="endpoint in endpoints" :key="endpoint.id">
-              <div
-                class="endpoint-row"
-                :class="{active: endpoint.id===endpointActiveId}"
-              >
-                <button
-                  class="endpoint-pick"
-                  @click="activateEndpoint(endpoint.id)"
-                >
-                  <span class="endpoint-dot" aria-hidden="true"></span>
-                  <span class="endpoint-name" x-text="endpoint.name"></span>
-                  <span class="endpoint-model">
-                    <span x-text="endpoint.model || 'default model'"></span
-                    ><span x-show="endpoint.hasKey" class="endpoint-key" title="API key set">🔑</span>
-                  </span>
-                </button>
-                <button
-                  class="endpoint-edit"
-                  aria-label="Edit endpoint"
-                  @click="editEndpoint(endpoint)"
-                >
-                  Edit
-                </button>
-              </div>
-            </template>
-          </div>
-          <button
-            class="chip"
-            x-show="!endpointDraft"
-            @click="newEndpoint()"
-          >
-            ＋ Add endpoint
-          </button>
-
-          <!-- Editor for a new or existing endpoint. -->
-          <div class="endpoint-editor" x-show="endpointDraft" x-cloak>
-            <template x-if="endpointDraft">
-              <div>
-                <label class="endpoint-field"
-                  >Name<input
-                    x-model="endpointDraft.name"
-                    placeholder="Studio box"
-                /></label>
-                <label class="endpoint-field"
-                  >URL<input
-                    x-model="endpointDraft.url"
-                    placeholder="http://192.168.1.40:8080/v1/chat/completions"
-                    spellcheck="false"
-                /></label>
-                <label class="endpoint-field"
-                  >Model<input
-                    x-model="endpointDraft.model"
-                    placeholder="qwen2.5-7b"
-                    spellcheck="false"
-                /></label>
-                <label class="endpoint-field"
-                  >API key
-                  <input
-                    type="password"
-                    autocomplete="off"
-                    x-model="endpointDraft.apiKey"
-                    :placeholder="endpointDraft.hasKey ? '•••••• (leave blank to keep)' : 'optional'"
-                  />
-                </label>
-                <label class="endpoint-toggle">
-                  <input type="checkbox" x-model="endpointDraft.openaiCompat" />
-                  OpenAI-compatible
-                  <small
-                    >— send only standard fields (turn off for llama.cpp's
-                    thinking controls)</small
-                  >
-                </label>
-                <div class="endpoint-error" x-show="endpointError" x-text="endpointError"></div>
-                <div
-                  class="endpoint-result"
-                  x-show="endpointTest"
-                  x-cloak
-                  :class="{bad: endpointTest && !endpointTest.ok}"
-                >
-                  <template x-if="endpointTest?.ok"
-                    ><span
-                      >Replied: <b x-text="endpointTest.reply"></b></span
-                  ></template>
-                  <template x-if="endpointTest && !endpointTest.ok"
-                    ><span x-text="endpointTest.error"></span
-                  ></template>
-                </div>
-                <div class="endpoint-actions">
-                  <button
-                    class="chip"
-                    :disabled="endpointBusy"
-                    @click="testEndpoint()"
-                    x-text="endpointBusy ? 'Working' : 'Test'"
-                  ></button>
-                  <button
-                    class="chip"
-                    :disabled="endpointBusy"
-                    @click="saveEndpoint()"
-                  >
-                    Save
-                  </button>
-                  <button
-                    class="chip warn"
-                    x-show="endpointDraft.id"
-                    @click="deleteEndpoint(endpointDraft); cancelEndpoint()"
-                  >
-                    Delete
-                  </button>
-                  <button class="chip" @click="cancelEndpoint()">Cancel</button>
-                </div>
-              </div>
-            </template>
-          </div>
-
-          <h2 class="endpoint-divider">Local model vault</h2>
-          <!-- Attributes a manager failure to a layer instead of reporting a
-               single opaque "unavailable". -->
-          <div class="model-diagnostics">
-            <button class="chip" @click="runModelDiagnostics()">
-              Diagnose connection
-            </button>
-            <template x-if="modelDiagnostics">
-              <div class="diagnostic-list">
-                <template x-for="check in modelDiagnostics.checks" :key="check.step">
-                  <div class="diagnostic-row" :class="{bad: !check.ok}">
-                    <span class="diagnostic-step" x-text="check.step"></span>
-                    <span
-                      class="diagnostic-state"
-                      x-text="check.ok ? 'Pass' : 'Fail'"
-                    ></span>
-                    <span class="diagnostic-detail" x-text="check.detail"></span>
-                    <span
-                      class="diagnostic-hint"
-                      x-show="check.hint"
-                      x-text="check.hint"
-                    ></span>
-                  </div>
-                </template>
-              </div>
-            </template>
-          </div>
-          <div
-            class="model-catalog"
-            data-model-catalog
-            x-show="modelManagerEnabled"
-          >
-            <header class="model-catalog-head">
-              <div>
-                <b
-                  x-text="modelStatus?.state?.active?.id ? `Active // ${modelStatus.state.active.id}` : 'No active managed model'"
-                ></b>
-                <small
-                  x-show="modelStatus?.state?.fallback?.id"
-                  x-text="`Fallback // ${modelStatus?.state?.fallback?.id}`"
-                ></small>
-              </div>
-              <button class="ghost" @click="reloadModels()">Refresh</button>
-            </header>
-            <form
-              class="model-pairing"
-              x-show="!modelPairingConfigured"
-              @submit.prevent="pairModelManager()"
-            >
-              <b>Direct manager pairing required</b>
-              <p>
-                Open the llama.cpp add-on log and enter its six-character code.
-                The code expires and can only be used once.
-              </p>
-              <label
-                >Six-character code
-                <input
-                  x-model="pairingCode"
-                  inputmode="text"
-                  maxlength="6"
-                  autocomplete="one-time-code"
-                  spellcheck="false"
-                  placeholder="ABC234"
-                />
-              </label>
-              <button class="action" type="submit" :disabled="pairingBusy">
-                <span x-text="pairingBusy ? 'Pairing…' : 'Pair manager'"></span>
-              </button>
-            </form>
-            <div
-              class="model-operation"
-              aria-live="polite"
-              x-show="modelOperation?.phase && modelOperation.phase!=='idle'"
-            >
-              <div>
-                <b
-                  x-text="(modelOperation?.phase || '').replaceAll('_',' ')"
-                ></b>
-                <span
-                  x-text="modelOperation?.bytesTotal ? `${formatModelBytes(modelOperation.bytesDone)} / ${formatModelBytes(modelOperation.bytesTotal)}` : modelOperation?.variantId || ''"
-                ></span>
-              </div>
-              <div class="model-progress">
-                <i :style="`width:${modelProgressPercent()}%`"></i>
-              </div>
+            <template x-for="option in ai?.providers || []" :key="option.id">
               <button
-                class="ghost"
-                x-show="modelOperation?.phase==='downloading'"
-                @click="cancelModelOperation()"
+                class="endpoint-row"
+                :class="{active: option.id===ai.provider}"
+                :disabled="!option.configured || aiBusy"
+                @click="chooseAi({provider: option.id})"
               >
-                Cancel download
+                <span class="endpoint-dot" aria-hidden="true"></span>
+                <span class="endpoint-name" x-text="option.label"></span>
+                <span
+                  class="endpoint-model"
+                  x-text="option.configured ? (option.model || 'pick a model') : 'no key in the app options'"
+                ></span>
               </button>
-            </div>
-            <p
-              class="model-error"
-              role="alert"
-              x-show="modelError"
-              x-text="modelError"
-            ></p>
-            <p class="model-roles" x-show="modelPairingConfigured && modelStatus?.defaultModel">
-              Chat uses <b x-text="modelStatus?.chatModel"></b>. Apps that call the
-              add-on without naming a model get <b x-text="modelStatus?.defaultModel"></b>.
-            </p>
-            <div class="model-grid" x-show="modelPairingConfigured">
-              <template x-for="variant in modelCatalog" :key="variant.model.id"
-                ><article
-                  class="model-card"
-                  :class="{active:variant.active,chat:isChatModel(variant),unsafe:!variant.assessment?.safe}"
-                >
-                  <header>
-                    <div>
-                      <b x-text="variant.model.family"></b>
-                      <small
-                        x-text="`${variant.model.quantization} · ${variant.model.source}`"
-                      ></small>
-                    </div>
-                    <em
-                      :class="variant.model.tier"
-                      x-text="isChatModel(variant) && variant.active ? 'Chat · default' : isChatModel(variant) ? 'Chat' : variant.active ? 'Default' : variant.verified ? 'Downloaded' : modelOperation?.variantId===variant.model.id ? 'Downloading' : 'Available'"
-                    ></em>
-                  </header>
-                  <div class="model-capabilities">
-                    <template
-                      x-for="capability in variant.model.capabilities"
-                      :key="capability"
-                      ><span x-text="capability"></span
-                    ></template>
-                  </div>
-                  <dl>
-                    <div>
-                      <dt>Download</dt>
-                      <dd
-                        x-text="formatModelBytes(variant.model.expectedBytes)"
-                      ></dd>
-                    </div>
-                    <div>
-                      <dt>Memory est.</dt>
-                      <dd
-                        x-text="formatModelBytes(variant.assessment?.requiredRAM)"
-                      ></dd>
-                    </div>
-                    <div>
-                      <dt>Context</dt>
-                      <dd
-                        x-text="variant.assessment?.runtime?.context || variant.model.recommendedContext"
-                      ></dd>
-                    </div>
-                    <div>
-                      <dt>Fit</dt>
-                      <dd
-                        x-text="variant.assessment?.safe ? `${variant.assessment.score}/100` : variant.assessment?.code"
-                      ></dd>
-                    </div>
-                  </dl>
-                  <p
-                    x-show="variant.assessment?.warnings?.length"
-                    x-text="variant.assessment?.warnings?.[0]"
-                  ></p>
-                  <div class="model-actions">
-                    <!-- Not downloaded yet: download, verify, and chat with it. -->
-                    <button
-                      class="action"
-                      x-show="!variant.verified && !variant.active"
-                      :disabled="modelOperationBusy || !variant.assessment?.safe"
-                      @click="useModel(variant.model.id)"
-                      x-text="variant.installed ? 'Verify & use' : 'Download & use'"
-                    ></button>
-                    <!-- Downloaded: chat with it at once. The add-on keeps serving
-                         its default to everything else. -->
-                    <button
-                      class="action"
-                      x-show="variant.verified && !isChatModel(variant)"
-                      :disabled="modelOperationBusy"
-                      @click="useModel(variant.model.id)"
-                    >
-                      Use this model
-                    </button>
-                    <!-- The default is what other apps get; changing it is its own act. -->
-                    <button
-                      class="ghost"
-                      x-show="variant.verified && !variant.active"
-                      :disabled="modelOperationBusy"
-                      @click="makeDefaultModel(variant.model.id)"
-                    >
-                      Make default
-                    </button>
-                    <!-- The native-config YAML path stays as an advanced fallback. -->
-                    <button
-                      class="ghost"
-                      x-show="variant.verified"
-                      @click="copyModelYaml(variant.model.id)"
-                    >
-                      Copy YAML
-                    </button>
-                    <button
-                      class="ghost"
-                      x-show="variant.installed && !variant.active && !isChatModel(variant)"
-                      :disabled="modelOperationBusy"
-                      @click="removeModel(variant.model.id)"
-                    >
-                      Remove
-                    </button>
-                  </div>
-                </article></template
+            </template>
+          </div>
+          <div class="settings-grid">
+            <label
+              >Model<input
+                list="ai-models"
+                x-model="aiModel"
+                spellcheck="false"
+                :placeholder="aiModels.length ? 'Choose or type a model' : 'Type a model name'"
+                :disabled="aiBusy || !ai?.providers?.find((option) => option.id===ai.provider)?.configured"
+                @change="chooseAi({model: aiModel})"
+              /><datalist id="ai-models"
+                ><template x-for="id in aiModels" :key="id"
+                  ><option :value="id"></option></template
+              ></datalist>
+            </label>
+            <label
+              >Effort on Discord and in tasks<select
+                x-model="aiEffort"
+                :disabled="aiBusy"
+                @change="chooseAi({effort: aiEffort})"
               >
-            </div>
-            <section
-              class="model-inventory"
-              x-show="modelPairingConfigured"
-              aria-labelledby="model-inventory-title"
+                <option value="low">Low: quick and cheap</option>
+                <option value="medium">Medium</option>
+                <option value="high">High: slower, costs more</option>
+              </select></label
             >
-              <div class="model-inventory-head">
-                <div>
-                  <h3 id="model-inventory-title">Downloaded models</h3>
-                </div>
-                <button
-                  class="ghost"
-                  :disabled="modelInventoryLoading"
-                  @click="reloadModels()"
-                >
-                  Refresh
-                </button>
-              </div>
-              <p class="micro" x-show="modelInventoryLoading">
-                Scanning model storage…
-              </p>
-              <p
-                class="model-error"
-                role="alert"
-                x-show="modelInventoryError"
-                x-text="modelInventoryError"
-              ></p>
-              <template
-                x-for="warning in modelInventoryWarnings"
-                :key="warning.source"
-              >
-                <p class="model-inventory-warning" x-text="warning.message"></p>
-              </template>
-              <p
-                class="micro"
-                x-show="!modelInventoryLoading && !modelInventoryError && modelInventory.length === 0"
-              >
-                No downloaded model files found.
-              </p>
-              <div class="model-inventory-list">
-                <template x-for="item in modelInventory" :key="item.id">
-                  <article class="model-inventory-row">
-                    <div class="model-inventory-copy">
-                      <b x-text="item.name"></b>
-                      <small
-                        x-text="`${item.source === 'legacy_cache' ? 'Legacy cache' : 'Managed'} · ${formatModelBytes(item.size)}`"
-                      ></small>
-                      <small
-                        x-show="!item.validGguf"
-                        class="model-inventory-warning"
-                        >Invalid GGUF</small
-                      >
-                      <small
-                        x-show="item.catalogId"
-                        x-text="`Catalog: ${item.catalogId}`"
-                      ></small>
-                      <small x-show="!item.catalogId">Unknown model</small>
-                    </div>
-                    <span
-                      class="model-inventory-state"
-                      :class="{protected:item.active || item.inProgress}"
-                      x-text="item.active ? 'Running' : item.inProgress ? 'In progress' : item.removable ? 'Stored' : 'Protected'"
-                    ></span>
-                    <button
-                      class="ghost danger"
-                      :disabled="!item.removable || modelOperationBusy"
-                      @click="removeInventoryItem(item)"
-                      x-text="item.removable ? 'Remove' : 'In use'"
-                    ></button>
-                  </article>
-                </template>
-              </div>
-            </section>
-            <section class="model-yaml" x-show="modelPairingConfigured">
-              <h3>Native Configuration YAML</h3>
-              <p>
-                The YAML sets the default the add-on starts with after a
-                restart. Copy it, open the llama.cpp add-on
-                <b>Configuration</b> editor, replace the options, save, and
-                restart the llama.cpp add-on.
-              </p>
-              <p class="micro" aria-live="polite" x-text="modelYamlMessage"></p>
-              <pre x-show="modelYaml" x-text="modelYaml"></pre>
-            </section>
-            <details class="model-advanced" x-show="modelPairingConfigured">
-              <summary>Hugging Face access and custom GGUF</summary>
-              <div class="model-advanced-grid">
-                <label
-                  >Hugging Face token
-                  <input
-                    x-model="hfToken"
-                    type="password"
-                    autocomplete="off"
-                    placeholder="hf_…"
-                /></label>
-                <button class="action" @click="saveModelToken()">
-                  Save token server-side
-                </button>
-                <label
-                  >Custom repository
-                  <input
-                    x-model="customModel.repo"
-                    placeholder="owner/repository"
-                /></label>
-                <label
-                  >Exact GGUF filename
-                  <input
-                    x-model="customModel.file"
-                    placeholder="model-Q4_K_M.gguf"
-                /></label>
-                <button class="action" @click="saveCustomModel()">
-                  Add unverified model
-                </button>
-              </div>
-            </details>
+          </div>
+          <p class="settings-note" x-show="ai?.problem" x-text="ai?.problem"></p>
+          <p class="settings-note" x-show="aiError" x-text="aiError"></p>
+          <p class="settings-note" x-text="aiSpendLine()"></p>
+          <p class="settings-note" x-text="aiSearchLine()"></p>
+          <div
+            class="endpoint-result"
+            x-show="aiTest"
+            x-cloak
+            :class="{bad: aiTest && !aiTest.ok}"
+          >
+            <span x-text="aiTest?.ok ? `Replied: ${aiTest.reply}` : aiTest?.error"></span>
           </div>
           <div class="settings-actions">
+            <button
+              class="action"
+              :disabled="aiBusy || !ai?.ready"
+              @click="testAi()"
+              x-text="aiBusy ? 'Working' : 'Test'"
+            ></button>
+            <button class="action" :disabled="aiBusy || !ai?.ready" @click="sendBrief()">
+              Send today's brief to Discord
+            </button>
             <button class="send" @click="modelsOpen=false">Close</button>
           </div>
         </section>

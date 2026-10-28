@@ -10,7 +10,7 @@ import { handleChatInputCommand, registerSlashCommands } from "./slash";
  * "!" prefixes, bare mentions, and natural-language-after-a-mention all landing
  * on the same handlers — gave one action too many triggers and made a stray
  * mention look like a command. Interactions are the single, explicit surface;
- * the AI chat bridge keeps its own "!chat"/mention path in chat.ts.
+ * the assistant itself answers DMs and mentions (discord/assistantChat.ts).
  */
 export function setupCommands(client: Client) {
 	client.once("clientReady", () => void registerSlashCommands(client));

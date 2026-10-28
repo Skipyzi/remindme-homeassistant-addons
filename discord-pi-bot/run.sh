@@ -15,25 +15,26 @@ export DISCORD_GUILD_ID="$(get_option guild_id)"
 export PLAYFUL_PLACEHOLDERS="$(get_option playful_placeholders)"
 # Accent colour of the reminder card, as a hex string (e.g. 5865f2).
 export REMINDER_COLOR="$(get_option reminder_color)"
-export PI_AGENT_WEBHOOK_URL="$(get_option pi_agent_webhook_url)"
-export LOCAL_LLM_ENABLED="$(get_option local_llm_enabled)"
-LOCAL_LLM_URL="$(get_option local_llm_url)"
-case "$LOCAL_LLM_URL" in
-"" | "http://127.0.0.1:8080/v1/chat/completions" | "http://localhost:8080/v1/chat/completions" | "http://local-llama-cpp:8080/v1/chat/completions")
-	LOCAL_LLM_URL="http://homeassistant:8080/v1/chat/completions" ;;
-esac
-export LOCAL_LLM_URL
-export LOCAL_LLM_MODEL="$(get_option local_llm_model)"
-export LOCAL_LLM_CONTEXT_SIZE="$(get_option local_llm_context_size)"
-export LOCAL_LLM_VISION="$(get_option local_llm_vision)"
-export MODEL_MANAGER_ENABLED="$(get_option model_manager_enabled)"
-MODEL_MANAGER_URL="$(get_option model_manager_url)"
-case "$MODEL_MANAGER_URL" in
-"" | "http://127.0.0.1:8080/manager/v1" | "http://localhost:8080/manager/v1" | "http://local-llama-cpp:8080/manager/v1")
-	MODEL_MANAGER_URL="http://homeassistant:8080/manager/v1" ;;
-esac
-export MODEL_MANAGER_URL
-export MODEL_MANAGER_TOKEN_PATH=/data/model-manager-token
+
+# Which AI answers. The console can switch between the providers that have a
+# key without a restart; keys themselves only ever come from here.
+export AI_PROVIDER="$(get_option ai_provider)"
+export AI_MODEL="$(get_option ai_model)"
+export AI_EFFORT="$(get_option ai_effort)"
+export ANTHROPIC_API_KEY="$(get_option anthropic_api_key)"
+export OPENAI_API_KEY="$(get_option openai_api_key)"
+export OPENCODE_API_KEY="$(get_option opencode_api_key)"
+export OPENCODE_URL="$(get_option opencode_url)"
+export CUSTOM_AI_URL="$(get_option custom_ai_url)"
+export CUSTOM_AI_KEY="$(get_option custom_ai_key)"
+export DAILY_AI_BUDGET="$(get_option daily_ai_budget)"
+
+# The assistant speaking first, on Discord.
+export MORNING_BRIEF_TIME="$(get_option morning_brief_time)"
+export BIN_REMINDER_TIME="$(get_option bin_reminder_time)"
+export QUIET_HOURS="$(get_option quiet_hours)"
+export BATTERY_NUDGE_PERCENT="$(get_option battery_nudge_percent)"
+
 export SEARXNG_URL="$(get_option searxng_url)"
 export EXA_API_KEY="$(get_option exa_api_key)"
 export HA_NOTIFY_TARGET="$(get_option ha_notify_target)"
@@ -53,9 +54,13 @@ export PRESENCE_UPTIME_PATH=/data/presence-uptime.json
 export TASK_DATA_PATH=/data/tasks.json
 export PERSONA_DATA_PATH=/data/persona.json
 export PARCEL_DATA_PATH=/data/parcels.json
+export AI_DATA_PATH=/data/ai.json
+export SPEND_DATA_PATH=/data/spend.json
+export DISCORD_CHAT_PATH=/data/discord-chats.json
+export PROACTIVE_DATA_PATH=/data/proactive.json
 # The vault is a shared folder, not add-on data, so it lives under /share where
 # the remindme-vault editor add-on reads and writes the same files.
 export VAULT_DATA_PATH=/share/vault
 
-node /app/dist/harness-server.js &
-exec node /app/dist/index.js
+# One process: the console, the Discord bot and the scheduler share one assistant.
+exec node /app/dist/main.js

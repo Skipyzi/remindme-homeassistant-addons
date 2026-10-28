@@ -1,0 +1,73 @@
+import type { Artifact } from "../harness/artifacts";
+import type { VaultNote } from "../harness/vault";
+
+export type Channel = "console" | "discord" | "task" | "brief";
+
+/**
+ * The standing instructions. Identical on every turn and every channel, so
+ * the provider caches them with the tools; everything that changes goes into
+ * `turnContext` instead.
+ */
+export function systemPrompt(persona: string): string {
+	return `${persona.trim()}
+
+You are the personal assistant of one person, running inside their Home Assistant. You can see and control their home, read their calendars, to-do lists and weather, set reminders, keep notes, and message them on Discord.
+
+How to work:
+- Look things up with your tools instead of guessing. Get exact entity_ids from find_devices before control_devices; never invent one.
+- Change devices only when asked. Locks, doors, covers, alarms and similar wait for the user to confirm: tell them it's waiting for their tap.
+- Calendars hold the user's work shifts and the waste collection days, alongside appointments. Bins go out the evening before collection.
+- Use the current local time from the context for anything relative ("tonight", "in two hours"). For reminders pass the full date-time with its UTC offset.
+- Save a note only when the user asks you to remember something.
+- If a tool fails, say what failed in one plain sentence and what they can do about it.
+- Give times in 24-hour local time and temperatures in degrees Celsius unless the context says otherwise.`;
+}
+
+const channelStyle: Record<Channel, string> = {
+	console:
+		"This is the chat in the RemindMe console. Markdown works. Keep answers short unless asked for detail.",
+	discord:
+		"This is a Discord direct message. Write like a text message: short, plain, no headings or tables. Bold sparingly. One or two short paragraphs or a short list at most.",
+	task: "This is a scheduled task running without the user present. Do the work with your tools, then write the result as one short message to them.",
+	brief:
+		"Write the user's morning brief as a Discord message. Lead with what matters today: shift times, bins tonight, appointments, the weather and anything wrong in the house. Short lines, no headings, at most about 10 lines. Leave out anything that's fine or empty.",
+};
+
+function offset(at: Date): string {
+	const minutes = -at.getTimezoneOffset();
+	const sign = minutes >= 0 ? "+" : "-";
+	const abs = Math.abs(minutes);
+	return `UTC${sign}${String(Math.floor(abs / 60)).padStart(2, "0")}:${String(abs % 60).padStart(2, "0")}`;
+}
+
+export function describeNow(at: Date, timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone): string {
+	const day = at.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+	const time = at.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+	return `${day}, ${time} (${timeZone}, ${offset(at)})`;
+}
+
+/** What changes per turn: the time, the channel, recalled notes, the open document. */
+export function turnContext(options: {
+	channel: Channel;
+	now?: Date;
+	home?: string;
+	recalled?: VaultNote[];
+	openDocument?: Artifact;
+	extra?: string;
+}): string {
+	const lines = [`Current local time: ${describeNow(options.now || new Date())}.`];
+	if (options.home) lines.push(`Home: ${options.home}.`);
+	lines.push(channelStyle[options.channel]);
+	if (options.recalled?.length)
+		lines.push(
+			"From your saved notes about the user (treat as things you already know):\n" +
+				options.recalled.map((note) => `- ${note.title}: ${note.body.replace(/\s+/g, " ").trim().slice(0, 240)}`).join("\n"),
+		);
+	const open = options.openDocument;
+	if (open)
+		lines.push(
+			`The user has document ${open.id} open ("${open.title}", ${open.kind}). Edit it with edit_document when they ask for changes. Current content:\n${open.content.slice(0, 12_000)}`,
+		);
+	if (options.extra) lines.push(options.extra);
+	return lines.join("\n\n");
+}

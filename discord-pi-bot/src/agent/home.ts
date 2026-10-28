@@ -5,12 +5,46 @@ import {
 	type EntityAction,
 	type ValidatedEntityAction,
 } from "../harness/entityActions";
-import type { HomeCommand } from "./actions";
+
+/** Everything the assistant may ask a device to do. */
+export const HOME_COMMANDS = [
+	"turn_on",
+	"turn_off",
+	"toggle",
+	"set_brightness",
+	"set_color",
+	"set_color_temperature",
+	"set_temperature",
+	"set_hvac_mode",
+	"set_position",
+	"open",
+	"close",
+	"lock",
+	"unlock",
+	"set_fan_speed",
+	"play",
+	"pause",
+	"next_track",
+	"set_volume",
+	"start",
+	"return_home",
+] as const;
+export type HomeCommand = (typeof HOME_COMMANDS)[number];
+
+export interface CalendarEvent {
+	calendar: string;
+	summary: string;
+	start: string;
+	end: string;
+	allDay: boolean;
+	location?: string;
+	description?: string;
+}
 
 /**
  * Home Assistant, as the agent sees it: states with their areas attached,
- * service calls, and the built-in conversation agent. Everything goes through
- * the Supervisor proxy with the add-on's token.
+ * service calls, calendars, and the built-in conversation agent. Everything
+ * goes through the Supervisor proxy with the add-on's token.
  */
 export class HomeApi {
 	private statesCache?: { at: number; cards: EntityCard[] };
@@ -92,6 +126,71 @@ export class HomeApi {
 			method: "POST",
 			body: JSON.stringify({ ...action.serviceData, entity_id: action.entityId }),
 		});
+	}
+
+	/** A service that answers with data, such as `weather.get_forecasts`. */
+	async serviceResponse(
+		domain: string,
+		service: string,
+		data: Record<string, unknown>,
+	): Promise<Record<string, unknown>> {
+		const response = await this.call(`/services/${domain}/${service}?return_response`, {
+			method: "POST",
+			body: JSON.stringify(data),
+		});
+		const body = (await response.json()) as { service_response?: Record<string, unknown> };
+		return body.service_response || {};
+	}
+
+	/** A service that changes something and answers nothing, such as `todo.add_item`. */
+	async callService(domain: string, service: string, data: Record<string, unknown>): Promise<void> {
+		this.statesCache = undefined;
+		await this.call(`/services/${domain}/${service}`, { method: "POST", body: JSON.stringify(data) });
+	}
+
+	/** Events from every calendar (or the named ones) between two instants. */
+	async calendarEvents(start: Date, end: Date, only: string[] = []): Promise<CalendarEvent[]> {
+		const calendars = (await (await this.call("/calendars")).json()) as Array<{ entity_id: string; name: string }>;
+		const wanted = only.length ? calendars.filter((calendar) => only.includes(calendar.entity_id)) : calendars;
+		const query = `start=${encodeURIComponent(start.toISOString())}&end=${encodeURIComponent(end.toISOString())}`;
+		const lists = await Promise.all(
+			wanted.map(async (calendar) => {
+				try {
+					const response = await this.call(`/calendars/${encodeURIComponent(calendar.entity_id)}?${query}`);
+					const events = (await response.json()) as Array<{
+						summary?: string;
+						start?: { dateTime?: string; date?: string };
+						end?: { dateTime?: string; date?: string };
+						location?: string;
+						description?: string;
+					}>;
+					return events.map(
+						(event): CalendarEvent => ({
+							calendar: calendar.name || calendar.entity_id,
+							summary: event.summary || "(untitled)",
+							start: event.start?.dateTime || event.start?.date || "",
+							end: event.end?.dateTime || event.end?.date || "",
+							allDay: !event.start?.dateTime,
+							...(event.location ? { location: event.location } : {}),
+							...(event.description ? { description: event.description.slice(0, 300) } : {}),
+						}),
+					);
+				} catch (error) {
+					console.warn(`Calendar ${calendar.entity_id} failed:`, error instanceof Error ? error.message : error);
+					return [];
+				}
+			}),
+		);
+		return lists.flat().sort((a, b) => a.start.localeCompare(b.start));
+	}
+
+	/** Home Assistant's own settings: the house's time zone, location name, units. */
+	async config(): Promise<{ time_zone?: string; location_name?: string; unit_system?: { temperature?: string } }> {
+		return (await this.call("/config")).json() as Promise<{
+			time_zone?: string;
+			location_name?: string;
+			unit_system?: { temperature?: string };
+		}>;
 	}
 
 	/**
@@ -325,7 +424,7 @@ export function planCommand(
 		case "pause":
 		case "next_track":
 			if (domain !== "media_player") throw new Error(`${card.name} is not a media player`);
-			return custom(card, { play: "media_play", pause: "media_pause", next_track: "media_next_track" }[command]);
+			return custom(card, ({ play: "media_play", pause: "media_pause", next_track: "media_next_track" } as const)[command]);
 		case "set_volume": {
 			if (domain !== "media_player") throw new Error(`${card.name} is not a media player`);
 			if (!amount) throw new Error(`Say what volume for ${card.name}`);
