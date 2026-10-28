@@ -171,6 +171,8 @@ function remindme() {
 		phone: { state: "" },
 		phoneBusy: false,
 		phoneNote: "",
+		haPhone: { phones: [], target: "", liveActivities: true, pictures: false },
+		haNote: "",
 		phoneCopied: false,
 		phoneTimer: null,
 		pushOn: false,
@@ -1015,12 +1017,36 @@ function remindme() {
 			return `${devices} Turn them on in the phone app itself: open the address above on your phone, install it, and come back to this page there.`;
 		},
 		async loadPhone() {
-			this.phone = await this.getJson("./api/phone", { state: "error", error: "RemindMe didn't answer." });
+			const [phone, ha] = await Promise.all([this.getJson("./api/phone", { state: "error", error: "RemindMe didn't answer." }), this.getJson("./api/phone/ha", null)]);
+			this.phone = phone;
+			if (ha) this.haPhone = { phones: ha.phones || [], target: ha.target || "", liveActivities: ha.liveActivities !== false, pictures: Boolean(ha.pictures) };
 			if (this.pushPossible) {
 				const registration = await navigator.serviceWorker.getRegistration().catch(() => undefined);
 				this.pushOn = Boolean(await registration?.pushManager.getSubscription().catch(() => null));
 			}
 			this.pollPhone();
+		},
+		async chooseHaPhone(change) {
+			try {
+				const data = await this.request("./api/phone/ha", "PUT", change);
+				this.haPhone = { ...this.haPhone, target: data.target, liveActivities: data.liveActivities };
+				const name = this.haPhone.phones.find((option) => option.id === data.target)?.name;
+				if ("target" in change) this.haNote = name ? `Notifications now come through the Home Assistant app on ${name}. Send a test to check the buttons.` : "RemindMe's own notifications are back.";
+				else this.haNote = data.liveActivities ? "Running jobs show on the Lock Screen." : "No more Live Activities.";
+			} catch (error) {
+				this.haNote = `Not saved: ${error.message}`;
+			}
+		},
+		async testHaPhone() {
+			this.phoneBusy = true;
+			try {
+				await this.request("./api/phone/ha/test");
+				this.haNote = "Sent. Tap a button on the phone: the notification changes to say it worked.";
+			} catch (error) {
+				this.haNote = error.message;
+			} finally {
+				this.phoneBusy = false;
+			}
 		},
 		/* While signing in to Tailscale, the page follows along until it's connected. */
 		pollPhone() {

@@ -12,6 +12,7 @@ import {
 	activity,
 	aiSettings,
 	assistant,
+	batteryButtons,
 	batteryNeeds,
 	confirmations,
 	home,
@@ -42,11 +43,11 @@ async function main() {
 	const messenger = startBot({ assistant, chats, confirmations, home, ownerId, activity, phone: phoneApp });
 
 	// What RemindMe says first goes to Discord and to every phone with the app.
-	const notify = async (text: string, what: "brief" | "bins" | "battery" | "mail" | "heads_up") => {
+	const notify = async (text: string, what: "brief" | "bins" | "battery" | "mail" | "heads_up", extra?: { battery?: string }) => {
 		const title = what === "brief" ? `☀️ ${new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" })}` : undefined;
 		const [onDiscord, phones] = await Promise.all([
 			messenger ? messenger.send(text, { title }) : Promise.resolve(false),
-			phoneApp.send({ title: what === "brief" ? "Morning brief" : "RemindMe", body: text, url: "./", tag: what }),
+			phoneApp.send({ title: what === "brief" ? "Morning brief" : "RemindMe", body: text, url: "./", tag: what, ...(extra?.battery ? { buttons: batteryButtons(extra.battery) } : {}) }),
 		]);
 		const sent = onDiscord || phones > 0;
 		activity.add(

@@ -103,6 +103,16 @@ RemindMe installs on your phone as an app with its own notifications. It joins y
 
 Notifications come for job questions and results, reminders, the morning brief and nudges, alongside Discord; tapping one opens what it is about. On an iPhone they show a title and text only: iOS gives web apps no buttons or pictures in notifications. The app icon counts what waits for your decision, and the app opens on a black RemindMe splash on iPhone and Android. Requests from other accounts and from tagged devices on the tailnet are turned away. Tailscale's state stays in `/data/tailscale`, and its logs aren't uploaded.
 
+### Through the Home Assistant app
+
+On an iPhone, a web app's notifications are text only. The Home Assistant app on the phone can do more, without a developer account, so RemindMe can send through it instead (**Settings → Phone app → Through the Home Assistant app**, or the `ha_notify_target` option):
+
+- **Buttons:** a job's question with its answers and a reply field; an action a job left waiting, with Confirm (only from an unlocked phone) and Cancel; a battery's **Remind me Saturday** and **Got it**; a reminder's **In 1 hour**. The answer takes the notification's place.
+- **The thread's cat** as the picture, drawn by the web browser and loaded over the phone app's address, so Tailscale has to be on.
+- **Live Activities:** a job working for more than a few seconds shows on the Lock Screen with its latest step and progress, and leaves when it stops.
+
+While it's on, the web app's own notifications stay quiet, so nothing arrives twice. Taps come back as Home Assistant's `mobile_app_notification_action` event; each button works once.
+
 ## Background jobs
 
 Work that takes many steps, such as comparing flights across sites, going through a week of receipts, or researching a purchase, goes to a job instead of a single answer. You ask as usual, here or on Discord; the AI decides to hand it off. The job:

@@ -309,6 +309,25 @@ export class WebBrowser {
 		return this.view(session);
 	}
 
+	/**
+	 * A picture of some HTML of our own, such as a cat for a notification. No
+	 * network: setContent loads nothing, and the routes refuse what it might.
+	 */
+	async renderPng(html: string, size: number): Promise<Buffer> {
+		this.context ??= this.launch().catch((error) => {
+			this.context = undefined;
+			throw error;
+		});
+		const page = await (await this.context).newPage();
+		try {
+			await page.setViewportSize({ width: size, height: size });
+			await page.setContent(html, { waitUntil: "load" });
+			return await page.screenshot({ type: "png" });
+		} finally {
+			await page.close().catch(() => {});
+		}
+	}
+
 	/** Keep a page open while a click on it waits for the user's tap. */
 	keep(key: string, until: number): { url: string; title: Promise<string> } {
 		const session = this.sessions.get(key);

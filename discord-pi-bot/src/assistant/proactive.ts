@@ -27,7 +27,7 @@ export interface ProactiveDeps {
 	assistant: Assistant;
 	home?: HomeApi;
 	/** Message the owner on Discord. False when it could not be sent. */
-	notify(text: string, what: "brief" | "bins" | "battery" | "mail" | "heads_up"): Promise<boolean>;
+	notify(text: string, what: "brief" | "bins" | "battery" | "mail" | "heads_up", extra?: { battery?: string }): Promise<boolean>;
 	reminders(): Promise<Array<{ message: string; time: Date }>>;
 	/** Something RemindMe did on its own, for the ledger. */
 	did?(text: string): void;
@@ -257,6 +257,8 @@ export class Proactive {
 				? `🔋 ${low[0].name} at ${low[0].level}%. ${batteryHint(low[0])}`
 				: `🔋 Batteries running low: ${low.map((battery) => `${battery.name} at ${battery.level}% (${batteryShort(battery)})`).join(", ")}.`,
 			"battery",
+			// One battery: the phone gets its Remind me and Got it buttons.
+			low.length === 1 ? { battery: low[0].entityId } : undefined,
 		);
 		if (!sent) return;
 		for (const battery of low) this.state.batteries[battery.entityId] = localDate(now);

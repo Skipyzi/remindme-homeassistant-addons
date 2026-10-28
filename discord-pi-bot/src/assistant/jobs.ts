@@ -1,5 +1,6 @@
 import type { PriorTurn } from "../ai/types";
 import type { AskInput, AskResult } from "./agent";
+import type { Confirmation } from "./confirmations";
 import type { Thread, ThreadStore } from "./threads";
 import { titleFrom } from "./threads";
 
@@ -23,6 +24,10 @@ export interface JobDeps {
 	quietUntil?(at: Date): Date;
 	/** How long a watch keeps going before it stops on its own. */
 	watchDays?: number;
+	/** The job moved: started, noted a step, or stopped working. For a Lock Screen Live Activity. */
+	changed?(thread: Thread): void;
+	/** A run left actions waiting for the user's tap. */
+	held?(thread: Thread, confirms: Confirmation[]): void;
 }
 
 const RUNS_PER_GO = 6;
@@ -108,6 +113,7 @@ export class JobRunner {
 		if (this.current?.id === id) this.current.abort.abort();
 		threads.updateJob(id, { status: "stopped", note: "Stopped by you", question: undefined, wakeAt: undefined, wakeWords: undefined });
 		threads.append(id, { role: "assistant", text: "Stopped. Reply to start it again." });
+		this.changed(id);
 		return true;
 	}
 
@@ -117,6 +123,16 @@ export class JobRunner {
 			.list()
 			.filter((thread) => thread.job?.status === "needs_you" && thread.job.question)
 			.map((thread) => ({ id: thread.id, title: thread.title, question: thread.job!.question!.text }));
+	}
+
+	private changed(id: string): void {
+		const thread = this.deps.threads.get(id);
+		if (!thread || !this.deps.changed) return;
+		try {
+			this.deps.changed(thread);
+		} catch (error) {
+			console.warn("A job change hook failed:", error instanceof Error ? error.message : error);
+		}
 	}
 
 	/** Resolves when nothing is queued or running; for tests. */
@@ -195,6 +211,7 @@ export class JobRunner {
 		const abort = new AbortController();
 		this.current = { id, abort };
 		threads.updateJob(id, { status: "working", error: undefined });
+		this.changed(id);
 		const say = async (text: string, message = text) => {
 			threads.append(id, { role: "assistant", text });
 			await this.deps.notify(threads.get(id)!, message).catch((error) => console.warn("Could not send a job update:", error instanceof Error ? error.message : error));
@@ -208,6 +225,7 @@ export class JobRunner {
 					update: (step, progress, note) => {
 						if (step.trim()) threads.append(id, { role: "step", text: step });
 						threads.updateJob(id, { ...(progress ? { progress } : {}), ...(note ? { note } : {}) });
+						this.changed(id);
 					},
 					ask: (question, options) => {
 						if (outcome) return;
@@ -251,12 +269,14 @@ export class JobRunner {
 				threads.updateJob(id, { runs: (threads.get(id)?.job?.runs || 0) + 1, wokeBy: undefined });
 				if (abort.signal.aborted) return;
 				if (result.did.length) threads.append(id, { role: "step", text: result.did.map((item) => item.text).join("; "), receipts: result.did });
-				if (result.confirms.length)
+				if (result.confirms.length) {
 					threads.append(id, {
 						role: "step",
 						text: "Waiting for your tap",
 						confirms: result.confirms.map((item) => ({ token: item.token, message: item.message, destructive: item.destructive })),
 					});
+					this.deps.held?.(threads.get(id)!, result.confirms);
+				}
 				if (result.problem) {
 					threads.updateJob(id, { status: "stopped", error: result.problem });
 					await say(`I had to stop: ${result.problem}`);
@@ -276,6 +296,7 @@ export class JobRunner {
 			await say(`I had to stop: ${error instanceof Error ? error.message : error}`);
 		} finally {
 			if (this.current?.id === id) this.current = undefined;
+			this.changed(id);
 		}
 	}
 }

@@ -395,8 +395,9 @@
                   <h3>Install it</h3>
                   <p><b>iPhone:</b> open the address in Safari, tap Share, then Add to Home Screen, and open RemindMe from there.<br /><b>Android:</b> open it in Chrome, then the menu, Install app.</p>
                   <h3>Notifications</h3>
-                  <p x-text="pushLine"></p>
-                  <div class="rm-actions">
+                  <p x-show="haPhone.target" class="rm-note">They come through the Home Assistant app now (below), so these stay quiet.</p>
+                  <p x-text="pushLine" x-show="!haPhone.target"></p>
+                  <div class="rm-actions" x-show="!haPhone.target">
                     <button class="rm-btn solid" type="button" x-show="pushPossible && !pushOn" :disabled="phoneBusy" @click="enablePush()">Turn on notifications here</button>
                     <button class="rm-btn" type="button" x-show="phone.devices?.length" :disabled="phoneBusy" @click="testPush()">Send a test</button>
                     <button class="rm-btn" type="button" x-show="pushOn" :disabled="phoneBusy" @click="disablePush()">Turn off here</button>
@@ -404,6 +405,22 @@
                   <p class="rm-note" role="status" x-show="phoneNote" x-text="phoneNote"></p>
                 </div>
               </template>
+
+              <h3>Through the Home Assistant app</h3>
+              <p>On an iPhone, the Home Assistant app can do what a web app can't: buttons to answer a job, confirm an action or snooze a reminder, a reply field, the thread's cat as a picture, and a running job on the Lock Screen as a Live Activity. While it's on, notifications come only this way, so none arrive twice.</p>
+              <label class="rm-field">Phone
+                <select @change="chooseHaPhone({ target: $event.target.value })" :disabled="!haPhone.phones.length">
+                  <option value="" :selected="!haPhone.target">Off: RemindMe's own notifications</option>
+                  <template x-for="option in haPhone.phones" :key="option.id">
+                    <option :value="option.id" :selected="option.id === haPhone.target" x-text="option.name"></option>
+                  </template>
+                </select>
+              </label>
+              <label class="rm-toggle" x-show="haPhone.target"><input type="checkbox" :checked="haPhone.liveActivities" @change="chooseHaPhone({ liveActivities: $event.target.checked })" /><span x-text="haPhone.liveActivities ? 'Live Activities for running jobs' : 'No Live Activities'"></span></label>
+              <div class="rm-actions" x-show="haPhone.target"><button class="rm-btn" type="button" :disabled="phoneBusy" @click="testHaPhone()">Send a test with buttons</button></div>
+              <p class="rm-note" x-show="haPhone.target && !haPhone.pictures">Cats in notifications need the phone app connected above and the web_browser option on.</p>
+              <p class="rm-note" x-show="!haPhone.phones.length">Home Assistant knows no phone with its app yet. Install the Home Assistant app on your phone and sign in to this Home Assistant.</p>
+              <p class="rm-note" role="status" x-show="haNote" x-text="haNote"></p>
             </div>
 
             <!-- Connectors -->

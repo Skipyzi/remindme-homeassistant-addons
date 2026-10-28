@@ -129,6 +129,20 @@ export class HomeApi {
 		return kinds;
 	}
 
+	/**
+	 * The phones with the Home Assistant app: their notify services, named
+	 * after their device tracker ("iPhone von Gabor") where there is one.
+	 */
+	async notifyTargets(): Promise<Array<{ id: string; name: string }>> {
+		const services = (await (await this.call("/services")).json()) as Array<{ domain: string; services: Record<string, unknown> }>;
+		const ids = Object.keys(services.find((entry) => entry.domain === "notify")?.services || {}).filter((id) => id.startsWith("mobile_app_"));
+		const cards = await this.cards(60_000).catch(() => [] as EntityCard[]);
+		return ids.map((id) => {
+			const slug = id.slice("mobile_app_".length);
+			return { id, name: cards.find((card) => card.entityId === `device_tracker.${slug}`)?.name || slug.replace(/_/g, " ") };
+		});
+	}
+
 	/** Every entity as a card, with its area. Cached briefly: one turn reads it twice. */
 	async cards(maxAgeMs = 3_000): Promise<EntityCard[]> {
 		if (this.statesCache && Date.now() - this.statesCache.at < maxAgeMs)

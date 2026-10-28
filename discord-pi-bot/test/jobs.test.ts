@@ -284,3 +284,25 @@ test("a watch looks once, sleeps, and wakes on its time or on a matching email; 
 	await runner.settled();
 	assert.equal(looks, 5, "a stopped watch doesn't wake");
 });
+
+test("the runner reports a job's moves (for Live Activities) and the taps it leaves waiting (for phone buttons)", async () => {
+	const threads = store();
+	const changes: string[] = [];
+	const held: string[] = [];
+	const confirm = { confirmation_required: true as const, token: "t1", message: "Send \"Samstag\" to anna@example.com", entityId: "mail" };
+	const runner = new JobRunner({
+		threads,
+		ask: async (input) => {
+			input.tools!.job!.update("Drafted the email", { done: 1, total: 2 });
+			input.tools!.job!.finish("Done.");
+			return answer("", { confirms: [confirm] });
+		},
+		notify: async () => {},
+		changed: (thread) => void changes.push(`${thread.job!.status}${thread.job!.progress ? ` ${thread.job!.progress.done}/${thread.job!.progress.total}` : ""}`),
+		held: (thread, confirms) => void held.push(`${thread.title}: ${confirms.map((item) => item.message).join(", ")}`),
+	});
+	runner.start({ title: "Write to Anna", instructions: "Email Anna", origin: "console" });
+	await runner.settled();
+	assert.deepEqual(changes, ["working", "working 1/2", "done 2/2"]);
+	assert.deepEqual(held, ['Write to Anna: Send "Samstag" to anna@example.com']);
+});

@@ -74,11 +74,15 @@ import { McpAuth } from "./harness/mcp-auth";
 import { WebBrowser } from "./harness/browser";
 import { modelTable } from "./ai/catalog";
 import { ThreadStore, titleFrom, type Thread } from "./assistant/threads";
+import type { Confirmation } from "./assistant/confirmations";
 import { JobRunner } from "./assistant/jobs";
 import { MemoryStore } from "./assistant/memory";
 import { BatteryHides, batteryHint, lowBatteries, type LowBattery } from "./assistant/batteries";
 import type { EntityCard } from "./harness/entities";
 import { PhonePush, type PushMessage } from "./phone/push";
+import { HaApp, plainText, type PhoneButton, type PhoneNotice } from "./phone/ha-app";
+import { HaEvents, websocketUrl } from "./phone/ha-events";
+import { LiveJobs } from "./phone/live-jobs";
 import { TailscaleNode, tailnetGuard } from "./phone/tailscale";
 import type { CalendarEvent } from "./agent/home";
 import { buildTools, type McpTool, type ToolContext } from "./assistant/tools";
@@ -96,17 +100,24 @@ const app = express();
 export const tailscale = new TailscaleNode();
 let phoneUrl: string | undefined;
 const phonePush = new PhonePush(undefined, () => phoneUrl || "mailto:remindme@example.com");
-/** A notification to every phone with the app; answers how many it reached. */
-export function phoneNotify(message: PushMessage): Promise<number> {
+/**
+ * A notification for the phone; answers how many phones it reached. Through
+ * the Home Assistant app when one is picked in Settings, with its buttons and
+ * a cat; the web app's own notifications then stay quiet, so none come twice.
+ */
+export async function phoneNotify(input: PhoneNotice): Promise<number> {
+	const message = { ...input, body: plainText(input.body) };
 	// The icon's count goes along: held actions and questions from jobs.
 	const badge = confirmations.list().length + jobs.waiting().length;
-	return phonePush.send({ badge, ...message }).catch((error) => {
+	if (haApp.on) return (await haApp.send({ badge, image: catImage("remindme", "done"), ...message })) ? 1 : 0;
+	const { buttons: _buttons, image: _image, quiet: _quiet, ...plain } = message;
+	return phonePush.send({ badge, ...plain }).catch((error) => {
 		console.warn("Push failed:", error instanceof Error ? error.message : error);
 		return 0;
 	});
 }
 /** For the Discord bot's reminders: whether any phone listens, and how to reach it. */
-export const phoneApp = { devices: () => phonePush.devices().length, send: phoneNotify };
+export const phoneApp = { devices: () => phonePush.devices().length + (haApp.on ? 1 : 0), send: phoneNotify };
 app.use(tailnetGuard(tailscale));
 const port = Number(process.env.HARNESS_PORT || 8090);
 const supervisorToken = process.env.SUPERVISOR_TOKEN || "";
@@ -185,6 +196,19 @@ void aiSettings.load();
 export const spend = new SpendLedger();
 void spend.load();
 export const home = supervisorToken ? new HomeApi(supervisorToken, homeAssistantUrl) : undefined;
+/* The Home Assistant app on the phone: notifications with buttons and a cat, and Live Activities. */
+export const haApp = new HaApp(home, {
+	fallbackTarget: process.env.HA_NOTIFY_TARGET,
+	link: (url) => (phoneUrl ? new URL(url || "./", `${phoneUrl}/`).toString() : undefined),
+});
+/* Taps on its buttons come back as Home Assistant events. */
+const haEvents = supervisorToken
+	? new HaEvents(websocketUrl(homeAssistantUrl), supervisorToken, ["mobile_app_notification_action"], (_type, data) => void haApp.tapped(data))
+	: undefined;
+/** A thread's cat as a picture the phone can load, over the phone app's address. */
+function catImage(seed: string, state: "asking" | "working" | "done" | "stopped"): string | undefined {
+	return phoneUrl && webBrowser ? `${phoneUrl}/api/cats/${encodeURIComponent(seed)}/${state}.png` : undefined;
+}
 const conversations = new ConversationStore();
 void conversations.load();
 const skills = new SkillStore();
@@ -1292,16 +1316,16 @@ app.get("/api/ledger", async (_request, response) => {
  * if the battery is still low) or "Got it" (back only after it was charged
  * or replaced and runs low again).
  */
-app.post("/api/batteries/:entityId/:action", async (request, response) => {
-	const battery = (await batteryNeeds()).find((entry) => entry.entityId === request.params.entityId);
-	if (!battery) return response.status(404).json({ error: "That battery isn't low any more." });
-	if (request.params.action === "hide") {
+class BatteryGone extends Error {}
+/** "Remind me" (until `at`) or "Got it" for a low battery; answers what happened, in a line. */
+async function batteryAction(entityId: string, action: "remind" | "hide", at?: Date): Promise<string> {
+	const battery = (await batteryNeeds()).find((entry) => entry.entityId === entityId);
+	if (!battery) throw new BatteryGone("That battery isn't low any more.");
+	if (action === "hide") {
 		await batteryHides.hide(battery.entityId);
-		return response.json({ text: battery.rechargeable ? "Hidden until it's charged." : "Hidden until the battery is changed." });
+		return battery.rechargeable ? "Hidden until it's charged." : "Hidden until the battery is changed.";
 	}
-	if (request.params.action !== "remind") return response.status(404).json({ error: "Unknown action" });
-	const at = new Date(String(request.body?.at || ""));
-	if (Number.isNaN(at.getTime()) || at.getTime() < Date.now()) return response.status(400).json({ error: "Pick a time in the future." });
+	if (!at || Number.isNaN(at.getTime()) || at.getTime() < Date.now()) throw new Error("Pick a time in the future.");
 	const message = battery.rechargeable ? `Charge the ${battery.name}` : `Put a new ${battery.battery || "battery"} in the ${battery.name}`;
 	await addReminder(message, (at.getTime() - Date.now()) / 60_000, process.env.OWNER_ID || "", "");
 	await batteryHides.hide(battery.entityId, at);
@@ -1309,7 +1333,31 @@ app.post("/api/batteries/:entityId/:action", async (request, response) => {
 	activity.add({ kind: "did", channel: "console", text: line, receipts: [{ text: line }] });
 	const day = at.toLocaleDateString("en-GB", { weekday: "long" });
 	const time = at.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
-	response.json({ text: `Reminder set for ${day} at ${time}.` });
+	return `Reminder set for ${day} at ${time}.`;
+}
+/** Saturday at 10:00, or the one after when it's Saturday already. */
+function nextSaturday(now = new Date()): Date {
+	const at = new Date(now);
+	at.setDate(at.getDate() + ((6 - at.getDay() + 7) % 7 || 7));
+	at.setHours(10, 0, 0, 0);
+	return at;
+}
+/** The battery nudge's buttons on the phone. */
+export function batteryButtons(entityId: string): PhoneButton[] {
+	return [
+		{ title: "Remind me Saturday", run: () => batteryAction(entityId, "remind", nextSaturday()) },
+		{ title: "Got it", run: () => batteryAction(entityId, "hide") },
+	];
+}
+app.post("/api/batteries/:entityId/:action", async (request, response) => {
+	const action = request.params.action;
+	if (action !== "remind" && action !== "hide") return response.status(404).json({ error: "Unknown action" });
+	try {
+		const at = action === "remind" ? new Date(String(request.body?.at || "")) : undefined;
+		response.json({ text: await batteryAction(request.params.entityId, action, at) });
+	} catch (error) {
+		response.status(error instanceof BatteryGone ? 404 : 400).json({ error: error instanceof Error ? error.message : "That didn't work" });
+	}
 });
 /* Set a reminder straight from the ledger, such as "replace the battery on Saturday". */
 app.post("/api/reminders", async (request, response) => {
@@ -1704,8 +1752,132 @@ export const jobs = new JobRunner({
 	// A watch never wakes you: its looks move past the quiet hours.
 	quietUntil: (at) => afterQuietHours(process.env.QUIET_HOURS ?? "22:30-07:00", at),
 	notify: async (thread, text) => {
-		await Promise.all([jobNotifier(thread, text), phoneNotify({ title: thread.title, body: text, url: `./#t/${thread.id}`, tag: `job-${thread.id}` })]);
+		const job = thread.job;
+		const asking = job?.status === "needs_you" && job.question ? job.question : undefined;
+		await Promise.all([
+			jobNotifier(thread, text),
+			phoneNotify({
+				title: thread.title,
+				// With buttons on the phone, the options needn't be listed in the text too.
+				body: asking && haApp.on ? asking.text : text,
+				url: `./#t/${thread.id}`,
+				tag: `job-${thread.id}`,
+				image: catImage(thread.id, asking ? "asking" : job?.status === "stopped" ? "stopped" : "done"),
+				...(asking ? { buttons: answerButtons(thread.id, asking.options) } : {}),
+			}),
+		]);
 	},
+	held: (thread, confirms) => {
+		for (const confirm of confirms) void heldOnPhone(thread, confirm);
+	},
+	changed: (thread) => liveJobs.update(thread),
+});
+
+/** A job's question on the phone: its options as buttons, and a reply field. */
+function answerButtons(id: string, options: string[]): PhoneButton[] {
+	const answer = async (text: string) => {
+		if (threads.get(id)?.job?.status !== "needs_you") return "The job isn't waiting for that any more.";
+		jobs.answer(id, text);
+		return `You answered "${text.length > 60 ? `${text.slice(0, 60)}…` : text}". The job carries on.`;
+	};
+	return [
+		...options.slice(0, 4).map((option) => ({ title: option, run: () => answer(option) })),
+		{ title: "Reply", reply: { button: "Send", placeholder: "Your answer" }, run: async (reply?: string) => (reply ? answer(reply) : "Nothing was typed.") },
+	];
+}
+
+/** An action a job left waiting for a tap, on the phone: confirm needs the phone unlocked. */
+async function heldOnPhone(thread: Thread, confirm: Confirmation): Promise<void> {
+	if (!haApp.on) return;
+	const verb = /^(Send|Unlock|Lock|Open|Close|Add|Turn|Start|Stop|Arm|Disarm)\b/.exec(confirm.message)?.[1] || "Confirm";
+	await phoneNotify({
+		title: thread.title,
+		body: confirm.detail ? `${confirm.message}\n\n${confirm.detail.slice(0, 600)}` : confirm.message,
+		url: `./#t/${thread.id}`,
+		tag: `held-${confirm.token.slice(0, 16)}`,
+		image: catImage(thread.id, "asking"),
+		buttons: [
+			{
+				title: verb,
+				unlocked: true,
+				destructive: confirm.destructive,
+				run: async () => {
+					const held = confirmations.take(confirm.token);
+					if (!held) return "That has expired. Ask again.";
+					try {
+						await held.perform();
+					} catch (error) {
+						activity.resolve(confirm.token, "failed", `${held.label}: ${error instanceof Error ? error.message : "That didn't work"}`);
+						throw error;
+					}
+					activity.resolve(confirm.token, "confirmed", held.label);
+					return `Done: ${held.label}`;
+				},
+			},
+			{
+				title: "Cancel",
+				run: async () => {
+					confirmations.cancel(confirm.token);
+					activity.resolve(confirm.token, "cancelled", confirm.message);
+					return "Cancelled.";
+				},
+			},
+		],
+	});
+}
+
+/* A working job on the Lock Screen (see phone/live-jobs.ts). */
+const liveJobs = new LiveJobs(haApp);
+
+/* The Home Assistant app on the phone: which one, Live Activities, and a test with buttons. */
+app.get("/api/phone/ha", async (_request, response) => {
+	const phones = home ? await home.notifyTargets().catch(() => []) : [];
+	response.set("Cache-Control", "no-store").json({ phones, target: haApp.target || "", liveActivities: haApp.liveSetting, pictures: Boolean(webBrowser && phoneUrl) });
+});
+app.put("/api/phone/ha", async (request, response) => {
+	const target = typeof request.body?.target === "string" ? request.body.target : undefined;
+	if (target && !/^mobile_app_[a-z0-9_]+$/.test(target)) return response.status(400).json({ error: "Pick one of the phones listed." });
+	await haApp.choose({ target, liveActivities: typeof request.body?.liveActivities === "boolean" ? request.body.liveActivities : undefined });
+	response.json({ target: haApp.target || "", liveActivities: haApp.liveSetting });
+});
+app.post("/api/phone/ha/test", async (_request, response) => {
+	const sent = await haApp.send({
+		title: "RemindMe",
+		body: "Notifications come through the Home Assistant app now. Tap a button to check they work.",
+		tag: "rm-test",
+		image: catImage("remindme", "asking"),
+		buttons: [
+			{ title: "Looks good", run: async () => "Buttons work. Questions from jobs, held actions and battery nudges come with buttons like these." },
+			{ title: "Reply", reply: { button: "Send", placeholder: "Type something" }, run: async (reply) => `Replies work too. You wrote: ${reply || "(nothing)"}` },
+		],
+	});
+	response.status(sent ? 200 : 502).json(sent ? { sent } : { error: "Home Assistant didn't take the notification. Check the phone's notify service." });
+});
+/* A thread's cat as a PNG, for notification pictures. Drawn by the browser, kept in memory. */
+const catPictures = new Map<string, Promise<Buffer>>();
+async function drawCat(seed: string, state: string): Promise<Buffer> {
+	if (!webBrowser) throw new Error("No browser to draw with");
+	const cats = await readFile(resolve(process.cwd(), "public/components/cats.js"), "utf8");
+	const html = `<!doctype html><html><body style="margin:0;width:256px;height:256px;background:#000;display:grid;place-items:center"><div id="cat" style="width:210px;height:210px"></div><script>${cats}</script><script>const box=document.getElementById("cat");box.innerHTML=window.RemindMeCats.draw(${JSON.stringify(seed)},${JSON.stringify(state)});box.firstElementChild.setAttribute("width","210");box.firstElementChild.setAttribute("height","210");</script></body></html>`;
+	return webBrowser.renderPng(html, 256);
+}
+app.get("/api/cats/:seed/:file", async (request, response) => {
+	const state = /^(asking|working|done|stopped)\.png$/.exec(request.params.file)?.[1];
+	const seed = request.params.seed;
+	if (!webBrowser || !state || !/^[\w-]{1,64}$/.test(seed)) return response.status(404).end();
+	const key = `${seed}:${state}`;
+	let picture = catPictures.get(key);
+	if (!picture) {
+		picture = drawCat(seed, state);
+		catPictures.set(key, picture);
+		picture.catch(() => catPictures.delete(key));
+		if (catPictures.size > 200) catPictures.delete(catPictures.keys().next().value as string);
+	}
+	try {
+		response.set("Cache-Control", "public, max-age=86400").type("png").send(await picture);
+	} catch {
+		response.status(503).end();
+	}
 });
 
 /* The phone app's settings: Tailscale, and the phones that get notifications. */
@@ -2194,7 +2366,8 @@ export function createHarnessApp(): Express {
  * runs on the container's clock.
  */
 export async function startHarness(): Promise<void> {
-	await Promise.all([loadConnectors(), threads.load(), phonePush.load(), memory.load(), batteryHides.load()]);
+	await Promise.all([loadConnectors(), threads.load(), phonePush.load(), memory.load(), batteryHides.load(), haApp.load()]);
+	haEvents?.start();
 	app.listen(port, () => console.log(`RemindMe console listening on port ${port}`));
 	jobs.resume();
 	jobs.startClock();

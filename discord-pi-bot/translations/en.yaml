@@ -82,7 +82,7 @@ configuration:
     description: A headless Chromium on the Pi for pages that need one, such as tracking pages and shops. It browses signed out and can't reach your home network; buying, booking or sending waits for your tap.
   ha_notify_target:
     name: Phone notifications
-    description: Optional. A notify service such as mobile_app_iphone, for reminders on your phone.
+    description: Optional. The phone with the Home Assistant app that gets RemindMe's notifications, with buttons and Live Activities, such as mobile_app_iphone. Picking a phone under Settings, Phone app, does the same and wins over this.
   vault_url:
     name: Vault editor URL
     description: Optional. Links notes to the RemindMe Vault editor app.

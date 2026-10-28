@@ -1,7 +1,7 @@
 import { Client, EmbedBuilder, GatewayIntentBits, Partials } from "discord.js";
 import { config, validateConfig } from "./config";
 import { setupCommands } from "./commands";
-import { startReminderScheduler } from "./utils/reminderManager";
+import { addReminder, startReminderScheduler } from "./utils/reminderManager";
 import { startPresenceMonitor } from "./presence";
 import { deliverReminder, deliveryTargets } from "./harness/reminderDelivery";
 import { setupAssistantChat, type ChatDeps } from "./discord/assistantChat";
@@ -78,16 +78,26 @@ export function startBot(deps: ChatDeps): OwnerMessenger | undefined {
 							message: reminder.message,
 							notification_id: reminder.id,
 						}),
-					mobile: process.env.HA_NOTIFY_TARGET
-						? () =>
-								callHomeAssistant(
-									`notify/${process.env.HA_NOTIFY_TARGET?.replace(/^notify\./, "")}`,
-									{ title: "RemindMe", message: reminder.message },
-								)
-						: undefined,
+					// The Home Assistant app (ha_notify_target, or the phone picked in Settings) goes through phone, with its buttons.
+					mobile: undefined,
 					phone: deps.phone?.devices()
 						? async () => {
-								if (!(await deps.phone!.send({ title: "Reminder", body: reminder.message, url: "./", tag: `reminder-${reminder.id}` }))) throw new Error("No phone took the reminder");
+								const sent = await deps.phone!.send({
+									title: "Reminder",
+									body: reminder.message,
+									url: "./",
+									tag: `reminder-${reminder.id}`,
+									buttons: [
+										{
+											title: "In 1 hour",
+											run: async () => {
+												await addReminder(reminder.message, 60, reminder.userId, reminder.channelId);
+												return "I'll remind you again in an hour.";
+											},
+										},
+									],
+								});
+								if (!sent) throw new Error("No phone took the reminder");
 							}
 						: undefined,
 					discord: async () => {
