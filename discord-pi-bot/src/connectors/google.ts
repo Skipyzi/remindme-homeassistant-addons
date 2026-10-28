@@ -158,15 +158,15 @@ export class GoogleTokens {
 	private async refresh(connector: StoredConnector): Promise<string> {
 		const app = this.app.get();
 		const address = connector.values.address || "this account";
-		if (!app) throw new Error(`Google sign-in isn't set up any more, so ${address} can't be read. Add your Google app under Settings, Connectors.`);
+		if (!app) throw new Error(`Google sign-in isn't set up any more, so ${address} can't be read. Add your Google app under Settings, Mail and calendars.`);
 		const refreshToken = connector.secrets.refreshToken;
-		if (!refreshToken) throw new Error(`Sign in to ${address} again under Settings, Connectors.`);
+		if (!refreshToken) throw new Error(`Sign in to ${address} again under Settings, Mail and calendars.`);
 		try {
 			const tokens = await refreshTokens(this.endpoints(), { id: app.clientId, secret: app.clientSecret }, { refreshToken }, this.fetchImpl);
 			this.cached.set(connector.id, { token: tokens.accessToken, until: tokens.expiresAt ?? Date.now() + 3_000_000 });
 			return tokens.accessToken;
 		} catch (error) {
-			if (error instanceof SignInExpired) throw new Error(`Google no longer accepts RemindMe's sign-in for ${address}. Sign in again under Settings, Connectors.`);
+			if (error instanceof SignInExpired) throw new Error(`Google no longer accepts RemindMe's sign-in for ${address}. Sign in again under Settings, Mail and calendars.`);
 			throw error;
 		}
 	}

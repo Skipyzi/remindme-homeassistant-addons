@@ -317,5 +317,5 @@ test("a refused login says what the server meant, not \"Command failed\"", () =>
 	assert.match(refusal(gmail, new Error("Invalid login: 534-5.7.9 Application-specific password required.")), /wants an app password/, "SMTP's wording too");
 	assert.match(refusal({ ...gmail, token: async () => "t" }, imapError("[AUTHENTICATIONFAILED] Invalid credentials (Failure)")), /Sign in again/);
 	assert.match(refusal({ label: "GMX", host: "imap.gmx.net", provider: "imap" }, imapError("[AUTHENTICATIONFAILED] authentication failed")), /POP3\/IMAP Abruf/);
-	assert.equal(refusal({ label: "Work", host: "mail.example.com", provider: "imap" }, new Error("connect ETIMEDOUT")), "Work refused the connection (connect ETIMEDOUT). Check the address, password and server under Settings, Connectors.");
+	assert.equal(refusal({ label: "Work", host: "mail.example.com", provider: "imap" }, new Error("connect ETIMEDOUT")), "Work refused the connection (connect ETIMEDOUT). Check the address, password and server under Settings, Mail and calendars.");
 });

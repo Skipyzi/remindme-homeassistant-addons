@@ -480,23 +480,70 @@ a {
 	column-gap: 24px;
 	margin-top: 24px;
 }
+/* Settings sections: grouped, each with what it's set to now */
 .rm-sections {
-	grid-column: 1 / 3;
+	grid-column: 1 / 4;
 	display: grid;
 	align-content: start;
-	gap: 2px;
+}
+.rm-sections-group h3 {
+	margin: 18px 0 4px;
+	color: var(--dim);
+	font-size: 12px;
+	font-weight: 400;
 }
 .rm-sections button {
-	padding: 8px 0;
+	display: grid;
+	gap: 2px;
+	width: 100%;
+	padding: 9px 0;
 	color: var(--mute);
+	text-align: left;
 	border-top: 1px solid var(--rule);
+}
+.rm-sections button b {
+	font-weight: 400;
+}
+.rm-sections button small {
+	overflow: hidden;
+	color: var(--dim);
+	font-size: 12px;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.rm-sections button small.bad {
+	color: #ff6b5e;
 }
 .rm-sections button[aria-pressed="true"] {
 	color: #fff;
+}
+.rm-sections button[aria-pressed="true"] b {
 	font-weight: 600;
 }
+/* What needs fixing, on top */
+.rm-sections .rm-attn {
+	margin-bottom: 6px;
+	padding: 10px 12px;
+	border: 1px solid #ff6b5e;
+	color: #fff;
+}
+.rm-sections .rm-attn b {
+	font-weight: 600;
+}
+.rm-sections .rm-attn span {
+	color: var(--mute);
+	font-size: 12px;
+	text-decoration: underline;
+	text-underline-offset: 3px;
+}
+.rm-settings-back {
+	display: none;
+	color: var(--mute);
+	font-size: 14px;
+	white-space: nowrap;
+}
 .rm-panel {
-	grid-column: 3 / 11;
+	grid-column: 4 / 12;
 	min-width: 0;
 	display: grid;
 	gap: 16px;
@@ -1483,19 +1530,70 @@ body:has(> .rm-app) {
 	.rm-attach {
 		padding: 0 10px;
 	}
+	/* On a phone, Settings is a list you tap into; a section replaces it, with ‹ Settings to go back. */
 	.rm-settings {
 		display: block;
+		margin-top: 8px;
 	}
-	.rm-sections {
-		display: flex;
-		gap: 16px;
-		overflow-x: auto;
-		margin-bottom: 20px;
-		border-bottom: 1px solid var(--rule);
+	.rm-settings.in-section .rm-sections {
+		display: none;
+	}
+	.rm-settings-back {
+		display: inline-block;
+	}
+	/* In a section: ‹ Settings and Close on one line, the section's name in full below. */
+	.rm-sheet-top.in-section {
+		flex-wrap: wrap;
+		align-items: center;
+	}
+	.rm-sheet-top.in-section .rm-settings-back {
+		flex: 1;
+	}
+	.rm-sheet-top.in-section h2 {
+		order: 3;
+		flex-basis: 100%;
+		margin-top: 6px;
+		font-size: 26px;
+	}
+	.rm-settings.in-section .rm-panel > h3:first-child {
+		border-top: 0;
+		padding-top: 0;
 	}
 	.rm-sections button {
+		grid-template-columns: minmax(0, 1fr) auto;
+		padding: 12px 0;
 		border-top: 0;
-		white-space: nowrap;
+		border-bottom: 1px solid var(--rule);
+	}
+	.rm-sections-group button:first-of-type {
+		border-top: 1px solid var(--rule);
+	}
+	.rm-sections button b {
+		color: #fff;
+		font-weight: 600;
+	}
+	.rm-sections button small {
+		grid-column: 1;
+		color: var(--mute);
+		font-size: 13px;
+	}
+	.rm-sections button small.bad {
+		color: #ff6b5e;
+	}
+	.rm-sections button::after {
+		content: "›";
+		grid-row: 1 / 3;
+		grid-column: 2;
+		align-self: center;
+		color: var(--dim);
+		font-size: 18px;
+	}
+	.rm-sections .rm-attn {
+		margin: 12px 0 0;
+		border-bottom: 1px solid #ff6b5e;
+	}
+	.rm-sections .rm-attn span {
+		grid-column: 1;
 	}
 	.rm-two {
 		grid-template-columns: minmax(0, 1fr);

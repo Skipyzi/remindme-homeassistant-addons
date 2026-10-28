@@ -404,7 +404,7 @@ function deviceTools(ctx: ToolContext): AssistantTool[] {
 				if (!target)
 					return {
 						content: json({
-							problem: named ? `No calendar called ${named} takes new events.` : "No calendar is chosen for new events. Ask the user which one; they can also set it under Settings, Connectors.",
+							problem: named ? `No calendar called ${named} takes new events.` : "No calendar is chosen for new events. Ask the user which one; they can also set it under Settings, Mail and calendars.",
 							calendars: writable.map((calendar) => calendar.name),
 						}),
 						isError: true,

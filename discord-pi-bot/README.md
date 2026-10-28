@@ -51,7 +51,7 @@ Nothing is sent during `quiet_hours` (default 22:30-07:00); nudges wait until th
 
 ## Connectors: your mail
 
-Add mail accounts in the console under **Settings → Connectors**: Gmail, GMX, WEB.DE, iCloud Mail, or any other IMAP server. Each one is tested before it's saved, shows its last check, and can be switched off or removed. Passwords and sign-ins stay in the app's private data on the Pi and are never shown again. RemindMe reads over IMAP and never deletes, moves or marks mail as read. It writes a draft when you ask for one, and sends an email only after you tap Send.
+Add mail accounts in the console under **Settings → Mail and calendars**: Gmail, GMX, WEB.DE, iCloud Mail, or any other IMAP server. Each one is tested before it's saved, shows its last check, and can be switched off or removed. Passwords and sign-ins stay in the app's private data on the Pi and are never shown again. RemindMe reads over IMAP and never deletes, moves or marks mail as read. It writes a draft when you ask for one, and sends an email only after you tap Send.
 
 - **Gmail** can sign in with Google, or use an app password (Google Account → Security → App passwords; needs 2-step verification). Signing in also lets RemindMe look up addresses in your Google contacts. It needs your own Google app, made once: the console walks through it and shows the two values Google asks for. Publish the app ("In production"), or Google ends the sign-in after 7 days, and sign in from a device with Tailscale on, since Google sends you back to the phone app's address.
 - **GMX** and **WEB.DE** need "POP3/IMAP Abruf" turned on in their mail settings.
@@ -70,7 +70,7 @@ Mail text reaches the AI only when a question or the brief needs it, and is trea
 
 ## Calendars
 
-RemindMe reads every calendar in Home Assistant and adds events to the one chosen under **Settings → Connectors → New events go to**. "Put the dentist on Friday at 10" comes back as a button; nothing is added until you tap it. With no calendar chosen, it asks which one.
+RemindMe reads every calendar in Home Assistant and adds events to the one chosen under **Settings → Mail and calendars → New events go to**. "Put the dentist on Friday at 10" comes back as a button; nothing is added until you tap it. With no calendar chosen, it asks which one.
 
 To use iCloud, add Home Assistant's **CalDAV** integration (Settings → Devices & services → Add integration): server `https://caldav.icloud.com`, your Apple ID, and an app-specific password from account.apple.com. Your iCloud calendars then show in Home Assistant, and events RemindMe adds show on your iPhone and Mac.
 
@@ -91,7 +91,7 @@ Open **RemindMe** in the sidebar. It is an inbox. On a phone a thread opens over
 - **Cats:** every conversation and job has its own cat (a ginger tabby, tuxedo, calico, siamese, grey or black cat, with a bow tie, beret, glasses, headphones, party hat or scarf). It shows how things stand: busy while a job works, a paw raised when it needs you, content when done, grey and dizzy when it stopped.
 - **The box at the bottom:** ask, or hand something off. Every request opens a thread of its own; reply in it to carry on. Pictures work with Claude, OpenAI and ChatGPT.
 - **History:** the full timeline: what's coming up, then everything RemindMe answered, changed, sent and failed at, with changed lamps in their own colour.
-- **Settings:** the AI and sign-ins, connectors and calendars, how it talks, skills, connected tools (MCP), scheduled tasks and documents.
+- **Settings:** grouped into AI (who answers and the model, how it talks, memory, skills), accounts and devices (mail and calendars, the phone app, connected tools) and what it does on its own (scheduled tasks, documents). Each section shows what it's set to, and anything broken is listed on top. On a phone, Settings is a list you tap into; on a computer, the list stays on the left.
 
 ## The phone app
 

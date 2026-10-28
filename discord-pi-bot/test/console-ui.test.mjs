@@ -27,8 +27,8 @@ test("the old dev-harness pieces are gone from the page", () => {
 });
 
 test("settings keep every section, including the 3.1 sign-in console", () => {
-	for (const section of ["AI and sign-ins", "Connectors", "Phone app", "How it talks", "Skills", "Connected tools", "Scheduled tasks", "Documents"])
-		assert.match(app, new RegExp(`label: "${section}"`), section);
+	for (const section of ["AI and sign-ins", "How it talks", "Memory", "Skills", "Mail and calendars", "Phone app", "Connected tools", "Scheduled tasks", "Documents"])
+		assert.match(app, new RegExp(`label: "${section}", group: `), section);
 	assert.match(html, /id="account-terminal"/);
 	assert.match(html, /components\/account-console\.js/);
 });

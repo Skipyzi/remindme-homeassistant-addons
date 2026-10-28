@@ -50,7 +50,7 @@
           <h1>RemindMe<small x-text="inboxLine"></small></h1>
           <button class="rm-barlink" type="button" x-show="authConsole.running" x-cloak @click="window.RemindMeAccountConsole.open($data, authConsole.backend)">Sign-in running</button>
           <button class="rm-barlink" type="button" @click="openHistory()">History</button>
-          <button class="rm-barlink" type="button" @click="openSettings('ai')">Settings</button>
+          <button class="rm-barlink" type="button" @click="openSettings()">Settings</button>
         </header>
         <div class="rm-scroll">
           <p class="rm-problem" x-show="ai && !ai.ready" x-cloak>
@@ -321,14 +321,27 @@
       <!-- Settings -->
       <div class="rm-sheet" x-show="settingsOpen" x-cloak @keydown.escape.window="settingsOpen = false" role="dialog" aria-modal="true" aria-labelledby="settings-title">
         <div class="rm-sheet-in">
-          <div class="rm-sheet-top">
-            <h2 id="settings-title">Settings</h2>
+          <div class="rm-sheet-top" :class="{ 'in-section': settingsTab && phoneLayout }">
+            <button class="rm-settings-back" type="button" x-show="settingsTab" @click="settingsTab = null">‹ Settings</button>
+            <h2 id="settings-title" x-text="settingsTitle"></h2>
             <button class="rm-btn" type="button" @click="settingsOpen = false">Close</button>
           </div>
-          <div class="rm-settings">
+          <div class="rm-settings" :class="{ 'in-section': settingsTab }">
+            <!-- Every section with what it's set to; on a phone, the list you tap into. -->
             <nav class="rm-sections" aria-label="Settings sections">
-              <template x-for="section in sections" :key="section.id">
-                <button type="button" :aria-pressed="String(settingsTab === section.id)" @click="openSettings(section.id)" x-text="section.label"></button>
+              <template x-for="problem in settingsProblems" :key="problem.id">
+                <button class="rm-attn" type="button" @click="showSection(problem.id)"><b x-text="problem.status.text"></b><span x-text="`Fix it under ${problem.label}`"></span></button>
+              </template>
+              <template x-for="group in settingsGroups" :key="group.name">
+                <div class="rm-sections-group">
+                  <h3 x-text="group.name"></h3>
+                  <template x-for="section in group.sections" :key="section.id">
+                    <button type="button" :aria-pressed="String(settingsTab === section.id)" @click="showSection(section.id)">
+                      <b x-text="section.label"></b>
+                      <small :class="{ bad: sectionStatus(section.id).bad }" x-text="sectionStatus(section.id).text"></small>
+                    </button>
+                  </template>
+                </div>
               </template>
             </nav>
 

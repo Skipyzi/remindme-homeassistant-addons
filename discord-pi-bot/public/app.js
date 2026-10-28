@@ -120,17 +120,19 @@ function remindme() {
 		/* Settings */
 		settingsOpen: false,
 		settingsTab: "ai",
+		/* Settings: grouped, each with a line on what it's set to; on a phone a list you tap into. */
 		sections: [
-			{ id: "ai", label: "AI and sign-ins" },
-			{ id: "connectors", label: "Connectors" },
-			{ id: "phone", label: "Phone app" },
-			{ id: "prompt", label: "How it talks" },
-			{ id: "memory", label: "Memory" },
-			{ id: "skills", label: "Skills" },
-			{ id: "mcp", label: "Connected tools" },
-			{ id: "tasks", label: "Scheduled tasks" },
-			{ id: "documents", label: "Documents" },
+			{ id: "ai", label: "AI and sign-ins", group: "AI" },
+			{ id: "prompt", label: "How it talks", group: "AI" },
+			{ id: "memory", label: "Memory", group: "AI" },
+			{ id: "skills", label: "Skills", group: "AI" },
+			{ id: "connectors", label: "Mail and calendars", group: "Accounts and devices" },
+			{ id: "phone", label: "Phone app", group: "Accounts and devices" },
+			{ id: "mcp", label: "Connected tools", group: "Accounts and devices" },
+			{ id: "tasks", label: "Scheduled tasks", group: "On its own" },
+			{ id: "documents", label: "Documents", group: "On its own" },
 		],
+		phoneLayout: window.matchMedia("(max-width: 820px)").matches,
 		aiModels: [],
 		modelTable: { billing: "unknown", budget: 0, featured: [], others: [] },
 		modelsOpen: false,
@@ -209,6 +211,10 @@ function remindme() {
 			const fit = () => document.documentElement.style.setProperty("--app-height", `${window.innerHeight}px`);
 			fit();
 			window.addEventListener("resize", fit);
+			window.matchMedia("(max-width: 820px)").addEventListener("change", (event) => {
+				this.phoneLayout = event.matches;
+				if (!event.matches && !this.settingsTab) this.settingsTab = "ai";
+			});
 			this.loadInbox();
 			this.route();
 			window.addEventListener("popstate", () => this.route());
@@ -1050,9 +1056,21 @@ function remindme() {
 
 		/* ── Settings ────────────────────────────────────────────────── */
 
+		/*
+		 * Settings open on the list on a phone, and on AI on a computer, where the
+		 * list stays alongside. Every section's line comes from loading them all.
+		 */
 		async openSettings(tab) {
-			this.settingsTab = tab;
+			this.settingsTab = tab || (this.phoneLayout ? null : this.settingsTab || "ai");
 			this.settingsOpen = true;
+			await Promise.allSettled(this.sections.map((section) => this.loadSection(section.id)));
+		},
+		async showSection(id) {
+			this.settingsTab = id;
+			document.querySelector(".rm-sheet")?.scrollTo?.(0, 0);
+			await this.loadSection(id);
+		},
+		async loadSection(tab) {
 			if (tab === "ai") await this.loadAi();
 			if (tab === "prompt") await this.loadPersona();
 			if (tab === "skills") this.skills = await this.getJson("./api/skills", []);
@@ -1062,6 +1080,49 @@ function remindme() {
 			if (tab === "phone") await this.loadPhone();
 			if (tab === "memory") this.memory = await this.getJson("./api/memory", { learn: true, facts: [] });
 			if (tab === "documents") this.documents = (await this.getJson("./api/artifacts", [])).sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)));
+		},
+		get settingsGroups() {
+			return [...new Set(this.sections.map((section) => section.group))].map((name) => ({ name, sections: this.sections.filter((section) => section.group === name) }));
+		},
+		get settingsTitle() {
+			return this.phoneLayout && this.settingsTab ? this.sections.find((section) => section.id === this.settingsTab)?.label || "Settings" : "Settings";
+		},
+		/* One line per section on what it's set to now; bad when something needs fixing. */
+		sectionStatus(id) {
+			const plural = (count, word) => `${count} ${word}${count === 1 ? "" : "s"}`;
+			if (id === "ai") return !this.ai?.ready && this.ai?.problem ? { text: this.ai.problem, bad: true } : { text: [this.ai?.label, this.ai?.model].filter(Boolean).join(" · ") || "Pick who answers" };
+			if (id === "prompt") return { text: firstLine(this.persona) || "The built-in personality" };
+			if (id === "memory") return { text: `${this.memory.learn ? "Learning" : "Not learning"} · ${plural(this.memory.facts?.length || 0, "fact")}` };
+			if (id === "skills") return { text: this.skills.length ? `${this.skills.filter((skill) => skill.enabled).length} of ${this.skills.length} on` : "None yet" };
+			if (id === "connectors") {
+				const failed = this.connectors.find((connector) => connector.enabled && connector.status && !connector.status.ok);
+				if (failed) return { text: `${failed.name}'s last check failed`, bad: true };
+				return { text: this.connectors.length ? this.connectors.map((connector) => connector.name).join(", ") : "No mail accounts yet" };
+			}
+			if (id === "phone") {
+				const name = this.haPhone.phones.find((phone) => phone.id === this.haPhone.target)?.name;
+				if (this.haPhone.target) return { text: `Through the Home Assistant app on ${name || "your phone"}` };
+				if (this.phone.state === "running") {
+					const count = this.phone.devices?.length || 0;
+					return { text: count ? `Connected · ${count === 1 ? "1 device gets" : `${count} devices get`} notifications` : "Connected · no device gets notifications yet" };
+				}
+				if (this.phone.state === "needs_login") return { text: "Not connected to Tailscale yet" };
+				if (this.phone.state === "off") return { text: "Off" };
+				return this.phone.error ? { text: "Tailscale isn't answering", bad: true } : { text: "Starting" };
+			}
+			if (id === "mcp") {
+				const wants = this.mcpServers.find((server) => server.wantsSignIn);
+				if (wants) return { text: `${wants.name} wants you to sign in`, bad: true };
+				const on = this.mcpServers.filter((server) => server.enabled);
+				return { text: on.length ? on.map((server) => server.name).join(", ") : this.mcpServers.length ? "All off" : "None yet" };
+			}
+			if (id === "tasks") return { text: this.tasks.length ? `${this.tasks.slice(0, 2).map((task) => task.name).join(", ")}${this.tasks.length > 2 ? ` and ${this.tasks.length - 2} more` : ""}` : "None yet" };
+			if (id === "documents") return { text: this.documents.length ? plural(this.documents.length, "document") : "None yet" };
+			return { text: "" };
+		},
+		/* What needs fixing, on top of the list. */
+		get settingsProblems() {
+			return this.sections.map((section) => ({ ...section, status: this.sectionStatus(section.id) })).filter((section) => section.status.bad);
 		},
 
 		async getJson(url, fallback) {
