@@ -35,6 +35,14 @@ export BIN_REMINDER_TIME="$(get_option bin_reminder_time)"
 export QUIET_HOURS="$(get_option quiet_hours)"
 export BATTERY_NUDGE_PERCENT="$(get_option battery_nudge_percent)"
 
+# Mail, read-only over IMAP. The inbox sorter app labels it; blank skips that.
+export GMAIL_ADDRESS="$(get_option gmail_address)"
+export GMAIL_APP_PASSWORD="$(get_option gmail_app_password)"
+export GMX_ADDRESS="$(get_option gmx_address)"
+export GMX_PASSWORD="$(get_option gmx_password)"
+export MAIL_NUDGES="$(get_option mail_nudges)"
+export INBOX_SORTER_URL="$(get_option inbox_sorter_url)"
+
 export SEARXNG_URL="$(get_option searxng_url)"
 export EXA_API_KEY="$(get_option exa_api_key)"
 export HA_NOTIFY_TARGET="$(get_option ha_notify_target)"
@@ -58,6 +66,9 @@ export AI_DATA_PATH=/data/ai.json
 export SPEND_DATA_PATH=/data/spend.json
 export DISCORD_CHAT_PATH=/data/discord-chats.json
 export PROACTIVE_DATA_PATH=/data/proactive.json
+export ACTIVITY_DATA_PATH=/data/activity.json
+export CONSOLE_CHAT_PATH=/data/console-chat.json
+export MAIL_DATA_PATH=/data/mail.json
 # Subscription sign-ins and the CLI agents' own accounts and sessions. Same
 # places as 3.1, so existing sign-ins carry over.
 export CHATGPT_AUTH_PATH=/data/chatgpt-auth.json

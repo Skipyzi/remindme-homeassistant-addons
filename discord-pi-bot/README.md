@@ -50,6 +50,16 @@ All to your DMs, and part of that chat, so you can reply to them:
 
 Nothing is sent during `quiet_hours` (default 22:30-07:00); nudges wait until they end. Blank times turn a message off. The bins and battery checks don't use the AI.
 
+## Your mail
+
+Set `gmail_address` and `gmail_app_password` (Google Account → Security → 2-step verification → App passwords), and/or `gmx_address` and `gmx_password` (turn on "POP3/IMAP Abruf" in GMX's settings first), then restart. RemindMe reads over IMAP and never sends, deletes, moves or marks mail as read.
+
+- **Ask about it:** "did the landlord reply?", "when is my dentist appointment?". Gmail searches all mail, archived included; GMX searches the inbox.
+- **The morning brief** gets a line or two on new mail worth knowing. Your inbox sorter app keeps newsletters and social mail out; without it, mailing-list headers do.
+- **Nudges** (`mail_nudges`, on by default) for new bills and appointment confirmations, and again the day before a bill is due. Reading those out of new mail takes one short AI request per batch, on the AI chosen under **AI** (not a CLI agent).
+
+Mail text reaches the AI only when a question or the brief needs it, and is treated as information, never as instructions.
+
 ## What the assistant can do
 
 House overview, find and control devices, calendar events, weather forecasts, to-do lists (read, add, complete), reminders (set, list, cancel), notes in the shared vault (search, save when asked), web search (built into Claude and OpenAI; SearXNG or Exa for the others), reading a web page, parcel tracking (with `trackingmore_api_key`), documents in the console, and tools from MCP servers added in the console.

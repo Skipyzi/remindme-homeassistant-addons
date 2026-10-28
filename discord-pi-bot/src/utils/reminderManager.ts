@@ -272,6 +272,12 @@ export async function cleanupExpiredReminders(): Promise<void> {
 /* ── Scheduling: the bot process only ─────────────────────────────────── */
 
 const timers = new Map<string, ReturnType<typeof setTimeout>>();
+/*
+ * Reminders being delivered right now. Delivery (Home Assistant, the phone,
+ * Discord) can outlast the five-second sweep, which would otherwise see a
+ * reminder with no timer and no "notified" yet, and send it a second time.
+ */
+const delivering = new Set<string>();
 let pollTimer: ReturnType<typeof setInterval> | undefined;
 let cleanupTimer: ReturnType<typeof setInterval> | undefined;
 
@@ -287,6 +293,16 @@ function arm(reminder: Reminder, onDue: DueHandler, delayMs?: number): void {
 
 async function fire(id: string, onDue: DueHandler): Promise<void> {
 	timers.delete(id);
+	if (delivering.has(id)) return;
+	delivering.add(id);
+	try {
+		await deliver(id, onDue);
+	} finally {
+		delivering.delete(id);
+	}
+}
+
+async function deliver(id: string, onDue: DueHandler): Promise<void> {
 	// Re-read: the console may have deleted it, or another pass delivered it.
 	const reminder = await getReminder(id);
 	if (!reminder || reminder.notified) return;
@@ -340,7 +356,7 @@ export function startReminderScheduler(
 		for (const reminder of list) {
 			if (reminder.notified) continue;
 			live.add(reminder.id);
-			if (!timers.has(reminder.id)) arm(reminder, onDue);
+			if (!timers.has(reminder.id) && !delivering.has(reminder.id)) arm(reminder, onDue);
 		}
 		for (const [id, timer] of timers) {
 			if (live.has(id)) continue;

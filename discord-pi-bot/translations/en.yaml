@@ -50,6 +50,24 @@ configuration:
   battery_nudge_percent:
     name: Battery nudge
     description: Tell you when a device battery is at or below this percentage, once a week per device. 0 turns it off.
+  gmail_address:
+    name: Gmail address
+    description: Optional. Lets RemindMe read your Gmail (never send or delete). Needs an app password below.
+  gmail_app_password:
+    name: Gmail app password
+    description: Google Account, Security, 2-step verification, App passwords. Not your normal password.
+  gmx_address:
+    name: GMX address
+    description: Optional. Lets RemindMe read your GMX mail (never send or delete). Turn on "POP3/IMAP Abruf" in GMX's settings first.
+  gmx_password:
+    name: GMX password
+    description: Your GMX password, or an app password if you use 2-factor sign-in.
+  mail_nudges:
+    name: Mail nudges
+    description: Message you on Discord about new bills and appointments, and the day before a bill is due.
+  inbox_sorter_url:
+    name: Inbox sorter
+    description: The inbox sorter app's address, used to leave newsletters out. Blank uses mailing-list headers only.
   playful_placeholders:
     name: Playful placeholders
     description: Random placeholder text while a slash command is working.

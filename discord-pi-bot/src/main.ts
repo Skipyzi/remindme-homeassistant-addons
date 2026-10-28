@@ -3,6 +3,7 @@ import { startBot } from "./bot";
 import { setReminderAi } from "./commands/remind";
 import { DiscordChats } from "./discord/chats";
 import { Proactive } from "./assistant/proactive";
+import { MailWatch } from "./mail/watch";
 import { setAiReadiness } from "./presence";
 import { listReminders } from "./utils/reminderManager";
 import {
@@ -11,6 +12,7 @@ import {
 	assistant,
 	confirmations,
 	home,
+	mailboxes,
 	parcelSummary,
 	setBriefSender,
 	setPlannedSends,
@@ -32,18 +34,31 @@ async function main() {
 	const ownerId = process.env.OWNER_ID || "";
 	const messenger = startBot({ assistant, chats, confirmations, home, ownerId, activity });
 
+	const notify = async (text: string, what: "brief" | "bins" | "battery" | "mail") => {
+		const title = what === "brief" ? `☀️ ${new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" })}` : undefined;
+		const sent = messenger ? await messenger.send(text, { title }) : false;
+		activity.add(
+			sent
+				? { kind: "sent", channel: what === "brief" ? "brief" : "nudge", text }
+				: { kind: "failed", channel: what === "brief" ? "brief" : "nudge", text: `Couldn't send this on Discord: ${text}` },
+		);
+		return sent;
+	};
+	const mail = mailboxes.configured
+		? new MailWatch({
+				mailboxes,
+				sorterUrl: process.env.INBOX_SORTER_URL ?? "http://local-inbox-sorter:8095",
+				ask: (prompt) => assistant.quick(prompt),
+				notify: (text) => notify(text, "mail"),
+				nudges: process.env.MAIL_NUDGES !== "false",
+			})
+		: undefined;
+	await mail?.load();
 	const proactive = new Proactive({
 		assistant,
 		home,
-		notify: async (text, what) => {
-			const sent = messenger ? await messenger.send(text) : false;
-			activity.add(
-				sent
-					? { kind: "sent", channel: what === "brief" ? "brief" : "nudge", text }
-					: { kind: "failed", channel: what === "brief" ? "brief" : "nudge", text: `Couldn't send this on Discord: ${text}` },
-			);
-			return sent;
-		},
+		mail,
+		notify,
 		reminders: () => listReminders(ownerId),
 		parcels: parcelSummary,
 		options: {

@@ -92,6 +92,11 @@ class OpenAiSession implements Session {
 		let response: OpenAI.Responses.Response | undefined;
 		/* Some subscription streams leave the output out of the final event. */
 		const done = new Map<number, OpenAI.Responses.ResponseOutputItem>();
+		/*
+		 * Newer models write a short "commentary" message before the final
+		 * answer. It streams as thinking, and only the final answer is kept.
+		 */
+		const commentary = new Set<string>();
 		try {
 			const client = await this.client();
 			const stream = await client.responses.create(
@@ -111,7 +116,12 @@ class OpenAiSession implements Session {
 				{ signal: this.request.signal },
 			);
 			for await (const event of stream) {
-				if (event.type === "response.output_text.delta") events.text?.(event.delta);
+				if (event.type === "response.output_item.added" && event.item.type === "message" && event.item.phase === "commentary")
+					commentary.add(event.item.id);
+				else if (event.type === "response.output_text.delta") {
+					if (commentary.has(event.item_id)) events.thinking?.(event.delta);
+					else events.text?.(event.delta);
+				}
 				else if (event.type === "response.reasoning_summary_text.delta") events.thinking?.(event.delta);
 				else if (event.type === "response.output_item.done") done.set(event.output_index, event.item);
 				else if (event.type === "response.completed" || event.type === "response.incomplete")
@@ -134,18 +144,21 @@ class OpenAiSession implements Session {
 			cacheReadTokens: cached,
 			cacheWriteTokens: 0,
 		};
-		let text = "";
+		const messages: Array<{ final: boolean; text: string }> = [];
 		let refused = false;
 		const calls: ToolCall[] = [];
 		for (const item of response.output) {
-			if (item.type === "message")
+			if (item.type === "message") {
+				let body = "";
 				for (const part of item.content) {
-					if (part.type === "output_text") text += part.text;
+					if (part.type === "output_text") body += part.text;
 					else if (part.type === "refusal") {
 						refused = true;
-						text += part.refusal;
+						body += part.refusal;
 					}
 				}
+				messages.push({ final: item.phase !== "commentary", text: body });
+			}
 			else if (item.type === "function_call")
 				calls.push({ id: item.call_id, name: item.name, input: parseArguments(item.arguments) });
 			else if (item.type === "web_search_call") {
@@ -153,6 +166,9 @@ class OpenAiSession implements Session {
 				if (typeof action?.query === "string") events.searched?.(action.query);
 			}
 		}
+		// The final answer only; separate messages never run together.
+		const answer = messages.some((message) => message.final) ? messages.filter((message) => message.final) : messages;
+		const text = answer.map((message) => message.text.trim()).filter(Boolean).join("\n\n");
 		const base = { text, usage, model: response.model || this.model };
 		if (refused) return { ...base, calls: [], stop: "refused" };
 		if (response.status === "incomplete") return { ...base, calls: [], stop: "max_tokens" };

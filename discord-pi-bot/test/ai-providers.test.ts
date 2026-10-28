@@ -210,3 +210,24 @@ test("model lists come from each provider's API", async () => {
 	script = [JSON.stringify({ data: [{ id: "glm-5.3-flash" }, { id: "deepseek-v4.1-flash" }], object: "list" })];
 	assert.deepEqual(await new CompatibleProvider("opencode", "OpenCode", "k", "x", `${base}/v1`).listModels(), ["deepseek-v4.1-flash", "glm-5.3-flash"]);
 });
+
+test("OpenAI: a commentary message streams as thinking and stays out of the answer", async () => {
+	seen.length = 0;
+	const commentary = { type: "message", id: "msg_c", role: "assistant", status: "completed", phase: "commentary", content: [{ type: "output_text", text: "Let me gather the facts.", annotations: [] }] };
+	const final = { type: "message", id: "msg_f", role: "assistant", status: "completed", phase: "final_answer", content: [{ type: "output_text", text: "Paper bin out tonight.", annotations: [] }] };
+	script = [
+		sse([
+			["response.output_item.added", { type: "response.output_item.added", output_index: 0, sequence_number: 0, item: { ...commentary, content: [] } }],
+			["response.output_text.delta", { type: "response.output_text.delta", item_id: "msg_c", output_index: 0, content_index: 0, delta: "Let me gather the facts.", sequence_number: 1 }],
+			["response.output_item.added", { type: "response.output_item.added", output_index: 1, sequence_number: 2, item: { ...final, content: [] } }],
+			["response.output_text.delta", { type: "response.output_text.delta", item_id: "msg_f", output_index: 1, content_index: 0, delta: "Paper bin out tonight.", sequence_number: 3 }],
+			["response.completed", { type: "response.completed", sequence_number: 4, response: { id: "r", object: "response", created_at: 0, status: "completed", model: "gpt-5.6-luna", output: [commentary, final], usage: { input_tokens: 1, output_tokens: 1, input_tokens_details: { cached_tokens: 0 } } } }],
+		]),
+	];
+	const text: string[] = [];
+	const thinking: string[] = [];
+	const step = await new OpenAiProvider("k", "gpt-5.6-luna", { baseURL: `${base}/v1` }).start(request()).next({ text: (delta) => text.push(delta), thinking: (delta) => thinking.push(delta) });
+	assert.equal(step.text, "Paper bin out tonight.");
+	assert.deepEqual(text, ["Paper bin out tonight."]);
+	assert.deepEqual(thinking, ["Let me gather the facts."]);
+});

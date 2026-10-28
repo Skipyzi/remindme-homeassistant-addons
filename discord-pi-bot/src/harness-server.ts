@@ -61,6 +61,7 @@ import { ConfirmationStore } from "./assistant/confirmations";
 import { ActivityLog } from "./assistant/activity";
 import { wasteEvents } from "./assistant/proactive";
 import { DiscordChats } from "./discord/chats";
+import { Mailboxes, mailAccounts } from "./mail/mailboxes";
 import type { CalendarEvent } from "./agent/home";
 import { buildTools, type McpTool, type ToolContext } from "./assistant/tools";
 import { registerBridge, chatgptFetch } from "./agents/bridge";
@@ -83,6 +84,8 @@ export const confirmations = new ConfirmationStore();
 /* What RemindMe said, did and sent: the console's ledger. */
 export const activity = new ActivityLog();
 void activity.load();
+/* Gmail and GMX, read-only, when their addresses and passwords are set. */
+export const mailboxes = new Mailboxes(mailAccounts());
 /* The console's running chat, kept here like a Discord DM's. */
 const consoleChat = new DiscordChats(process.env.CONSOLE_CHAT_PATH || "./data/console-chat.json");
 void consoleChat.load();
@@ -1265,6 +1268,7 @@ export function toolContext(): ToolContext {
 				}
 			: undefined,
 		artifacts,
+		mail: mailboxes,
 		mcp: {
 			/* A server that is down must not take the turn with it. */
 			async tools() {

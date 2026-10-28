@@ -1,5 +1,5 @@
 name: RemindMe
-version: "4.1.0"
+version: "4.2.0"
 slug: remindme_discord_bot
 description: Your personal assistant in Home Assistant and Discord, on Claude, OpenAI, OpenCode or your ChatGPT and Claude subscriptions
 arch:
@@ -29,6 +29,12 @@ options:
   bin_reminder_time: "19:00"
   quiet_hours: "22:30-07:00"
   battery_nudge_percent: 15
+  gmail_address: ""
+  gmail_app_password: ""
+  gmx_address: ""
+  gmx_password: ""
+  mail_nudges: true
+  inbox_sorter_url: http://local-inbox-sorter:8095
   playful_placeholders: true
   reminder_color: "5865f2"
   searxng_url: ""
@@ -54,6 +60,12 @@ schema:
   bin_reminder_time: str?
   quiet_hours: str?
   battery_nudge_percent: int(0,100)
+  gmail_address: str?
+  gmail_app_password: password?
+  gmx_address: str?
+  gmx_password: password?
+  mail_nudges: bool
+  inbox_sorter_url: str?
   playful_placeholders: bool
   reminder_color: str
   searxng_url: str?

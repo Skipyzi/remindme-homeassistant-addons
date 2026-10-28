@@ -74,7 +74,7 @@ test("the brief goes out once, after its time, written from gathered facts", asy
 	assert.equal(sent.length, 0);
 	await proactive.tick(at("2026-10-28T07:02:00"));
 	await proactive.tick(at("2026-10-28T07:03:00"));
-	assert.deepEqual(sent, ["☀️ Early shift at 06:00. Yellow bin tonight."]);
+	assert.deepEqual(sent, ["Early shift at 06:00. Yellow bin tonight."]);
 	assert.equal(asks[0].channel, "brief");
 	assert.match(asks[0].extra || "", /"bins_out_tonight":\["packaging \(Gelbe Tonne\)"\]/);
 	assert.match(asks[0].extra || "", /Early shift/);
@@ -118,11 +118,11 @@ test("without the AI, the brief is a plain list of the same facts", () => {
 	assert.equal(
 		text,
 		[
-			"☀️ Morning. (Plain version: Today's AI budget is used up.)",
-			"• 2026-10-28 06:00 Early shift",
-			"• Bins tonight: paper (Blaue Tonne)",
-			"• Weather: rainy, 11°C",
-			"• Low batteries: IKEA remote battery 1%",
+			"**2026-10-28 06:00** Early shift",
+			"**Tonight** paper (Blaue Tonne) out",
+			"**Weather** rainy, 11°C",
+			"**House** Low batteries: IKEA remote battery 1%",
+			"_Plain version: Today's AI budget is used up._",
 		].join("\n"),
 	);
 });

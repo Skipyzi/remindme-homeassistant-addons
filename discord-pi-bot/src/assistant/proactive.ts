@@ -3,6 +3,7 @@ import { dirname } from "node:path";
 import { localDate } from "../ai/spend";
 import type { CalendarEvent, HomeApi } from "../agent/home";
 import { stateText } from "../agent/home";
+import type { MailWatch } from "../mail/watch";
 import type { Assistant } from "./agent";
 
 export interface ProactiveOptions {
@@ -20,9 +21,11 @@ export interface ProactiveDeps {
 	assistant: Assistant;
 	home?: HomeApi;
 	/** Message the owner on Discord. False when it could not be sent. */
-	notify(text: string, what: "brief" | "bins" | "battery"): Promise<boolean>;
+	notify(text: string, what: "brief" | "bins" | "battery" | "mail"): Promise<boolean>;
 	reminders(): Promise<Array<{ message: string; time: Date }>>;
 	parcels?(): string;
+	/** Gmail and GMX: checked every quarter hour outside quiet hours. */
+	mail?: MailWatch;
 	options: ProactiveOptions;
 	statePath?: string;
 }
@@ -94,6 +97,7 @@ function startOfDay(at: Date, plusDays = 0): Date {
 export class Proactive {
 	private state: State = { batteries: {} };
 	private running = false;
+	private mailCheckedAt = 0;
 	private readonly path: string;
 
 	constructor(private readonly deps: ProactiveDeps) {
@@ -148,6 +152,11 @@ export class Proactive {
 				if (text) await this.deps.notify(text, "bins");
 			}
 			if (options.batteryThreshold > 0) await this.checkBatteries(now);
+			if (this.deps.mail && now.getTime() - this.mailCheckedAt >= 15 * 60_000) {
+				this.mailCheckedAt = now.getTime();
+				await this.deps.mail.check(now);
+				await this.deps.mail.dueTomorrow(now);
+			}
 		} catch (error) {
 			console.warn("Nudge check failed:", error instanceof Error ? error.message : error);
 		} finally {
@@ -203,7 +212,6 @@ export class Proactive {
 				facts.low_batteries = cards
 					.filter((card) => card.available && card.deviceClass === "battery" && card.numericState !== undefined && card.numericState <= 20)
 					.map((card) => `${card.name} ${card.numericState}%`);
-				facts.updates_waiting = cards.filter((card) => card.domain === "update" && card.state === "on").length;
 				facts.lights_on = cards.filter((card) => card.domain === "light" && card.state === "on").map((card) => card.name);
 			} catch (error) {
 				facts.home_error = error instanceof Error ? error.message : String(error);
@@ -219,11 +227,19 @@ export class Proactive {
 		}
 		const parcels = this.deps.parcels?.();
 		if (parcels && !/^No parcels/.test(parcels)) facts.parcels = parcels;
+		const mail = this.deps.mail?.digest() || [];
+		if (mail.length)
+			facts.new_mail = mail.map((item) => ({ account: item.account, from: item.from, subject: item.subject, kind: item.label, preview: item.snippet.slice(0, 120) }));
 		return facts;
 	}
 
 	/** Write the brief and send it. Falls back to a plain list if the AI can't. */
 	async sendBrief(now = new Date()): Promise<string> {
+		// Overnight mail goes into the brief rather than arriving as separate messages.
+		if (this.deps.mail) {
+			await this.deps.mail.check(now, { announce: false });
+			this.mailCheckedAt = now.getTime();
+		}
 		const facts = await this.briefFacts(now);
 		const result = await this.deps.assistant.ask({
 			prompt: "Write my morning brief.",
@@ -231,8 +247,8 @@ export class Proactive {
 			effort: "medium",
 			extra: `Facts gathered for the brief, as JSON. Use your tools only if something important is missing.\n${JSON.stringify(facts)}`,
 		});
-		const text = result.problem ? plainBrief(facts, result.problem) : `☀️ ${result.text}`;
-		await this.deps.notify(text, "brief");
+		const text = result.problem ? plainBrief(facts, result.problem) : result.text;
+		if ((await this.deps.notify(text, "brief")) && this.deps.mail) await this.deps.mail.clearDigest();
 		return text;
 	}
 
@@ -272,15 +288,18 @@ export class Proactive {
 
 /** The brief without the AI: the same facts, as a short list. */
 export function plainBrief(facts: Record<string, unknown>, problem: string): string {
-	const lines = ["☀️ Morning. (Plain version: " + problem.replace(/\.$/, "") + ".)"];
+	const lines: string[] = [];
 	const events = (facts.today_and_tomorrow as CalendarEvent[] | undefined) || [];
 	for (const event of events.slice(0, 6))
-		lines.push(`• ${event.allDay ? event.start : event.start.slice(0, 16).replace("T", " ")} ${event.summary}`);
+		lines.push(`**${event.allDay ? event.start : event.start.slice(0, 16).replace("T", " ")}** ${event.summary}`);
 	const bins = facts.bins_out_tonight as string[] | undefined;
-	if (bins?.length) lines.push(`• Bins tonight: ${bins.join(", ")}`);
+	if (bins?.length) lines.push(`**Tonight** ${bins.join(", ")} out`);
 	const weather = facts.weather as { now?: string } | undefined;
-	if (weather?.now) lines.push(`• Weather: ${weather.now}`);
+	if (weather?.now) lines.push(`**Weather** ${weather.now}`);
+	const mail = facts.new_mail as Array<{ from: string; subject: string }> | undefined;
+	if (mail?.length) lines.push(`**Mail** ${mail.length} new worth a look, latest: ${mail[mail.length - 1].subject}`);
 	const batteries = facts.low_batteries as string[] | undefined;
-	if (batteries?.length) lines.push(`• Low batteries: ${batteries.join(", ")}`);
+	if (batteries?.length) lines.push(`**House** Low batteries: ${batteries.join(", ")}`);
+	lines.push(`_Plain version: ${problem.replace(/\.$/, "")}._`);
 	return lines.join("\n");
 }

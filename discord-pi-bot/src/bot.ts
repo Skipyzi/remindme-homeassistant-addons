@@ -1,4 +1,4 @@
-import { Client, GatewayIntentBits, Partials } from "discord.js";
+import { Client, EmbedBuilder, GatewayIntentBits, Partials } from "discord.js";
 import { config, validateConfig } from "./config";
 import { setupCommands } from "./commands";
 import { startReminderScheduler } from "./utils/reminderManager";
@@ -109,7 +109,8 @@ export function startBot(deps: ChatDeps): OwnerMessenger | undefined {
 							throw new Error("Reminder has no Discord recipient");
 						try {
 							const user = await client.users.fetch(reminder.userId);
-							await user.send(`⏰ Reminder: **${reminder.message}**`);
+							// A card, like the brief: readable over a chat wallpaper.
+							await user.send({ embeds: [new EmbedBuilder().setColor(config.reminderColor).setDescription(`⏰ **${reminder.message}**`)] });
 						} catch (error) {
 							/*
 							 * 50007 = "Cannot send messages to this user": they share
