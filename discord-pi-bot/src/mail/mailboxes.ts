@@ -76,6 +76,26 @@ const DRAFT_NAMES = new Set(["drafts", "draft", "entwürfe", "entwurf", "brouill
 const SENT_NAMES = new Set(["sent", "sent items", "sent messages", "gesendet", "gesendete objekte", "gesendete elemente"]);
 
 /**
+ * Why a mail server said no, in plain words. The servers' own reason is in
+ * imapflow's responseText (its message only says "Command failed"); Gmail's
+ * and GMX's usual answers become what to do about them.
+ */
+export function refusal(account: Pick<MailAccount, "label" | "host" | "provider" | "token">, error: unknown): string {
+	const said = String((error as { responseText?: unknown })?.responseText || (error instanceof Error ? error.message : error) || "").trim();
+	const gmail = account.provider === "gmail" || /gmail\.com$/i.test(account.host);
+	const where = "Make one at myaccount.google.com/apppasswords (it needs 2-step verification), or sign in with Google instead under Settings, Connectors.";
+	if (/Application-specific password required/i.test(said)) return `${account.label} wants an app password, not your normal Google password. ${where}`;
+	if (/log in via your web browser|WEBALERT|Web login required/i.test(said)) return `Google blocked the sign-in as unusual. Open Gmail in a browser, confirm it was you on the security alert, then try again.`;
+	if (/AUTHENTICATIONFAILED|Invalid credentials|authentication failed|Username and Password not accepted|Invalid login/i.test(said)) {
+		if (account.token) return `${account.label} didn't accept RemindMe's Google sign-in. Sign in again under Settings, Connectors.`;
+		if (gmail) return `${account.label} didn't take that password. Gmail never accepts your normal Google password in other apps, only an app password. ${where} If it was an app password, check it wasn't cut short when copied.`;
+		if (/gmx|web\.de/i.test(account.host)) return `${account.label} didn't take that address and password. Check that "POP3/IMAP Abruf" is on in its mail settings, and use an app password if you sign in there with 2-factor.`;
+		return `${account.label} didn't take that address and password. Check them under Settings, Connectors.`;
+	}
+	return `${account.label} refused the connection (${said || "no reason given"}). Check the address, password and server under Settings, Connectors.`;
+}
+
+/**
  * IMAP, read-only: it opens mailboxes for reading and never sets flags, so
  * reading a message here doesn't mark it read on your phone. The one write is
  * a new draft in the Drafts folder, when the user asks for one.
@@ -93,9 +113,7 @@ export class ImapSource implements MailSource {
 		try {
 			await client.connect();
 		} catch (error) {
-			const reason = error instanceof Error ? error.message : String(error);
-			const check = account.token ? "Sign in again under Settings, Connectors if it keeps failing." : "Check the address, password and server under Settings, Connectors.";
-			throw new Error(`${account.label} refused the connection (${reason}). ${check}`);
+			throw new Error(refusal(account, error));
 		}
 		try {
 			return await work(client);
@@ -238,7 +256,8 @@ export class ImapSource implements MailSource {
 			await transport.sendMail({ envelope, raw });
 		} catch (error) {
 			const reason = error instanceof Error ? error.message : String(error);
-			throw new Error(`${account.label} didn't send it (${reason}).`);
+			// A refused login says what to fix; anything else, what the server said.
+			throw new Error(/Invalid login|5\.7\.[89]/i.test(reason) ? refusal(account, error) : `${account.label} didn't send it (${reason}).`);
 		} finally {
 			transport.close();
 		}

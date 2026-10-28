@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { simpleParser } from "mailparser";
-import { Mailboxes, recipients, type MailAccount, type MailMessage, type MailSource, type MailSummary } from "../src/mail/mailboxes.ts";
+import { Mailboxes, recipients, refusal, type MailAccount, type MailMessage, type MailSource, type MailSummary } from "../src/mail/mailboxes.ts";
 import { ConnectorStore, publicView } from "../src/connectors/store.ts";
 import { checkMailInput, importMailOptions, mailAccount } from "../src/connectors/mail.ts";
 import { statSync } from "node:fs";
@@ -306,4 +306,16 @@ test("only a mailbox with an outgoing server can send", async () => {
 	assert.deepEqual(withSmtp.smtp, { host: "smtp.example.com", port: 465, secure: true });
 	assert.throws(() => checkMailInput({ preset: "imap", values: { address: "me", host: "mail.example.com", smtpHost: "bad host" }, secrets: { password: "x" } }, true), /SMTP server name/);
 	assert.deepEqual(recipients("Anna <anna@example.com>; not-an-address, team: x@example.org, y@example.org;"), ["anna@example.com", "x@example.org", "y@example.org"]);
+});
+
+test("a refused login says what the server meant, not \"Command failed\"", () => {
+	const gmail = { label: "Gmail", host: "imap.gmail.com", provider: "gmail" as const };
+	const imapError = (text: string) => Object.assign(new Error("Command failed"), { responseText: text });
+	assert.match(refusal(gmail, imapError("[ALERT] Application-specific password required: https://support.google.com/accounts/answer/185833 (Failure)")), /wants an app password, not your normal Google password\. Make one at myaccount\.google\.com\/apppasswords/);
+	assert.match(refusal(gmail, imapError("[AUTHENTICATIONFAILED] Invalid credentials (Failure)")), /never accepts your normal Google password in other apps/);
+	assert.match(refusal(gmail, imapError("[ALERT] Please log in via your web browser: https://support.google.com/mail/accounts/answer/78754 (Failure)")), /blocked the sign-in as unusual/);
+	assert.match(refusal(gmail, new Error("Invalid login: 534-5.7.9 Application-specific password required.")), /wants an app password/, "SMTP's wording too");
+	assert.match(refusal({ ...gmail, token: async () => "t" }, imapError("[AUTHENTICATIONFAILED] Invalid credentials (Failure)")), /Sign in again/);
+	assert.match(refusal({ label: "GMX", host: "imap.gmx.net", provider: "imap" }, imapError("[AUTHENTICATIONFAILED] authentication failed")), /POP3\/IMAP Abruf/);
+	assert.equal(refusal({ label: "Work", host: "mail.example.com", provider: "imap" }, new Error("connect ETIMEDOUT")), "Work refused the connection (connect ETIMEDOUT). Check the address, password and server under Settings, Connectors.");
 });
