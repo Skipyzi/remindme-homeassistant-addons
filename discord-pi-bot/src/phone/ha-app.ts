@@ -64,6 +64,17 @@ const TAG = /[^A-Za-z0-9_-]/g;
 
 export const safeTag = (tag: string) => tag.replace(TAG, "-").slice(0, 64) || "remindme";
 
+/**
+ * Where a tap on a notification goes: RemindMe's panel in the Home Assistant
+ * app (/app/<slug>), on the thread it's about. A web address would open a
+ * browser instead, and iOS can't hand a link to an installed web app.
+ */
+export function appLink(url: string | undefined, slug: string, phoneUrl?: string): string | undefined {
+	const thread = /#t\/([\w-]+)/.exec(url || "")?.[1];
+	if (slug) return `/app/${slug}${thread ? `/t/${thread}` : ""}`;
+	return phoneUrl ? new URL(url || "./", `${phoneUrl}/`).toString() : undefined;
+}
+
 /** A notification shows text as it is: Markdown's stars, links and headings come off. */
 export function plainText(text: string): string {
 	return text

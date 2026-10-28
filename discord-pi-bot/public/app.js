@@ -183,6 +183,9 @@ function remindme() {
 		authConsoleInput: "",
 		authConsoleError: "",
 		authConsoleBusy: false,
+		/* Inside Home Assistant's app panel on a phone: its header is hidden, so ☰ stands in. */
+		haNarrow: false,
+		haLinked: "",
 
 		init() {
 			const fit = () => document.documentElement.style.setProperty("--app-height", `${window.innerHeight}px`);
@@ -193,6 +196,7 @@ function remindme() {
 			window.addEventListener("popstate", () => this.route());
 			// A tapped notification opens its thread by changing the address.
 			window.addEventListener("hashchange", () => this.route());
+			this.joinHomeAssistant();
 			// Installed on a phone (not inside Home Assistant), it works offline and gets notifications.
 			if (this.inPhoneApp && "serviceWorker" in navigator) navigator.serviceWorker.register("./sw.js").catch(() => {});
 			setInterval(() => {
@@ -351,6 +355,34 @@ function remindme() {
 		verbFor(message) {
 			const word = String(message || "").split(" ")[0];
 			return VERBS.has(word) ? word : "Do it";
+		},
+
+		/*
+		 * Inside Home Assistant's app panel (the sidebar, or the Home Assistant
+		 * app on a phone): Home Assistant tells it which thread a notification
+		 * link names (/app/<slug>/t/<id>), and on a phone hides its own header
+		 * so RemindMe fills the screen; ☰ opens Home Assistant's menu instead.
+		 */
+		joinHomeAssistant() {
+			if (window.parent === window) return;
+			let asked = false;
+			window.addEventListener("message", (event) => {
+				if (event.source !== window.parent || event.data?.type !== "home-assistant/properties") return;
+				this.haNarrow = Boolean(event.data.narrow);
+				if (this.haNarrow && !asked) {
+					asked = true;
+					window.parent.postMessage({ type: "home-assistant/subscribe-properties", kioskMode: true }, "*");
+				}
+				const thread = /^\/t\/([\w-]+)/.exec(event.data.route?.path || "")?.[1];
+				if (thread && thread !== this.haLinked) {
+					this.haLinked = thread;
+					this.openThread(thread);
+				}
+			});
+			window.parent.postMessage({ type: "home-assistant/subscribe-properties" }, "*");
+		},
+		haMenu() {
+			window.parent.postMessage({ type: "home-assistant/toggle-menu" }, "*");
 		},
 
 		/* ── A thread ────────────────────────────────────────────────── */

@@ -6,7 +6,7 @@ import type { AddressInfo, Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { HaApp, plainText, safeTag } from "../src/phone/ha-app.ts";
+import { HaApp, appLink, plainText, safeTag } from "../src/phone/ha-app.ts";
 import { HaEvents, websocketUrl } from "../src/phone/ha-events.ts";
 import { LiveJobs } from "../src/phone/live-jobs.ts";
 import type { Thread } from "../src/assistant/threads.ts";
@@ -191,4 +191,11 @@ test("button taps arrive over Home Assistant's WebSocket API, and the connection
 test("notifications show plain text: Markdown's marks come off", () => {
 	assert.equal(plainText("**Wizz Air, Friday 06:10: 61 €.** Back _Sunday_. [Booking](https://wizzair.com/x) and `BER`.\n## Next"), "Wizz Air, Friday 06:10: 61 €. Back Sunday. Booking and BER.\nNext");
 	assert.equal(plainText("sensor_battery_level stays"), "sensor_battery_level stays");
+});
+
+test("a tap opens RemindMe's panel in the Home Assistant app, on the thread", () => {
+	assert.equal(appLink("./#t/abc-123", "835ec51f_remindme_discord_bot"), "/app/835ec51f_remindme_discord_bot/t/abc-123");
+	assert.equal(appLink("./", "835ec51f_remindme_discord_bot"), "/app/835ec51f_remindme_discord_bot");
+	assert.equal(appLink("./#t/abc", "", "https://remindme.tail.ts.net"), "https://remindme.tail.ts.net/#t/abc", "without the slug, the phone app's address");
+	assert.equal(appLink("./", ""), undefined);
 });

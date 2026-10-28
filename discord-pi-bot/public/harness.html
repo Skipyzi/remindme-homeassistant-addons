@@ -37,7 +37,7 @@
     <script defer src="./vendor/alpine.min.js"></script>
   </head>
   <body>
-    <div class="rm-app" x-data="remindme()" x-init="init()" :class="{ 'thread-open': open }">
+    <div class="rm-app" x-data="remindme()" :class="{ 'thread-open': open }">
       <!-- The installed app's splash, like the iPhone launch screen, until the inbox has loaded. -->
       <div class="rm-splash" x-show="splash" x-transition.opacity.duration.400ms aria-hidden="true">
         <img src="./icons/icon-512.png" width="120" height="120" alt="" />
@@ -46,6 +46,7 @@
       <!-- The inbox: what needs you, what's running, then everything else, newest first. -->
       <section class="rm-inbox" aria-label="Inbox">
         <header class="rm-bar">
+          <button class="rm-menu" type="button" x-show="haNarrow" x-cloak @click="haMenu()" aria-label="Home Assistant menu">☰</button>
           <h1>RemindMe<small x-text="inboxLine"></small></h1>
           <button class="rm-barlink" type="button" x-show="authConsole.running" x-cloak @click="window.RemindMeAccountConsole.open($data, authConsole.backend)">Sign-in running</button>
           <button class="rm-barlink" type="button" @click="openHistory()">History</button>

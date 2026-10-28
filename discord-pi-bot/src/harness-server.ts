@@ -80,7 +80,7 @@ import { MemoryStore } from "./assistant/memory";
 import { BatteryHides, batteryHint, lowBatteries, type LowBattery } from "./assistant/batteries";
 import type { EntityCard } from "./harness/entities";
 import { PhonePush, type PushMessage } from "./phone/push";
-import { HaApp, plainText, type PhoneButton, type PhoneNotice } from "./phone/ha-app";
+import { HaApp, appLink, plainText, type PhoneButton, type PhoneNotice } from "./phone/ha-app";
 import { HaEvents, websocketUrl } from "./phone/ha-events";
 import { LiveJobs } from "./phone/live-jobs";
 import { TailscaleNode, tailnetGuard } from "./phone/tailscale";
@@ -196,11 +196,19 @@ void aiSettings.load();
 export const spend = new SpendLedger();
 void spend.load();
 export const home = supervisorToken ? new HomeApi(supervisorToken, homeAssistantUrl) : undefined;
+/* This app's slug, for links into its panel in Home Assistant (/app/<slug>/…). */
+let appSlug = process.env.APP_SLUG || "";
+async function loadAppSlug(): Promise<void> {
+	if (appSlug || !supervisorToken || !homeAssistantUrl.startsWith("http://supervisor/")) return;
+	try {
+		const response = await fetch("http://supervisor/addons/self/info", { headers: { Authorization: `Bearer ${supervisorToken}` }, signal: AbortSignal.timeout(10_000) });
+		appSlug = ((await response.json()) as { data?: { slug?: string } }).data?.slug || "";
+	} catch (error) {
+		console.warn("Couldn't learn the app's slug:", error instanceof Error ? error.message : error);
+	}
+}
 /* The Home Assistant app on the phone: notifications with buttons and a cat, and Live Activities. */
-export const haApp = new HaApp(home, {
-	fallbackTarget: process.env.HA_NOTIFY_TARGET,
-	link: (url) => (phoneUrl ? new URL(url || "./", `${phoneUrl}/`).toString() : undefined),
-});
+export const haApp = new HaApp(home, { fallbackTarget: process.env.HA_NOTIFY_TARGET, link: (url) => appLink(url, appSlug, phoneUrl) });
 /* Taps on its buttons come back as Home Assistant events. */
 const haEvents = supervisorToken
 	? new HaEvents(websocketUrl(homeAssistantUrl), supervisorToken, ["mobile_app_notification_action"], (_type, data) => void haApp.tapped(data))
@@ -2366,7 +2374,7 @@ export function createHarnessApp(): Express {
  * runs on the container's clock.
  */
 export async function startHarness(): Promise<void> {
-	await Promise.all([loadConnectors(), threads.load(), phonePush.load(), memory.load(), batteryHides.load(), haApp.load()]);
+	await Promise.all([loadConnectors(), threads.load(), phonePush.load(), memory.load(), batteryHides.load(), haApp.load(), loadAppSlug()]);
 	haEvents?.start();
 	app.listen(port, () => console.log(`RemindMe console listening on port ${port}`));
 	jobs.resume();

@@ -852,6 +852,17 @@ body:has(> .rm-app) {
 	padding: calc(10px + env(safe-area-inset-top)) 16px 10px;
 	border-bottom: 1px solid var(--rule);
 }
+.rm-menu {
+	flex: none;
+	width: 32px;
+	height: 32px;
+	margin-left: -6px;
+	color: var(--mute);
+	font-size: 20px;
+}
+.rm-menu:hover {
+	color: #fff;
+}
 .rm-bar h1 {
 	flex: 1;
 	min-width: 0;
