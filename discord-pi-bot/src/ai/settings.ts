@@ -218,6 +218,18 @@ export class AiSettings {
 		return this.cached.provider;
 	}
 
+	/** The same AI on its cheapest model, for small chores such as reading a price off a page. */
+	cheapProvider(): Provider | undefined {
+		if (this.problem()) return undefined;
+		const id = this.providerId();
+		if (isRunner(id)) return undefined;
+		const model = id === "claude" ? "claude-haiku-5-5" : "gpt-6-luna";
+		const key = `${id}:${model}`;
+		if (this.cheapCached?.key !== key) this.cheapCached = { key, provider: this.build(id, model) };
+		return this.cheapCached.provider;
+	}
+	private cheapCached?: { key: string; provider: Provider };
+
 	/** The CLI agent that runs turns now, if one is chosen. */
 	runner(): Runner | undefined {
 		if (this.problem()) return undefined;

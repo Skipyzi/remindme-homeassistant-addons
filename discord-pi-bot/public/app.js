@@ -70,6 +70,16 @@ function pad(value) {
 	return String(value).padStart(2, "0");
 }
 
+const euroFormat = new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR" });
+function euro(value) {
+	return value === undefined || value === null ? "–" : euroFormat.format(value);
+}
+/* "179,90", "179.90 €", "180" → 179.9; anything else, nothing. */
+function euroNumber(text) {
+	const value = Number(String(text || "").replace(/[€\s]/g, "").replace(/\.(?=\d{3}\b)/g, "").replace(",", "."));
+	return Number.isFinite(value) && value > 0 ? value : undefined;
+}
+
 function dayKey(date) {
 	return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
@@ -129,10 +139,16 @@ function remindme() {
 			{ id: "connectors", label: "Mail and calendars", group: "Accounts and devices" },
 			{ id: "phone", label: "Phone app", group: "Accounts and devices" },
 			{ id: "mcp", label: "Connected tools", group: "Accounts and devices" },
+			{ id: "prices", label: "Price watches", group: "On its own" },
 			{ id: "tasks", label: "Scheduled tasks", group: "On its own" },
 			{ id: "documents", label: "Documents", group: "On its own" },
 		],
 		phoneLayout: window.matchMedia("(max-width: 820px)").matches,
+		/* Price watches */
+		priceWatches: [],
+		newPrice: { what: "", target: "" },
+		priceNote: "",
+		priceBusy: false,
 		aiModels: [],
 		modelTable: { billing: "unknown", budget: 0, featured: [], others: [] },
 		modelsOpen: false,
@@ -509,6 +525,78 @@ function remindme() {
 			} catch (error) {
 				this.error = error.message;
 			}
+		},
+
+		/* ── Price watches ─────────────────────────────────────────────── */
+
+		priceLine(watch) {
+			if (watch.price === undefined) return watch.error ? `Not read: ${watch.error}` : "Not read yet";
+			const lowest = watch.lowest && watch.lowest.price < watch.price ? ` · lowest ${euro(watch.lowest.price)}` : "";
+			return `${euro(watch.price)}${watch.shop ? ` at ${watch.shop}` : ""}${lowest} · checked ${this.formatWhen(watch.lastCheck)}`;
+		},
+		/* A target as typed back into its field: "180", "45,50". */
+		targetText(target) {
+			if (!target) return "";
+			return (Number.isInteger(target) ? String(target) : target.toFixed(2)).replace(".", ",");
+		},
+		/* The price over time, as a small line: built as SVG elements, never as HTML. */
+		drawPriceLine(element, history) {
+			element.replaceChildren();
+			const points = (history || []).map((point) => point.price);
+			if (points.length < 2) return;
+			const low = Math.min(...points);
+			const high = Math.max(...points);
+			const spread = high - low || 1;
+			const ns = "http://www.w3.org/2000/svg";
+			const svg = document.createElementNS(ns, "svg");
+			svg.setAttribute("viewBox", "0 0 100 24");
+			svg.setAttribute("preserveAspectRatio", "none");
+			svg.setAttribute("aria-hidden", "true");
+			const line = document.createElementNS(ns, "polyline");
+			line.setAttribute("points", points.map((price, index) => `${((index / (points.length - 1)) * 100).toFixed(1)},${(22 - ((price - low) / spread) * 20).toFixed(1)}`).join(" "));
+			line.setAttribute("fill", "none");
+			line.setAttribute("stroke", "currentColor");
+			line.setAttribute("stroke-width", "1.5");
+			line.setAttribute("vector-effect", "non-scaling-stroke");
+			svg.append(line);
+			element.append(svg);
+		},
+		async addPriceWatch() {
+			const what = this.newPrice.what.trim();
+			const target = euroNumber(this.newPrice.target);
+			this.priceBusy = true;
+			this.priceNote = "";
+			try {
+				const watch = await this.request("./api/prices", "POST", { ...(/^https?:\/\//i.test(what) ? { url: what } : { query: what }), ...(target ? { target } : {}) });
+				this.newPrice = { what: "", target: "" };
+				this.priceNote = `Watching ${watch.name}: ${euro(watch.price)}${watch.shop ? ` at ${watch.shop}` : ""} now.`;
+				await this.loadSection("prices");
+			} catch (error) {
+				this.priceNote = `Not added: ${error.message}`;
+			} finally {
+				this.priceBusy = false;
+			}
+		},
+		async checkPriceWatch(watch) {
+			this.priceNote = `Checking ${watch.name}`;
+			const fresh = await this.request(`./api/prices/${encodeURIComponent(watch.id)}/check`).catch((error) => ({ error: error.message }));
+			this.priceNote = fresh.price !== undefined ? `${watch.name}: ${euro(fresh.price)}${fresh.shop ? ` at ${fresh.shop}` : ""}.` : `Couldn't read it: ${fresh.error}`;
+			await this.loadSection("prices");
+		},
+		async setPriceTarget(watch, value) {
+			const target = euroNumber(value);
+			try {
+				await this.request(`./api/prices/${encodeURIComponent(watch.id)}`, "PATCH", { target: target || null });
+				this.priceNote = target ? `You'll hear when ${watch.name} is ${euro(target)} or less.` : `You'll hear when ${watch.name} drops by 5 % or more.`;
+			} catch (error) {
+				this.priceNote = error.message;
+			}
+			await this.loadSection("prices");
+		},
+		async removePriceWatch(watch) {
+			await fetch(`./api/prices/${encodeURIComponent(watch.id)}`, { method: "DELETE" });
+			this.priceNote = `Stopped watching ${watch.name}.`;
+			await this.loadSection("prices");
 		},
 
 		/* ── Swiping rows: left to snooze or archive, right to delete ── */
@@ -1076,6 +1164,7 @@ function remindme() {
 			if (tab === "skills") this.skills = await this.getJson("./api/skills", []);
 			if (tab === "mcp") this.mcpServers = await this.getJson("./api/mcp", []);
 			if (tab === "tasks") this.tasks = await this.getJson("./api/tasks", []);
+			if (tab === "prices") this.priceWatches = await this.getJson("./api/prices", []);
 			if (tab === "connectors") await this.loadConnectors();
 			if (tab === "phone") await this.loadPhone();
 			if (tab === "memory") this.memory = await this.getJson("./api/memory", { learn: true, facts: [] });
@@ -1115,6 +1204,13 @@ function remindme() {
 				if (wants) return { text: `${wants.name} wants you to sign in`, bad: true };
 				const on = this.mcpServers.filter((server) => server.enabled);
 				return { text: on.length ? on.map((server) => server.name).join(", ") : this.mcpServers.length ? "All off" : "None yet" };
+			}
+			if (id === "prices") {
+				const broken = this.priceWatches.find((watch) => watch.error && watch.price === undefined);
+				if (broken) return { text: `${broken.name}: ${broken.error}`, bad: true };
+				if (!this.priceWatches.length) return { text: "None yet" };
+				const [first] = this.priceWatches;
+				return { text: this.priceWatches.length === 1 ? `${first.name}: ${euro(first.price)}` : `${this.priceWatches.length} products, checked every few hours` };
 			}
 			if (id === "tasks") return { text: this.tasks.length ? `${this.tasks.slice(0, 2).map((task) => task.name).join(", ")}${this.tasks.length > 2 ? ` and ${this.tasks.length - 2} more` : ""}` : "None yet" };
 			if (id === "documents") return { text: this.documents.length ? plural(this.documents.length, "document") : "None yet" };

@@ -123,7 +123,7 @@ Work that takes many steps, such as comparing flights across sites, going throug
 - asks you when only you can decide, with options to tap in the inbox or to answer on Discord;
 - finishes with a result, sent to you on Discord as well;
 - stops after six runs of up to ten tool steps each to check in, so it can't run up the bill. Reply "carry on" to continue, or **Stop** it any time;
-- for keep-me-updated requests (a parcel, a price, a reply), watches instead: it looks once, then sleeps until the time it set or until an email arrives whose sender or subject has its words (the carrier, an order number). It tells you only what changed, never looks during quiet hours, and stops after a week. A sleeping watch costs nothing; **Stop watching** ends it.
+- for keep-me-updated requests (a parcel, a reply), watches instead: it looks once, then sleeps until the time it set or until an email arrives whose sender or subject has its words (the carrier, an order number). It tells you only what changed, never looks during quiet hours, and stops after a week. A sleeping watch costs nothing; **Stop watching** ends it.
 
 Device changes, calendar events and the like still wait for your tap, as everywhere else.
 
@@ -138,13 +138,26 @@ For pages a plain read can't handle, such as DHL tracking, shops and timetables,
 - It can't reach your home network, Home Assistant or the Supervisor, and Chromium runs as its own user without RemindMe's keys or access to `/data`.
 - It starts when needed and closes after three minutes without use, using about 200–400 MB of memory while open.
 
+## Prices
+
+Ask "where is the Sony WH-1000XM5 cheapest?" and RemindMe reads the offers on [Geizhals](https://geizhals.de), which compares German and Austrian shops: the cheapest few with shop, delivery and shipping, and similar products. (idealo turns automated browsers away, so it isn't used.)
+
+Ask it to watch a price ("tell me when the XM5 is under 180 €"), or add one under **Settings → Price watches** with a product's name or a link:
+
+- A name is looked up on Geizhals, preferring a product that's on sale now; RemindMe says which one it found, so you can correct it. Geizhals' product pages carry every offer's price, so these checks need no AI at all.
+- A link to any shop's product page also works: the browser reads the page and the cheapest model (Claude Haiku or GPT Luna) picks out the price. A link whose price can't be read isn't kept.
+- It checks every six hours, never during quiet hours, and keeps a short price history with the lowest price seen.
+- You hear about it on your phone and in the inbox when the price falls under your target or, without a target, drops by 5 % or more since it last told you. The notice has **Open** and **Stop watching**; the same price again isn't news.
+
+Searching Geizhals needs the web browser (`web_browser`).
+
 ## Memory
 
 RemindMe remembers things about you: what it picked up from what you told it ("my sister Anna lives in Berlin"), and what you add yourself. Every answer gets them, so you don't have to say them twice. It learns only from your own messages, never from emails or web pages, and never keeps passwords, codes or long numbers. **Settings → Memory** lists everything it remembers: forget any of it, add to it, or switch learning off.
 
 ## Data
 
-Everything lives in `/data`: reminders, chats, the inbox's threads and jobs (`threads.json`), what it remembers about you (`memory.json`), which heads-ups were sent (`triage.json`), batteries you dealt with (`batteries.json`), the phone app's notification keys and devices (`push.json`) and Tailscale's state (`tailscale/`), the AI choice (`ai.json`), today's spend (`spend.json`), Discord chat history (`discord-chats.json`) and which nudges were sent (`proactive.json`). Notes stay in `/share/vault`, shared with the Vault editor app.
+Everything lives in `/data`: reminders, chats, the inbox's threads and jobs (`threads.json`), what it remembers about you (`memory.json`), which heads-ups were sent (`triage.json`), batteries you dealt with (`batteries.json`), price watches (`prices.json`), the phone app's notification keys and devices (`push.json`) and Tailscale's state (`tailscale/`), the AI choice (`ai.json`), today's spend (`spend.json`), Discord chat history (`discord-chats.json`) and which nudges were sent (`proactive.json`). Notes stay in `/share/vault`, shared with the Vault editor app.
 
 ## Upgrading from 3.x
 

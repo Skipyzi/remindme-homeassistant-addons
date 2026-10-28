@@ -264,6 +264,23 @@ export class WebBrowser {
 		return this.view(session);
 	}
 
+	/** A page's HTML, for code that reads it (a price comparison), in a session of its own. */
+	async pageHtml(key: string, url: string): Promise<string> {
+		const raw = /^https?:\/\//i.test(url) ? url : `https://${url}`;
+		const target = this.options.allowHosts?.includes(new URL(raw).hostname) ? new URL(raw) : await assertPublicUrl(raw);
+		const session = await this.session(key);
+		await session.page.goto(target.toString(), { waitUntil: "domcontentloaded" });
+		await this.settle(session.page);
+		return session.page.content();
+	}
+
+	/** Run a script of ours on the page a session has open, for code that reads it. */
+	async evaluate<T>(key: string, script: string): Promise<T> {
+		const session = this.sessions.get(key);
+		if (!session || session.page.isClosed()) throw new BrowserRefused("No page is open.");
+		return (await session.page.evaluate(script)) as T;
+	}
+
 	/** The item behind a ref from the last view, or an error the model can act on. */
 	item(key: string, ref: number): PageItem {
 		const session = this.sessions.get(key);

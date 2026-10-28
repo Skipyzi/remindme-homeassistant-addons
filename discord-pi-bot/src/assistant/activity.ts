@@ -20,8 +20,8 @@ export interface Receipt {
 /** A button under one of RemindMe's own messages, in its thread: what it does, and on what. */
 export interface EntryAction {
 	label: string;
-	kind: "battery-remind" | "battery-hide" | "reminder-later";
-	/** The battery's entity id, or the reminder's text. */
+	kind: "battery-remind" | "battery-hide" | "reminder-later" | "price-stop";
+	/** The battery's entity id, the reminder's text, or the price watch's id. */
 	ref: string;
 }
 

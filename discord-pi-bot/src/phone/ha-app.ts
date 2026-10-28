@@ -23,8 +23,10 @@ export interface PhoneButton {
 	unlocked?: boolean;
 	/** A text field instead of a plain button; what was typed goes to run. */
 	reply?: { button: string; placeholder: string };
+	/** A link the button opens instead, such as the shop. */
+	uri?: string;
 	/** Does it, and says what to show in the notification's place. */
-	run(reply?: string): Promise<string>;
+	run?(reply?: string): Promise<string>;
 }
 
 export interface PhoneNotice extends PushMessage {
@@ -161,6 +163,7 @@ export class HaApp {
 		const tag = safeTag(notice.tag || `rm-${randomBytes(6).toString("hex")}`);
 		const group = randomBytes(8).toString("hex");
 		const actions = (notice.buttons || []).slice(0, MAX_BUTTONS).map((button) => {
+			if (button.uri) return { action: "URI", title: button.title, uri: button.uri };
 			const id = `REMINDME_${randomBytes(12).toString("hex")}`;
 			this.pending.set(id, { group, button, tag, title: notice.title, at: now });
 			return {
@@ -227,7 +230,7 @@ export class HaApp {
 		const reply = typeof event.reply_text === "string" ? event.reply_text.trim().slice(0, 2_000) : undefined;
 		let text: string;
 		try {
-			text = await found.button.run(reply);
+			text = found.button.run ? await found.button.run(reply) : "Done.";
 		} catch (error) {
 			text = `That didn't work: ${error instanceof Error ? error.message : String(error)}`;
 		}

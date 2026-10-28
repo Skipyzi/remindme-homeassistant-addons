@@ -363,9 +363,9 @@ export class Assistant {
 		};
 	}
 
-	/** One plain answer without tools or history, for small jobs like reading a reminder request. */
-	async quick(prompt: string, signal?: AbortSignal): Promise<string | undefined> {
-		const provider = this.deps.settings.provider();
+	/** One plain answer without tools or history, for small jobs like reading a reminder request. `cheap`: on the AI's cheapest model, for chores like reading a price. */
+	async quick(prompt: string, signal?: AbortSignal, options: { cheap?: boolean } = {}): Promise<string | undefined> {
+		const provider = (options.cheap && this.deps.settings.cheapProvider?.()) || this.deps.settings.provider();
 		if (!provider || this.deps.spend.overBudget(this.deps.settings.dailyBudget())) return undefined;
 		const session = provider.start({
 			system: "Follow the instruction exactly and answer with nothing else.",

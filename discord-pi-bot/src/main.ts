@@ -1,3 +1,5 @@
+import type { PhoneButton } from "./phone/ha-app";
+import type { EntryAction } from "./assistant/activity";
 import "dotenv/config";
 import { startBot } from "./bot";
 import { setReminderAi } from "./commands/remind";
@@ -21,6 +23,7 @@ import {
 	parcelSummary,
 	phoneApp,
 	setBriefSender,
+	setOwnerNotifier,
 	setJobNotifier,
 	setPlannedSends,
 	startHarness,
@@ -43,15 +46,17 @@ async function main() {
 	const messenger = startBot({ assistant, chats, confirmations, home, ownerId, activity, phone: phoneApp });
 
 	// What RemindMe says first goes to Discord and to every phone with the app.
-	const notify = async (text: string, what: "brief" | "bins" | "battery" | "mail" | "heads_up", extra?: { battery?: string }) => {
+	const notify = async (text: string, what: "brief" | "bins" | "battery" | "mail" | "heads_up" | "price", extra?: { battery?: string; buttons?: PhoneButton[]; actions?: EntryAction[] }) => {
 		const title = what === "brief" ? `☀️ ${new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" })}` : undefined;
 		const [onDiscord, phones] = await Promise.all([
 			messenger ? messenger.send(text, { title }) : Promise.resolve(false),
 			// A tap opens RemindMe's own thread, where this message is, with its buttons.
-			phoneApp.send({ title: what === "brief" ? "Morning brief" : "RemindMe", body: text, url: "./#t/remindme", tag: what, ...(extra?.battery ? { buttons: batteryButtons(extra.battery) } : {}) }),
+			phoneApp.send({ title: what === "brief" ? "Morning brief" : what === "price" ? "Price drop" : "RemindMe", body: text, url: "./#t/remindme", tag: what === "price" ? `price-${Date.now()}` : what, ...(extra?.buttons ? { buttons: extra.buttons } : extra?.battery ? { buttons: batteryButtons(extra.battery) } : {}) }),
 		]);
 		const sent = onDiscord || phones > 0;
-		const actions = extra?.battery
+		const actions = extra?.actions
+			? extra.actions
+			: extra?.battery
 			? [
 					{ label: "Remind me Saturday", kind: "battery-remind" as const, ref: extra.battery },
 					{ label: "Got it", kind: "battery-hide" as const, ref: extra.battery },
@@ -115,6 +120,8 @@ async function main() {
 		},
 	});
 	await proactive.load();
+	// Price drops go where the other nudges go: Discord, the phone and the RemindMe thread.
+	setOwnerNotifier((text, extra) => notify(text, "price", extra));
 	// A job's question or result comes as a DM card titled with the job; reply there or in the console.
 	setJobNotifier(async (thread, text) => {
 		const sent = messenger ? await messenger.send(`${text}\n\n_Reply here or in the RemindMe console._`, { title: thread.title }) : false;

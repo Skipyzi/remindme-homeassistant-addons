@@ -725,6 +725,39 @@
               <p class="rm-note" x-show="mcpError" x-text="mcpError"></p>
             </div>
 
+            <!-- Price watches -->
+            <div class="rm-panel" x-show="settingsTab === 'prices'">
+              <h3>Price watches</h3>
+              <p>Products RemindMe checks every few hours, on Geizhals (which compares German and Austrian shops) or on a shop's own page. You hear about it when the price falls under your target or, without one, drops by 5 % or more. Never during quiet hours.</p>
+              <div>
+                <template x-for="watch in priceWatches" :key="watch.id">
+                  <div class="rm-item rm-price">
+                    <b x-text="watch.name"></b>
+                    <span class="rm-mute" x-text="priceLine(watch)"></span>
+                    <span class="rm-price-problem" x-show="watch.error && watch.price !== undefined" x-text="`Last check failed: ${watch.error}`"></span>
+                    <span class="rm-price-line" x-show="(watch.history || []).length > 1" x-effect="drawPriceLine($el, watch.history)"></span>
+                    <div class="rm-price-foot">
+                      <label class="rm-field rm-price-target">Tell me under (€)<input inputmode="decimal" :value="targetText(watch.target)" placeholder="Any 5 % drop" @change="setPriceTarget(watch, $event.target.value)" /></label>
+                      <span class="rm-price-actions">
+                        <a class="rm-link" :href="watch.url" target="_blank" rel="noopener">Open</a>
+                        <button class="rm-link" type="button" @click="checkPriceWatch(watch)">Check now</button>
+                        <button class="rm-link" type="button" @click="removePriceWatch(watch)">Stop</button>
+                      </span>
+                    </div>
+                  </div>
+                </template>
+                <p class="rm-note" x-show="!priceWatches.length">Nothing watched yet. Add a product below, or ask RemindMe: "watch the Sony WH-1000XM5 and tell me under 180 €".</p>
+              </div>
+              <div class="rm-item">
+                <div class="rm-two">
+                  <label class="rm-field">Product, or a link to it<input x-model="newPrice.what" placeholder="Sony WH-1000XM5" autocomplete="off" /></label>
+                  <label class="rm-field">Tell me when it's under (€, optional)<input x-model="newPrice.target" inputmode="decimal" placeholder="180" /></label>
+                </div>
+                <div class="rm-actions"><button class="rm-btn solid" type="button" :disabled="priceBusy || !newPrice.what.trim()" @click="addPriceWatch()" x-text="priceBusy ? 'Looking it up' : 'Watch it'"></button></div>
+              </div>
+              <p class="rm-note" role="status" x-show="priceNote" x-text="priceNote"></p>
+            </div>
+
             <!-- Tasks -->
             <div class="rm-panel" x-show="settingsTab === 'tasks'">
               <h3>Scheduled tasks</h3>
