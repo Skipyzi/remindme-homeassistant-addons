@@ -21,9 +21,9 @@ Under **AI → Sign-ins** in the console:
 
 - **ChatGPT subscription:** sign in, approve plan usage, and paste the final page's address back in (it points at the Pi, so your browser usually can't open it). ChatGPT then answers like the API providers, with all the same tools.
 - **Claude subscription:** sign in and paste the code Claude shows. Claude runs as an agent through Claude Code.
-- **Codex, OpenCode and Pi:** their own sign-ins, in a terminal console. They run as agents too. Codex uses the ChatGPT sign-in when there is one.
+- **Codex:** its own sign-in, in a terminal console. It runs as an agent too, and uses the ChatGPT sign-in when there is one.
 
-The agents (Claude, Codex, OpenCode app, Pi) run each turn themselves with RemindMe's tools and nothing else: no terminal, files or coding tools. Each chat keeps its own agent session. They can't look at pictures, and their usage counts against your subscription, not the daily budget.
+The agents (Claude and Codex) run each turn themselves with RemindMe's tools and nothing else: no terminal, files or coding tools. Each chat keeps its own agent session. They can't look at pictures, and their usage counts against your subscription, not the daily budget.
 
 `ai_provider` picks the default. In the console, **AI** (the badge at the top, or the drawer) switches between the providers that have a key, picks the model and sets the effort, without a restart. Keys only ever come from the app options; the console never sees them.
 
@@ -100,7 +100,7 @@ RemindMe installs on your phone as an app with its own notifications. It joins y
 3. On the phone, with Tailscale on, open the address it shows (`https://remindme.<your-tailnet>.ts.net`). iPhone: Share → Add to Home Screen, then open it from the home screen. Android: Chrome menu → Install app.
 4. In the installed app, open **Settings → Phone app → Turn on notifications here**, then **Send a test**.
 
-Notifications come for job questions and results, reminders, the morning brief and nudges, alongside Discord; tapping one opens what it is about. Requests from other accounts and from tagged devices on the tailnet are turned away. Tailscale's state stays in `/data/tailscale`, and its logs aren't uploaded.
+Notifications come for job questions and results, reminders, the morning brief and nudges, alongside Discord; tapping one opens what it is about. On an iPhone they show a title and text only: iOS gives web apps no buttons or pictures in notifications. The app icon counts what waits for your decision, and the app opens on a black RemindMe splash on iPhone and Android. Requests from other accounts and from tagged devices on the tailnet are turned away. Tailscale's state stays in `/data/tailscale`, and its logs aren't uploaded.
 
 ## Background jobs
 

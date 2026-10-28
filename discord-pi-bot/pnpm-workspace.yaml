@@ -1,2 +1,5 @@
+# Install scripts stay off: the Dockerfile runs Claude Code's itself, and
+# esbuild (for the tests) works from its prebuilt platform package.
 allowBuilds:
-  opencode-ai: true
+  "@anthropic-ai/claude-code": false
+  esbuild: false

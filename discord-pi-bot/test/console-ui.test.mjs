@@ -54,3 +54,24 @@ test("the console installs as a phone app with its own notifications", () => {
 	assert.match(app, /serviceWorker\.register\("\.\/sw\.js"\)/);
 	assert.match(app, /hassio_ingress/, "no service worker inside the Home Assistant panel");
 });
+
+test("the installed app opens on a splash: iPhone launch images for every screen, and the same splash in the page", () => {
+	const startups = [...html.matchAll(/rel="apple-touch-startup-image" media="\(device-width: (\d+)px\) and \(device-height: (\d+)px\) and \(-webkit-device-pixel-ratio: (\d)\)[^"]*" href="\.\/(splash\/splash-(\d+)x(\d+)\.png)"/g)];
+	assert.ok(startups.length >= 10, `${startups.length} launch images`);
+	for (const [, width, height, ratio, path, pixelsWide, pixelsHigh] of startups) {
+		assert.equal(Number(pixelsWide), Number(width) * Number(ratio), path);
+		assert.equal(Number(pixelsHigh), Number(height) * Number(ratio), path);
+		const png = readFileSync(`public/${path}`);
+		assert.equal(png.readUInt32BE(16), Number(pixelsWide), `${path} is as wide as its screen`);
+		assert.equal(png.readUInt32BE(20), Number(pixelsHigh), `${path} is as tall as its screen`);
+	}
+	assert.match(html, /class="rm-splash" x-show="splash"/);
+	assert.match(readFileSync("public/styles.css", "utf8"), /@media \(display-mode: standalone\) \{\s*\.rm-splash/);
+});
+
+test("only Claude Code and Codex remain as agents", () => {
+	assert.doesNotMatch(html, /value="opencode"|value="pi"|Pi account/);
+	assert.doesNotMatch(readFileSync("public/components/account-console.js", "utf8"), /agents\/pi|opencode/);
+	const pkg = JSON.parse(readFileSync("package.json", "utf8"));
+	assert.ok(!pkg.dependencies["opencode-ai"] && !pkg.dependencies["@earendil-works/pi-coding-agent"]);
+});

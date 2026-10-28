@@ -9,6 +9,8 @@ export interface PushMessage {
 	url?: string;
 	/** A newer notification with the same tag replaces the older one. */
 	tag?: string;
+	/** The app icon's count, where the phone shows one. */
+	badge?: number;
 }
 
 interface Device {
@@ -91,7 +93,7 @@ export class PhonePush {
 	async send(message: PushMessage): Promise<number> {
 		if (!this.saved.devices.length) return 0;
 		const body = message.body.replace(/\*\*|__|`/g, "").replace(/\s+/g, " ").trim();
-		const payload = JSON.stringify({ title: message.title, body: body.length > 240 ? `${body.slice(0, 239)}…` : body, url: message.url || "./", tag: message.tag });
+		const payload = JSON.stringify({ title: message.title, body: body.length > 240 ? `${body.slice(0, 239)}…` : body, url: message.url || "./", tag: message.tag, ...(message.badge !== undefined ? { badge: message.badge } : {}) });
 		let reached = 0;
 		const gone: string[] = [];
 		await Promise.all(

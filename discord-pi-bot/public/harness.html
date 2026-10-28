@@ -13,6 +13,18 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black" />
     <meta name="apple-mobile-web-app-title" content="RemindMe" />
+    <!-- iPhone launch screens, one per screen size; Android draws its own from the manifest. -->
+    <link rel="apple-touch-startup-image" media="(device-width: 440px) and (device-height: 956px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" href="./splash/splash-1320x2868.png" />
+    <link rel="apple-touch-startup-image" media="(device-width: 420px) and (device-height: 912px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" href="./splash/splash-1260x2736.png" />
+    <link rel="apple-touch-startup-image" media="(device-width: 402px) and (device-height: 874px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" href="./splash/splash-1206x2622.png" />
+    <link rel="apple-touch-startup-image" media="(device-width: 430px) and (device-height: 932px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" href="./splash/splash-1290x2796.png" />
+    <link rel="apple-touch-startup-image" media="(device-width: 393px) and (device-height: 852px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" href="./splash/splash-1179x2556.png" />
+    <link rel="apple-touch-startup-image" media="(device-width: 428px) and (device-height: 926px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" href="./splash/splash-1284x2778.png" />
+    <link rel="apple-touch-startup-image" media="(device-width: 390px) and (device-height: 844px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" href="./splash/splash-1170x2532.png" />
+    <link rel="apple-touch-startup-image" media="(device-width: 375px) and (device-height: 812px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" href="./splash/splash-1125x2436.png" />
+    <link rel="apple-touch-startup-image" media="(device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" href="./splash/splash-1242x2688.png" />
+    <link rel="apple-touch-startup-image" media="(device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)" href="./splash/splash-828x1792.png" />
+    <link rel="apple-touch-startup-image" media="(device-width: 375px) and (device-height: 667px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)" href="./splash/splash-750x1334.png" />
     <link rel="stylesheet" href="./styles.css" />
     <link rel="stylesheet" href="./vendor/xterm.css" />
     <script defer src="./components/highlight.js"></script>
@@ -24,6 +36,11 @@
   </head>
   <body>
     <div class="rm-app" x-data="remindme()" x-init="init()" :class="{ 'thread-open': open }">
+      <!-- The installed app's splash, like the iPhone launch screen, until the inbox has loaded. -->
+      <div class="rm-splash" x-show="splash" x-transition.opacity.duration.400ms aria-hidden="true">
+        <img src="./icons/icon-512.png" width="120" height="120" alt="" />
+        <p>RemindMe</p>
+      </div>
       <!-- The inbox: what needs you, what's running, then everything else, newest first. -->
       <section class="rm-inbox" aria-label="Inbox">
         <header class="rm-bar">
@@ -273,7 +290,7 @@
               </div>
 
               <h3>Sign-ins</h3>
-              <p>Use a subscription instead of an API key. ChatGPT answers like the providers above. Claude, Codex, OpenCode and Pi run as agents with RemindMe's tools and nothing else.</p>
+              <p>Use a subscription instead of an API key. ChatGPT answers like the providers above. Claude and Codex run as agents with RemindMe's tools and nothing else.</p>
               <div class="rm-choices">
                 <template x-for="option in [{ id: 'chatgpt', label: 'ChatGPT subscription' }, { id: 'claude', label: 'Claude subscription' }]" :key="option.id">
                   <div class="rm-choice" :class="{ on: signinStatus[option.id]?.connected }">
@@ -283,8 +300,8 @@
                   </div>
                 </template>
                 <div class="rm-choice">
-                  <span>Codex, OpenCode or Pi account</span>
-                  <small>their own sign-ins, in a console</small>
+                  <span>Codex account</span>
+                  <small>its own sign-in, in a console</small>
                   <button class="rm-link" type="button" @click="window.RemindMeAccountConsole.open($data, 'codex')">Open</button>
                 </div>
               </div>
@@ -536,11 +553,8 @@
             <div class="rm-two">
               <label class="rm-field">Agent
                 <select x-model="authConsoleBackend" :disabled="authConsole.running || authConsoleBusy">
-                  <option value="codex">Codex</option><option value="claude">Claude Code</option><option value="opencode">OpenCode</option><option value="pi">Pi</option>
+                  <option value="codex">Codex</option><option value="claude">Claude Code</option>
                 </select>
-              </label>
-              <label class="rm-field" x-show="authConsoleBackend === 'pi'">Pi account
-                <select x-model="authConsoleProvider" :disabled="authConsole.running"><template x-for="provider in agentPiProviders" :key="provider.id"><option :value="provider.id" x-text="provider.name"></option></template></select>
               </label>
             </div>
             <div class="rm-actions">
@@ -552,7 +566,7 @@
             <div class="rm-actions">
               <template x-for="url in authConsole.urls" :key="url"><a class="rm-btn" :href="url" target="_blank" rel="noreferrer noopener" style="display: inline-grid; place-items: center; text-decoration: none">Open sign-in link</a></template>
             </div>
-            <div class="rm-actions" x-show="authConsole.running && ['codex', 'opencode'].includes(authConsole.backend)">
+            <div class="rm-actions" x-show="authConsole.running && authConsole.backend === 'codex'">
               <button class="rm-btn" type="button" @click="window.RemindMeAccountConsole.key($data, '\x1b[A')">↑</button>
               <button class="rm-btn" type="button" @click="window.RemindMeAccountConsole.key($data, '\x1b[B')">↓</button>
               <button class="rm-btn" type="button" @click="window.RemindMeAccountConsole.key($data, '\r')">Enter</button>

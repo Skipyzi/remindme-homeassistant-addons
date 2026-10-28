@@ -45,6 +45,8 @@ self.addEventListener("push", (event) => {
 	} catch {
 		data = { body: event.data ? event.data.text() : "" };
 	}
+	// The app icon's count of what waits for a decision, where the phone shows one.
+	if (typeof data.badge === "number" && "setAppBadge" in self.navigator) (data.badge ? self.navigator.setAppBadge(data.badge) : self.navigator.clearAppBadge()).catch(() => {});
 	event.waitUntil(
 		self.registration.showNotification(data.title || "RemindMe", {
 			body: data.body || "",

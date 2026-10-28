@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
-import { pathToFileURL } from "node:url";
 import type { Effort, PriorTurn, ToolSpec } from "../ai/types";
 import type { ToolRun } from "../assistant/tools";
 import { chatgptAuth } from "../subscriptions/chatgptAuth";
@@ -9,18 +8,17 @@ import { binary, JsonProcess, nativeEnvironment } from "./native-process";
 import { agentDirectory } from "./paths";
 
 /**
- * The CLI agents: Claude Code, Codex, OpenCode and Pi, each running a whole
- * turn itself with RemindMe's tools and nothing else. Ported from RemindMe
- * 3.1, where they ran as conversation backends.
+ * The CLI agents: Claude Code and Codex, each running a whole turn itself
+ * with RemindMe's tools and nothing else. Ported from RemindMe 3.1, where
+ * they ran as conversation backends; 4.7 dropped the OpenCode app and Pi,
+ * coding agents with nothing to add to a home assistant.
  */
-export const RUNNERS = ["claude-code", "codex", "opencode-cli", "pi"] as const;
+export const RUNNERS = ["claude-code", "codex"] as const;
 export type RunnerId = (typeof RUNNERS)[number];
 
 export const RUNNER_LABELS: Record<RunnerId, string> = {
 	"claude-code": "Claude subscription",
 	codex: "Codex",
-	"opencode-cli": "OpenCode app",
-	pi: "Pi",
 };
 
 export interface RunnerTurn {
@@ -144,103 +142,7 @@ export async function runClaudeCode(turn: RunnerTurn): Promise<void> {
 	if (!resultSeen || resultError) throw new Error(resultError || "Claude ended without a completed result");
 }
 
-/** OpenCode's headless runner keeps its own session between turns, under its own sign-in. */
-export async function runOpenCode(turn: RunnerTurn): Promise<void> {
-	const options = await nativeEnvironment("opencode");
-	const model = turn.model;
-	if (!model.includes("/")) throw new Error("Choose one of the OpenCode app's models in RemindMe's AI settings.");
-	const config = {
-		$schema: "https://opencode.ai/config.json",
-		autoupdate: false,
-		share: "disabled",
-		snapshot: false,
-		plugin: [],
-		enabled_providers: [model.split("/")[0]],
-		permission: { "*": "deny", "home_*": "allow" },
-		mcp: { home: { type: "local", command: [process.execPath, bridgeScript()], environment: bridgeEnvironment(turn), enabled: true } },
-		agent: { home: { mode: "primary", description: "Home Assistant", prompt: turn.system, permission: { "*": "deny", "home_*": "allow" } } },
-		default_agent: "home",
-	};
-	options.env.OPENCODE_CONFIG_CONTENT = JSON.stringify(config);
-	options.env.OPENCODE_DISABLE_AUTOUPDATE = "true";
-	options.env.OPENCODE_DISABLE_PROJECT_CONFIG = "true";
-	options.env.OPENCODE_DISABLE_CLAUDE_CODE = "true";
-	const previous = turn.thread.get();
-	let resultSeen = false;
-	let error = "";
-	const args = ["run", "--pure", "--format", "json", "--agent", "home", "--model", model, ...(previous ? ["--session", previous] : []), "--variant", turn.effort];
-	const worker = new JsonProcess(binary("opencode"), args, { ...options, signal: turn.signal }, (message) => {
-		if (message.sessionID && !turn.thread.get()) turn.thread.set(message.sessionID);
-		if (message.type === "text") turn.delta(message.part?.text || "");
-		if (message.type === "step_finish") resultSeen = true;
-		if (message.type === "error") error = message.error?.data?.message || message.error?.message || "OpenCode turn failed";
-	});
-	worker.child.stdin.end(runnerPrompt(turn));
-	await worker.finished;
-	if (error || !resultSeen) throw new Error(error || "OpenCode ended without a completed result");
-}
-
-/** Dynamic import keeps Pi's ESM API usable from this CommonJS build. */
-const importEsm = new Function("specifier", "return import(specifier)") as (specifier: string) => Promise<any>;
-
-export async function runPi(turn: RunnerTurn): Promise<void> {
-	const sdk = await importEsm(pathToFileURL(join(process.cwd(), "node_modules/@earendil-works/pi-coding-agent/dist/index.js")).href);
-	const options = await nativeEnvironment("pi");
-	const agentDir = join(agentDirectory(), "pi");
-	const auth = sdk.AuthStorage.create(join(agentDir, "auth.json"));
-	const registry = sdk.ModelRegistry.create(auth, join(agentDir, "models.json"));
-	const separator = turn.model.indexOf("/");
-	const model = separator > 0 ? registry.find(turn.model.slice(0, separator), turn.model.slice(separator + 1)) : undefined;
-	if (!model || !auth.has(model.provider)) throw new Error("Sign in to this Pi provider and choose one of its models in RemindMe's AI settings.");
-	const loader = new sdk.DefaultResourceLoader({ cwd: options.cwd, agentDir, noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true, systemPrompt: turn.system });
-	await loader.reload();
-	const previous = turn.thread.get();
-	const manager = previous ? sdk.SessionManager.open(previous, join(agentDir, "sessions"), options.cwd) : sdk.SessionManager.create(options.cwd, join(agentDir, "sessions"));
-	const { session } = await sdk.createAgentSession({
-		cwd: options.cwd,
-		agentDir,
-		authStorage: auth,
-		modelRegistry: registry,
-		model,
-		thinkingLevel: turn.effort,
-		tools: turn.tools.map((tool) => tool.name),
-		resourceLoader: loader,
-		sessionManager: manager,
-		settingsManager: sdk.SettingsManager.inMemory({ compaction: { enabled: true }, retry: { enabled: true, maxRetries: 2 } }),
-		customTools: turn.tools.map((tool) => ({
-			name: tool.name,
-			label: tool.name,
-			description: tool.description,
-			parameters: tool.parameters,
-			execute: async (_id: string, args: unknown) => ({ content: [{ type: "text", text: (await turn.call(tool.name, args)).content }], details: {} }),
-		})),
-	});
-	const prompt = runnerPrompt(turn);
-	turn.thread.set(manager.getSessionFile());
-	let failure = "";
-	const unsubscribe = session.subscribe((event: any) => {
-		if (event.type === "message_update" && event.assistantMessageEvent?.type === "text_delta") turn.delta(event.assistantMessageEvent.delta);
-		if (event.type === "message_end" && event.message.role === "assistant" && event.message.stopReason === "error") failure = event.message.errorMessage || "Pi turn failed";
-	});
-	const cancel = () => {
-		void session.abort();
-	};
-	turn.signal.addEventListener("abort", cancel, { once: true });
-	try {
-		turn.signal.throwIfAborted();
-		await session.prompt(prompt);
-		turn.signal.throwIfAborted();
-		if (failure) throw new Error(failure);
-	} finally {
-		unsubscribe();
-		turn.signal.removeEventListener("abort", cancel);
-		session.dispose();
-	}
-}
-
 export const RUN: Record<RunnerId, (turn: RunnerTurn) => Promise<void>> = {
 	"claude-code": runClaudeCode,
 	codex: runCodex,
-	"opencode-cli": runOpenCode,
-	pi: runPi,
 };

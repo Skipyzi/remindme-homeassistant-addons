@@ -14,9 +14,8 @@ RUN wget -qO /tmp/tailscale.tgz "https://pkgs.tailscale.com/stable/tailscale_${T
 WORKDIR /app
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.json ./
 RUN corepack enable && pnpm install --frozen-lockfile --prod=false --ignore-scripts
-# The agent CLIs fetch their platform binaries in install hooks, run here explicitly.
+# Claude Code fetches its platform binary in an install hook, run here explicitly.
 RUN node node_modules/@anthropic-ai/claude-code/install.cjs
-RUN node node_modules/opencode-ai/postinstall.mjs
 COPY src ./src
 RUN pnpm build
 COPY public ./public

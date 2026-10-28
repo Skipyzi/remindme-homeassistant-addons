@@ -39,6 +39,8 @@ test("push keys are made once, kept privately, and devices come and go", async (
 	assert.equal(sent[0].subject, "https://remindme.tail1234.ts.net");
 	assert.equal(sent[0].ttl, 6 * 3600);
 
+	await push.send({ title: "Dentist", body: "Add it?", badge: 2 });
+	assert.equal(sent.at(-1)!.payload.badge, 2, "the app icon's count goes along when given");
 	refuse = subscription(2).endpoint;
 	assert.equal(await push.send({ title: "Reminder", body: "Call Oma" }), 1);
 	assert.deepEqual(push.devices().map((device) => device.kind), ["iPhone"], "a device the push service says is gone is dropped");

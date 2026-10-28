@@ -26,15 +26,14 @@
    if (!terminal && scope.Terminal) {
     terminal = new scope.Terminal({ cols: 90, rows: 18, cursorBlink: true, convertEol: true, fontFamily: 'IBM Plex Mono, monospace', fontSize: 12, theme: { background: '#090b09', foreground: '#d5ddd5', cursor: '#b3c9b3' } });
     terminal.open(document.getElementById('account-terminal'));
-    terminal.onData(data => { if (app.authConsole.running && ['codex', 'opencode'].includes(app.authConsole.backend)) void request('/input', { id: app.authConsole.id, input: data, raw: true }).catch(error => { app.authConsoleError = error.message; }); });
+    terminal.onData(data => { if (app.authConsole.running && app.authConsole.backend === 'codex') void request('/input', { id: app.authConsole.id, input: data, raw: true }).catch(error => { app.authConsoleError = error.message; }); });
    }
    clearTimeout(poll); await update(app);
-   try { const response = await fetch('./api/ai/agents/pi/providers'); if (response.ok) { const data = await response.json(); app.agentPiProviders = data.providers || []; app.authConsoleProvider ||= app.agentPiProviders[0]?.id || ''; } } catch {}
   },
   async start(app) {
    if (app.authConsoleBusy) return;
    app.authConsoleBusy = true; app.authConsoleError = '';
-   try { render(app, await request('/start', { backend: app.authConsoleBackend, provider: app.authConsoleProvider })); clearTimeout(poll); await update(app); }
+   try { render(app, await request('/start', { backend: app.authConsoleBackend })); clearTimeout(poll); await update(app); }
    catch (error) { app.authConsoleError = error.message; }
    finally { app.authConsoleBusy = false; }
   },

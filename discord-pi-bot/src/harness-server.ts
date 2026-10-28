@@ -88,7 +88,9 @@ let phoneUrl: string | undefined;
 const phonePush = new PhonePush(undefined, () => phoneUrl || "mailto:remindme@example.com");
 /** A notification to every phone with the app; answers how many it reached. */
 export function phoneNotify(message: PushMessage): Promise<number> {
-	return phonePush.send(message).catch((error) => {
+	// The icon's count goes along: held actions and questions from jobs.
+	const badge = confirmations.list().length + jobs.waiting().length;
+	return phonePush.send({ badge, ...message }).catch((error) => {
 		console.warn("Push failed:", error instanceof Error ? error.message : error);
 		return 0;
 	});
@@ -129,7 +131,7 @@ void consoleChat.load();
 /* The inbox's threads: one per request; a background job lives in its thread. */
 export const threads = new ThreadStore();
 /* Which AI answers, and what it has cost today. */
-/* The CLI agents' own sign-ins (Codex, OpenCode, Pi), and their sign-in console. */
+/* Codex's own sign-in, and its sign-in console. */
 const nativeAccounts = new NativeAccounts();
 async function storedKeys(path: string): Promise<Record<string, unknown>> {
 	try {
@@ -141,25 +143,20 @@ async function storedKeys(path: string): Promise<Record<string, unknown>> {
 /* Keys saved by RemindMe 3.x still work until they are moved into the options. */
 export const aiSettings = new AiSettings(withLegacyKeys(process.env), process.env.AI_DATA_PATH, {
 	async accounts() {
-		const [chatgpt, claude, codex, opencode, pi] = await Promise.all([
+		const [chatgpt, claude, codex] = await Promise.all([
 			chatgptAuth.status().catch(() => ({ connected: false })),
 			claudeAuth.status().catch(() => ({ connected: false })),
 			storedKeys(join(agentDirectory(), "codex/auth.json")),
-			storedKeys(join(agentDirectory(), "opencode/data/opencode/auth.json")),
-			storedKeys(join(agentDirectory(), "pi/auth.json")),
 		]);
 		return {
 			chatgpt: chatgpt.connected,
 			claude: claude.connected,
 			codex: Boolean((codex.tokens as { access_token?: string } | undefined)?.access_token),
-			opencode: Object.keys(opencode).length > 0,
-			pi: Object.keys(pi).length > 0,
 		};
 	},
 	chatgpt: { token: () => chatgptAuth.accessToken(), fetch: chatgptFetch },
 	chatgptModels: async () => (await chatgptAuth.models()).map((model) => model.id),
-	agentModels: async (runner) =>
-		((await nativeAccounts.catalog(runner === "opencode-cli" ? "opencode" : runner)).models as Array<{ id: string }>).map((model) => model.id),
+	agentModels: async (runner) => ((await nativeAccounts.catalog(runner)).models as Array<{ id: string }>).map((model) => model.id),
 });
 void aiSettings.load();
 export const spend = new SpendLedger();
@@ -328,13 +325,6 @@ registerBridge(app);
 nativeAccounts.register(app, () => false);
 app.get("/vendor/xterm.js", (_request, response) => response.sendFile(resolve(process.cwd(), "node_modules/@xterm/xterm/lib/xterm.js")));
 app.get("/vendor/xterm.css", (_request, response) => response.sendFile(resolve(process.cwd(), "node_modules/@xterm/xterm/css/xterm.css")));
-app.get("/api/ai/agents/pi/providers", async (_request, response) => {
-	try {
-		response.json({ providers: (await nativeAccounts.catalog("pi")).providers || [] });
-	} catch (error) {
-		response.status(502).json({ error: error instanceof Error ? error.message : "Pi is unavailable" });
-	}
-});
 /*
  * ChatGPT and Claude subscription sign-in. ChatGPT finishes on a loopback
  * page the browser usually can't reach, so its address is pasted back in;

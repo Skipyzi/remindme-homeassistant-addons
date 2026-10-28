@@ -77,6 +77,7 @@ function firstLine(text) {
 function remindme() {
 	return {
 		/* The inbox */
+		splash: true,
 		ai: null,
 		waiting: [],
 		batteries: [],
@@ -160,11 +161,9 @@ function remindme() {
 		authConsole: { id: "", backend: "", running: false, output: "", urls: [] },
 		authConsoleOpen: false,
 		authConsoleBackend: "codex",
-		authConsoleProvider: "",
 		authConsoleInput: "",
 		authConsoleError: "",
 		authConsoleBusy: false,
-		agentPiProviders: [],
 
 		init() {
 			this.loadInbox();
@@ -205,9 +204,19 @@ function remindme() {
 				this.now = new Date(data.now || Date.now());
 				this.loaded = true;
 				this.error = "";
+				this.showBadge();
 			} catch (error) {
 				this.error = `RemindMe isn't answering (${error.message || error}). It may be restarting.`;
+			} finally {
+				this.splash = false;
 			}
+		},
+
+		/* The app icon's count: what waits for your decision. */
+		showBadge() {
+			if (!this.inPhoneApp || !("setAppBadge" in navigator)) return;
+			const count = this.waiting.length + this.asking.length;
+			(count ? navigator.setAppBadge(count) : navigator.clearAppBadge()).catch(() => {});
 		},
 
 		/* Settings call this after a change; it refreshes whatever is showing. */

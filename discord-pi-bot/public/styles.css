@@ -638,6 +638,28 @@ a {
 	padding: 0;
 }
 
+/* The installed app's splash: only in the home-screen app, gone once the inbox loads. */
+.rm-splash {
+	position: fixed;
+	inset: 0;
+	z-index: 100;
+	display: none;
+	place-content: center;
+	justify-items: center;
+	gap: 20px;
+	background: #000;
+}
+@media (display-mode: standalone) {
+	.rm-splash {
+		display: grid;
+	}
+}
+.rm-splash p {
+	font-size: 22px;
+	font-weight: 700;
+	letter-spacing: -0.02em;
+}
+
 /*
  * The app: the inbox, and one thread. On a phone the thread slides over the
  * inbox; from 900px they sit side by side.

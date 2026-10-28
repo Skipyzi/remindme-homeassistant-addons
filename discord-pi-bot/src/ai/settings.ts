@@ -17,8 +17,6 @@ export const PROVIDERS: Array<{ id: AssistantId; label: string; kind: "api" | "s
 	{ id: "chatgpt", label: "ChatGPT subscription", kind: "subscription" },
 	{ id: "claude-code", label: RUNNER_LABELS["claude-code"], kind: "agent" },
 	{ id: "codex", label: RUNNER_LABELS.codex, kind: "agent" },
-	{ id: "opencode-cli", label: RUNNER_LABELS["opencode-cli"], kind: "agent" },
-	{ id: "pi", label: RUNNER_LABELS.pi, kind: "agent" },
 ];
 
 /* The Claude subscription runs through Claude Code, which names models by family. */
@@ -31,8 +29,6 @@ export interface Accounts {
 	chatgpt: boolean;
 	claude: boolean;
 	codex: boolean;
-	opencode: boolean;
-	pi: boolean;
 }
 
 /** What the subscriptions and agents need from the rest of the app. */
@@ -40,7 +36,7 @@ export interface SignIns {
 	accounts(): Promise<Accounts>;
 	chatgpt: Subscription;
 	chatgptModels(): Promise<string[]>;
-	agentModels(runner: "codex" | "opencode-cli" | "pi"): Promise<string[]>;
+	agentModels(runner: "codex"): Promise<string[]>;
 }
 
 /** What the console may change. Keys only ever come from the app options. */
@@ -84,7 +80,7 @@ function isEffort(value: unknown): value is Effort {
 	return EFFORTS.includes(value as Effort);
 }
 
-const NO_ACCOUNTS: Accounts = { chatgpt: false, claude: false, codex: false, opencode: false, pi: false };
+const NO_ACCOUNTS: Accounts = { chatgpt: false, claude: false, codex: false };
 
 /**
  * Which AI answers, with which model, at what effort. The app options supply
@@ -153,10 +149,6 @@ export class AiSettings {
 				return this.accounts.claude;
 			case "codex":
 				return this.accounts.chatgpt || this.accounts.codex;
-			case "opencode-cli":
-				return this.accounts.opencode;
-			case "pi":
-				return this.accounts.pi;
 			default:
 				return Boolean(this.key(id));
 		}
@@ -251,7 +243,7 @@ export class AiSettings {
 		if (!this.configured(id)) return [];
 		if (id === "claude-code") return CLAUDE_CODE_MODELS;
 		if (id === "chatgpt" || (id === "codex" && this.accounts.chatgpt)) return this.signIns ? this.signIns.chatgptModels() : [];
-		if (id === "codex" || id === "opencode-cli" || id === "pi") return this.signIns ? this.signIns.agentModels(id) : [];
+		if (id === "codex") return this.signIns ? this.signIns.agentModels(id) : [];
 		return this.build(id, this.model(id) || "-").listModels();
 	}
 
