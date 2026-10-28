@@ -4,7 +4,7 @@
  * the agent above them only ever sees these types.
  */
 
-export type ProviderId = "claude" | "openai" | "opencode" | "custom";
+export type ProviderId = "claude" | "openai" | "chatgpt" | "opencode" | "custom";
 
 export type Effort = "low" | "medium" | "high";
 

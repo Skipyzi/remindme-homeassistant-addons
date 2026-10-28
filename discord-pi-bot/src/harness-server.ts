@@ -55,10 +55,19 @@ import { validateAttachments } from "./harness/attachments";
 import { HomeApi } from "./agent/home";
 import { AiSettings, PROVIDERS } from "./ai/settings";
 import { SpendLedger } from "./ai/spend";
+import { withLegacyKeys } from "./ai/legacyEndpoints";
 import type { Effort, ImageInput, ProviderId } from "./ai/types";
 import { Assistant, type AskEvents } from "./assistant/agent";
 import { ConfirmationStore } from "./assistant/confirmations";
 import { buildTools, type McpTool, type ToolContext } from "./assistant/tools";
+import { registerBridge, chatgptFetch } from "./agents/bridge";
+import { NativeAccounts } from "./agents/native-accounts";
+import { agentDirectory } from "./agents/paths";
+import { RunnerThreads } from "./agents/threads";
+import { chatgptAuth } from "./subscriptions/chatgptAuth";
+import { claudeAuth } from "./subscriptions/claudeAuth";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 
 const app = express();
 const port = Number(process.env.HARNESS_PORT || 8090);
@@ -69,7 +78,38 @@ const instanceId = randomUUID();
 /* Device actions waiting for the owner's tap, shared with the Discord bot. */
 export const confirmations = new ConfirmationStore();
 /* Which AI answers, and what it has cost today. */
-export const aiSettings = new AiSettings();
+/* The CLI agents' own sign-ins (Codex, OpenCode, Pi), and their sign-in console. */
+const nativeAccounts = new NativeAccounts();
+async function storedKeys(path: string): Promise<Record<string, unknown>> {
+	try {
+		return JSON.parse(await readFile(path, "utf8")) as Record<string, unknown>;
+	} catch {
+		return {};
+	}
+}
+/* Keys saved by RemindMe 3.x still work until they are moved into the options. */
+export const aiSettings = new AiSettings(withLegacyKeys(process.env), process.env.AI_DATA_PATH, {
+	async accounts() {
+		const [chatgpt, claude, codex, opencode, pi] = await Promise.all([
+			chatgptAuth.status().catch(() => ({ connected: false })),
+			claudeAuth.status().catch(() => ({ connected: false })),
+			storedKeys(join(agentDirectory(), "codex/auth.json")),
+			storedKeys(join(agentDirectory(), "opencode/data/opencode/auth.json")),
+			storedKeys(join(agentDirectory(), "pi/auth.json")),
+		]);
+		return {
+			chatgpt: chatgpt.connected,
+			claude: claude.connected,
+			codex: Boolean((codex.tokens as { access_token?: string } | undefined)?.access_token),
+			opencode: Object.keys(opencode).length > 0,
+			pi: Object.keys(pi).length > 0,
+		};
+	},
+	chatgpt: { token: () => chatgptAuth.accessToken(), fetch: chatgptFetch },
+	chatgptModels: async () => (await chatgptAuth.models()).map((model) => model.id),
+	agentModels: async (runner) =>
+		((await nativeAccounts.catalog(runner === "opencode-cli" ? "opencode" : runner)).models as Array<{ id: string }>).map((model) => model.id),
+});
 void aiSettings.load();
 export const spend = new SpendLedger();
 void spend.load();
@@ -231,7 +271,67 @@ app.post("/api/mcp/:id/test", async (request, response) => {
 function searchFallback(): boolean {
 	return Boolean(getSearxngUrl() || process.env.EXA_API_KEY);
 }
-app.get("/api/ai", (_request, response) => {
+/* The agents' tool and inference bridge, reachable only with a turn's token. */
+registerBridge(app);
+/* Sign-in consoles for the CLI agents' own accounts, drawn in a terminal. */
+nativeAccounts.register(app, () => false);
+app.get("/vendor/xterm.js", (_request, response) => response.sendFile(resolve(process.cwd(), "node_modules/@xterm/xterm/lib/xterm.js")));
+app.get("/vendor/xterm.css", (_request, response) => response.sendFile(resolve(process.cwd(), "node_modules/@xterm/xterm/css/xterm.css")));
+app.get("/api/ai/agents/pi/providers", async (_request, response) => {
+	try {
+		response.json({ providers: (await nativeAccounts.catalog("pi")).providers || [] });
+	} catch (error) {
+		response.status(502).json({ error: error instanceof Error ? error.message : "Pi is unavailable" });
+	}
+});
+/*
+ * ChatGPT and Claude subscription sign-in. ChatGPT finishes on a loopback
+ * page the browser usually can't reach, so its address is pasted back in;
+ * Claude shows a code to paste.
+ */
+const subscriptions = { chatgpt: chatgptAuth, claude: claudeAuth } as const;
+type SubscriptionId = keyof typeof subscriptions;
+function subscription(id: string): (typeof subscriptions)[SubscriptionId] | undefined {
+	return id in subscriptions ? subscriptions[id as SubscriptionId] : undefined;
+}
+app.get("/api/ai/signin/:provider", async (request, response) => {
+	const manager = subscription(request.params.provider);
+	if (!manager) return response.status(404).json({ error: "Unknown sign-in" });
+	try {
+		response.set("Cache-Control", "no-store").json(await manager.status());
+	} catch {
+		response.status(503).json({ connected: false, error: "The sign-in client is unavailable." });
+	}
+});
+app.post("/api/ai/signin/:provider/:step", async (request, response) => {
+	const manager = subscription(request.params.provider);
+	if (!manager) return response.status(404).json({ error: "Unknown sign-in" });
+	if (!request.is("application/json")) return response.status(415).json({ error: "Send an application/json request" });
+	try {
+		switch (request.params.step) {
+			case "start":
+				return response.json(await manager.start());
+			case "complete": {
+				const status = await manager.complete(String(request.body?.attemptId || ""), String(request.body?.code || ""));
+				await aiSettings.refreshAccounts();
+				return response.json(status);
+			}
+			case "cancel":
+				manager.cancel();
+				return response.json({ ok: true });
+			case "logout":
+				await manager.logout();
+				await aiSettings.refreshAccounts();
+				return response.json({ ok: true });
+			default:
+				return response.status(404).json({ error: "Unknown step" });
+		}
+	} catch (error) {
+		response.status(400).json({ error: error instanceof Error ? error.message : "Sign-in failed" });
+	}
+});
+app.get("/api/ai", async (_request, response) => {
+	await aiSettings.refreshAccounts();
 	response.set("Cache-Control", "no-store").json({
 		...aiSettings.status(searchFallback()),
 		spend: spend.today(),
@@ -884,6 +984,10 @@ app.post("/api/chat", async (request, response) => {
 			// Which document is on the bench, so edits have a default target.
 			openDocument: artifactId ? artifacts.get(artifactId) : undefined,
 			effort: effortFor(request.body?.thinkingMode),
+			conversationId:
+				typeof request.body?.conversationId === "string" && request.body.conversationId
+					? `console:${request.body.conversationId.slice(0, 80)}`
+					: undefined,
 			signal: abort.signal,
 		});
 		send("complete", {});
@@ -1100,6 +1204,7 @@ export const assistant = new Assistant({
 	recall: (prompt) => vault.recall(prompt, 5),
 	home: () => homeName,
 	searchFallback,
+	agents: { bridgeUrl: `http://127.0.0.1:${port}/internal/agent-tools`, threads: new RunnerThreads() },
 });
 
 /** Parcels still on their way, as lines for the morning brief. */

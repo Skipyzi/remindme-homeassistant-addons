@@ -1,7 +1,7 @@
 name: RemindMe
 version: "4.0.0"
 slug: remindme_discord_bot
-description: Your personal assistant in Home Assistant and Discord, powered by Claude, OpenAI or OpenCode
+description: Your personal assistant in Home Assistant and Discord, on Claude, OpenAI, OpenCode or your ChatGPT and Claude subscriptions
 arch:
   - aarch64
 startup: application

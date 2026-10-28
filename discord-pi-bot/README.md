@@ -15,6 +15,16 @@ Add at least one key in the app's **Configuration** page, then restart the app:
 | OpenCode | `opencode_api_key` | Your OpenCode Go key (`opencode_url` defaults to `https://opencode.ai/zen/go/v1`; use `https://opencode.ai/zen/v1` for Zen). Pick a model in the console. Web search needs `searxng_url` or `exa_api_key`. |
 | Custom server | `custom_ai_url`, `custom_ai_key` | Any server that speaks OpenAI's Chat Completions, such as OpenRouter. |
 
+### Or sign in with a subscription
+
+Under **AI → Sign-ins** in the console:
+
+- **ChatGPT subscription:** sign in, approve plan usage, and paste the final page's address back in (it points at the Pi, so your browser usually can't open it). ChatGPT then answers like the API providers, with all the same tools.
+- **Claude subscription:** sign in and paste the code Claude shows. Claude runs as an agent through Claude Code.
+- **Codex, OpenCode and Pi:** their own sign-ins, in a terminal console. They run as agents too. Codex uses the ChatGPT sign-in when there is one.
+
+The agents (Claude, Codex, OpenCode app, Pi) run each turn themselves with RemindMe's tools and nothing else: no terminal, files or coding tools. Each chat keeps its own agent session. They can't look at pictures, and their usage counts against your subscription, not the daily budget.
+
 `ai_provider` picks the default. In the console, **AI** (the badge at the top, or the drawer) switches between the providers that have a key, picks the model and sets the effort, without a restart. Keys only ever come from the app options; the console never sees them.
 
 `ai_effort` sets how hard the AI thinks on Discord and in scheduled tasks; in the console, the **Thinking** menu under the message box sets it per message. `daily_ai_budget` (US dollars, default 2) pauses the assistant for the rest of the day once reached. Spend is counted from Claude's list prices; OpenAI and OpenCode usage is shown in tokens only, because their APIs publish no prices.
@@ -56,13 +66,16 @@ Everything lives in `/data`: reminders, chats, the AI choice (`ai.json`), today'
 
 ## Upgrading from 3.x
 
-The `local_llm_*`, `model_manager_*` and `pi_agent_webhook_url` options are gone, and so is the console's Models workbench. Add a key, restart, and the assistant is ready. The Local llama.cpp and SearXNG apps keep running until you uninstall them; RemindMe no longer uses llama.cpp, and uses SearXNG only for web search with OpenCode or a custom server.
+The `local_llm_*`, `model_manager_*` and `pi_agent_webhook_url` options are gone, and so is the console's Models workbench.
+
+From 3.1: your ChatGPT, Claude, Codex, OpenCode and Pi sign-ins carry over, and API keys saved in the old endpoint list keep working until you add them to the app options (options win). Choosing an assistant per conversation is gone: the choice under **AI** applies everywhere, Discord included. The Local llama.cpp and SearXNG apps keep running until you uninstall them; RemindMe no longer uses llama.cpp, and uses SearXNG only for web search with OpenCode or a custom server.
 
 ## Development
 
 ```sh
 pnpm install
 pnpm test        # node:test, no network: the AI APIs are faked
+pnpm test:agents # the real Codex CLI and a stand-in Claude Code, against simulated ChatGPT
 pnpm build && HA_API_URL=http://localhost:8123/api SUPERVISOR_TOKEN=<token> ANTHROPIC_API_KEY=<key> node dist/main.js
 ```
 

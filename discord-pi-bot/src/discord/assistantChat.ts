@@ -121,6 +121,7 @@ async function handleMessage(client: Client, deps: ChatDeps, message: Message): 
 				prompt,
 				channel: "discord",
 				history: deps.chats.history(message.channelId),
+				conversationId: deps.chats.conversationId(message.channelId),
 				images,
 			});
 			if (!result.problem)

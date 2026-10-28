@@ -118,6 +118,7 @@ const step = (values: Partial<Step>): Step => ({ text: "", calls: [], stop: "end
 function settings(provider: Provider | undefined, budget = 2): AiSettings {
 	return {
 		provider: () => provider,
+		runner: () => undefined,
 		problem: () => (provider ? "" : "No Claude API key is set."),
 		dailyBudget: () => budget,
 		effort: () => "low",

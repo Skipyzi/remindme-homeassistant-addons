@@ -5,6 +5,8 @@ import { join } from "node:path";
 import test from "node:test";
 import { AiSettings } from "../src/ai/settings.ts";
 import { SpendLedger, costOf } from "../src/ai/spend.ts";
+import { legacyKeys, withLegacyKeys } from "../src/ai/legacyEndpoints.ts";
+import { writeFileSync } from "node:fs";
 
 const path = () => join(mkdtempSync(join(tmpdir(), "ai-")), "ai.json");
 
@@ -23,7 +25,9 @@ test("without a key for the chosen provider, the first one with a key answers", 
 	assert.equal(settings.providerId(), "opencode");
 	assert.equal(settings.problem(), "Pick a model for OpenCode in RemindMe's AI settings.");
 	const none = new AiSettings({ AI_PROVIDER: "openai" }, path());
-	assert.match(none.problem(), /No OpenAI API key is set/);
+	assert.match(none.problem(), /No AI is set up yet/);
+	const other = new AiSettings({ AI_PROVIDER: "openai", ANTHROPIC_API_KEY: "a" }, path());
+	assert.equal(other.providerId(), "claude", "falls back to the provider that has a key");
 	assert.equal(none.provider(), undefined);
 });
 
@@ -61,4 +65,33 @@ test("spend is priced for Claude, counted for the rest, and resets each day", as
 	assert.equal(ledger.overBudget(2, morning), true);
 	assert.equal(ledger.overBudget(0, morning), false);
 	assert.equal(ledger.overBudget(2, new Date("2026-10-29T08:00:00")), false);
+});
+
+test("API keys saved by RemindMe 3.x fill blank options, and options win", () => {
+	const file = path();
+	writeFileSync(
+		file,
+		JSON.stringify({
+			endpoints: [
+				{ url: "http://homeassistant:8080/v1/chat/completions", model: "qwen3" },
+				{ url: "https://api.openai.com/v1/responses", authProvider: "chatgpt", model: "gpt-5.5" },
+				{ url: "https://api.anthropic.com/v1/messages", apiKey: "sk-ant-old" },
+				{ url: "https://opencode.ai/zen/go/v1/chat/completions", apiKey: "oc-old", model: "glm" },
+				{ url: "https://openrouter.ai/api/v1/chat/completions", apiKey: "or-old" },
+			],
+		}),
+	);
+	assert.deepEqual(legacyKeys(file), {
+		CHATGPT_MODEL: "gpt-5.5",
+		ANTHROPIC_API_KEY: "sk-ant-old",
+		OPENCODE_API_KEY: "oc-old",
+		CUSTOM_AI_URL: "https://openrouter.ai/api/v1",
+		CUSTOM_AI_KEY: "or-old",
+	});
+	const env = withLegacyKeys({ ANTHROPIC_API_KEY: "sk-ant-new", CUSTOM_AI_URL: "https://my.server/v1" }, file);
+	assert.equal(env.ANTHROPIC_API_KEY, "sk-ant-new");
+	assert.equal(env.OPENCODE_API_KEY, "oc-old");
+	assert.equal(env.CUSTOM_AI_URL, "https://my.server/v1");
+	assert.equal(env.CUSTOM_AI_KEY, undefined, "a different server's key is never paired with yours");
+	assert.deepEqual(legacyKeys(join(tmpdir(), "missing-endpoints.json")), {});
 });

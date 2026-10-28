@@ -65,6 +65,18 @@ function harness() {
 		aiBusy: false,
 		aiError: "",
 		aiTest: null,
+		/** ChatGPT and Claude subscription sign-in: status, and the attempt in progress. */
+		signinStatus: {},
+		signin: null,
+		/** The CLI agents' sign-in console (Codex, OpenCode, Pi), ported from 3.1. */
+		authConsole: { id: "", backend: "", running: false, output: "", urls: [] },
+		authConsoleOpen: false,
+		authConsoleBackend: "codex",
+		authConsoleProvider: "",
+		authConsoleInput: "",
+		authConsoleError: "",
+		authConsoleBusy: false,
+		agentPiProviders: [],
 		modelBadge: "AI",
 		sessionLabel: "ready // private network",
 		hardware: "raspberry pi profile",
@@ -279,7 +291,7 @@ function harness() {
 				this.ai = await response.json();
 				this.aiModel = this.ai.model || "";
 				this.aiEffort = this.ai.effort || "low";
-				await this.loadAiModels();
+				await Promise.all([this.loadAiModels(), this.loadSignins()]);
 			} catch (error) {
 				this.aiError = `Could not load the AI settings: ${error.message || error}`;
 			}
@@ -310,6 +322,69 @@ function harness() {
 				this.refreshStatus();
 			} catch (error) {
 				this.aiError = error.message || String(error);
+			} finally {
+				this.aiBusy = false;
+			}
+		},
+		async loadSignins() {
+			const status = {};
+			for (const id of ["chatgpt", "claude"]) {
+				try {
+					status[id] = await fetch(`./api/ai/signin/${id}`).then((r) => r.json());
+				} catch {
+					status[id] = { connected: false };
+				}
+			}
+			this.signinStatus = status;
+		},
+		async signinRequest(provider, step, body = {}) {
+			const response = await fetch(`./api/ai/signin/${provider}/${step}`, {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify(body),
+			});
+			const data = await response.json().catch(() => ({}));
+			if (!response.ok) throw new Error(data.error || "Sign-in failed");
+			return data;
+		},
+		async signIn(provider) {
+			this.aiBusy = true;
+			this.aiError = "";
+			try {
+				const attempt = await this.signinRequest(provider, "start");
+				this.signin = { provider, attemptId: attempt.attemptId, url: attempt.url, instructions: attempt.instructions, code: "" };
+				window.open(attempt.url, "_blank", "noopener");
+			} catch (error) {
+				this.aiError = error.message;
+			} finally {
+				this.aiBusy = false;
+			}
+		},
+		async finishSignIn() {
+			if (!this.signin) return;
+			this.aiBusy = true;
+			this.aiError = "";
+			try {
+				await this.signinRequest(this.signin.provider, "complete", { attemptId: this.signin.attemptId, code: this.signin.code.trim() });
+				this.signin = null;
+				await this.loadAi();
+			} catch (error) {
+				this.aiError = error.message;
+			} finally {
+				this.aiBusy = false;
+			}
+		},
+		async cancelSignIn() {
+			if (this.signin) await this.signinRequest(this.signin.provider, "cancel").catch(() => {});
+			this.signin = null;
+		},
+		async signOut(provider) {
+			this.aiBusy = true;
+			try {
+				await this.signinRequest(provider, "logout");
+				await this.loadAi();
+			} catch (error) {
+				this.aiError = error.message;
 			} finally {
 				this.aiBusy = false;
 			}
@@ -1434,6 +1509,8 @@ function harness() {
 						artifactId: this.artifactOpen ? this.currentArtifact?.id || "" : "",
 						thinkingMode: this.thinking,
 						attachments: this.attachments,
+						// Lets a CLI agent resume its own session for this chat.
+						conversationId: this.currentConversationId,
 					}),
 				});
 				if (!r.ok || !r.body)

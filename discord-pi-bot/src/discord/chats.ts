@@ -1,8 +1,11 @@
+import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import type { PriorTurn } from "../ai/types";
 
 interface Chat {
+	/** Changes whenever the chat starts over, so a CLI agent starts a fresh session too. */
+	id: string;
 	turns: PriorTurn[];
 	updatedAt: number;
 }
@@ -28,22 +31,37 @@ export class DiscordChats {
 		try {
 			const saved = JSON.parse(await readFile(this.path, "utf8")) as Record<string, Chat>;
 			for (const [id, chat] of Object.entries(saved))
-				if (Array.isArray(chat?.turns)) this.chats.set(id, { turns: chat.turns, updatedAt: Number(chat.updatedAt) || 0 });
+				if (Array.isArray(chat?.turns))
+					this.chats.set(id, { id: chat.id || randomUUID(), turns: chat.turns, updatedAt: Number(chat.updatedAt) || 0 });
 		} catch {
 			// No saved chats yet.
 		}
 	}
 
-	history(channelId: string, now = Date.now()): PriorTurn[] {
+	private active(channelId: string, now: number): Chat | undefined {
 		const chat = this.chats.get(channelId);
-		if (!chat || now - chat.updatedAt > IDLE_RESET_MS) return [];
-		return [...chat.turns];
+		return chat && now - chat.updatedAt <= IDLE_RESET_MS ? chat : undefined;
+	}
+
+	history(channelId: string, now = Date.now()): PriorTurn[] {
+		return [...(this.active(channelId, now)?.turns || [])];
+	}
+
+	/** This chat's id; a chat gone quiet starts over here. */
+	conversationId(channelId: string, now = Date.now()): string {
+		let chat = this.active(channelId, now);
+		if (!chat) {
+			chat = { id: randomUUID(), turns: [], updatedAt: now };
+			this.chats.set(channelId, chat);
+		}
+		return `discord:${channelId}:${chat.id}`;
 	}
 
 	append(channelId: string, turns: PriorTurn[], now = Date.now()): void {
-		const kept = this.history(channelId, now);
-		kept.push(...turns.filter((turn) => turn.text.trim()));
-		this.chats.set(channelId, { turns: kept.slice(-MAX_TURNS), updatedAt: now });
+		const chat = this.active(channelId, now) || { id: randomUUID(), turns: [], updatedAt: now };
+		chat.turns = [...chat.turns, ...turns.filter((turn) => turn.text.trim())].slice(-MAX_TURNS);
+		chat.updatedAt = now;
+		this.chats.set(channelId, chat);
 		this.save();
 	}
 

@@ -34,9 +34,17 @@ function parseArguments(text: string): Record<string, unknown> {
 	}
 }
 
+/** A ChatGPT sign-in: the subscription's token, fetched fresh for each request. */
+export interface Subscription {
+	token(): Promise<string>;
+	fetch(body: Record<string, unknown>, signal?: AbortSignal): Promise<Response>;
+}
+
 /**
- * OpenAI through the Responses API. Each round after the first continues the
- * stored response by id, so only the new tool results are sent.
+ * OpenAI through the Responses API. With an API key each round continues the
+ * stored response by id, so only the new tool results are sent. A ChatGPT
+ * subscription stores nothing, so every round resends the turn so far,
+ * reasoning included in its encrypted form.
  */
 class OpenAiSession implements Session {
 	private previousId?: string;
@@ -44,9 +52,11 @@ class OpenAiSession implements Session {
 	private readonly tools: OpenAI.Responses.Tool[];
 
 	constructor(
-		private readonly client: OpenAI,
+		private readonly client: (() => Promise<OpenAI>),
 		private readonly model: string,
 		private readonly request: TurnRequest,
+		private readonly name: string,
+		private readonly stateless: boolean,
 	) {
 		this.tools = request.tools.map((tool) => ({
 			type: "function",
@@ -80,18 +90,21 @@ class OpenAiSession implements Session {
 	async next(events: StreamEvents): Promise<Step> {
 		const reasoning = reasoningModels.test(this.model);
 		let response: OpenAI.Responses.Response | undefined;
+		/* Some subscription streams leave the output out of the final event. */
+		const done = new Map<number, OpenAI.Responses.ResponseOutputItem>();
 		try {
-			const stream = await this.client.responses.create(
+			const client = await this.client();
+			const stream = await client.responses.create(
 				{
 					model: this.model,
 					// Instructions are not carried over from the previous response.
 					instructions: [this.request.system, this.request.context].filter(Boolean).join("\n\n"),
 					input: this.input,
-					previous_response_id: this.previousId,
 					tools: this.tools,
-					max_output_tokens: this.request.maxTokens,
-					store: true,
 					stream: true,
+					...(this.stateless
+						? { store: false, include: ["reasoning.encrypted_content"] }
+						: { store: true, previous_response_id: this.previousId, max_output_tokens: this.request.maxTokens }),
 					// No reasoning summary: OpenAI refuses it for organisations it hasn't verified.
 					...(reasoning ? { reasoning: { effort: this.request.effort } } : {}),
 				},
@@ -100,17 +113,20 @@ class OpenAiSession implements Session {
 			for await (const event of stream) {
 				if (event.type === "response.output_text.delta") events.text?.(event.delta);
 				else if (event.type === "response.reasoning_summary_text.delta") events.thinking?.(event.delta);
+				else if (event.type === "response.output_item.done") done.set(event.output_index, event.item);
 				else if (event.type === "response.completed" || event.type === "response.incomplete")
 					response = event.response;
 				else if (event.type === "response.failed")
-					throw new ProviderError(event.response.error?.message || "OpenAI could not answer.", "unknown");
+					throw new ProviderError(event.response.error?.message || `${this.name} could not answer.`, "unknown");
 				else if (event.type === "error")
-					throw new ProviderError(event.message || "OpenAI could not answer.", "unknown");
+					throw new ProviderError(event.message || `${this.name} could not answer.`, "unknown");
 			}
 		} catch (error) {
-			throw openAiError(error, "OpenAI");
+			throw openAiError(error, this.name);
 		}
-		if (!response) throw new ProviderError("OpenAI ended the answer without a result.", "unknown");
+		if (!response) throw new ProviderError(`${this.name} ended the answer without a result.`, "unknown");
+		if (!response.output?.length && done.size)
+			response.output = [...done.entries()].sort(([a], [b]) => a - b).map(([, item]) => item);
 		const cached = response.usage?.input_tokens_details?.cached_tokens || 0;
 		const usage = {
 			inputTokens: (response.usage?.input_tokens || 0) - cached,
@@ -141,47 +157,76 @@ class OpenAiSession implements Session {
 		if (refused) return { ...base, calls: [], stop: "refused" };
 		if (response.status === "incomplete") return { ...base, calls: [], stop: "max_tokens" };
 		if (calls.length) {
-			this.previousId = response.id;
-			this.input = [];
+			if (this.stateless)
+				// Nothing is stored, so ids would point nowhere: send the items without them.
+				this.input.push(
+					...response.output.map((item) => {
+						const { id: _id, ...rest } = item as typeof item & { id?: string };
+						return rest as OpenAI.Responses.ResponseInputItem;
+					}),
+				);
+			else {
+				this.previousId = response.id;
+				this.input = [];
+			}
 			return { ...base, calls, stop: "tools" };
 		}
 		return { ...base, calls: [], stop: "end" };
 	}
 
 	answer(results: Array<{ call: ToolCall; outcome: ToolOutcome }>): void {
-		this.input = results.map(({ call, outcome }) => ({
+		const outputs = results.map(({ call, outcome }): OpenAI.Responses.ResponseInputItem => ({
 			type: "function_call_output",
 			call_id: call.id,
 			output: outcome.isError ? `Error: ${outcome.content}` : outcome.content || "(no output)",
 		}));
+		if (this.stateless) this.input.push(...outputs);
+		else this.input = outputs;
 	}
 }
 
 export class OpenAiProvider implements Provider {
-	readonly id = "openai" as const;
-	readonly label = "OpenAI";
+	readonly id: "openai" | "chatgpt";
+	readonly label: string;
 	readonly nativeWebSearch = true;
 	readonly vision = true;
-	private readonly client: OpenAI;
+	private readonly client?: OpenAI;
 
 	constructor(
 		apiKey: string,
 		readonly model: string,
-		options: { baseURL?: string; fetch?: typeof fetch } = {},
+		private readonly options: { baseURL?: string; fetch?: typeof fetch; subscription?: Subscription } = {},
 	) {
-		this.client = new OpenAI({ apiKey, ...options, maxRetries: 2 });
+		this.id = options.subscription ? "chatgpt" : "openai";
+		this.label = options.subscription ? "ChatGPT" : "OpenAI";
+		if (!options.subscription) this.client = new OpenAI({ apiKey, baseURL: options.baseURL, fetch: options.fetch, maxRetries: 2 });
+	}
+
+	/* The subscription's requests go through its own fetch, which trims the body to what it accepts. */
+	private async connect(): Promise<OpenAI> {
+		const subscription = this.options.subscription;
+		if (!subscription) return this.client!;
+		return new OpenAI({
+			apiKey: await subscription.token(),
+			baseURL: this.options.baseURL,
+			maxRetries: 2,
+			fetch: async (url, init) =>
+				String(url).endsWith("/responses")
+					? subscription.fetch(JSON.parse(String(init?.body || "{}")), init?.signal || undefined)
+					: fetch(url, init),
+		});
 	}
 
 	start(request: TurnRequest): Session {
-		return new OpenAiSession(this.client, this.model, request);
+		return new OpenAiSession(() => this.connect(), this.model, request, this.label, Boolean(this.options.subscription));
 	}
 
 	async listModels(): Promise<string[]> {
 		const ids: string[] = [];
 		try {
-			for await (const model of this.client.models.list()) ids.push(model.id);
+			for await (const model of (await this.connect()).models.list()) ids.push(model.id);
 		} catch (error) {
-			throw openAiError(error, "OpenAI");
+			throw openAiError(error, this.label);
 		}
 		// Only the ones that can chat; the list also holds embeddings, audio and images.
 		return ids.filter((id) => /^(gpt-|o\d|chatgpt-)/.test(id) && !/(audio|realtime|transcribe|tts|image|search|embedding)/.test(id)).sort();

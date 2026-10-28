@@ -58,6 +58,13 @@ export AI_DATA_PATH=/data/ai.json
 export SPEND_DATA_PATH=/data/spend.json
 export DISCORD_CHAT_PATH=/data/discord-chats.json
 export PROACTIVE_DATA_PATH=/data/proactive.json
+# Subscription sign-ins and the CLI agents' own accounts and sessions. Same
+# places as 3.1, so existing sign-ins carry over.
+export CHATGPT_AUTH_PATH=/data/chatgpt-auth.json
+export CLAUDE_CONFIG_DIR=/data/claude-auth
+export AGENT_DATA_DIR=/data/agents
+# API keys RemindMe 3.x saved in its endpoint list, used while the options are blank.
+export LEGACY_ENDPOINTS_PATH=/data/endpoints.json
 # The vault is a shared folder, not add-on data, so it lives under /share where
 # the remindme-vault editor add-on reads and writes the same files.
 export VAULT_DATA_PATH=/share/vault

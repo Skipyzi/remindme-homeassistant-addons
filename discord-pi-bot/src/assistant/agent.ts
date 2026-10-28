@@ -1,4 +1,7 @@
-import type { AiSettings } from "../ai/settings";
+import { openCapability } from "../agents/bridge";
+import { RUN } from "../agents/runners";
+import type { RunnerThreads } from "../agents/threads";
+import type { AiSettings, Runner } from "../ai/settings";
 import type { SpendLedger } from "../ai/spend";
 import {
 	ProviderError,
@@ -37,7 +40,12 @@ export interface AssistantDeps {
 	/** "Home, Berlin": Home Assistant's location name. */
 	home?(): string | undefined;
 	searchFallback(): boolean;
+	/** CLI agents: where their tool bridge listens, and their sessions per conversation. */
+	agents?: { bridgeUrl: string; threads: RunnerThreads };
 }
+
+/* A CLI agent runs its own loop; this caps how many tools one turn may call. */
+const MAX_RUNNER_TOOL_CALLS = 24;
 
 export interface AskInput {
 	prompt: string;
@@ -48,6 +56,8 @@ export interface AskInput {
 	effort?: Effort;
 	/** More context for this turn only, such as the facts for a brief. */
 	extra?: string;
+	/** Which conversation this turn belongs to, so a CLI agent can resume its session. */
+	conversationId?: string;
 	signal?: AbortSignal;
 }
 
@@ -98,10 +108,19 @@ function failure(problem: string, model = ""): AskResult {
  * right now; the console, Discord, tasks and the brief all come through here.
  */
 export class Assistant {
+	/* One CLI agent turn at a time: they share their sign-ins and working folders. */
+	private runnerQueue: Promise<unknown> = Promise.resolve();
+
 	constructor(private readonly deps: AssistantDeps) {}
 
 	async ask(input: AskInput, events: AskEvents = {}): Promise<AskResult> {
 		const { settings, spend } = this.deps;
+		const runner = settings.runner();
+		if (runner) {
+			const turn = this.runnerQueue.then(() => this.askRunner(runner, input, events));
+			this.runnerQueue = turn.catch(() => {});
+			return turn;
+		}
 		const provider = settings.provider();
 		if (!provider) return failure(settings.problem());
 		const budget = settings.dailyBudget();
@@ -196,6 +215,90 @@ export class Assistant {
 			usage,
 			costUsd,
 			rounds,
+		};
+	}
+
+	/**
+	 * A turn on a CLI agent (Claude Code, Codex, OpenCode, Pi). The agent runs
+	 * its own loop and reaches RemindMe's tools through the bridge; tool rows
+	 * and confirmations still come back through the same events. Usage is
+	 * billed to the subscription, so nothing is added to the daily spend.
+	 */
+	private async askRunner(runner: Runner, input: AskInput, events: AskEvents): Promise<AskResult> {
+		const agents = this.deps.agents;
+		if (!agents) return failure(`${runner.label} isn't available here.`);
+		if (input.images?.length) return failure(`${runner.label} can't look at images here. Switch to Claude, OpenAI or ChatGPT to send pictures.`, runner.model);
+		const tools = await buildTools(this.deps.tools(), { nativeWebSearch: false });
+		const effects: Effects = { cards: new Map(), confirms: [], artifacts: [] };
+		const abort = new AbortController();
+		const cancel = () => abort.abort();
+		input.signal?.addEventListener("abort", cancel, { once: true });
+		let calls = 0;
+		let answer = "";
+		// One way into the tools, whether the agent comes over the bridge (Claude Code,
+		// OpenCode) or calls in-process (Codex, Pi).
+		const call = async (name: string, args: unknown): Promise<ToolRun> => {
+			if (++calls > MAX_RUNNER_TOOL_CALLS) {
+				abort.abort();
+				return { content: "The agent reached the tool-call limit for one turn.", isError: true };
+			}
+			const toolCall = { id: `${runner.id}-${calls}`, name, input: args && typeof args === "object" ? (args as Record<string, unknown>) : {} };
+			events.toolStart?.(toolCall, 0);
+			const confirmsBefore = effects.confirms.length;
+			const result = await runTool(tools, toolCall, effects);
+			events.toolEnd?.(toolCall, result, 0);
+			for (const confirmation of effects.confirms.slice(confirmsBefore)) events.confirm?.(confirmation, 0);
+			return result;
+		};
+		const capability = openCapability({ tools: tools.map((tool) => tool.spec), signal: abort.signal, codexNative: runner.nativeAuth, call });
+		const conversation = input.conversationId;
+		const ephemeral: { id?: string } = {};
+		events.roundStart?.(0);
+		try {
+			await RUN[runner.id]({
+				runner: runner.id,
+				model: runner.model,
+				nativeAuth: runner.nativeAuth,
+				system: `${systemPrompt(this.deps.persona())}\n\nNo terminal, files, coding tools or other agents are available: only the tools given here.\n\n${turnContext({
+					channel: input.channel,
+					home: this.deps.home?.(),
+					recalled: this.deps.recall?.(input.prompt),
+					openDocument: input.openDocument,
+					extra: input.extra,
+				})}`,
+				prompt: input.prompt,
+				history: trimHistory(input.history || []),
+				effort: input.effort || this.deps.settings.effort(),
+				thread: conversation
+					? { get: () => agents.threads.get(conversation, runner.id), set: (id) => agents.threads.set(conversation, runner.id, id) }
+					: { get: () => ephemeral.id, set: (id) => (ephemeral.id = id) },
+				tools: tools.map((tool) => tool.spec),
+				call,
+				bridge: { url: agents.bridgeUrl, token: capability.token },
+				signal: abort.signal,
+				delta: (text) => {
+					answer += text;
+					events.text?.(text, 0);
+				},
+			});
+		} catch (error) {
+			if (input.signal?.aborted) throw error;
+			console.error(`${runner.label} turn failed:`, error);
+			const problem = `${runner.label} couldn't finish: ${error instanceof Error ? error.message : error}`;
+			return { ...failure(problem, runner.model), confirms: effects.confirms, cards: [...effects.cards.values()], artifacts: effects.artifacts };
+		} finally {
+			capability.close();
+			abort.abort();
+			input.signal?.removeEventListener("abort", cancel);
+		}
+		return {
+			text: answer.trim() || "Done.",
+			confirms: effects.confirms,
+			cards: [...effects.cards.values()],
+			artifacts: effects.artifacts,
+			model: `${runner.label} · ${runner.model}`,
+			usage: emptyUsage(),
+			rounds: 1,
 		};
 	}
 

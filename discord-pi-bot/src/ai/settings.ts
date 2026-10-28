@@ -1,72 +1,131 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
+import { RUNNER_LABELS, RUNNERS, type RunnerId } from "../agents/runners";
 import { ClaudeProvider, DEFAULT_CLAUDE_MODEL } from "./claude";
 import { CompatibleProvider, OPENCODE_GO_URL } from "./compatible";
-import { OpenAiProvider } from "./openai";
+import { OpenAiProvider, type Subscription } from "./openai";
 import type { Effort, Provider, ProviderId } from "./types";
 
-export const PROVIDERS: Array<{ id: ProviderId; label: string }> = [
-	{ id: "claude", label: "Claude" },
-	{ id: "openai", label: "OpenAI" },
-	{ id: "opencode", label: "OpenCode" },
-	{ id: "custom", label: "Custom server" },
+/** Everything that can answer: an AI the assistant drives, or a CLI agent that runs the turn itself. */
+export type AssistantId = ProviderId | RunnerId;
+
+export const PROVIDERS: Array<{ id: AssistantId; label: string; kind: "api" | "subscription" | "agent" }> = [
+	{ id: "claude", label: "Claude", kind: "api" },
+	{ id: "openai", label: "OpenAI", kind: "api" },
+	{ id: "opencode", label: "OpenCode", kind: "api" },
+	{ id: "custom", label: "Custom server", kind: "api" },
+	{ id: "chatgpt", label: "ChatGPT subscription", kind: "subscription" },
+	{ id: "claude-code", label: RUNNER_LABELS["claude-code"], kind: "agent" },
+	{ id: "codex", label: RUNNER_LABELS.codex, kind: "agent" },
+	{ id: "opencode-cli", label: RUNNER_LABELS["opencode-cli"], kind: "agent" },
+	{ id: "pi", label: RUNNER_LABELS.pi, kind: "agent" },
 ];
+
+/* The Claude subscription runs through Claude Code, which names models by family. */
+export const CLAUDE_CODE_MODELS = ["sonnet", "opus", "haiku"];
 
 const EFFORTS: Effort[] = ["low", "medium", "high"];
 
+/** Which sign-ins are connected. Refreshed from disk and the CLIs, read synchronously. */
+export interface Accounts {
+	chatgpt: boolean;
+	claude: boolean;
+	codex: boolean;
+	opencode: boolean;
+	pi: boolean;
+}
+
+/** What the subscriptions and agents need from the rest of the app. */
+export interface SignIns {
+	accounts(): Promise<Accounts>;
+	chatgpt: Subscription;
+	chatgptModels(): Promise<string[]>;
+	agentModels(runner: "codex" | "opencode-cli" | "pi"): Promise<string[]>;
+}
+
 /** What the console may change. Keys only ever come from the app options. */
 interface Choice {
-	provider?: ProviderId;
-	models?: Partial<Record<ProviderId, string>>;
+	provider?: AssistantId;
+	models?: Partial<Record<AssistantId, string>>;
 	effort?: Effort;
 }
 
+export interface Runner {
+	id: RunnerId;
+	label: string;
+	model: string;
+	/** Codex on its own CLI sign-in instead of the ChatGPT sign-in. */
+	nativeAuth: boolean;
+}
+
 export interface AiStatus {
-	provider: ProviderId | "";
+	provider: AssistantId | "";
 	label: string;
 	model: string;
 	effort: Effort;
 	ready: boolean;
 	/** Why the assistant can't answer yet, in words for the console and Discord. */
 	problem: string;
-	providers: Array<{ id: ProviderId; label: string; configured: boolean; model: string }>;
+	providers: Array<{ id: AssistantId; label: string; kind: string; configured: boolean; model: string }>;
+	accounts: Accounts;
 	webSearch: "provider" | "searxng" | "none";
 	vision: boolean;
 }
 
-function isProvider(value: unknown): value is ProviderId {
+function isAssistant(value: unknown): value is AssistantId {
 	return PROVIDERS.some((provider) => provider.id === value);
+}
+
+export function isRunner(value: unknown): value is RunnerId {
+	return RUNNERS.includes(value as RunnerId);
 }
 
 function isEffort(value: unknown): value is Effort {
 	return EFFORTS.includes(value as Effort);
 }
 
+const NO_ACCOUNTS: Accounts = { chatgpt: false, claude: false, codex: false, opencode: false, pi: false };
+
 /**
  * Which AI answers, with which model, at what effort. The app options supply
  * the keys and the defaults; the console's choice is saved on top of them, so
- * switching between Claude, OpenAI and OpenCode needs no restart.
+ * switching between Claude, OpenAI, OpenCode, the subscriptions and the CLI
+ * agents needs no restart.
  */
 export class AiSettings {
 	private choice: Choice = {};
 	private cached?: { key: string; provider: Provider };
+	private accounts: Accounts = { ...NO_ACCOUNTS };
 
 	constructor(
 		private readonly env: NodeJS.ProcessEnv = process.env,
 		private readonly path = env.AI_DATA_PATH || "./data/ai.json",
+		private readonly signIns?: SignIns,
 	) {}
 
 	async load(): Promise<void> {
 		try {
 			const saved = JSON.parse(await readFile(this.path, "utf8")) as Choice;
 			this.choice = {
-				provider: isProvider(saved.provider) ? saved.provider : undefined,
+				provider: isAssistant(saved.provider) ? saved.provider : undefined,
 				models: saved.models && typeof saved.models === "object" ? saved.models : {},
 				effort: isEffort(saved.effort) ? saved.effort : undefined,
 			};
 		} catch {
 			this.choice = {};
 		}
+		await this.refreshAccounts();
+	}
+
+	/** Re-read which sign-ins are connected: at start, after a sign-in, and when the console looks. */
+	async refreshAccounts(): Promise<Accounts> {
+		if (!this.signIns) return this.accounts;
+		try {
+			this.accounts = await this.signIns.accounts();
+		} catch (error) {
+			console.warn("Could not read the sign-ins:", error instanceof Error ? error.message : error);
+		}
+		return this.accounts;
 	}
 
 	private key(id: ProviderId): string {
@@ -79,20 +138,37 @@ export class AiSettings {
 				return this.env.OPENCODE_API_KEY || "";
 			case "custom":
 				return this.env.CUSTOM_AI_KEY || "";
+			case "chatgpt":
+				return "";
 		}
 	}
 
-	configured(id: ProviderId): boolean {
-		return id === "custom" ? Boolean(this.env.CUSTOM_AI_URL) : Boolean(this.key(id));
+	configured(id: AssistantId): boolean {
+		switch (id) {
+			case "custom":
+				return Boolean(this.env.CUSTOM_AI_URL);
+			case "chatgpt":
+				return this.accounts.chatgpt;
+			case "claude-code":
+				return this.accounts.claude;
+			case "codex":
+				return this.accounts.chatgpt || this.accounts.codex;
+			case "opencode-cli":
+				return this.accounts.opencode;
+			case "pi":
+				return this.accounts.pi;
+			default:
+				return Boolean(this.key(id));
+		}
 	}
 
-	private defaultProvider(): ProviderId {
+	private defaultProvider(): AssistantId {
 		const option = this.env.AI_PROVIDER;
-		if (isProvider(option) && this.configured(option)) return option;
-		return PROVIDERS.find((provider) => this.configured(provider.id))?.id || (isProvider(option) ? option : "claude");
+		if (isAssistant(option) && this.configured(option)) return option;
+		return PROVIDERS.find((provider) => this.configured(provider.id))?.id || (isAssistant(option) ? option : "claude");
 	}
 
-	providerId(): ProviderId {
+	providerId(): AssistantId {
 		const chosen = this.choice.provider;
 		return chosen && this.configured(chosen) ? chosen : this.defaultProvider();
 	}
@@ -100,8 +176,11 @@ export class AiSettings {
 	model(id = this.providerId()): string {
 		const chosen = this.choice.models?.[id];
 		if (chosen) return chosen;
-		if (this.env.AI_MODEL && id === this.defaultProvider()) return this.env.AI_MODEL;
-		return id === "claude" ? DEFAULT_CLAUDE_MODEL : "";
+		if (this.env.AI_MODEL && id === this.defaultProvider() && PROVIDERS.find((entry) => entry.id === id)?.kind === "api") return this.env.AI_MODEL;
+		if (id === "claude") return DEFAULT_CLAUDE_MODEL;
+		if (id === "chatgpt" && this.env.CHATGPT_MODEL) return this.env.CHATGPT_MODEL;
+		if (id === "claude-code") return "sonnet";
+		return "";
 	}
 
 	effort(): Effort {
@@ -121,6 +200,9 @@ export class AiSettings {
 				return new ClaudeProvider(this.key(id), model || DEFAULT_CLAUDE_MODEL);
 			case "openai":
 				return new OpenAiProvider(this.key(id), model);
+			case "chatgpt":
+				if (!this.signIns) throw new Error("ChatGPT sign-in isn't available here.");
+				return new OpenAiProvider("", model, { subscription: this.signIns.chatgpt });
 			case "opencode":
 				return new CompatibleProvider("opencode", "OpenCode", this.key(id), model, this.env.OPENCODE_URL || OPENCODE_GO_URL);
 			case "custom":
@@ -128,38 +210,61 @@ export class AiSettings {
 		}
 	}
 
+	private label(id: AssistantId): string {
+		return PROVIDERS.find((provider) => provider.id === id)?.label || id;
+	}
+
 	problem(): string {
 		const id = this.providerId();
-		const label = PROVIDERS.find((provider) => provider.id === id)?.label || id;
-		if (!this.configured(id))
-			return id === "custom"
-				? "No AI is set up yet. Add an API key for Claude, OpenAI or OpenCode in the RemindMe app's options, then restart it."
-				: `No ${label} API key is set. Add one in the RemindMe app's options, then restart the app.`;
+		const label = this.label(id);
+		if (!this.configured(id)) {
+			if (id === "custom" || !PROVIDERS.some((provider) => this.configured(provider.id)))
+				return "No AI is set up yet. Add an API key for Claude, OpenAI or OpenCode in the RemindMe app's options, or sign in under AI in the RemindMe console.";
+			return PROVIDERS.find((entry) => entry.id === id)?.kind === "api"
+				? `No ${label} API key is set. Add one in the RemindMe app's options, then restart the app.`
+				: `${label} isn't signed in. Sign in under AI in the RemindMe console.`;
+		}
 		if (!this.model(id)) return `Pick a model for ${label} in RemindMe's AI settings.`;
 		return "";
 	}
 
-	/** The provider to use now, or undefined with `problem()` saying why. */
+	/** The AI the assistant drives now, or undefined for a CLI agent or with `problem()` saying why. */
 	provider(): Provider | undefined {
 		if (this.problem()) return undefined;
 		const id = this.providerId();
+		if (isRunner(id)) return undefined;
 		const model = this.model(id);
 		const key = `${id}:${model}`;
 		if (this.cached?.key !== key) this.cached = { key, provider: this.build(id, model) };
 		return this.cached.provider;
 	}
 
-	async listModels(id: ProviderId): Promise<string[]> {
+	/** The CLI agent that runs turns now, if one is chosen. */
+	runner(): Runner | undefined {
+		if (this.problem()) return undefined;
+		const id = this.providerId();
+		if (!isRunner(id)) return undefined;
+		return { id, label: this.label(id), model: this.model(id), nativeAuth: id === "codex" && !this.accounts.chatgpt };
+	}
+
+	async listModels(id: AssistantId): Promise<string[]> {
 		if (!this.configured(id)) return [];
+		if (id === "claude-code") return CLAUDE_CODE_MODELS;
+		if (id === "chatgpt" || (id === "codex" && this.accounts.chatgpt)) return this.signIns ? this.signIns.chatgptModels() : [];
+		if (id === "codex" || id === "opencode-cli" || id === "pi") return this.signIns ? this.signIns.agentModels(id) : [];
 		return this.build(id, this.model(id) || "-").listModels();
 	}
 
 	async choose(update: { provider?: unknown; model?: unknown; effort?: unknown }): Promise<void> {
 		const next: Choice = { ...this.choice, models: { ...(this.choice.models || {}) } };
 		if (update.provider !== undefined) {
-			if (!isProvider(update.provider)) throw new Error("Unknown AI provider");
+			if (!isAssistant(update.provider)) throw new Error("Unknown AI provider");
 			if (!this.configured(update.provider))
-				throw new Error("That provider has no API key yet. Add it in the app options first.");
+				throw new Error(
+					PROVIDERS.find((entry) => entry.id === update.provider)?.kind === "api"
+						? "That provider has no API key yet. Add it in the app options first."
+						: "Sign in to that one first.",
+				);
 			next.provider = update.provider;
 		}
 		if (update.model !== undefined) {
@@ -183,20 +288,18 @@ export class AiSettings {
 		const id = this.providerId();
 		const problem = this.problem();
 		const provider = problem ? undefined : this.provider();
+		const runner = isRunner(id);
 		return {
 			provider: id,
-			label: PROVIDERS.find((entry) => entry.id === id)?.label || id,
+			label: this.label(id),
 			model: this.model(id),
 			effort: this.effort(),
 			ready: !problem,
 			problem,
-			providers: PROVIDERS.map((entry) => ({
-				...entry,
-				configured: this.configured(entry.id),
-				model: this.model(entry.id),
-			})),
+			providers: PROVIDERS.map((entry) => ({ ...entry, configured: this.configured(entry.id), model: this.model(entry.id) })),
+			accounts: this.accounts,
 			webSearch: provider?.nativeWebSearch ? "provider" : searchFallback ? "searxng" : "none",
-			vision: Boolean(provider?.vision),
+			vision: !runner && Boolean(provider?.vision),
 		};
 	}
 }

@@ -30,6 +30,9 @@
     <script defer src="./components/entityControls.js"></script>
     <script defer src="./components/conversations.js"></script>
     <script defer src="./components/attachments.js"></script>
+    <script defer src="./components/account-console.js"></script>
+    <script defer src="./vendor/xterm.js"></script>
+    <link rel="stylesheet" href="./vendor/xterm.css" />
     <script defer src="./app.js"></script>
     <script defer src="./vendor/alpine.min.js"></script>
     <link rel="stylesheet" href="./styles.css" />
@@ -207,6 +210,7 @@
             <div class="top-title">
               <svg class="emblem" viewBox="0 0 32 32" aria-hidden="true"><ellipse cx="16" cy="10" rx="12" ry="3.4" /><path d="M16 3v4M13 13.2 11 29h10l-2-15.8M11 29h10M14 19h4M13.4 24h5.2" /></svg><b>RemindMe</b>
             </div>
+            <button class="chip" x-show="authConsole.running" x-cloak @click="window.RemindMeAccountConsole.open($data, authConsole.backend)">Sign-in running</button>
             <button
               type="button"
               class="badge"
@@ -1451,6 +1455,44 @@
           </div>
         </section>
       </div>
+      <div class="settings account-console-sheet" x-show="authConsoleOpen" x-cloak @keydown.escape.stop="window.RemindMeAccountConsole.close($data)">
+        <section class="settings-card account-console-card" role="dialog" aria-modal="true" aria-labelledby="account-console-title">
+          <button class="sheet-close" aria-label="Close sign-in console" @click="window.RemindMeAccountConsole.close($data)">✕</button>
+          <h2 id="account-console-title">Sign-in console</h2>
+          <p class="settings-copy">Sign in on the Pi. Follow the link shown below, then enter a code here if asked. Closing this panel keeps the sign-in running.</p>
+          <div class="console-controls">
+            <label class="endpoint-field">Agent
+              <select x-model="authConsoleBackend" :disabled="authConsole.running || authConsoleBusy">
+                <option value="codex">Codex</option><option value="claude">Claude Code</option><option value="opencode">OpenCode</option><option value="pi">Pi</option>
+              </select>
+            </label>
+            <label class="endpoint-field" x-show="authConsoleBackend==='pi'">Pi account
+              <select x-model="authConsoleProvider" :disabled="authConsole.running"><template x-for="provider in agentPiProviders" :key="provider.id"><option :value="provider.id" x-text="provider.name"></option></template></select>
+            </label>
+            <button class="chip" :disabled="busy || authConsole.running || authConsoleBusy" @click="window.RemindMeAccountConsole.start($data)">Start sign-in</button>
+            <button class="chip" :disabled="!authConsole.running" @click="window.RemindMeAccountConsole.cancel($data)">Cancel sign-in</button>
+          </div>
+          <p class="micro" x-show="authConsoleBackend==='codex'">Codex uses your ChatGPT sign-in when there is one. This console adds Codex's own sign-in, used when ChatGPT isn't signed in.</p>
+          <p class="micro" x-show="authConsole.running" x-text="`Sign-in running for ${authConsole.backend}`"></p>
+          <div id="account-terminal" aria-label="CLI sign-in output"></div>
+          <div class="console-links"><template x-for="url in authConsole.urls" :key="url"><a class="chip" :href="url" target="_blank" rel="noreferrer noopener">Open sign-in link</a></template></div>
+          <div class="console-keys" x-show="authConsole.running && ['codex','opencode'].includes(authConsole.backend)">
+            <button class="chip" @click="window.RemindMeAccountConsole.key($data, '\x1b[A')">↑</button>
+            <button class="chip" @click="window.RemindMeAccountConsole.key($data, '\x1b[B')">↓</button>
+            <button class="chip" @click="window.RemindMeAccountConsole.key($data, '\r')">Enter</button>
+          </div>
+          <p class="micro" x-show="authConsole.prompt" x-text="authConsole.prompt"></p>
+          <div class="console-links"><template x-for="option in (authConsole.options || [])" :key="option.id"><button class="chip" @click="window.RemindMeAccountConsole.input($data, option.id)" x-text="option.label"></button></template></div>
+          <form class="console-input" @submit.prevent="window.RemindMeAccountConsole.input($data)">
+            <label class="endpoint-field">Code, callback URL or requested input
+              <input type="password" x-model="authConsoleInput" autocomplete="off" spellcheck="false" :disabled="!authConsole.running || authConsoleBusy" />
+            </label>
+            <button class="chip" type="submit" :disabled="!authConsole.running || authConsoleBusy || !authConsoleInput">Send input</button>
+          </form>
+          <p class="endpoint-error" role="alert" x-show="authConsoleError" x-text="authConsoleError"></p>
+          <button class="chip" @click="window.RemindMeAccountConsole.close($data)">Back to AI settings</button>
+        </section>
+      </div>
       <div
         class="settings"
         id="models-view"
@@ -1478,9 +1520,58 @@
                 <span class="endpoint-name" x-text="option.label"></span>
                 <span
                   class="endpoint-model"
-                  x-text="option.configured ? (option.model || 'pick a model') : 'no key in the app options'"
+                  x-text="option.configured ? (option.model || 'pick a model') : (option.kind === 'api' ? 'no key in the app options' : 'sign in below')"
                 ></span>
               </button>
+            </template>
+          </div>
+          <h3 class="ai-subhead">Sign-ins</h3>
+          <p class="settings-copy">
+            Use a subscription instead of an API key. ChatGPT answers like the
+            providers above. Claude, Codex, OpenCode and Pi run as agents with
+            RemindMe's tools and nothing else.
+          </p>
+          <div class="endpoint-list">
+            <template x-for="option in [{id: 'chatgpt', label: 'ChatGPT subscription'}, {id: 'claude', label: 'Claude subscription'}]" :key="option.id">
+              <div class="endpoint-row" :class="{active: signinStatus[option.id]?.connected}">
+                <span class="endpoint-dot" aria-hidden="true"></span>
+                <span class="endpoint-name" x-text="option.label"></span>
+                <span
+                  class="endpoint-model"
+                  x-text="signinStatus[option.id]?.connected ? (signinStatus[option.id].email || 'signed in') : 'not signed in'"
+                ></span>
+                <button
+                  class="endpoint-edit"
+                  :disabled="aiBusy"
+                  @click="signinStatus[option.id]?.connected ? signOut(option.id) : signIn(option.id)"
+                  x-text="signinStatus[option.id]?.connected ? 'Sign out' : 'Sign in'"
+                ></button>
+              </div>
+            </template>
+            <div class="endpoint-row">
+              <span class="endpoint-dot" aria-hidden="true"></span>
+              <span class="endpoint-name">Codex, OpenCode or Pi account</span>
+              <span class="endpoint-model">their own sign-ins, in a console</span>
+              <button class="endpoint-edit" @click="window.RemindMeAccountConsole.open($data, 'codex')">Open</button>
+            </div>
+          </div>
+          <div class="endpoint-editor" x-show="signin" x-cloak>
+            <template x-if="signin">
+              <div>
+                <p class="settings-note" x-text="signin.instructions"></p>
+                <a class="chip" :href="signin.url" target="_blank" rel="noreferrer noopener">Open the sign-in page</a>
+                <label class="endpoint-field"
+                  >Paste the code or the final page's address here<input
+                    type="password"
+                    autocomplete="off"
+                    spellcheck="false"
+                    x-model="signin.code"
+                /></label>
+                <div class="endpoint-actions">
+                  <button class="chip" :disabled="aiBusy || !signin.code" @click="finishSignIn()">Finish sign-in</button>
+                  <button class="chip" @click="cancelSignIn()">Cancel</button>
+                </div>
+              </div>
             </template>
           </div>
           <div class="settings-grid">
