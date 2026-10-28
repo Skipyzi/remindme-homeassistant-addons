@@ -85,7 +85,7 @@ export function startBot(deps: ChatDeps): OwnerMessenger | undefined {
 								const sent = await deps.phone!.send({
 									title: "Reminder",
 									body: reminder.message,
-									url: "./",
+									url: "./#t/remindme",
 									tag: `reminder-${reminder.id}`,
 									buttons: [
 										{
@@ -162,7 +162,7 @@ export function startBot(deps: ChatDeps): OwnerMessenger | undefined {
 				// Into the ledger once, when the first channel gets it.
 				const before = Object.values(reminder.deliveryStatus || {}).includes("delivered");
 				if (!before && Object.values(delivered).includes("delivered"))
-					deps.activity?.add({ kind: "sent", channel: "reminder", text: `Reminder: ${reminder.message}` });
+					deps.activity?.add({ kind: "sent", channel: "reminder", text: `Reminder: ${reminder.message}`, actions: [{ label: "In 1 hour", kind: "reminder-later", ref: reminder.message }] });
 				return delivered;
 			});
 			await startPresenceMonitor(client);

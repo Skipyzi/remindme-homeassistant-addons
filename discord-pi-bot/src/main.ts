@@ -47,12 +47,19 @@ async function main() {
 		const title = what === "brief" ? `☀️ ${new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" })}` : undefined;
 		const [onDiscord, phones] = await Promise.all([
 			messenger ? messenger.send(text, { title }) : Promise.resolve(false),
-			phoneApp.send({ title: what === "brief" ? "Morning brief" : "RemindMe", body: text, url: "./", tag: what, ...(extra?.battery ? { buttons: batteryButtons(extra.battery) } : {}) }),
+			// A tap opens RemindMe's own thread, where this message is, with its buttons.
+			phoneApp.send({ title: what === "brief" ? "Morning brief" : "RemindMe", body: text, url: "./#t/remindme", tag: what, ...(extra?.battery ? { buttons: batteryButtons(extra.battery) } : {}) }),
 		]);
 		const sent = onDiscord || phones > 0;
+		const actions = extra?.battery
+			? [
+					{ label: "Remind me Saturday", kind: "battery-remind" as const, ref: extra.battery },
+					{ label: "Got it", kind: "battery-hide" as const, ref: extra.battery },
+				]
+			: undefined;
 		activity.add(
 			sent
-				? { kind: "sent", channel: what === "brief" ? "brief" : "nudge", text }
+				? { kind: "sent", channel: what === "brief" ? "brief" : "nudge", text, ...(actions ? { actions } : {}) }
 				: { kind: "failed", channel: what === "brief" ? "brief" : "nudge", text: `Couldn't send this on Discord: ${text}` },
 		);
 		return sent;

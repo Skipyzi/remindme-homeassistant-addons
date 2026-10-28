@@ -15,6 +15,16 @@ const KIND_LABELS = {
 	waiting: "waiting",
 };
 
+/* RemindMe's own thread: what it sent and did on its own, and the replies to it. */
+const FEED = "remindme";
+const storedNumber = (key) => {
+	try {
+		return Number(localStorage.getItem(key)) || 0;
+	} catch {
+		return 0;
+	}
+};
+
 const CHANNEL_NOTES = {
 	discord: "On Discord",
 	brief: "Morning brief, on Discord",
@@ -183,6 +193,14 @@ function remindme() {
 		authConsoleInput: "",
 		authConsoleError: "",
 		authConsoleBusy: false,
+		/* RemindMe's thread: when it was last opened here, and whether older days are folded. */
+		feedSeen: storedNumber("rm-feed-seen"),
+		feedFold: true,
+		feedTop: "",
+		/* Swiping rows: what waits for a snooze time, what's hidden until the server agrees, and the undo toast. */
+		snoozeFor: null,
+		hiddenRows: [],
+		toast: null,
 		/* Inside Home Assistant's app panel on a phone: its header is hidden, so ☰ stands in. */
 		haNarrow: false,
 		haLinked: "",
@@ -229,6 +247,9 @@ function remindme() {
 				this.threads = data.threads || [];
 				this.scheduled = data.tasks || [];
 				this.activity = data.activity || [];
+				const top = this.activity[0]?.id || "";
+				if (this.open?.feed && top !== this.feedTop) this.showFeed(true);
+				this.feedTop = top;
 				this.now = new Date(data.now || Date.now());
 				this.loaded = true;
 				this.error = "";
@@ -273,31 +294,19 @@ function remindme() {
 
 		threadItem(thread) {
 			const job = thread.job;
-			const item = { key: `t-${thread.id}`, threadId: thread.id, openId: thread.id, at: new Date(thread.updatedAt), title: thread.title, line: firstLine(thread.last), mark: "›", bad: false, cat: this.catState(thread) };
+			// A snoozed thread that's due comes back on top.
+			const back = thread.snoozedUntil && Date.parse(thread.snoozedUntil) > Date.parse(thread.updatedAt) ? thread.snoozedUntil : thread.updatedAt;
+			const item = { key: `t-${thread.id}`, threadId: thread.id, openId: thread.id, at: new Date(back), title: thread.title, line: firstLine(thread.last), mark: "›", bad: false, cat: this.catState(thread) };
 			if (job?.status === "done") item.mark = "✓";
 			if (job?.status === "stopped") Object.assign(item, { mark: "✕", bad: Boolean(job.error), line: job.error || job.note || item.line });
 			return item;
 		},
 
-		activityItem(entry) {
-			const base = { key: `a-${entry.id}`, openId: `entry:${entry.id}`, at: new Date(entry.at), entry, mark: "↗", bad: false };
-			const line = firstLine(entry.text);
-			if (entry.kind === "failed") return { ...base, mark: "✕", bad: true, title: "Couldn't do this", line };
-			if (entry.channel === "brief") return { ...base, mark: "☀", title: "Morning brief", line };
-			if (entry.channel === "reminder") return { ...base, title: "Reminded you", line };
-			if (entry.kind === "did") {
-				const receipts = entry.receipts || [];
-				return { ...base, mark: "•", color: receipts.find((receipt) => receipt.color)?.color, title: receipts[0]?.text || line, line: receipts.length > 1 ? `and ${receipts.length - 1} more` : CHANNEL_NOTES[entry.channel] || "" };
-			}
-			if (entry.kind === "answered") return { ...base, mark: "›", title: entry.question || "Answered", line: `${CHANNEL_NOTES[entry.channel] || ""}: ${line}`.replace(/^: /, "") };
-			if (entry.kind === "confirmed") return { ...base, mark: "✓", title: entry.text, line: "Done after your tap" };
-			if (entry.kind === "cancelled") return { ...base, mark: "–", title: entry.text, line: "Cancelled" };
-			return { ...base, title: entry.channel === "task" ? "Scheduled task" : "Sent you", line };
-		},
-
 		get groups() {
 			const busy = new Set([...this.asking, ...this.working].map((thread) => thread.id));
-			const items = [...this.threads.filter((thread) => !busy.has(thread.id)).map((thread) => this.threadItem(thread)), ...this.activity.map((entry) => this.activityItem(entry))].sort((a, b) => b.at - a.at);
+			const now = this.now.getTime();
+			const shown = (thread) => !busy.has(thread.id) && thread.id !== FEED && !thread.archivedAt && !this.hiddenRows.includes(thread.id) && !(thread.snoozedUntil && Date.parse(thread.snoozedUntil) > now);
+			const items = this.threads.filter(shown).map((thread) => this.threadItem(thread)).sort((a, b) => b.at - a.at);
 			const today = dayKey(this.now);
 			const yesterday = dayKey(new Date(this.now.getTime() - 86_400_000));
 			const groups = [
@@ -316,7 +325,26 @@ function remindme() {
 		},
 
 		get isEmpty() {
-			return !this.needsCount && !this.working.length && !this.scheduled.length && !this.groups.length;
+			return !this.needsCount && !this.working.length && !this.scheduled.length && !this.groups.length && !this.feedRow;
+		},
+
+		/* The pinned RemindMe row: its latest message, and how many came since it was last opened here. */
+		get feedRow() {
+			const entry = this.activity[0];
+			const thread = this.threads.find((item) => item.id === FEED);
+			const entryAt = entry ? Date.parse(entry.at) : 0;
+			const threadAt = thread?.count ? Date.parse(thread.updatedAt) : 0;
+			if (!entryAt && !threadAt) return null;
+			const at = new Date(Math.max(entryAt, threadAt));
+			return {
+				line: entryAt >= threadAt ? firstLine(entry.text) : firstLine(thread.last),
+				time: dayKey(at) === dayKey(this.now) ? this.timeOf(at) : at.toLocaleDateString("en-GB", { weekday: "short" }),
+				fresh: this.activity.filter((item) => Date.parse(item.at) > this.feedSeen).length,
+			};
+		},
+
+		get archived() {
+			return this.threads.filter((thread) => thread.archivedAt && thread.id !== FEED);
 		},
 
 		jobLine(thread) {
@@ -400,6 +428,7 @@ function remindme() {
 		},
 
 		async showThread(id) {
+			if (id === FEED) return this.showFeed();
 			const thread = await this.getJson(`./api/threads/${encodeURIComponent(id)}`, null);
 			if (!thread) {
 				this.error = "That conversation is gone.";
@@ -411,22 +440,218 @@ function remindme() {
 			this.scrollMessages();
 		},
 
-		/* Something RemindMe sent or did outside a thread, shown on its own. */
-		openEntry(item) {
-			const entry = item.entry;
-			const meta = `${this.formatWhen(entry.at)} · ${CHANNEL_NOTES[entry.channel] || "RemindMe"}`;
-			if (history.state?.thread) history.replaceState(null, "", location.pathname + location.search);
-			this.open = {
-				id: item.openId,
-				readOnly: true,
-				title: item.title,
-				createdAt: entry.at,
-				meta,
-				messages: [
-					...(entry.question ? [{ id: "q", role: "user", at: entry.at, text: entry.question }] : []),
-					{ id: "a", role: "assistant", at: entry.at, meta, text: entry.receipts?.length ? "" : entry.text, receipts: entry.receipts },
-				],
+		/*
+		 * RemindMe's thread: its own messages (from the activity log) and the
+		 * replies to it, by day, with older days folded and each message's buttons.
+		 */
+		async showFeed(quiet = false) {
+			const data = await this.getJson("./api/feed", null);
+			if (!data) {
+				this.error = "RemindMe's thread didn't load.";
+				return;
+			}
+			if (quiet && this.open?.id !== FEED) return;
+			this.open = this.feedView(data);
+			this.feedSeen = Date.now();
+			try {
+				localStorage.setItem("rm-feed-seen", String(this.feedSeen));
+			} catch {
+				/* private browsing: it just counts again */
+			}
+			if (!quiet) this.scrollMessages();
+		},
+		feedView(data) {
+			const notes = (data.entries || []).map((entry) => ({
+				id: `e-${entry.id}`,
+				role: "assistant",
+				at: entry.at,
+				text: entry.receipts?.length ? "" : entry.text,
+				receipts: entry.receipts,
+				entry,
+				bad: entry.kind === "failed",
+				meta: `${this.timeOf(new Date(entry.at))}${CHANNEL_NOTES[entry.channel] ? ` · ${CHANNEL_NOTES[entry.channel]}` : ""}`,
+			}));
+			const said = (data.thread?.messages || []).filter((message) => message.role !== "step");
+			const all = [...notes, ...said].sort((a, b) => a.at.localeCompare(b.at));
+			const today = dayKey(this.now);
+			const yesterday = dayKey(new Date(this.now.getTime() - 86_400_000));
+			const recent = all.filter((message) => [today, yesterday].includes(dayKey(new Date(message.at))));
+			const older = all.length - recent.length;
+			const messages = [];
+			if (this.feedFold && older) messages.push({ id: "fold", role: "fold", at: "", text: `Show ${older} earlier message${older === 1 ? "" : "s"}` });
+			let day = "";
+			for (const message of this.feedFold ? recent : all) {
+				const key = dayKey(new Date(message.at));
+				if (key !== day) {
+					day = key;
+					messages.push({ id: `day-${key}`, role: "day", at: message.at, text: key === today ? "Today" : key === yesterday ? "Yesterday" : new Date(message.at).toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" }) });
+				}
+				messages.push(message);
+			}
+			return { id: FEED, feed: true, title: "RemindMe", createdAt: all[0]?.at || new Date().toISOString(), updatedAt: all.at(-1)?.at || "", messages };
+		},
+		async unfoldFeed() {
+			this.feedFold = false;
+			await this.showFeed(true);
+		},
+		/* A button under one of RemindMe's messages: it does its thing, and the message says what came of it. */
+		async feedAct(message, index) {
+			try {
+				message.entry = await this.request(`./api/activity/${encodeURIComponent(message.entry.id)}/act/${index}`);
+				await this.loadInbox();
+			} catch (error) {
+				this.error = error.message;
+			}
+		},
+
+		/* ── Swiping rows: left to snooze or archive, right to delete ── */
+
+		swipeable(element, item) {
+			const face = element.querySelector(".rm-swipe-face");
+			const REVEAL = 176;
+			let start, base = 0, dx = 0, decided = false, sliding = false;
+			face.addEventListener("pointerdown", (event) => {
+				if (event.pointerType === "mouse" && event.button !== 0) return;
+				start = { x: event.clientX, y: event.clientY };
+				base = element.dataset.state === "left" ? -REVEAL : element.dataset.state === "right" ? 96 : 0;
+				dx = 0;
+				decided = sliding = false;
+			});
+			face.addEventListener("pointermove", (event) => {
+				if (!start) return;
+				const mx = event.clientX - start.x;
+				const my = event.clientY - start.y;
+				if (!decided) {
+					if (Math.abs(mx) < 8 && Math.abs(my) < 8) return;
+					decided = true;
+					// Up and down is scrolling.
+					if (Math.abs(my) > Math.abs(mx)) return void (start = undefined);
+					sliding = true;
+					face.setPointerCapture(event.pointerId);
+					face.style.transition = "none";
+				}
+				dx = mx;
+				face.style.transform = `translateX(${base + dx}px)`;
+				element.dataset.dir = base + dx < 0 ? "left" : "right";
+			});
+			const end = () => {
+				if (!start) return;
+				start = undefined;
+				face.style.transition = "";
+				if (!sliding) return;
+				element.dataset.moved = "1";
+				const x = base + dx;
+				const width = element.offsetWidth;
+				this.closeSwipes(element);
+				if (x < -width * 0.6) return void this.rowAct(item, "archive");
+				if (x > width * 0.6) return void this.rowAct(item, "delete");
+				if (x < -50) Object.assign(element.dataset, { state: "left", dir: "left" }), (face.style.transform = `translateX(-${REVEAL}px)`);
+				else if (x > 50) Object.assign(element.dataset, { state: "right", dir: "right" }), (face.style.transform = "translateX(96px)");
+				else this.closeSwipes();
 			};
+			face.addEventListener("pointerup", end);
+			face.addEventListener("pointercancel", end);
+			// A swipe isn't a tap.
+			face.addEventListener(
+				"click",
+				(event) => {
+					if (!element.dataset.moved) return;
+					event.preventDefault();
+					event.stopPropagation();
+					delete element.dataset.moved;
+				},
+				true,
+			);
+		},
+		closeSwipes(except) {
+			for (const element of document.querySelectorAll(".rm-swipe[data-state], .rm-swipe[data-dir]")) {
+				if (element === except) continue;
+				element.querySelector(".rm-swipe-face").style.transform = "";
+				delete element.dataset.state;
+				delete element.dataset.dir;
+			}
+		},
+		get snoozeChoices() {
+			const now = new Date(this.now);
+			const at = (days, hour) => {
+				const date = new Date(now);
+				date.setDate(date.getDate() + days);
+				date.setHours(hour, 0, 0, 0);
+				return date;
+			};
+			const label = (date) => `${date.toLocaleDateString("en-GB", { weekday: "short" })} ${this.timeOf(date)}`;
+			const later = now.getHours() < 17 ? { title: "Later today", at: at(0, 18) } : { title: "In 3 hours", at: new Date(now.getTime() + 3 * 3_600_000) };
+			return [later, { title: "Tomorrow morning", at: at(1, 8) }, { title: "This weekend", at: at((6 - now.getDay() + 7) % 7 || 7, 9) }, { title: "Next week", at: at((1 - now.getDay() + 7) % 7 || 7, 8) }].map((choice) => ({ ...choice, when: label(choice.at) }));
+		},
+		showToast(text, undo) {
+			clearTimeout(this.toastTimer);
+			// Kept off the reactive object: Alpine calls a function an expression hands it.
+			this.toastUndo = undo;
+			this.toast = { text, canUndo: Boolean(undo) };
+			this.toastTimer = setTimeout(() => (this.toast = null), 5_000);
+		},
+		async undoToast() {
+			const undo = this.toastUndo;
+			this.toastUndo = undefined;
+			this.toast = null;
+			await undo?.();
+			await this.loadInbox();
+		},
+		unhide(id) {
+			this.hiddenRows = this.hiddenRows.filter((hidden) => hidden !== id);
+		},
+		async rowAct(item, what) {
+			this.closeSwipes();
+			const id = item.threadId;
+			const name = item.title.length > 32 ? `${item.title.slice(0, 32)}…` : item.title;
+			if (what === "snooze") {
+				this.snoozeFor = item;
+				return;
+			}
+			this.hiddenRows = [...this.hiddenRows, id];
+			if (this.open?.id === id) this.closeThread();
+			if (what === "archive") {
+				try {
+					await this.request(`./api/threads/${encodeURIComponent(id)}`, "PATCH", { archived: true });
+					this.showToast(`Archived “${name}”.`, async () => {
+						await this.request(`./api/threads/${encodeURIComponent(id)}`, "PATCH", { archived: false });
+						this.unhide(id);
+					});
+				} catch (error) {
+					this.unhide(id);
+					this.error = error.message;
+				}
+				return this.loadInbox();
+			}
+			// Deleting waits out the undo: only then is it gone for good.
+			const timer = setTimeout(async () => {
+				await fetch(`./api/threads/${encodeURIComponent(id)}`, { method: "DELETE" }).catch(() => {});
+				this.unhide(id);
+				await this.loadInbox();
+			}, 5_500);
+			this.showToast(`Deleted “${name}”.`, () => {
+				clearTimeout(timer);
+				this.unhide(id);
+			});
+		},
+		async chooseSnooze(choice) {
+			const item = this.snoozeFor;
+			this.snoozeFor = null;
+			if (!item) return;
+			const id = item.threadId;
+			try {
+				await this.request(`./api/threads/${encodeURIComponent(id)}`, "PATCH", { snoozedUntil: choice.at.toISOString() });
+				if (this.open?.id === id) this.closeThread();
+				this.showToast(`Snoozed until ${choice.when}.`, () => this.request(`./api/threads/${encodeURIComponent(id)}`, "PATCH", { snoozedUntil: null }));
+			} catch (error) {
+				this.error = error.message;
+			}
+			await this.loadInbox();
+		},
+		async unarchive(thread) {
+			await this.request(`./api/threads/${encodeURIComponent(thread.id)}`, "PATCH", { archived: false }).catch((error) => (this.error = error.message));
+			if (this.open?.id === thread.id) this.open = { ...this.open, archivedAt: undefined };
+			await this.loadInbox();
 		},
 
 		closeThread() {
@@ -440,6 +665,7 @@ function remindme() {
 		async refreshThread() {
 			const open = this.open;
 			if (!open || open.readOnly) return;
+			if (open.feed) return this.showFeed(true);
 			const fresh = await this.getJson(`./api/threads/${encodeURIComponent(open.id)}`, null);
 			if (!fresh || this.open?.id !== fresh.id || this.streaming) return;
 			const box = document.querySelector(".rm-messages");
@@ -454,6 +680,8 @@ function remindme() {
 
 		threadLine(thread) {
 			if (thread.readOnly) return thread.meta;
+			if (thread.feed) return "What it sent and did on its own";
+			if (thread.archivedAt) return `Archived · started ${this.formatWhen(thread.createdAt)}`;
 			const job = thread.job;
 			if (!job) return `Started ${this.formatWhen(thread.createdAt)}`;
 			const progress = job.progress ? ` · ${job.progress.done} of ${job.progress.total}` : "";

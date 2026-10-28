@@ -306,3 +306,20 @@ test("the runner reports a job's moves (for Live Activities) and the taps it lea
 	assert.deepEqual(changes, ["working", "working 1/2", "done 2/2"]);
 	assert.deepEqual(held, ['Write to Anna: Send "Samstag" to anna@example.com']);
 });
+
+test("a thread can be archived or snoozed and taken back; RemindMe's own thread is made once, with a fixed id", async () => {
+	const threads = store();
+	const thread = threads.create({ title: "what's on my list?", origin: "console" });
+	const before = threads.get(thread.id)!.updatedAt;
+	threads.setState(thread.id, { archivedAt: "2026-10-28T20:00:00.000Z", snoozedUntil: "2026-10-29T07:00:00.000Z" });
+	assert.equal(threads.list()[0].archivedAt, "2026-10-28T20:00:00.000Z");
+	assert.equal(threads.list()[0].snoozedUntil, "2026-10-29T07:00:00.000Z");
+	assert.equal(threads.get(thread.id)!.updatedAt, before, "archiving isn't news: the thread keeps its place");
+	threads.setState(thread.id, { archivedAt: null, snoozedUntil: null });
+	assert.equal(threads.get(thread.id)!.archivedAt, undefined);
+	assert.equal(threads.get(thread.id)!.snoozedUntil, undefined);
+	assert.equal(threads.setState("nope", { archivedAt: null }), undefined);
+	const feed = threads.ensure("remindme", "RemindMe");
+	assert.equal(threads.ensure("remindme", "Other").title, "RemindMe", "made once");
+	assert.equal(feed.id, "remindme");
+});

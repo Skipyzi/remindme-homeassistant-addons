@@ -1053,6 +1053,203 @@ body:has(> .rm-app) {
 	vertical-align: 1px;
 }
 
+/* Swipe rows: the row slides, its actions wait underneath */
+.rm-swipe {
+	position: relative;
+	overflow: hidden;
+	border-bottom: 1px solid var(--rule);
+}
+.rm-swipe .rm-entry {
+	border-bottom: 0;
+}
+.rm-swipe-face {
+	position: relative;
+	z-index: 1;
+	background: #000;
+	touch-action: pan-y;
+	transition: transform 0.18s ease;
+}
+.rm-swipe-under {
+	position: absolute;
+	inset: 0;
+	display: flex;
+}
+.rm-swipe-under.right {
+	justify-content: flex-end;
+}
+.rm-swipe-under.left {
+	justify-content: flex-start;
+}
+.rm-swipe[data-dir="left"] .rm-swipe-under.left,
+.rm-swipe[data-dir="right"] .rm-swipe-under.right,
+.rm-swipe:not([data-dir]) .rm-swipe-under {
+	visibility: hidden;
+}
+.rm-swipe-act {
+	min-width: 88px;
+	padding: 0 14px;
+	font-size: 13px;
+	font-weight: 600;
+}
+.rm-swipe-act.snooze {
+	background: var(--rule);
+	color: #fff;
+}
+.rm-swipe-act.archive {
+	background: #fff;
+	color: #000;
+}
+.rm-swipe-act.delete {
+	background: #d93a33;
+	color: #fff;
+}
+/* With a mouse, the same actions show on hover, over the time */
+.rm-swipe-hover {
+	position: absolute;
+	z-index: 2;
+	top: 10px;
+	right: 0;
+	display: none;
+	gap: 12px;
+	padding-left: 18px;
+	background: linear-gradient(90deg, transparent, #000 16px);
+	font-size: 12px;
+}
+.rm-swipe-hover button {
+	color: var(--mute);
+	text-decoration: underline;
+	text-underline-offset: 3px;
+}
+.rm-swipe-hover button:hover {
+	color: #fff;
+}
+.rm-swipe-hover button.delete:hover {
+	color: #ff6b5e;
+}
+@media (hover: hover) and (pointer: fine) {
+	.rm-swipe:not([data-dir]):hover .rm-swipe-hover,
+	.rm-swipe:not([data-dir]):focus-within .rm-swipe-hover {
+		display: flex;
+	}
+}
+/* RemindMe's own thread, pinned on top */
+.rm-pin .rm-entry {
+	border-bottom: 1px solid var(--rule);
+}
+.rm-new {
+	margin-left: 10px;
+	padding: 0 6px;
+	background: #fff;
+	color: #000;
+	font-size: 11px;
+	font-style: normal;
+	font-weight: 700;
+	vertical-align: 1px;
+}
+.rm-feed-day {
+	margin: 18px 0 6px;
+	color: var(--dim);
+	font-size: 12px;
+	text-align: center;
+}
+.rm-feed-fold {
+	display: block;
+	margin: 10px auto 4px;
+	color: var(--mute);
+	font-size: 12px;
+	text-decoration: underline;
+	text-underline-offset: 3px;
+}
+.rm-feed-acts {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	margin-top: 8px;
+}
+.rm-feed-acts .rm-btn {
+	height: 32px;
+	padding: 0 12px;
+	border-color: var(--rule);
+	font-size: 13px;
+}
+.rm-feed-acts .rm-btn:hover {
+	border-color: #fff;
+}
+.rm-feed-done {
+	margin: 6px 0 0;
+	color: var(--mute);
+	font-size: 13px;
+}
+.rm-md.bad {
+	color: #ff6b5e;
+}
+/* Snooze choices, and the undo toast */
+.rm-snooze {
+	position: fixed;
+	z-index: 60;
+	inset: auto 0 0;
+	padding: 14px 16px calc(14px + env(safe-area-inset-bottom));
+	background: #000;
+	border-top: 1px solid #fff;
+}
+.rm-snooze-top {
+	display: flex;
+	align-items: baseline;
+	justify-content: space-between;
+	margin-bottom: 6px;
+}
+.rm-snooze h2 {
+	margin: 0;
+	font-size: 14px;
+}
+.rm-snooze > button {
+	display: flex;
+	justify-content: space-between;
+	width: 100%;
+	padding: 12px 0;
+	border-bottom: 1px solid var(--rule);
+}
+.rm-snooze > button span + span {
+	color: var(--mute);
+}
+@media (min-width: 900px) {
+	.rm-snooze {
+		inset: auto auto 84px 16px;
+		width: 360px;
+		border: 1px solid #fff;
+	}
+}
+.rm-toast {
+	position: fixed;
+	z-index: 70;
+	left: 50%;
+	bottom: calc(84px + env(safe-area-inset-bottom));
+	transform: translateX(-50%);
+	display: flex;
+	gap: 16px;
+	align-items: center;
+	max-width: calc(100vw - 32px);
+	padding: 10px 14px;
+	background: #fff;
+	color: #000;
+	font-size: 13px;
+}
+.rm-toast button {
+	font-weight: 700;
+	text-decoration: underline;
+	text-underline-offset: 3px;
+}
+.rm-archived {
+	padding: 0 var(--gutter, 16px) 24px;
+}
+.rm-archived-row {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	padding: 8px 0;
+	border-bottom: 1px solid var(--rule);
+}
 /* A line in the inbox */
 .rm-entry {
 	display: grid;

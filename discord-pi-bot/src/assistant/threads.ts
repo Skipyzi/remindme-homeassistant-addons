@@ -56,6 +56,10 @@ export interface Thread {
 	origin: "console" | "discord";
 	messages: ThreadMessage[];
 	job?: JobState;
+	/** Out of the inbox, still in History. */
+	archivedAt?: string;
+	/** Out of the inbox until then; it comes back on top. */
+	snoozedUntil?: string;
 }
 
 /** A thread as a line in the inbox: no messages, just where it stands. */
@@ -108,6 +112,30 @@ export class ThreadStore {
 
 	get(id: string): Thread | undefined {
 		return this.threads.find((thread) => thread.id === id);
+	}
+
+	/** A thread with a fixed id, made the first time it's needed: RemindMe's own. */
+	ensure(id: string, title: string, now = new Date()): Thread {
+		const found = this.get(id);
+		if (found) return found;
+		const thread: Thread = { id, title, origin: "console", createdAt: now.toISOString(), updatedAt: now.toISOString(), messages: [] };
+		this.threads.push(thread);
+		this.trim();
+		this.save();
+		return thread;
+	}
+
+	/** Archive or snooze; null takes it back. Doesn't count as news, so the thread keeps its place. */
+	setState(id: string, patch: { archivedAt?: string | null; snoozedUntil?: string | null }): Thread | undefined {
+		const thread = this.get(id);
+		if (!thread) return undefined;
+		for (const key of ["archivedAt", "snoozedUntil"] as const) {
+			const value = patch[key];
+			if (value === null) delete thread[key];
+			else if (value !== undefined) thread[key] = value;
+		}
+		this.save();
+		return thread;
 	}
 
 	create(values: { title: string; origin: Thread["origin"]; job?: JobState }, now = new Date()): Thread {

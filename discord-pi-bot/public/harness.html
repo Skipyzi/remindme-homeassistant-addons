@@ -98,6 +98,15 @@
             </template>
           </section>
 
+          <!-- RemindMe's own thread, pinned: what it sent and did on its own, with buttons, and your replies. -->
+          <section class="rm-sec rm-pin" x-show="feedRow" x-cloak aria-label="RemindMe">
+            <button class="rm-entry" type="button" :class="{ on: open?.id === 'remindme' }" @click="openThread('remindme')">
+              <span class="rm-mark" aria-hidden="true"><span class="rm-cat" x-effect="drawCat($el, 'remindme', feedRow?.fresh ? 'asking' : 'done')"></span></span>
+              <span class="rm-entry-what"><b>RemindMe<em class="rm-new" x-show="feedRow?.fresh" x-text="`${feedRow?.fresh} new`"></em></b><span x-text="feedRow?.line"></span></span>
+              <time x-text="feedRow?.time"></time>
+            </button>
+          </section>
+
           <section class="rm-sec" x-show="working.length || scheduled.length" x-cloak aria-label="Working on">
             <h2><span>Working on</span><span x-text="working.length + scheduled.length"></span></h2>
             <template x-for="thread in working" :key="thread.id">
@@ -121,11 +130,19 @@
             <section class="rm-sec" :aria-label="group.label">
               <h2><span x-text="group.label"></span><span x-text="group.items.length"></span></h2>
               <template x-for="item in group.items" :key="item.key">
-                <button class="rm-entry" type="button" :class="{ bad: item.bad, on: open && open.id === item.openId }" @click="item.threadId ? openThread(item.threadId) : openEntry(item)">
-                  <span class="rm-mark" aria-hidden="true"><template x-if="item.threadId"><span class="rm-cat" x-effect="drawCat($el, item.threadId, item.cat)"></span></template><template x-if="!item.threadId && item.color"><span class="rm-sq" :style="`--c:${item.color}`"></span></template><span x-show="!item.threadId && !item.color" x-text="item.mark"></span></span>
-                  <span class="rm-entry-what"><b x-text="item.title"></b><span x-text="item.line"></span></span>
-                  <time x-text="item.time"></time>
-                </button>
+                <!-- Swipe left for Snooze and Archive (all the way archives), right for Delete; with a mouse, they show on hover. -->
+                <div class="rm-swipe" x-init="swipeable($el, item)">
+                  <div class="rm-swipe-under right"><button class="rm-swipe-act snooze" type="button" @click.stop="rowAct(item, 'snooze')">Snooze</button><button class="rm-swipe-act archive" type="button" @click.stop="rowAct(item, 'archive')">Archive</button></div>
+                  <div class="rm-swipe-under left"><button class="rm-swipe-act delete" type="button" @click.stop="rowAct(item, 'delete')">Delete</button></div>
+                  <div class="rm-swipe-face">
+                    <button class="rm-entry" type="button" :class="{ bad: item.bad, on: open && open.id === item.openId }" @click="openThread(item.threadId)">
+                      <span class="rm-mark" aria-hidden="true"><span class="rm-cat" x-effect="drawCat($el, item.threadId, item.cat)"></span></span>
+                      <span class="rm-entry-what"><b x-text="item.title"></b><span x-text="item.line"></span></span>
+                      <time x-text="item.time"></time>
+                    </button>
+                  </div>
+                  <div class="rm-swipe-hover"><button type="button" @click.stop="rowAct(item, 'snooze')">Snooze</button><button type="button" @click.stop="rowAct(item, 'archive')">Archive</button><button class="delete" type="button" @click.stop="rowAct(item, 'delete')">Delete</button></div>
+                </div>
               </template>
             </section>
           </template>
@@ -152,11 +169,14 @@
               <span class="rm-cat rm-cat-head" x-show="!open.readOnly" x-effect="open.readOnly || drawCat($el, open.id, catState(open))"></span>
               <h1><span x-text="open.title"></span><small x-text="threadLine(open)"></small></h1>
               <button class="rm-barlink" type="button" x-show="isRunning(open) || open.job?.status === 'waiting'" @click="stopJob(open)" x-text="open.job?.status === 'waiting' ? 'Stop watching' : 'Stop'"></button>
-              <button class="rm-barlink" type="button" x-show="!open.readOnly && !isRunning(open) && open.job?.status !== 'waiting'" @click="deleteThread(open)">Delete</button>
+              <button class="rm-barlink" type="button" x-show="open.archivedAt" @click="unarchive(open)">Unarchive</button>
+              <button class="rm-barlink" type="button" x-show="!open.readOnly && !open.feed && !isRunning(open) && open.job?.status !== 'waiting'" @click="deleteThread(open)">Delete</button>
             </header>
             <div class="rm-scroll rm-messages" x-ref="messages">
               <template x-for="message in open.messages" :key="message.id">
                 <div :class="`rm-msg ${message.role}`">
+                  <template x-if="message.role === 'day'"><p class="rm-feed-day" x-text="message.text"></p></template>
+                  <template x-if="message.role === 'fold'"><button class="rm-feed-fold" type="button" @click="unfoldFeed()" x-text="message.text"></button></template>
                   <template x-if="message.role === 'user'">
                     <div class="rm-me"><span class="rm-meta" x-text="timeOf(new Date(message.at))"></span><p x-text="message.text"></p></div>
                   </template>
@@ -168,12 +188,20 @@
                       <span class="rm-cat rm-cat-say" x-show="!open.readOnly" x-effect="open.readOnly || drawCat($el, open.id, message.id === lastAssistantId ? catState(open) : 'done')"></span>
                       <div>
                         <span class="rm-meta" x-text="message.meta || timeOf(new Date(message.at))"></span>
-                        <div class="rm-md" x-effect="renderText($el, message.receipts?.length && /^done\.?$/i.test(message.text) ? '' : message.text)"></div>
+                        <div class="rm-md" :class="{ bad: message.bad }" x-effect="renderText($el, message.receipts?.length && /^done\.?$/i.test(message.text) ? '' : message.text)"></div>
                         <ul class="rm-receipts" x-show="message.receipts?.length">
                           <template x-for="(receipt, index) in message.receipts || []" :key="index">
                             <li :class="receipt.color ? '' : 'plain'"><span class="rm-sq" :style="receipt.color ? `--c:${receipt.color}` : ''"></span><span x-text="receipt.text"></span></li>
                           </template>
                         </ul>
+                        <template x-if="message.entry?.actions?.length && !message.entry.acted">
+                          <div class="rm-feed-acts">
+                            <template x-for="(action, index) in message.entry.actions" :key="index">
+                              <button class="rm-btn" type="button" @click="feedAct(message, index)" x-text="action.label"></button>
+                            </template>
+                          </div>
+                        </template>
+                        <p class="rm-feed-done" x-show="message.entry?.acted" x-text="`✓ ${message.entry?.acted}`"></p>
                       </div>
                     </div>
                   </template>
@@ -201,15 +229,26 @@
                   <button class="rm-btn" :class="{ solid: index === 0 }" type="button" @click="answerJob(open, option)" x-text="option"></button>
                 </template>
               </div>
+              <p class="rm-empty" x-show="open.feed && !open.messages.length">Nothing yet. The morning brief, nudges, reminders and what RemindMe does on its own show up here, and you can answer them.</p>
             </div>
             <form class="rm-compose" x-show="!open.readOnly" @submit.prevent="reply()">
-              <input type="text" x-model="replyDraft" x-ref="reply" :placeholder="open.job ? 'Reply to this job' : 'Reply'" aria-label="Reply" autocomplete="off" enterkeyhint="send" />
+              <input type="text" x-model="replyDraft" x-ref="reply" :placeholder="open.feed ? 'Reply to RemindMe, such as: done, or remind me at 9' : open.job ? 'Reply to this job' : 'Reply'" aria-label="Reply" autocomplete="off" enterkeyhint="send" />
               <button class="rm-btn solid" type="submit" :disabled="sending || !replyDraft.trim()">Send</button>
             </form>
           </div>
         </template>
         <p class="rm-thread-empty" x-show="!open">Open something on the left, or ask below.</p>
       </section>
+
+      <!-- Snoozing a row: until when. -->
+      <div class="rm-snooze" x-show="snoozeFor" x-cloak role="dialog" aria-label="Snooze until" @keydown.escape.window="snoozeFor = null">
+        <div class="rm-snooze-top"><h2>Snooze until</h2><button class="rm-link" type="button" @click="snoozeFor = null">Cancel</button></div>
+        <template x-for="choice in snoozeChoices" :key="choice.title">
+          <button type="button" @click="chooseSnooze(choice)"><span x-text="choice.title"></span><span x-text="choice.when"></span></button>
+        </template>
+      </div>
+      <!-- What a swipe did, with a moment to take it back. -->
+      <div class="rm-toast" x-show="toast" x-cloak role="status"><span x-text="toast?.text"></span><button type="button" x-show="toast?.canUndo" @click="undoToast()">Undo</button></div>
 
       <!-- History: the old ledger, everything RemindMe said, did and will do. -->
       <div class="rm-sheet" x-show="historyOpen" x-cloak @keydown.escape.window="historyOpen = false" role="dialog" aria-modal="true" aria-labelledby="history-title">
@@ -252,6 +291,15 @@
               </div>
             </template>
             <p class="rm-empty" x-show="!view.some((item) => item.type === 'row')" x-text="emptyText"></p>
+          </section>
+          <section class="rm-archived" x-show="archived.length" aria-label="Archived conversations">
+            <h2 class="rm-day">Archived conversations</h2>
+            <template x-for="thread in archived" :key="thread.id">
+              <div class="rm-archived-row">
+                <button class="rm-link" type="button" @click="historyOpen = false; openThread(thread.id)" x-text="thread.title"></button>
+                <button class="rm-btn ghost" type="button" @click="unarchive(thread)">Unarchive</button>
+              </div>
+            </template>
           </section>
         </div>
       </div>

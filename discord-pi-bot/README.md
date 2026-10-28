@@ -86,7 +86,8 @@ Open **RemindMe** in the sidebar. It is an inbox. On a phone a thread opens over
 
 - **Needs you:** actions waiting for your tap (locks, doors, scenes, calendar events), questions from jobs with their answers as buttons, and batteries running out. A battery's **Remind me Saturday** hides it until then; **Got it** hides it until it's charged or changed.
 - **Working on:** background jobs with how far along they are, and your scheduled tasks.
-- **Today, Yesterday, Earlier:** every conversation and job, and what RemindMe sent or did elsewhere (the brief, nudges, reminders, Discord).
+- **RemindMe:** its own thread, pinned on top with what's new: the morning brief, nudges, reminders, heads-ups and what it changed on its own, by day, with their buttons (a battery's Remind me Saturday, a reminder's In 1 hour). Reply there in context, such as "done" or "remind me at 9". Notifications about these open it.
+- **Today, Yesterday, Earlier:** every conversation and job. Swipe a row left to snooze it (later today, tomorrow morning, the weekend, next week) or archive it, right to delete it, with Undo; with a mouse, the same show on hover. Archived conversations are under History.
 - **Cats:** every conversation and job has its own cat (a ginger tabby, tuxedo, calico, siamese, grey or black cat, with a bow tie, beret, glasses, headphones, party hat or scarf). It shows how things stand: busy while a job works, a paw raised when it needs you, content when done, grey and dizzy when it stopped.
 - **The box at the bottom:** ask, or hand something off. Every request opens a thread of its own; reply in it to carry on. Pictures work with Claude, OpenAI and ChatGPT.
 - **History:** the full timeline: what's coming up, then everything RemindMe answered, changed, sent and failed at, with changed lamps in their own colour.

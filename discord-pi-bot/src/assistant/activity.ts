@@ -17,6 +17,14 @@ export interface Receipt {
 	color?: string;
 }
 
+/** A button under one of RemindMe's own messages, in its thread: what it does, and on what. */
+export interface EntryAction {
+	label: string;
+	kind: "battery-remind" | "battery-hide" | "reminder-later";
+	/** The battery's entity id, or the reminder's text. */
+	ref: string;
+}
+
 export interface ActivityEntry {
 	id: string;
 	at: string;
@@ -28,6 +36,10 @@ export interface ActivityEntry {
 	receipts?: Receipt[];
 	/** For waiting rows: the confirmation token, until it is used. */
 	token?: string;
+	/** Buttons under it in the RemindMe thread. */
+	actions?: EntryAction[];
+	/** What a tap on one of them did; the buttons go then. */
+	acted?: string;
 }
 
 const MAX_ENTRIES = 1_000;
@@ -65,6 +77,29 @@ export class ActivityLog {
 		this.trim();
 		this.save();
 		return saved;
+	}
+
+	get(id: string): ActivityEntry | undefined {
+		return this.entries.find((entry) => entry.id === id);
+	}
+
+	/** A button was tapped: the entry says what came of it, and its buttons go. */
+	acted(id: string, text: string): void {
+		const entry = this.get(id);
+		if (!entry) return;
+		entry.acted = text;
+		this.save();
+	}
+
+	/** The same done from elsewhere (the phone, the inbox card): entries with buttons on it say so too. */
+	settle(ref: string, text: string): void {
+		let changed = false;
+		for (const entry of this.entries)
+			if (!entry.acted && entry.actions?.some((action) => action.ref === ref)) {
+				entry.acted = text;
+				changed = true;
+			}
+		if (changed) this.save();
 	}
 
 	/** A waiting row's outcome: it turns into what happened, and its token is spent. */
