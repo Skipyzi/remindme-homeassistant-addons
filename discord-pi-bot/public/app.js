@@ -510,30 +510,32 @@ function remindme() {
 			const face = element.querySelector(".rm-swipe-face");
 			const REVEAL = 176;
 			let start, base = 0, dx = 0, decided = false, sliding = false;
-			face.addEventListener("pointerdown", (event) => {
-				if (event.pointerType === "mouse" && event.button !== 0) return;
-				start = { x: event.clientX, y: event.clientY };
+			const begin = (x, y) => {
+				start = { x, y };
 				base = element.dataset.state === "left" ? -REVEAL : element.dataset.state === "right" ? 96 : 0;
 				dx = 0;
 				decided = sliding = false;
-			});
-			face.addEventListener("pointermove", (event) => {
-				if (!start) return;
-				const mx = event.clientX - start.x;
-				const my = event.clientY - start.y;
+			};
+			/* True while the row slides: a sideways drag. Up and down is scrolling and lets go. */
+			const move = (x, y) => {
+				if (!start) return false;
+				const mx = x - start.x;
+				const my = y - start.y;
 				if (!decided) {
-					if (Math.abs(mx) < 8 && Math.abs(my) < 8) return;
+					if (Math.abs(mx) < 8 && Math.abs(my) < 8) return false;
 					decided = true;
-					// Up and down is scrolling.
-					if (Math.abs(my) > Math.abs(mx)) return void (start = undefined);
+					if (Math.abs(my) > Math.abs(mx)) {
+						start = undefined;
+						return false;
+					}
 					sliding = true;
-					face.setPointerCapture(event.pointerId);
 					face.style.transition = "none";
 				}
 				dx = mx;
 				face.style.transform = `translateX(${base + dx}px)`;
 				element.dataset.dir = base + dx < 0 ? "left" : "right";
-			});
+				return true;
+			};
 			const end = () => {
 				if (!start) return;
 				start = undefined;
@@ -549,8 +551,31 @@ function remindme() {
 				else if (x > 50) Object.assign(element.dataset, { state: "right", dir: "right" }), (face.style.transform = "translateX(96px)");
 				else this.closeSwipes();
 			};
-			face.addEventListener("pointerup", end);
-			face.addEventListener("pointercancel", end);
+			/*
+			 * Touch has its own events: on an iPhone the list would otherwise take
+			 * a sideways drag for itself, whatever touch-action says. Once a drag
+			 * is clearly sideways, the list is told not to scroll.
+			 */
+			face.addEventListener("touchstart", (event) => event.touches.length === 1 && begin(event.touches[0].clientX, event.touches[0].clientY), { passive: true });
+			face.addEventListener(
+				"touchmove",
+				(event) => {
+					if (event.touches.length === 1 && move(event.touches[0].clientX, event.touches[0].clientY) && event.cancelable) event.preventDefault();
+				},
+				{ passive: false },
+			);
+			face.addEventListener("touchend", end);
+			face.addEventListener("touchcancel", end);
+			// A mouse or pen drags with pointer events.
+			face.addEventListener("pointerdown", (event) => {
+				if (event.pointerType !== "touch" && event.button === 0) begin(event.clientX, event.clientY);
+			});
+			face.addEventListener("pointermove", (event) => {
+				if (event.pointerType === "touch" || !move(event.clientX, event.clientY)) return;
+				if (!face.hasPointerCapture(event.pointerId)) face.setPointerCapture(event.pointerId);
+			});
+			face.addEventListener("pointerup", (event) => event.pointerType !== "touch" && end());
+			face.addEventListener("pointercancel", (event) => event.pointerType !== "touch" && end());
 			// A swipe isn't a tap.
 			face.addEventListener(
 				"click",
