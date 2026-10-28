@@ -664,11 +664,16 @@ a {
  * The app: the inbox, and one thread. On a phone the thread slides over the
  * inbox; from 900px they sit side by side.
  */
+/*
+ * --app-height is the window's own height, set by app.js: in the installed iPhone
+ * app 100vh and 100dvh can include the status bar and push the typing box off
+ * the bottom of the screen.
+ */
 .rm-app {
 	display: grid;
 	grid-template-columns: minmax(0, 1fr);
 	height: 100vh;
-	height: 100dvh;
+	height: var(--app-height, 100dvh);
 }
 .rm-inbox,
 .rm-thread-in {
@@ -676,7 +681,12 @@ a {
 	flex-direction: column;
 	min-height: 0;
 	height: 100vh;
-	height: 100dvh;
+	height: var(--app-height, 100dvh);
+}
+/* The app scrolls inside its panes, never as a whole page. */
+body:has(> .rm-app) {
+	overflow: hidden;
+	overscroll-behavior: none;
 }
 .rm-thread {
 	display: none;

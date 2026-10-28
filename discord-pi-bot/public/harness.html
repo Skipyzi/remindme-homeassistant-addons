@@ -11,7 +11,8 @@
     <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black" />
+    <!-- No apple-mobile-web-app-status-bar-style: since iOS 26.1 any value blurs the top of the
+         installed app. Without it the status bar is opaque and the page starts below it. -->
     <meta name="apple-mobile-web-app-title" content="RemindMe" />
     <!-- iPhone launch screens, one per screen size; Android draws its own from the manifest. -->
     <link rel="apple-touch-startup-image" media="(device-width: 440px) and (device-height: 956px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" href="./splash/splash-1320x2868.png" />

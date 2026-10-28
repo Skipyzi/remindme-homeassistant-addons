@@ -66,6 +66,8 @@ test("the installed app opens on a splash: iPhone launch images for every screen
 		assert.equal(png.readUInt32BE(20), Number(pixelsHigh), `${path} is as tall as its screen`);
 	}
 	assert.match(html, /class="rm-splash" x-show="splash"/);
+	assert.doesNotMatch(html, /<meta name="apple-mobile-web-app-status-bar-style"/, "any status bar style blurs the top of the installed app on iOS 26.1+");
+	assert.match(app, /--app-height/);
 	assert.match(readFileSync("public/styles.css", "utf8"), /@media \(display-mode: standalone\) \{\s*\.rm-splash/);
 });
 

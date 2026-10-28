@@ -166,6 +166,9 @@ function remindme() {
 		authConsoleBusy: false,
 
 		init() {
+			const fit = () => document.documentElement.style.setProperty("--app-height", `${window.innerHeight}px`);
+			fit();
+			window.addEventListener("resize", fit);
 			this.loadInbox();
 			this.route();
 			window.addEventListener("popstate", () => this.route());
