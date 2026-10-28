@@ -25,7 +25,7 @@ Under **AI → Sign-ins** in the console:
 
 The agents (Claude and Codex) run each turn themselves with RemindMe's tools and nothing else: no terminal, files or coding tools. Each chat keeps its own agent session. They can't look at pictures, and their usage counts against your subscription, not the daily budget.
 
-`ai_provider` picks the default. In the console, **AI** (the badge at the top, or the drawer) switches between the providers that have a key, picks the model and sets the effort, without a restart. Keys only ever come from the app options; the console never sees them.
+`ai_provider` picks the default. In the console, **Settings → AI and sign-ins** switches between the providers that are set up and picks the model without a restart. Models come in a table: what each is good for, a rough guide to smarts and speed, what a typical answer costs (or how much of a subscription it uses), and how many answers the daily budget covers. Older versions, and typing a model's exact name, are under **Older and other models**. Keys only ever come from the app options; the console never sees them.
 
 `ai_effort` sets how hard the AI thinks on Discord and in scheduled tasks; in the console, the **Thinking** menu under the message box sets it per message. `daily_ai_budget` (US dollars, default 2) pauses the assistant for the rest of the day once reached. Spend is counted from Claude's list prices; OpenAI and OpenCode usage is shown in tokens only, because their APIs publish no prices.
 

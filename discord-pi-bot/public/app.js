@@ -121,6 +121,9 @@ function remindme() {
 			{ id: "documents", label: "Documents" },
 		],
 		aiModels: [],
+		modelTable: { billing: "unknown", budget: 0, featured: [], others: [] },
+		modelsOpen: false,
+		customModel: "",
 		aiModel: "",
 		aiEffort: "low",
 		aiBusy: false,
@@ -723,12 +726,45 @@ function remindme() {
 		},
 		async loadAiModels() {
 			this.aiModels = [];
+			this.modelTable = { billing: "unknown", budget: 0, featured: [], others: [] };
 			const option = this.ai?.providers?.find((entry) => entry.id === this.ai.provider);
 			if (!option?.configured) return;
 			const response = await fetch(`./api/ai/models?provider=${encodeURIComponent(option.id)}`);
 			const data = await response.json().catch(() => ({}));
-			if (response.ok) this.aiModels = data.models || [];
-			else this.aiError = data.error || "Could not list the models.";
+			if (!response.ok) {
+				this.aiError = data.error || "Could not list the models.";
+				return;
+			}
+			this.aiModels = data.models || [];
+			this.modelTable = { billing: data.billing || "unknown", budget: data.budget || 0, featured: data.featured || [], others: data.others || [] };
+			// A model picked from the older list or typed in shows where it is.
+			this.modelsOpen = Boolean(this.aiModel) && !this.modelTable.featured.some((model) => model.id === this.aiModel);
+		},
+		get aiReadyToPick() {
+			return Boolean(this.ai?.providers?.find((option) => option.id === this.ai.provider)?.configured);
+		},
+		get modelNote() {
+			if (!this.aiReadyToPick) return "Choose who answers first.";
+			const using = this.aiModel && !this.modelTable.featured.some((model) => model.id === this.aiModel) ? `Using ${this.aiModel}. ` : "";
+			if (this.modelTable.billing === "credits") return `${using}Cost is a typical answer at list price, paid from your API credits. Smarts and speed are a rough guide, not a benchmark.`;
+			if (this.modelTable.billing === "plan") return `${using}Uses your plan's limits; nothing is billed here. Smarts and speed are a rough guide, not a benchmark.`;
+			if (!this.modelTable.featured.length && !this.modelTable.others.length) return `${using}This provider doesn't list its models. Type the exact name of the one to use.`;
+			return `${using}This provider doesn't tell RemindMe its prices.`;
+		},
+		pickModel(id) {
+			const model = String(id || "").trim();
+			if (!model || this.aiBusy || !this.aiReadyToPick) return;
+			this.aiModel = model;
+			this.customModel = "";
+			this.chooseAi({ model });
+		},
+		centsOf(usd) {
+			if (usd === undefined || usd === null) return "";
+			const cents = usd * 100;
+			return cents < 1 ? `${cents.toFixed(1)}¢` : `${Math.round(cents)}¢`;
+		},
+		planWord(level) {
+			return ["", "light", "more", "most"][level] || "";
 		},
 		async chooseAi(change) {
 			this.aiBusy = true;

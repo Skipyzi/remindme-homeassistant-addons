@@ -267,11 +267,41 @@
                   </button>
                 </template>
               </div>
+              <h3>Model</h3>
+              <table class="rm-models" x-show="modelTable.featured.length">
+                <thead>
+                  <tr>
+                    <th>Model</th>
+                    <th class="rm-wide">Smarts</th>
+                    <th class="rm-wide">Speed</th>
+                    <th class="rm-num" x-show="modelTable.billing !== 'unknown'" x-text="modelTable.billing === 'plan' ? 'Plan use' : 'Per answer'"></th>
+                    <th class="rm-num rm-perday" x-show="modelTable.billing === 'credits' && modelTable.budget > 0" x-text="`On $${modelTable.budget} a day`"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <template x-for="model in modelTable.featured" :key="model.id">
+                    <tr role="button" tabindex="0" :class="{ on: model.id === aiModel }" :aria-pressed="String(model.id === aiModel)" @click="pickModel(model.id)" @keydown.enter="pickModel(model.id)">
+                      <td><div class="rm-models-name"><span class="rm-models-pick"></span><span><b x-text="model.name"></b><span class="rm-tag" x-show="model.recommended">Recommended</span><small x-text="model.what"></small></span></div></td>
+                      <td class="rm-wide"><span class="rm-meter" :aria-label="`Smarts ${model.smarts} of 4`"><template x-for="n in 4" :key="n"><i :class="{ on: n <= model.smarts }"></i></template></span></td>
+                      <td class="rm-wide"><span class="rm-meter" :aria-label="`Speed ${model.speed} of 4`"><template x-for="n in 4" :key="n"><i :class="{ on: n <= model.speed }"></i></template></span></td>
+                      <td class="rm-num" x-show="modelTable.billing !== 'unknown'"><span x-text="modelTable.billing === 'plan' ? planWord(model.plan) : centsOf(model.perAnswerUsd)"></span><small class="rm-perday-short" x-show="model.perDay !== undefined" x-text="`~${model.perDay?.toLocaleString('en-GB')} a day`"></small></td>
+                      <td class="rm-num rm-mute rm-perday" x-show="modelTable.billing === 'credits' && modelTable.budget > 0" x-text="model.perDay !== undefined ? `~${model.perDay.toLocaleString('en-GB')} answers` : ''"></td>
+                    </tr>
+                  </template>
+                </tbody>
+              </table>
+              <button class="rm-link rm-models-more" type="button" x-show="modelTable.featured.length && modelTable.others.length" @click="modelsOpen = !modelsOpen" x-text="modelsOpen ? 'Hide older and other models' : `Older and other models (${modelTable.others.length})`"></button>
+              <div class="rm-choices" x-show="modelTable.others.length && (modelsOpen || !modelTable.featured.length)">
+                <template x-for="id in modelTable.others" :key="id">
+                  <button class="rm-choice" type="button" :class="{ on: id === aiModel }" :disabled="aiBusy" @click="pickModel(id)"><span x-text="id"></span><small></small><span></span></button>
+                </template>
+              </div>
+              <form class="rm-ask" x-show="modelsOpen || !modelTable.featured.length" @submit.prevent="pickModel(customModel)">
+                <input type="text" x-model="customModel" spellcheck="false" autocomplete="off" placeholder="Or type a model's exact name" aria-label="A model's exact name" :disabled="aiBusy || !aiReadyToPick" />
+                <button class="rm-btn" type="submit" :disabled="aiBusy || !customModel.trim()">Use</button>
+              </form>
+              <p class="rm-note" x-text="modelNote"></p>
               <div class="rm-two">
-                <label class="rm-field">Model
-                  <input list="ai-models" x-model="aiModel" spellcheck="false" :placeholder="aiModels.length ? 'Choose or type a model' : 'Type a model name'" :disabled="aiBusy || !ai?.providers?.find((option) => option.id === ai.provider)?.configured" @change="chooseAi({ model: aiModel })" />
-                  <datalist id="ai-models"><template x-for="id in aiModels" :key="id"><option :value="id"></option></template></datalist>
-                </label>
                 <label class="rm-field">How hard it thinks
                   <select x-model="aiEffort" :disabled="aiBusy" @change="chooseAi({ effort: aiEffort })">
                     <option value="low">Low: quick and cheap</option>

@@ -71,6 +71,14 @@ test("the installed app opens on a splash: iPhone launch images for every screen
 	assert.match(readFileSync("public/styles.css", "utf8"), /@media \(display-mode: standalone\) \{\s*\.rm-splash/);
 });
 
+test("models are picked from a table that explains them, not a box of ids", () => {
+	assert.match(html, /<table class="rm-models"/);
+	assert.match(html, /Older and other models/);
+	assert.match(html, /Or type a model's exact name/);
+	assert.doesNotMatch(html, /datalist id="ai-models"/);
+	assert.match(app, /pickModel\(id\)/);
+});
+
 test("only Claude Code and Codex remain as agents", () => {
 	assert.doesNotMatch(html, /value="opencode"|value="pi"|Pi account/);
 	assert.doesNotMatch(readFileSync("public/components/account-console.js", "utf8"), /agents\/pi|opencode/);

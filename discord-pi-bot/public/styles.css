@@ -569,6 +569,91 @@ a {
 	color: #fff;
 	font-weight: 400;
 }
+/* The model table: the current models explained, with what they cost */
+.rm-models {
+	width: 100%;
+	border-collapse: collapse;
+}
+.rm-models th {
+	padding: 0 10px 8px 0;
+	border-bottom: 1px solid #fff;
+	color: var(--mute);
+	font-size: 12px;
+	font-weight: 500;
+	text-align: left;
+	white-space: nowrap;
+}
+.rm-models td {
+	padding: 11px 10px 11px 0;
+	border-bottom: 1px solid var(--rule);
+	vertical-align: top;
+}
+.rm-models tr[role="button"] {
+	cursor: pointer;
+}
+.rm-models-name {
+	display: flex;
+	gap: 10px;
+	min-width: 0;
+}
+.rm-models-pick {
+	flex: none;
+	width: 10px;
+	height: 10px;
+	margin-top: 5px;
+	border: 1px solid var(--dim);
+}
+.rm-models tr.on .rm-models-pick {
+	background: #fff;
+	border-color: #fff;
+}
+.rm-models tr.on b,
+.rm-models tr[role="button"]:hover b {
+	text-decoration: underline;
+	text-underline-offset: 4px;
+	text-decoration-thickness: 1px;
+}
+.rm-models small {
+	display: block;
+	margin-top: 2px;
+	color: var(--mute);
+	font-size: 13px;
+}
+.rm-tag {
+	display: inline-block;
+	margin-left: 8px;
+	padding: 0 6px;
+	border: 1px solid currentColor;
+	font-size: 11px;
+	font-weight: 600;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+	vertical-align: 1px;
+}
+.rm-num {
+	text-align: right;
+	white-space: nowrap;
+}
+.rm-meter {
+	display: inline-flex;
+	gap: 2px;
+	padding-top: 4px;
+}
+.rm-meter i {
+	width: 6px;
+	height: 10px;
+	background: var(--rule);
+}
+.rm-meter i.on {
+	background: #fff;
+}
+.rm-perday-short {
+	display: none !important;
+}
+.rm-models-more {
+	justify-self: start;
+	color: var(--mute);
+}
 .rm-two {
 	display: grid;
 	grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1008,6 +1093,13 @@ body:has(> .rm-app) {
 }
 
 @media (max-width: 820px) {
+	.rm-models .rm-wide,
+	.rm-models .rm-perday {
+		display: none !important;
+	}
+	.rm-models .rm-perday-short {
+		display: block !important;
+	}
 	.rm-row,
 	.rm-now {
 		grid-template-columns: 52px minmax(0, 1fr);

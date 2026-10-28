@@ -65,6 +65,7 @@ import { Mailboxes, type MailAccount } from "./mail/mailboxes";
 import { ConnectorStore, publicView } from "./connectors/store";
 import { CONNECTOR_KINDS, checkMailInput, importMailOptions, mailAccount } from "./connectors/mail";
 import { CalendarChoice, listCalendars } from "./connectors/calendar";
+import { modelTable } from "./ai/catalog";
 import { ThreadStore, titleFrom, type Thread } from "./assistant/threads";
 import { JobRunner } from "./assistant/jobs";
 import type { EntityCard } from "./harness/entities";
@@ -392,7 +393,9 @@ app.get("/api/ai/models", async (request, response) => {
 	if (!PROVIDERS.some((provider) => provider.id === id))
 		return response.status(400).json({ error: "Unknown provider" });
 	try {
-		response.json({ models: await aiSettings.listModels(id as ProviderId) });
+		const models = await aiSettings.listModels(id as ProviderId);
+		// The plain list, plus the console's table: the current models explained, the rest under "Older".
+		response.json({ models, ...modelTable(id as ProviderId, models, aiSettings.dailyBudget()) });
 	} catch (error) {
 		response.status(502).json({ error: error instanceof Error ? error.message : "Could not list models" });
 	}
