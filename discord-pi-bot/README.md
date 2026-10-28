@@ -118,6 +118,15 @@ Device changes, calendar events and the like still wait for your tap, as everywh
 
 The assistant always knows which AI and model are answering, and says so when asked.
 
+## Web browser
+
+For pages a plain read can't handle, such as DHL tracking, shops and timetables, RemindMe has a headless Chromium on the Pi (`web_browser`, on by default). The AI opens pages, clicks, types into searches and reads what comes back.
+
+- It browses signed out, starts with a fresh profile every time, and never types into password, card or bank fields.
+- A click that would buy, book, send or sign up, or a form that asks for your details, waits for your tap like any other held action.
+- It can't reach your home network, Home Assistant or the Supervisor, and Chromium runs as its own user without RemindMe's keys or access to `/data`.
+- It starts when needed and closes after three minutes without use, using about 200–400 MB of memory while open.
+
 ## Memory
 
 RemindMe remembers things about you: what it picked up from what you told it ("my sister Anna lives in Berlin"), and what you add yourself. Every answer gets them, so you don't have to say them twice. It learns only from your own messages, never from emails or web pages, and never keeps passwords, codes or long numbers. **Settings → Memory** lists everything it remembers: forget any of it, add to it, or switch learning off.

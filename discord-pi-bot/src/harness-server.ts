@@ -71,6 +71,7 @@ import { CalendarChoice, listCalendars } from "./connectors/calendar";
 import { GoogleApp, GoogleContacts, GoogleTokens, signedInWithGoogle } from "./connectors/google";
 import { signInRoutes } from "./connectors/signin-routes";
 import { McpAuth } from "./harness/mcp-auth";
+import { WebBrowser } from "./harness/browser";
 import { modelTable } from "./ai/catalog";
 import { ThreadStore, titleFrom, type Thread } from "./assistant/threads";
 import { JobRunner } from "./assistant/jobs";
@@ -192,6 +193,8 @@ const artifacts = new ArtifactStore();
 void artifacts.load();
 const mcpServers = new McpServerStore();
 void mcpServers.load();
+/* The headless browser, when the image ships Chromium and web_browser is on. */
+const webBrowser = WebBrowser.fromEnv();
 const mcpAuth = new McpAuth((id, signIn) => mcpServers.setSignIn(id, signIn));
 /*
  * Work against a Connected tool with its sign-in. A 401 refreshes the token
@@ -1624,6 +1627,7 @@ export function toolContext(): ToolContext {
 		artifacts,
 		mail: mailboxes,
 		contacts,
+		...(webBrowser ? { browser: webBrowser } : {}),
 		calendar: calendarChoice,
 		jobs: { start: (input) => jobs.start(input), answer: (id, text) => jobs.answer(id, text) },
 		mcp: {

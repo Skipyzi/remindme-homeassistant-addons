@@ -77,6 +77,9 @@ configuration:
   phone_app:
     name: Phone app
     description: RemindMe joins your tailnet as its own device, so you can install it on your phone with its own notifications. Connect it under Settings, Phone app.
+  web_browser:
+    name: Web browser
+    description: A headless Chromium on the Pi for pages that need one, such as tracking pages and shops. It browses signed out and can't reach your home network; buying, booking or sending waits for your tap.
   ha_notify_target:
     name: Phone notifications
     description: Optional. A notify service such as mobile_app_iphone, for reminders on your phone.

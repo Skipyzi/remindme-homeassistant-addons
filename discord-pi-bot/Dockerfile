@@ -2,6 +2,16 @@ FROM node:22-alpine
 # `script` gives the CLI sign-in consoles a terminal.
 RUN apk add --no-cache util-linux
 
+# A headless Chromium for the browse tool. It runs as its own unprivileged user
+# through this wrapper, with a clean environment: a page that broke out of the
+# renderer finds no tokens or keys, and /data is closed to it (run.sh).
+RUN apk add --no-cache chromium su-exec font-dejavu \
+	&& adduser -D -H -h /var/lib/remindme-browser -s /sbin/nologin browser \
+	&& mkdir -p /var/lib/remindme-browser/profile \
+	&& chown -R browser:browser /var/lib/remindme-browser \
+	&& printf '#!/bin/sh\nexec /sbin/su-exec browser /usr/bin/chromium-browser "$@"\n' > /usr/local/bin/remindme-chromium \
+	&& chmod 755 /usr/local/bin/remindme-chromium
+
 # Tailscale for the phone app, pinned and checked: RemindMe joins the tailnet as its own device.
 ARG TAILSCALE_VERSION=1.104.4
 ARG TAILSCALE_SHA256=a1c249ce6bdebef62e1ae3b997595555bce2ae4709bf95a718e9ca7a129dad7e

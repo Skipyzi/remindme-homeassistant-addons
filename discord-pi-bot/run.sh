@@ -42,6 +42,13 @@ export MAIL_NUDGES="$(get_option mail_nudges)"
 export SMART_NUDGES="$(get_option smart_nudges)"
 export INBOX_SORTER_URL="$(get_option inbox_sorter_url)"
 
+# The browse tool's Chromium, run as its own user (see the Dockerfile). The data
+# folder is closed to every user but root, so that user can't read it.
+chmod 700 /data
+export WEB_BROWSER="$(get_option web_browser)"
+export BROWSER_PATH=/usr/local/bin/remindme-chromium
+export BROWSER_PROFILE=/var/lib/remindme-browser/profile
+
 export SEARXNG_URL="$(get_option searxng_url)"
 export EXA_API_KEY="$(get_option exa_api_key)"
 export HA_NOTIFY_TARGET="$(get_option ha_notify_target)"
