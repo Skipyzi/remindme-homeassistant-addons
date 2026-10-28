@@ -63,7 +63,8 @@
             <template x-for="item in waiting" :key="item.token">
               <div class="rm-need">
                 <b><span class="rm-flag" x-show="item.destructive">Lock</span><span x-text="item.message"></span></b>
-                <small x-text="item.destructive ? 'Opens or unlocks something.' : 'Waits for your tap.'"></small>
+                <small x-text="item.destructive ? 'Opens or unlocks something.' : item.entityId === 'mail' ? 'Nothing is sent until you tap Send.' : 'Waits for your tap.'"></small>
+                <p class="rm-need-detail" x-show="item.detail" x-text="item.detail"></p>
                 <div class="rm-need-acts">
                   <button class="rm-btn solid" type="button" @click="confirm(item)" x-text="verbFor(item.message)"></button>
                   <button class="rm-btn" type="button" @click="cancelWait(item)">Cancel</button>
@@ -173,6 +174,7 @@
                   <template x-for="item in pendingIn(message)" :key="item.token">
                     <div class="rm-need">
                       <b><span class="rm-flag" x-show="item.destructive">Lock</span><span x-text="item.message"></span></b>
+                      <p class="rm-need-detail" x-show="item.detail" x-text="item.detail"></p>
                       <div class="rm-need-acts">
                         <button class="rm-btn solid" type="button" @click="confirm(item)" x-text="verbFor(item.message)"></button>
                         <button class="rm-btn" type="button" @click="cancelWait(item)">Cancel</button>
@@ -463,12 +465,42 @@
                 <template x-if="newConnector.preset === 'imap'">
                   <label class="rm-field">Port<input x-model="newConnector.port" inputmode="numeric" /></label>
                 </template>
+                <template x-if="newConnector.preset === 'imap'">
+                  <label class="rm-field">SMTP server, to send (optional)<input x-model="newConnector.smtpHost" placeholder="smtp.example.com" /></label>
+                </template>
+                <template x-if="newConnector.preset === 'imap'">
+                  <label class="rm-field">SMTP port<input x-model="newConnector.smtpPort" inputmode="numeric" /></label>
+                </template>
               </div>
               <p class="rm-note" x-text="presetOf(newConnector.preset)?.help"></p>
               <div class="rm-actions">
                 <button class="rm-btn solid" type="button" :disabled="connectorBusy || !newConnector.address || !newConnector.password" @click="addConnector()" x-text="connectorBusy ? 'Testing the connection' : 'Test and add'"></button>
               </div>
               <p class="rm-result" x-show="connectorResult" x-cloak :class="{ bad: connectorResult && !connectorResult.ok }" x-text="connectorResult?.text"></p>
+            </div>
+
+            <!-- Memory -->
+            <div class="rm-panel" x-show="settingsTab === 'memory'">
+              <h3>What RemindMe remembers</h3>
+              <p>Facts it picked up from what you told it, and ones you added. Every answer gets them. It only learns from your own messages, never from emails or web pages, and never keeps passwords or long numbers.</p>
+              <label class="rm-toggle"><input type="checkbox" :checked="memory.learn" @change="setLearning($event.target.checked)" /><span x-text="memory.learn ? 'Learning from what you tell it' : 'Not learning; only what you add'"></span></label>
+              <form class="rm-ask" @submit.prevent="addMemory()">
+                <input type="text" x-model="newMemory" maxlength="200" placeholder="Something to remember, such as: My sister Anna lives in Berlin" aria-label="Something to remember" />
+                <button class="rm-btn solid" type="submit" :disabled="!newMemory.trim()">Add</button>
+              </form>
+              <p class="rm-note" role="status" x-show="memoryNote" x-text="memoryNote"></p>
+              <div>
+                <template x-for="fact in memory.facts" :key="fact.id">
+                  <div class="rm-item">
+                    <div class="rm-item-head">
+                      <span><span x-text="fact.text"></span><br /><span class="rm-mute" x-text="`${fact.source === 'you' ? 'Added by you' : 'Learned'}, ${formatWhen(fact.at)}`"></span></span>
+                      <button class="rm-link" type="button" @click="forgetFact(fact)">Forget</button>
+                    </div>
+                  </div>
+                </template>
+                <p class="rm-note" x-show="!memory.facts.length">Nothing yet. Tell RemindMe about yourself, or add something above.</p>
+              </div>
+              <div class="rm-actions" x-show="memory.facts.length"><button class="rm-btn" type="button" @click="forgetAll()">Forget everything</button></div>
             </div>
 
             <!-- Persona -->

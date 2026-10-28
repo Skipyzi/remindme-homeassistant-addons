@@ -6,6 +6,8 @@ export interface MailPreset {
 	label: string;
 	host?: string;
 	port?: number;
+	/** Where it sends from: SMTP, with the same address and password. */
+	smtp?: { host: string; port: number; secure: boolean };
 	/** How to get a password the server accepts, in plain words. */
 	help: string;
 }
@@ -15,11 +17,11 @@ export interface MailPreset {
  * (it wants Microsoft sign-in), so it isn't here.
  */
 export const MAIL_PRESETS: MailPreset[] = [
-	{ id: "gmail", label: "Gmail", host: "imap.gmail.com", port: 993, help: "Needs 2-step verification and an app password: Google Account, Security, App passwords. Not your normal password." },
-	{ id: "gmx", label: "GMX", host: "imap.gmx.net", port: 993, help: "Turn on \"POP3/IMAP Abruf\" in GMX's mail settings first. Your GMX password, or an app password if you use 2-factor sign-in." },
-	{ id: "webde", label: "WEB.DE", host: "imap.web.de", port: 993, help: "Turn on \"POP3/IMAP Abruf\" in WEB.DE's mail settings first. Your WEB.DE password, or an app password if you use 2-factor sign-in." },
-	{ id: "icloud", label: "iCloud Mail", host: "imap.mail.me.com", port: 993, help: "Needs an app-specific password from account.apple.com, Sign-In and Security." },
-	{ id: "imap", label: "Other mail (IMAP)", help: "Any mailbox that offers IMAP over SSL; your provider lists the server name." },
+	{ id: "gmail", label: "Gmail", host: "imap.gmail.com", port: 993, smtp: { host: "smtp.gmail.com", port: 465, secure: true }, help: "Needs 2-step verification and an app password: Google Account, Security, App passwords. Not your normal password." },
+	{ id: "gmx", label: "GMX", host: "imap.gmx.net", port: 993, smtp: { host: "mail.gmx.net", port: 465, secure: true }, help: "Turn on \"POP3/IMAP Abruf\" in GMX's mail settings first. Your GMX password, or an app password if you use 2-factor sign-in." },
+	{ id: "webde", label: "WEB.DE", host: "imap.web.de", port: 993, smtp: { host: "smtp.web.de", port: 587, secure: false }, help: "Turn on \"POP3/IMAP Abruf\" in WEB.DE's mail settings first. Your WEB.DE password, or an app password if you use 2-factor sign-in." },
+	{ id: "icloud", label: "iCloud Mail", host: "imap.mail.me.com", port: 993, smtp: { host: "smtp.mail.me.com", port: 587, secure: false }, help: "Needs an app-specific password from account.apple.com, Sign-In and Security." },
+	{ id: "imap", label: "Other mail (IMAP)", help: "Any mailbox that offers IMAP over SSL; your provider lists the server names. Add its SMTP server to send from RemindMe too." },
 ];
 
 /** The connector kinds the console can add. Mail is the first; calendars and feeds can follow. */
@@ -27,7 +29,7 @@ export const CONNECTOR_KINDS = [
 	{
 		id: "mail",
 		label: "Mail account",
-		description: "RemindMe can search and read it, mention new mail in the brief, nudge you about bills and appointments, and save a reply in your Drafts folder when you ask. It never sends, deletes, moves or marks mail as read.",
+		description: "RemindMe can search and read it, mention new mail in the brief, nudge you about bills and appointments, save a reply in your Drafts folder, and send one once you tap Send. It never deletes, moves or marks mail as read.",
 		presets: MAIL_PRESETS,
 	},
 ];
@@ -42,7 +44,9 @@ export function mailAccount(connector: StoredConnector): MailAccount | undefined
 	// Google shows app passwords in groups of four; the spaces aren't part of it.
 	const pass = connector.preset === "gmail" ? raw.replace(/\s+/g, "") : raw;
 	if (!host || !user || !pass || !Number.isInteger(port)) return undefined;
-	return { id: connector.id, label: connector.name, host, port, user, pass, provider: host === "imap.gmail.com" ? "gmail" : "imap" };
+	const smtpPort = Number(connector.values.smtpPort || 587);
+	const smtp = preset?.smtp || (connector.values.smtpHost ? { host: connector.values.smtpHost, port: smtpPort, secure: smtpPort === 465 } : undefined);
+	return { id: connector.id, label: connector.name, host, port, user, pass, provider: host === "imap.gmail.com" ? "gmail" : "imap", ...(smtp ? { smtp } : {}) };
 }
 
 /** Check what the console sent before anything is saved or tested. */
@@ -67,6 +71,14 @@ export function checkMailInput(input: { preset?: unknown; name?: unknown; values
 		if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("The port is a number, usually 993.");
 		values.host = host;
 		values.port = String(port);
+		const smtpHost = String(raw.smtpHost || "").trim();
+		if (smtpHost) {
+			if (!/^[a-z0-9.-]+$/i.test(smtpHost)) throw new Error("Enter the SMTP server name, such as smtp.example.com, or leave it empty.");
+			const smtpPort = Number(raw.smtpPort || 587);
+			if (!Number.isInteger(smtpPort) || smtpPort < 1 || smtpPort > 65535) throw new Error("The SMTP port is a number, usually 587 or 465.");
+			values.smtpHost = smtpHost;
+			values.smtpPort = String(smtpPort);
+		}
 	}
 	const password = String(secretsIn.password || "");
 	if (requirePassword && !password) throw new Error("Enter the password.");

@@ -157,14 +157,14 @@ async function handleButton(deps: ChatDeps, interaction: ButtonInteraction): Pro
 		line = "Cancelled.";
 	} else {
 		const held = deps.confirmations.take(token);
-		if (!held || !deps.home) line = "That request expired. Ask me again.";
+		if (!held) line = "That request expired. Ask me again.";
 		else {
 			try {
-				await deps.home.service(held.action);
+				await held.perform();
 				deps.activity?.resolve(token, "confirmed", held.label);
 				line = `Done: ${held.label}.`;
 			} catch (error) {
-				const reason = error instanceof Error ? error.message : "Home Assistant refused";
+				const reason = error instanceof Error ? error.message : "That didn't work";
 				deps.activity?.resolve(token, "failed", `${held.label}: ${reason}`);
 				line = `${held.label} failed: ${reason}.`;
 			}

@@ -56,6 +56,9 @@ configuration:
   mail_nudges:
     name: Mail nudges
     description: Message you on Discord about new bills and appointments, and the day before a bill is due.
+  smart_nudges:
+    name: Heads-ups
+    description: A few times a day RemindMe looks across new mail, the next hours of your calendar, the house and its jobs, and messages you only about what can't wait. At most four a day; never in quiet hours.
   inbox_sorter_url:
     name: Inbox sorter
     description: The inbox sorter app's address, used to leave newsletters out. Blank uses mailing-list headers only.

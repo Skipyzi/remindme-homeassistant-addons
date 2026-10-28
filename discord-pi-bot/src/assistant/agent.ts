@@ -47,6 +47,10 @@ export interface AssistantDeps {
 	activity?: ActivityLog;
 	/** Context every turn should have, such as jobs waiting for the user's answer. */
 	standing?(): string | undefined;
+	/** What RemindMe remembers about the user, for every turn's context. */
+	memory?(): string | undefined;
+	/** After a chat turn: look at what the user said for facts worth remembering. */
+	learn?(input: AskInput): void;
 }
 
 /* A CLI agent runs its own loop; this caps how many tools one turn may call. */
@@ -75,10 +79,10 @@ function toolContext(deps: AssistantDeps, input: AskInput): ToolContext {
 	return { ...deps.tools(), ...input.tools, turn: { channel: input.channel, prompt: input.prompt, threadId: input.threadId } };
 }
 
-/* The turn's own context plus what every turn should know; a job gets only its brief. */
+/* The turn's own context, what RemindMe remembers about the user, and what every chat should know. */
 function extraFor(deps: AssistantDeps, input: AskInput): string | undefined {
 	const standing = input.channel === "job" ? undefined : deps.standing?.();
-	return [input.extra, standing].filter(Boolean).join("\n\n") || undefined;
+	return [input.extra, deps.memory?.(), standing].filter(Boolean).join("\n\n") || undefined;
 }
 
 export interface AskEvents {
@@ -138,6 +142,7 @@ export class Assistant {
 	async ask(input: AskInput, events: AskEvents = {}): Promise<AskResult> {
 		const result = await this.answer(input, events);
 		this.record(input, result);
+		if (!result.problem && (input.channel === "console" || input.channel === "discord")) this.deps.learn?.(input);
 		return result;
 	}
 

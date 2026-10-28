@@ -14,8 +14,9 @@ dist/
 __pycache__/
 *.py[cod]
 
-# Runtime data
+# Runtime data (on the Pi it lives in /data; local runs write here)
 reminders.json
+discord-pi-bot/data/
 
 # OS / editor noise
 .DS_Store

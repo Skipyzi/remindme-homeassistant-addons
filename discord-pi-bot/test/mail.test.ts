@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { simpleParser } from "mailparser";
-import { Mailboxes, type MailAccount, type MailMessage, type MailSource, type MailSummary } from "../src/mail/mailboxes.ts";
+import { Mailboxes, recipients, type MailAccount, type MailMessage, type MailSource, type MailSummary } from "../src/mail/mailboxes.ts";
 import { ConnectorStore, publicView } from "../src/connectors/store.ts";
 import { checkMailInput, importMailOptions, mailAccount } from "../src/connectors/mail.ts";
 import { statSync } from "node:fs";
@@ -53,6 +53,14 @@ class FakeSource implements MailSource {
 		this.drafts.push({ account: account.id, raw });
 		return account.id === "gmail" ? "Drafts" : "Entwürfe";
 	}
+	sent: Array<{ account: string; smtp?: string; envelope: { from: string; to: string[] }; raw: Buffer }> = [];
+	filed: string[] = [];
+	async send(account: MailAccount, raw: Buffer, envelope: { from: string; to: string[] }) {
+		this.sent.push({ account: account.id, smtp: account.smtp?.host, envelope, raw });
+	}
+	async saveSent(account: MailAccount) {
+		this.filed.push(account.id);
+	}
 }
 
 const connector = (id: string, preset: string, values: Record<string, string>, password: string) => ({ id, kind: "mail", preset, name: preset === "gmail" ? "Gmail" : preset === "gmx" ? "GMX" : "Work", enabled: true, values, secrets: { password }, createdAt: "" });
@@ -83,13 +91,14 @@ test("search covers both accounts, newest first, and a failing one is reported",
 	await assert.rejects(boxes.read("gmail|INBOX|abc"), /isn't a mail id/);
 });
 
-test("the assistant can search and read mail, and never gets other tools for it", async () => {
+test("the assistant can search and read mail, and never delete or move it", async () => {
 	const source = new FakeSource();
 	source.inbox = [mail("gmx", 3, { subject: "Rechnung Strom", from: "Stadtwerke <rechnung@sw.de>" })];
 	const tools = await buildTools({ confirmations: new ConfirmationStore(), reminders: { add: async () => ({ id: "r" }), list: async () => [], cancel: async () => false }, mail: new Mailboxes(accounts, source) }, { nativeWebSearch: true });
 	const names = tools.map((tool) => tool.spec.name);
 	assert.ok(names.includes("search_mail") && names.includes("read_mail"));
-	assert.ok(!names.some((name) => /send|delete|move/.test(name)), "read-only");
+	assert.ok(!names.some((name) => /delete|move|trash|archive/.test(name)), "nothing deletes or moves mail");
+	assert.deepEqual(names.filter((name) => /send/.test(name)), ["send_mail"], "the one way to send, and it waits for a tap");
 	const found = JSON.parse((await runTool(tools, { id: "1", name: "search_mail", input: { query: "strom" } }, newEffects())).content);
 	assert.equal(found.mails[0].id, "gmx|INBOX|3");
 	const read = JSON.parse((await runTool(tools, { id: "2", name: "read_mail", input: { id: "gmx|INBOX|3" } }, newEffects())).content);
@@ -257,4 +266,44 @@ test("a new mail needs an address and a subject, and goes to the chosen mailbox"
 	const reply = await boxes.draft({ text: "Passt.", replyTo: "gmail|INBOX|6" });
 	assert.equal(reply.subject, "AW: Termin", "an answered subject isn't prefixed twice");
 	assert.ok(!(await simpleParser(source.drafts[0].raw)).inReplyTo, "a new mail isn't threaded");
+});
+
+test("send_mail waits for a tap, then sends from the right account and files a copy", async () => {
+	const source = new FakeSource();
+	source.inbox = [mail("gmx", 5, { subject: "Ihre Rechnung", from: "Stadtwerke <billing@stadtwerke.de>" })];
+	const confirmations = new ConfirmationStore();
+	const tools = await buildTools({ confirmations, reminders: { add: async () => ({ id: "r" }), list: async () => [], cancel: async () => false }, mail: new Mailboxes(accounts, source) }, { nativeWebSearch: true });
+	const effects = newEffects();
+	const result = await runTool(tools, { id: "1", name: "send_mail", input: { reply_to: "gmx|INBOX|5", text: "Danke, ich überweise morgen.\nGabor" } }, effects);
+	assert.deepEqual(JSON.parse(result.content), { waiting_for_user_to_confirm: 'Send "Re: Ihre Rechnung" to kundenservice@stadtwerke.de', from: "GMX" });
+	assert.equal(source.sent.length, 0, "nothing goes out before the tap");
+	assert.equal(effects.confirms[0].entityId, "mail");
+	assert.equal(effects.confirms[0].detail, "Danke, ich überweise morgen.\nGabor", "the card shows what will be sent");
+	const held = confirmations.take(effects.confirms[0].token)!;
+	await held.perform();
+	assert.deepEqual(source.sent.map((item) => [item.account, item.smtp, item.envelope]), [["gmx", "mail.gmx.net", { from: "me@gmx.de", to: ["kundenservice@stadtwerke.de"] }]]);
+	assert.deepEqual(source.filed, ["gmx"], "GMX doesn't keep sent mail by itself, so a copy goes to Sent");
+	const message = await simpleParser(source.sent[0].raw);
+	assert.equal(message.inReplyTo, "<bill-5@stadtwerke.de>");
+
+	const fromGmail = new Mailboxes(accounts, source);
+	await fromGmail.send(await fromGmail.compose({ text: "Hallo", to: "Anna <anna@example.com>, bob@example.com", subject: "Samstag", account: "Gmail" }));
+	assert.deepEqual(source.sent[1].envelope.to, ["anna@example.com", "bob@example.com"]);
+	assert.deepEqual(source.filed, ["gmx"], "Gmail files its own sent mail");
+});
+
+test("only a mailbox with an outgoing server can send", async () => {
+	assert.deepEqual(accounts.map((account) => account.smtp?.host), ["smtp.gmail.com", "mail.gmx.net"]);
+	const plain = mailAccount(connector("w", "imap", { address: "me@example.com", host: "mail.example.com", port: "993" }, "pw"))!;
+	assert.equal(plain.smtp, undefined);
+	const source = new FakeSource();
+	const tools = await buildTools({ confirmations: new ConfirmationStore(), reminders: { add: async () => ({ id: "r" }), list: async () => [], cancel: async () => false }, mail: new Mailboxes([plain], source) }, { nativeWebSearch: true });
+	const refused = await runTool(tools, { id: "1", name: "send_mail", input: { to: "a@example.com", subject: "Hi", text: "Hi" } }, newEffects());
+	assert.equal(refused.isError, true);
+	assert.match(refused.content, /no outgoing server/);
+	assert.deepEqual(checkMailInput({ preset: "imap", values: { address: "me", host: "mail.example.com", port: "993", smtpHost: "smtp.example.com", smtpPort: "465" }, secrets: { password: "x" } }, true).values, { address: "me", host: "mail.example.com", port: "993", smtpHost: "smtp.example.com", smtpPort: "465" });
+	const withSmtp = mailAccount(connector("w", "imap", { address: "me@example.com", host: "mail.example.com", port: "993", smtpHost: "smtp.example.com", smtpPort: "465" }, "pw"))!;
+	assert.deepEqual(withSmtp.smtp, { host: "smtp.example.com", port: 465, secure: true });
+	assert.throws(() => checkMailInput({ preset: "imap", values: { address: "me", host: "mail.example.com", smtpHost: "bad host" }, secrets: { password: "x" } }, true), /SMTP server name/);
+	assert.deepEqual(recipients("Anna <anna@example.com>; not-an-address, team: x@example.org, y@example.org;"), ["anna@example.com", "x@example.org", "y@example.org"]);
 });

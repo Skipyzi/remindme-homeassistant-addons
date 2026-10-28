@@ -38,6 +38,8 @@ export GMAIL_APP_PASSWORD="$(get_option gmail_app_password)"
 export GMX_ADDRESS="$(get_option gmx_address)"
 export GMX_PASSWORD="$(get_option gmx_password)"
 export MAIL_NUDGES="$(get_option mail_nudges)"
+# Heads-ups: a few times a day, only what can't wait.
+export SMART_NUDGES="$(get_option smart_nudges)"
 export INBOX_SORTER_URL="$(get_option inbox_sorter_url)"
 
 export SEARXNG_URL="$(get_option searxng_url)"
@@ -66,6 +68,8 @@ export PROACTIVE_DATA_PATH=/data/proactive.json
 export ACTIVITY_DATA_PATH=/data/activity.json
 export CONSOLE_CHAT_PATH=/data/console-chat.json
 export MAIL_DATA_PATH=/data/mail.json
+export TRIAGE_DATA_PATH=/data/triage.json
+export MEMORY_DATA_PATH=/data/memory.json
 export CONNECTORS_DATA_PATH=/data/connectors.json
 export CALENDAR_DATA_PATH=/data/calendar.json
 export THREADS_DATA_PATH=/data/threads.json

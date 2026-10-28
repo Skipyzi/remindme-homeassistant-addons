@@ -4,6 +4,8 @@ import { setReminderAi } from "./commands/remind";
 import { DiscordChats } from "./discord/chats";
 import { Proactive } from "./assistant/proactive";
 import { MailWatch } from "./mail/watch";
+import { Triage, houseConcerns, newMail, soonEvents, stuckJobs, type Candidate } from "./assistant/triage";
+import { wasteEvents } from "./assistant/proactive";
 import { setAiReadiness } from "./presence";
 import { listReminders } from "./utils/reminderManager";
 import {
@@ -19,6 +21,7 @@ import {
 	setJobNotifier,
 	setPlannedSends,
 	startHarness,
+	threads,
 } from "./harness-server";
 
 /**
@@ -37,7 +40,7 @@ async function main() {
 	const messenger = startBot({ assistant, chats, confirmations, home, ownerId, activity, phone: phoneApp });
 
 	// What RemindMe says first goes to Discord and to every phone with the app.
-	const notify = async (text: string, what: "brief" | "bins" | "battery" | "mail") => {
+	const notify = async (text: string, what: "brief" | "bins" | "battery" | "mail" | "heads_up") => {
 		const title = what === "brief" ? `☀️ ${new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" })}` : undefined;
 		const [onDiscord, phones] = await Promise.all([
 			messenger ? messenger.send(text, { title }) : Promise.resolve(false),
@@ -60,10 +63,33 @@ async function main() {
 		nudges: process.env.MAIL_NUDGES !== "false",
 	});
 	await mail.load();
+	// A few times a day: is there anything across mail, calendar, house and jobs worth a heads-up?
+	const triage =
+		process.env.SMART_NUDGES === "false"
+			? undefined
+			: new Triage({
+					gather: async (now, since) => {
+						const candidates: Candidate[] = [];
+						if (home) {
+							const [cards, events] = await Promise.all([
+								home.cards().catch(() => []),
+								home.calendarEvents(now, new Date(now.getTime() + 3 * 3_600_000)).catch(() => []),
+							]);
+							const waste = new Set(wasteEvents(events));
+							candidates.push(...houseConcerns(cards, now), ...soonEvents(events.filter((event) => !waste.has(event) && Date.parse(event.start) > now.getTime())));
+						}
+						candidates.push(...newMail(mail.digest(), since), ...stuckJobs(threads.list(), now));
+						return candidates;
+					},
+					ask: (prompt) => assistant.quick(prompt),
+					notify: (text) => notify(text, "heads_up"),
+				});
+	await triage?.load();
 	const proactive = new Proactive({
 		assistant,
 		home,
 		mail,
+		triage,
 		notify,
 		reminders: () => listReminders(ownerId),
 		did: (text) => activity.add({ kind: "did", channel: "nudge", text, receipts: [{ text }] }),

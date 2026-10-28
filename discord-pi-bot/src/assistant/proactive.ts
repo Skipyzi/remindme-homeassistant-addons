@@ -26,13 +26,15 @@ export interface ProactiveDeps {
 	assistant: Assistant;
 	home?: HomeApi;
 	/** Message the owner on Discord. False when it could not be sent. */
-	notify(text: string, what: "brief" | "bins" | "battery" | "mail"): Promise<boolean>;
+	notify(text: string, what: "brief" | "bins" | "battery" | "mail" | "heads_up"): Promise<boolean>;
 	reminders(): Promise<Array<{ message: string; time: Date }>>;
 	/** Something RemindMe did on its own, for the ledger. */
 	did?(text: string): void;
 	parcels?(): string;
 	/** Gmail and GMX: checked every quarter hour outside quiet hours. */
 	mail?: MailWatch;
+	/** The look across everything for what deserves a heads-up, after the brief and outside quiet hours. */
+	triage?: { maybeRun(now: Date): Promise<unknown> };
 	options: ProactiveOptions;
 	statePath?: string;
 }
@@ -182,6 +184,8 @@ export class Proactive {
 				await this.deps.mail.check(now);
 				await this.deps.mail.dueTomorrow(now);
 			}
+			// After the brief has had its say, so the two don't tell the same thing.
+			if (this.deps.triage && (briefAt === undefined || minute >= briefAt + 30)) await this.deps.triage.maybeRun(now);
 		} catch (error) {
 			console.warn("Nudge check failed:", error instanceof Error ? error.message : error);
 		} finally {

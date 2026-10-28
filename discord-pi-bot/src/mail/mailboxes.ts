@@ -1,6 +1,8 @@
 import { ImapFlow } from "imapflow";
 import { simpleParser } from "mailparser";
 import MailComposer from "nodemailer/lib/mail-composer";
+import addressparser from "nodemailer/lib/addressparser";
+import { createTransport } from "nodemailer";
 
 export type AccountId = string;
 
@@ -15,6 +17,8 @@ export interface MailAccount {
 	pass: string;
 	/** Gmail searches all its mail with its own search words; others search the inbox. */
 	provider: "gmail" | "imap";
+	/** Where it sends from, when it can: SMTP with the same address and password. */
+	smtp?: { host: string; port: number; secure: boolean };
 }
 
 /** One message as a line in a list: enough to judge it, not the whole thing. */
@@ -51,6 +55,10 @@ export interface MailSource {
 	read(account: MailAccount, mailbox: string, uid: number): Promise<MailMessage | undefined>;
 	/** Put a finished message in the Drafts folder; answers the folder's name. */
 	saveDraft(account: MailAccount, raw: Buffer): Promise<string>;
+	/** Send a finished message over SMTP. */
+	send(account: MailAccount, raw: Buffer, envelope: { from: string; to: string[] }): Promise<void>;
+	/** File a sent message in the Sent folder, for servers that don't do it themselves. */
+	saveSent(account: MailAccount, raw: Buffer): Promise<void>;
 }
 
 function clip(text: string, max: number): string {
@@ -60,8 +68,9 @@ function clip(text: string, max: number): string {
 
 const SNIPPET_BYTES = 24_000;
 const MESSAGE_BYTES = 1_500_000;
-/* For servers that don't mark their Drafts folder: the usual names. */
+/* For servers that don't mark their Drafts and Sent folders: the usual names. */
 const DRAFT_NAMES = new Set(["drafts", "draft", "entwürfe", "entwurf", "brouillons"]);
+const SENT_NAMES = new Set(["sent", "sent items", "sent messages", "gesendet", "gesendete objekte", "gesendete elemente"]);
 
 /**
  * IMAP, read-only: it opens mailboxes for reading and never sets flags, so
@@ -217,6 +226,27 @@ export class ImapSource implements MailSource {
 			return drafts.name;
 		});
 	}
+
+	async send(account: MailAccount, raw: Buffer, envelope: { from: string; to: string[] }): Promise<void> {
+		if (!account.smtp) throw new Error(`${account.label} has no SMTP server set, so RemindMe can't send from it.`);
+		const transport = createTransport({ host: account.smtp.host, port: account.smtp.port, secure: account.smtp.secure, requireTLS: !account.smtp.secure, auth: { user: account.user, pass: account.pass }, connectionTimeout: 20_000 });
+		try {
+			await transport.sendMail({ envelope, raw });
+		} catch (error) {
+			const reason = error instanceof Error ? error.message : String(error);
+			throw new Error(`${account.label} didn't send it (${reason}).`);
+		} finally {
+			transport.close();
+		}
+	}
+
+	async saveSent(account: MailAccount, raw: Buffer): Promise<void> {
+		await this.open(account, async (client) => {
+			const boxes = await client.list();
+			const sent = boxes.find((box) => box.specialUse === "\\Sent") || boxes.find((box) => SENT_NAMES.has(box.name.toLowerCase()));
+			if (sent) await client.append(sent.path, raw, ["\\Seen"]);
+		});
+	}
 }
 
 /** A plain-text email as the bytes a Drafts folder stores. */
@@ -243,6 +273,22 @@ export interface SavedDraft {
 	folder: string;
 	to: string;
 	subject: string;
+}
+
+/** An email ready to go: what the user sees before tapping Send, and the bytes to send. */
+export interface ComposedMail {
+	account: MailAccount;
+	to: string;
+	subject: string;
+	text: string;
+	raw: Buffer;
+}
+
+/** Every address in a To line such as "Anna <anna@example.com>, bob@example.com". */
+export function recipients(to: string): string[] {
+	const flatten = (entries: ReturnType<typeof addressparser>): string[] =>
+		entries.flatMap((entry) => ("group" in entry && entry.group ? flatten(entry.group) : "address" in entry && entry.address ? [entry.address] : []));
+	return [...new Set(flatten(addressparser(to)).filter((address) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(address)))];
 }
 
 export interface AccountStatus {
@@ -351,11 +397,10 @@ export class Mailboxes {
 	}
 
 	/**
-	 * Save an email in Drafts for the user to check and send. A reply goes to
-	 * the account it came to, threaded under it; a new mail to the chosen
-	 * account. Nothing is ever sent from here.
+	 * Write an email: a reply goes from the account it came to, threaded under
+	 * it and addressed to its Reply-To; a new mail from the chosen account.
 	 */
-	async draft(input: { text: string; replyTo?: string; account?: string; to?: string; subject?: string }): Promise<SavedDraft> {
+	async compose(input: { text: string; replyTo?: string; account?: string; to?: string; subject?: string }): Promise<ComposedMail> {
 		let account: MailAccount;
 		let to = (input.to || "").trim();
 		let subject = (input.subject || "").trim();
@@ -374,10 +419,27 @@ export class Mailboxes {
 			account = this.pick(input.account)[0];
 			if (!account) throw new Error("No mail account is connected.");
 		}
-		if (!/@/.test(to)) throw new Error("Give the address it goes to.");
+		if (!recipients(to).length) throw new Error("Give the address it goes to.");
 		if (!subject) throw new Error("Give it a subject.");
 		const raw = await composeDraft({ from: account.user.includes("@") ? account.user : undefined, to, subject, text: input.text, inReplyTo, references });
-		const folder = await this.tracked(account, () => this.source.saveDraft(account, raw));
-		return { account, folder, to, subject };
+		return { account, to, subject, text: input.text, raw };
+	}
+
+	/** Save an email in Drafts for the user to check and send themselves. */
+	async draft(input: { text: string; replyTo?: string; account?: string; to?: string; subject?: string }): Promise<SavedDraft> {
+		const mail = await this.compose(input);
+		const folder = await this.tracked(mail.account, () => this.source.saveDraft(mail.account, mail.raw));
+		return { account: mail.account, folder, to: mail.to, subject: mail.subject };
+	}
+
+	/**
+	 * Send an email the user has tapped Send on, and file a copy in Sent
+	 * (Gmail files its own). A copy that can't be filed doesn't undo the send.
+	 */
+	async send(mail: ComposedMail): Promise<void> {
+		const { account } = mail;
+		await this.tracked(account, () => this.source.send(account, mail.raw, { from: account.user, to: recipients(mail.to) }));
+		if (account.provider !== "gmail")
+			await this.source.saveSent(account, mail.raw).catch((error) => console.warn(`Sent, but couldn't file it in ${account.label}'s Sent folder:`, error instanceof Error ? error.message : error));
 	}
 }

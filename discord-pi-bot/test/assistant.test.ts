@@ -341,3 +341,26 @@ test("a calendar event waits for a tap, then goes to the chosen calendar", async
 	const badTime = await ask({ title: "Dentist", start: "next Friday" });
 	assert.match(badTime.content, /^Invalid input: Give the start/);
 });
+
+test("chat turns are looked at for things to remember; jobs, briefs and failures aren't", async () => {
+	const { home } = fakeHome();
+	const learned: string[] = [];
+	const assistant = (provider: Provider | undefined) =>
+		new Assistant({
+			settings: settings(provider, 2),
+			spend: ledger(),
+			persona: () => "You are RemindMe.",
+			tools: () => context(home),
+			searchFallback: () => false,
+			memory: () => "What you know about the user:\n- Prefers Friday flights.",
+			learn: (input) => learned.push(`${input.channel}: ${input.prompt}`),
+		});
+	const provider = new ScriptedProvider([step({ text: "Noted." }), step({ text: "Hi." }), step({ text: "Job run." })]);
+	await assistant(provider).ask({ prompt: "My sister Anna lives in Berlin", channel: "discord" });
+	await assistant(provider).ask({ prompt: "I like tea", channel: "console" });
+	await assistant(provider).ask({ prompt: "Carry on", channel: "job" });
+	await assistant(undefined).ask({ prompt: "My name is Gabor", channel: "console" });
+	assert.deepEqual(learned, ["discord: My sister Anna lives in Berlin", "console: I like tea"]);
+	assert.match(String(provider.requests[0].context), /Prefers Friday flights/, "what it remembers goes into the turn");
+	assert.match(String(provider.requests[2].context), /Prefers Friday flights/, "jobs get it too");
+});

@@ -54,7 +54,7 @@ const TOOL_WORDS = {
 
 const JOB_WORDS = { queued: "Waiting its turn", working: "Working", needs_you: "Needs you", done: "Done", stopped: "Stopped" };
 /* The first word of a held action, when it is a plain verb, names its button. */
-const VERBS = new Set(["Unlock", "Lock", "Open", "Close", "Add", "Run", "Arm", "Disarm"]);
+const VERBS = new Set(["Unlock", "Lock", "Open", "Close", "Add", "Run", "Arm", "Disarm", "Send"]);
 
 function pad(value) {
 	return String(value).padStart(2, "0");
@@ -115,6 +115,7 @@ function remindme() {
 			{ id: "connectors", label: "Connectors" },
 			{ id: "phone", label: "Phone app" },
 			{ id: "prompt", label: "How it talks" },
+			{ id: "memory", label: "Memory" },
 			{ id: "skills", label: "Skills" },
 			{ id: "mcp", label: "Connected tools" },
 			{ id: "tasks", label: "Scheduled tasks" },
@@ -149,10 +150,14 @@ function remindme() {
 		documents: [],
 		connectors: [],
 		connectorKinds: [],
-		newConnector: { preset: "gmail", name: "", address: "", password: "", host: "", port: "993" },
+		newConnector: { preset: "gmail", name: "", address: "", password: "", host: "", port: "993", smtpHost: "", smtpPort: "587" },
 		connectorBusy: false,
 		connectorResult: null,
 		calendars: { list: [], newEvents: null, note: "", error: "" },
+		/* Memory: what RemindMe knows about you */
+		memory: { learn: true, facts: [] },
+		newMemory: "",
+		memoryNote: "",
 		/* The phone app: Tailscale, and notifications on this device */
 		phone: { state: "" },
 		phoneBusy: false,
@@ -720,6 +725,7 @@ function remindme() {
 			if (tab === "tasks") this.tasks = await this.getJson("./api/tasks", []);
 			if (tab === "connectors") await this.loadConnectors();
 			if (tab === "phone") await this.loadPhone();
+			if (tab === "memory") this.memory = await this.getJson("./api/memory", { learn: true, facts: [] });
 			if (tab === "documents") this.documents = (await this.getJson("./api/artifacts", [])).sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)));
 		},
 
@@ -1069,6 +1075,32 @@ function remindme() {
 			}
 		},
 
+		/* Memory */
+		async addMemory() {
+			const text = this.newMemory.trim();
+			if (!text) return;
+			try {
+				this.memory = await this.request("./api/memory", "POST", { text });
+				this.newMemory = "";
+				this.memoryNote = "Remembered.";
+			} catch (error) {
+				this.memoryNote = error.message;
+			}
+		},
+		async forgetFact(fact) {
+			this.memory = await this.request(`./api/memory/${encodeURIComponent(fact.id)}`, "DELETE").catch(() => this.memory);
+			this.memoryNote = "Forgotten.";
+		},
+		async forgetAll() {
+			if (!window.confirm("Forget everything RemindMe remembers about you?")) return;
+			this.memory = await this.request("./api/memory", "DELETE").catch(() => this.memory);
+			this.memoryNote = "Forgot everything.";
+		},
+		async setLearning(learn) {
+			this.memory = await this.request("./api/memory/settings", "PUT", { learn }).catch(() => this.memory);
+			this.memoryNote = learn ? "It learns from what you tell it again." : "It stopped learning. What it knows stays until you forget it.";
+		},
+
 		/* Connectors */
 		async loadConnectors() {
 			const [data, calendars] = await Promise.all([
@@ -1112,11 +1144,11 @@ function remindme() {
 					kind: "mail",
 					preset: form.preset,
 					name: form.name.trim(),
-					values: { address: form.address.trim(), host: form.host.trim(), port: form.port },
+					values: { address: form.address.trim(), host: form.host.trim(), port: form.port, smtpHost: form.smtpHost.trim(), smtpPort: form.smtpPort },
 					secrets: { password: form.password },
 				});
 				this.connectorResult = { ok: true, text: `${data.connector.name} added. ${data.result}` };
-				this.newConnector = { preset: form.preset, name: "", address: "", password: "", host: "", port: "993" };
+				this.newConnector = { preset: form.preset, name: "", address: "", password: "", host: "", port: "993", smtpHost: "", smtpPort: "587" };
 				await this.loadConnectors();
 				await this.loadLedger();
 			} catch (error) {

@@ -957,6 +957,18 @@ body:has(> .rm-app) {
 	color: #444;
 	font-size: 13px;
 }
+.rm-need-detail {
+	max-height: 10.5em;
+	margin-top: 8px;
+	padding: 8px 10px;
+	overflow-y: auto;
+	border-left: 2px solid #000;
+	background: #f2f2f2;
+	color: #222;
+	font-size: 13px;
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+}
 .rm-need-acts {
 	display: flex;
 	flex-wrap: wrap;

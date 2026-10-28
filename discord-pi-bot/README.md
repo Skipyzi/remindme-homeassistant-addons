@@ -45,6 +45,7 @@ All to your DMs, and part of that chat, so you can reply to them:
 - **Morning brief** at `morning_brief_time` (default 07:00): today's shift and appointments, bins tonight, the weather, reminders, parcels, and anything wrong in the house. The facts are gathered in code and the AI writes them up; without the AI you get a plain list. The console's **AI** panel can send today's brief on demand.
 - **Bins:** on the morning before a collection, "Put the paper bin out" goes on your chores list (`chores_list`, default `todo.chores`), due that day. At `bin_reminder_time` (default 19:00) you get a message too, unless you've ticked the chore off. German bin names get an English label: paper (Blaue Tonne), packaging (Gelbe Tonne), organic, residual waste.
 - **Batteries** at or below `battery_nudge_percent` (default 15), once a week per device.
+- **Heads-ups** (`smart_nudges`, on by default): every two hours between the brief and quiet hours, RemindMe looks across new mail, the next three hours of your calendar, doors, windows and locks left open, leak or smoke alarms, and jobs that have waited long for you, and messages you only about what can't wait. Nothing is told twice, and there are four a day at most. One short AI request per pass, only when there's something new to look at.
 
 Nothing is sent during `quiet_hours` (default 22:30-07:00); nudges wait until they end. Blank times turn a message off. The bins and battery checks don't use the AI.
 
@@ -60,7 +61,8 @@ Add mail accounts in the console under **Settings → Connectors**: Gmail, GMX, 
 Gmail and GMX set in the 4.2 app options are taken in as connectors once. Connectors are built so other kinds (calendars, feeds) can be added the same way.
 
 - **Ask about it:** "did the landlord reply?", "when is my dentist appointment?". Gmail searches all mail, archived included; GMX searches the inbox.
-- **Drafts:** "write the landlord that Tuesday works" saves a reply in that account's Drafts folder, threaded under their mail. You check it and send it yourself from Gmail or GMX; RemindMe never sends.
+- **Drafts:** "write the landlord that Tuesday works" saves a reply in that account's Drafts folder, threaded under their mail, for you to finish and send yourself.
+- **Sending:** "send the landlord that Tuesday works" writes the reply and shows it, with who it goes to, as a card with **Send** and **Cancel**. Nothing goes out until you tap Send. It's sent from the account the mail came to (Gmail, GMX, WEB.DE and iCloud Mail need nothing more; other mail needs its SMTP server) and filed in Sent. RemindMe never sends because an email or a page asks it to.
 - **The morning brief** gets a line or two on new mail worth knowing. Your inbox sorter app keeps newsletters and social mail out; without it, mailing-list headers do.
 - **Nudges** (`mail_nudges`, on by default) for new bills and appointment confirmations, and again the day before a bill is due. Reading those out of new mail takes one short AI request per batch, on the AI chosen under **AI** (not a CLI agent).
 
@@ -115,9 +117,13 @@ Device changes, calendar events and the like still wait for your tap, as everywh
 
 The assistant always knows which AI and model are answering, and says so when asked.
 
+## Memory
+
+RemindMe remembers things about you: what it picked up from what you told it ("my sister Anna lives in Berlin"), and what you add yourself. Every answer gets them, so you don't have to say them twice. It learns only from your own messages, never from emails or web pages, and never keeps passwords, codes or long numbers. **Settings → Memory** lists everything it remembers: forget any of it, add to it, or switch learning off.
+
 ## Data
 
-Everything lives in `/data`: reminders, chats, the inbox's threads and jobs (`threads.json`), the phone app's notification keys and devices (`push.json`) and Tailscale's state (`tailscale/`), the AI choice (`ai.json`), today's spend (`spend.json`), Discord chat history (`discord-chats.json`) and which nudges were sent (`proactive.json`). Notes stay in `/share/vault`, shared with the Vault editor app.
+Everything lives in `/data`: reminders, chats, the inbox's threads and jobs (`threads.json`), what it remembers about you (`memory.json`), which heads-ups were sent (`triage.json`), the phone app's notification keys and devices (`push.json`) and Tailscale's state (`tailscale/`), the AI choice (`ai.json`), today's spend (`spend.json`), Discord chat history (`discord-chats.json`) and which nudges were sent (`proactive.json`). Notes stay in `/share/vault`, shared with the Vault editor app.
 
 ## Upgrading from 3.x
 

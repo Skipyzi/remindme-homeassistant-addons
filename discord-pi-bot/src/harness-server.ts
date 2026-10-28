@@ -68,6 +68,7 @@ import { CalendarChoice, listCalendars } from "./connectors/calendar";
 import { modelTable } from "./ai/catalog";
 import { ThreadStore, titleFrom, type Thread } from "./assistant/threads";
 import { JobRunner } from "./assistant/jobs";
+import { MemoryStore } from "./assistant/memory";
 import type { EntityCard } from "./harness/entities";
 import { PhonePush, type PushMessage } from "./phone/push";
 import { TailscaleNode, tailnetGuard } from "./phone/tailscale";
@@ -131,6 +132,8 @@ const consoleChat = new DiscordChats(process.env.CONSOLE_CHAT_PATH || "./data/co
 void consoleChat.load();
 /* The inbox's threads: one per request; a background job lives in its thread. */
 export const threads = new ThreadStore();
+/* What RemindMe remembers about the user, learned and added; editable in Settings. */
+const memory = new MemoryStore();
 /* Which AI answers, and what it has cost today. */
 /* Codex's own sign-in, and its sign-in console. */
 const nativeAccounts = new NativeAccounts();
@@ -852,7 +855,13 @@ app.post("/api/entities/action", async (request, response) => {
 		);
 		if (validated.requiresConfirmation) {
 			response.json(
-				confirmations.hold(validated, `${validated.service.replace(/_/g, " ")} ${validated.entityId}`),
+				confirmations.hold({
+					label: `${validated.service.replace(/_/g, " ")} ${validated.entityId}`,
+					entityId: validated.entityId,
+					destructive: validated.destructive,
+					action: validated,
+					perform: () => hassRequest(`/services/${validated.domain}/${validated.service}`, "POST", { ...validated.serviceData, entity_id: validated.entityId }).then(() => undefined),
+				}),
 			);
 			return;
 		}
@@ -984,16 +993,16 @@ app.post("/api/confirm", async (request, response) => {
 	const token =
 		typeof request.body?.token === "string" ? request.body.token : "";
 	const held = confirmations.take(token);
-	if (!held || !home) {
+	if (!held) {
 		response.status(404).json({ error: "That request expired. Ask again." });
 		return;
 	}
 	try {
-		await home.service(held.action);
+		await held.perform();
 		activity.resolve(token, "confirmed", held.label);
 		response.json({ done: true, message: held.label });
 	} catch (error) {
-		const reason = error instanceof Error ? error.message : "Home Assistant refused";
+		const reason = error instanceof Error ? error.message : "That didn't work";
 		activity.resolve(token, "failed", `${held.label}: ${reason}`);
 		response.status(502).json({ error: reason });
 	}
@@ -1055,9 +1064,31 @@ app.get("/api/inbox", async (_request, response) => {
 			.map((task) => ({ id: task.id, name: task.name, schedule: describeSchedule(task.schedule), nextRun: task.nextRun, lastRun: task.lastRun, lastStatus: task.lastStatus, lastSummary: task.lastSummary })),
 		activity: activity
 			.recent(3, now)
-			.filter((entry) => entry.channel !== "console" && entry.channel !== "job" && entry.kind !== "waiting")
+			.filter((entry) => entry.channel !== "console" && entry.channel !== "job" && entry.channel !== "memory" && entry.kind !== "waiting")
 			.slice(0, 80),
 	});
+});
+
+/* Memory: what RemindMe knows about the user. They see all of it, and can change all of it. */
+app.get("/api/memory", (_request, response) => {
+	response.set("Cache-Control", "no-store").json({ learn: memory.learning, facts: memory.facts() });
+});
+app.post("/api/memory", async (request, response) => {
+	const fact = await memory.add(typeof request.body?.text === "string" ? request.body.text : "", "you");
+	if (!fact) return response.status(400).json({ error: "Write it as a short sentence, without passwords or long numbers. It may also be there already." });
+	response.status(201).json({ learn: memory.learning, facts: memory.facts() });
+});
+app.delete("/api/memory/:id", async (request, response) => {
+	await memory.remove(request.params.id);
+	response.json({ learn: memory.learning, facts: memory.facts() });
+});
+app.delete("/api/memory", async (_request, response) => {
+	await memory.clear();
+	response.json({ learn: memory.learning, facts: memory.facts() });
+});
+app.put("/api/memory/settings", async (request, response) => {
+	await memory.setLearning(request.body?.learn !== false);
+	response.json({ learn: memory.learning, facts: memory.facts() });
 });
 
 app.get("/api/threads/:id", (request, response) => {
@@ -1543,6 +1574,15 @@ export const assistant = new Assistant({
 	searchFallback,
 	agents: { bridgeUrl: `http://127.0.0.1:${port}/internal/agent-tools`, threads: new RunnerThreads() },
 	activity,
+	memory: () => memory.context(),
+	learn: (input) => {
+		void memory
+			.learnFrom(input.prompt, (prompt) => assistant.quick(prompt))
+			.then((facts) => {
+				for (const fact of facts) activity.add({ kind: "did", channel: "memory", text: `Remembered: ${fact.text}`, receipts: [{ text: `Remembered: ${fact.text}` }] });
+			})
+			.catch((error) => console.warn("Could not learn from that message:", error instanceof Error ? error.message : error));
+	},
 	standing: () => {
 		const waiting = jobs.waiting();
 		return waiting.length
@@ -2053,7 +2093,7 @@ export function createHarnessApp(): Express {
  * runs on the container's clock.
  */
 export async function startHarness(): Promise<void> {
-	await Promise.all([loadConnectors(), threads.load(), phonePush.load()]);
+	await Promise.all([loadConnectors(), threads.load(), phonePush.load(), memory.load()]);
 	app.listen(port, () => console.log(`RemindMe console listening on port ${port}`));
 	jobs.resume();
 	// Once Tailscale is up: the app's address, and HTTPS to the console.

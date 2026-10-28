@@ -1,5 +1,5 @@
 name: RemindMe
-version: "4.9.0"
+version: "4.10.0"
 slug: remindme_discord_bot
 description: Your personal assistant in Home Assistant and Discord, on Claude, OpenAI or your ChatGPT and Claude subscriptions
 arch:
@@ -34,6 +34,7 @@ options:
   gmx_address: ""
   gmx_password: ""
   mail_nudges: true
+  smart_nudges: true
   inbox_sorter_url: http://local-inbox-sorter:8095
   playful_placeholders: true
   reminder_color: "5865f2"
@@ -63,6 +64,7 @@ schema:
   gmx_address: str?
   gmx_password: password?
   mail_nudges: bool
+  smart_nudges: bool
   inbox_sorter_url: str?
   playful_placeholders: bool
   reminder_color: str
