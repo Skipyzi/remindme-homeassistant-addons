@@ -32,6 +32,7 @@
     <script defer src="./components/richtext.js"></script>
     <script defer src="./components/account-console.js"></script>
     <script defer src="./vendor/xterm.js"></script>
+    <script defer src="./components/cats.js"></script>
     <script defer src="./app.js"></script>
     <script defer src="./vendor/alpine.min.js"></script>
   </head>
@@ -71,7 +72,7 @@
             </template>
             <template x-for="thread in asking" :key="thread.id">
               <div class="rm-need">
-                <b x-text="`${thread.title} asks`"></b>
+                <div class="rm-need-head"><span class="rm-cat" x-effect="drawCat($el, thread.id, 'asking')"></span><b x-text="`${thread.title} asks`"></b></div>
                 <small x-text="thread.job.question.text"></small>
                 <div class="rm-need-acts">
                   <template x-for="(option, index) in thread.job.question.options" :key="option">
@@ -94,7 +95,7 @@
             <h2><span>Working on</span><span x-text="working.length + scheduled.length"></span></h2>
             <template x-for="thread in working" :key="thread.id">
               <button class="rm-entry" type="button" :class="{ on: open?.id === thread.id }" @click="openThread(thread.id)">
-                <span class="rm-mark" aria-hidden="true">◐</span>
+                <span class="rm-mark" aria-hidden="true"><span class="rm-cat" x-effect="drawCat($el, thread.id, catState(thread))"></span></span>
                 <span class="rm-entry-what"><b x-text="thread.title"></b><span x-text="jobLine(thread)"></span></span>
                 <time x-text="timeOf(new Date(thread.createdAt))"></time>
                 <span class="rm-progress" x-show="thread.job.progress" :style="`--p:${progressOf(thread)}%`"><i></i></span>
@@ -114,7 +115,7 @@
               <h2><span x-text="group.label"></span><span x-text="group.items.length"></span></h2>
               <template x-for="item in group.items" :key="item.key">
                 <button class="rm-entry" type="button" :class="{ bad: item.bad, on: open && open.id === item.openId }" @click="item.threadId ? openThread(item.threadId) : openEntry(item)">
-                  <span class="rm-mark" aria-hidden="true"><template x-if="item.color"><span class="rm-sq" :style="`--c:${item.color}`"></span></template><span x-show="!item.color" x-text="item.mark"></span></span>
+                  <span class="rm-mark" aria-hidden="true"><template x-if="item.threadId"><span class="rm-cat" x-effect="drawCat($el, item.threadId, item.cat)"></span></template><template x-if="!item.threadId && item.color"><span class="rm-sq" :style="`--c:${item.color}`"></span></template><span x-show="!item.threadId && !item.color" x-text="item.mark"></span></span>
                   <span class="rm-entry-what"><b x-text="item.title"></b><span x-text="item.line"></span></span>
                   <time x-text="item.time"></time>
                 </button>
@@ -141,6 +142,7 @@
           <div class="rm-thread-in">
             <header class="rm-bar">
               <button class="rm-back" type="button" @click="closeThread()">‹ Inbox</button>
+              <span class="rm-cat rm-cat-head" x-show="!open.readOnly" x-effect="open.readOnly || drawCat($el, open.id, catState(open))"></span>
               <h1><span x-text="open.title"></span><small x-text="threadLine(open)"></small></h1>
               <button class="rm-barlink" type="button" x-show="isRunning(open)" @click="stopJob(open)">Stop</button>
               <button class="rm-barlink" type="button" x-show="!open.readOnly && !isRunning(open)" @click="deleteThread(open)">Delete</button>
@@ -155,14 +157,17 @@
                     <div class="rm-step"><time x-text="timeOf(new Date(message.at))"></time><span x-text="message.text"></span></div>
                   </template>
                   <template x-if="message.role === 'assistant'">
-                    <div class="rm-it">
-                      <span class="rm-meta" x-text="message.meta || timeOf(new Date(message.at))"></span>
-                      <div class="rm-md" x-effect="renderText($el, message.receipts?.length && /^done\.?$/i.test(message.text) ? '' : message.text)"></div>
-                      <ul class="rm-receipts" x-show="message.receipts?.length">
-                        <template x-for="(receipt, index) in message.receipts || []" :key="index">
-                          <li :class="receipt.color ? '' : 'plain'"><span class="rm-sq" :style="receipt.color ? `--c:${receipt.color}` : ''"></span><span x-text="receipt.text"></span></li>
-                        </template>
-                      </ul>
+                    <div class="rm-it" :class="{ 'with-cat': !open.readOnly }">
+                      <span class="rm-cat rm-cat-say" x-show="!open.readOnly" x-effect="open.readOnly || drawCat($el, open.id, message.id === lastAssistantId ? catState(open) : 'done')"></span>
+                      <div>
+                        <span class="rm-meta" x-text="message.meta || timeOf(new Date(message.at))"></span>
+                        <div class="rm-md" x-effect="renderText($el, message.receipts?.length && /^done\.?$/i.test(message.text) ? '' : message.text)"></div>
+                        <ul class="rm-receipts" x-show="message.receipts?.length">
+                          <template x-for="(receipt, index) in message.receipts || []" :key="index">
+                            <li :class="receipt.color ? '' : 'plain'"><span class="rm-sq" :style="receipt.color ? `--c:${receipt.color}` : ''"></span><span x-text="receipt.text"></span></li>
+                          </template>
+                        </ul>
+                      </div>
                     </div>
                   </template>
                   <template x-for="item in pendingIn(message)" :key="item.token">
@@ -176,9 +181,12 @@
                   </template>
                 </div>
               </template>
-              <div class="rm-it" x-show="streaming && streaming.threadId === open.id" x-cloak>
-                <span class="rm-meta" x-text="streaming?.status"></span>
-                <div class="rm-md" x-effect="renderText($el, streaming?.text || '')"></div>
+              <div class="rm-it with-cat" x-show="streaming && streaming.threadId === open.id" x-cloak>
+                <span class="rm-cat rm-cat-say" x-effect="streaming && drawCat($el, open.id, 'working')"></span>
+                <div>
+                  <span class="rm-meta" x-text="streaming?.status"></span>
+                  <div class="rm-md" x-effect="renderText($el, streaming?.text || '')"></div>
+                </div>
               </div>
               <div class="rm-need-acts rm-answers" x-show="open.job?.status === 'needs_you' && open.job.question?.options?.length" x-cloak>
                 <template x-for="(option, index) in open.job?.question?.options || []" :key="option">

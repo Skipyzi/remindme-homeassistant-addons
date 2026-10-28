@@ -251,7 +251,7 @@ function remindme() {
 
 		threadItem(thread) {
 			const job = thread.job;
-			const item = { key: `t-${thread.id}`, threadId: thread.id, openId: thread.id, at: new Date(thread.updatedAt), title: thread.title, line: firstLine(thread.last), mark: "›", bad: false };
+			const item = { key: `t-${thread.id}`, threadId: thread.id, openId: thread.id, at: new Date(thread.updatedAt), title: thread.title, line: firstLine(thread.last), mark: "›", bad: false, cat: this.catState(thread) };
 			if (job?.status === "done") item.mark = "✓";
 			if (job?.status === "stopped") Object.assign(item, { mark: "✕", bad: Boolean(job.error), line: job.error || job.note || item.line });
 			return item;
@@ -302,6 +302,22 @@ function remindme() {
 			if (!job) return thread.last;
 			const progress = job.progress ? `${job.progress.done} of ${job.progress.total}` : "";
 			return [JOB_WORDS[job.status], progress, job.note].filter(Boolean).join(" · ");
+		},
+
+		/* Each thread's cat (components/cats.js), in the mood its job is in. */
+		catState(thread) {
+			if (!thread || thread.readOnly) return "done";
+			const status = thread.job?.status;
+			if (status === "needs_you") return "asking";
+			if (status === "queued" || status === "working" || this.streaming?.threadId === thread.id) return "working";
+			if (status === "stopped") return "stopped";
+			return "done";
+		},
+		drawCat(element, seed, state) {
+			window.RemindMeCats?.render(element, seed, state);
+		},
+		get lastAssistantId() {
+			return [...(this.open?.messages || [])].reverse().find((message) => message.role === "assistant")?.id;
 		},
 
 		progressOf(thread) {

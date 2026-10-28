@@ -989,7 +989,7 @@ body:has(> .rm-app) {
 /* A line in the inbox */
 .rm-entry {
 	display: grid;
-	grid-template-columns: 18px minmax(0, 1fr) auto;
+	grid-template-columns: 38px minmax(0, 1fr) auto;
 	gap: 2px 10px;
 	align-items: baseline;
 	width: 100%;
@@ -1045,6 +1045,91 @@ body:has(> .rm-app) {
 	width: var(--p);
 	height: 100%;
 	background: #fff;
+}
+
+/* The cats (components/cats.js): one per thread, in its job's mood */
+.rm-cat {
+	display: inline-block;
+	flex: none;
+	width: 38px;
+	height: 38px;
+	line-height: 0;
+}
+.rm-cat svg {
+	display: block;
+	width: 100%;
+	height: 100%;
+	overflow: visible;
+}
+.rm-mark {
+	align-self: center;
+	justify-self: center;
+}
+.rm-need-head {
+	display: flex;
+	gap: 10px;
+	align-items: center;
+}
+.rm-need-head .rm-cat,
+.rm-cat-head {
+	width: 40px;
+	height: 40px;
+}
+.rm-it.with-cat {
+	display: grid;
+	grid-template-columns: 28px minmax(0, 1fr);
+	gap: 10px;
+}
+.rm-cat-say {
+	width: 28px;
+	height: 28px;
+	margin-top: 2px;
+}
+@keyframes rm-bob {
+	0%,
+	100% {
+		transform: translateY(0);
+	}
+	50% {
+		transform: translateY(-2px);
+	}
+}
+@keyframes rm-hop {
+	0%,
+	80%,
+	100% {
+		transform: translateY(0);
+	}
+	88% {
+		transform: translateY(-4px);
+	}
+}
+@keyframes rm-tail {
+	0%,
+	100% {
+		transform: rotate(0deg);
+	}
+	50% {
+		transform: rotate(-14deg);
+	}
+}
+.rm-cat[data-state="working"] svg {
+	animation: rm-bob 1.4s ease-in-out infinite;
+}
+.rm-cat[data-state="asking"] svg {
+	animation: rm-hop 2.4s ease-in-out infinite;
+}
+.rm-cat[data-state="working"] .rm-cat-tail,
+.rm-cat[data-state="asking"] .rm-cat-tail {
+	transform-box: fill-box;
+	transform-origin: 0% 100%;
+	animation: rm-tail 1.2s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+	.rm-cat svg,
+	.rm-cat .rm-cat-tail {
+		animation: none !important;
+	}
 }
 
 /* A thread's messages */

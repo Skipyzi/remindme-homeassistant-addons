@@ -71,6 +71,13 @@ test("the installed app opens on a splash: iPhone launch images for every screen
 	assert.match(readFileSync("public/styles.css", "utf8"), /@media \(display-mode: standalone\) \{\s*\.rm-splash/);
 });
 
+test("threads have cats, drawn by components/cats.js", () => {
+	assert.match(html, /components\/cats\.js/);
+	assert.ok(html.indexOf("components/cats.js") < html.indexOf("app.js\""), "cats.js loads before the console script");
+	assert.match(html, /drawCat\(\$el, thread\.id/);
+	assert.match(app, /catState\(thread\)/);
+});
+
 test("models are picked from a table that explains them, not a box of ids", () => {
 	assert.match(html, /<table class="rm-models"/);
 	assert.match(html, /Older and other models/);

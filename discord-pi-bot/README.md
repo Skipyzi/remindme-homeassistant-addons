@@ -85,6 +85,7 @@ Open **RemindMe** in the sidebar. It is an inbox. On a phone a thread opens over
 - **Needs you:** actions waiting for your tap (locks, doors, scenes, calendar events), questions from jobs with their answers as buttons, and batteries running out.
 - **Working on:** background jobs with how far along they are, and your scheduled tasks.
 - **Today, Yesterday, Earlier:** every conversation and job, and what RemindMe sent or did elsewhere (the brief, nudges, reminders, Discord).
+- **Cats:** every conversation and job has its own cat (a ginger tabby, tuxedo, calico, siamese, grey or black cat, with a bow tie, beret, glasses, headphones, party hat or scarf). It shows how things stand: busy while a job works, a paw raised when it needs you, content when done, grey and dizzy when it stopped.
 - **The box at the bottom:** ask, or hand something off. Every request opens a thread of its own; reply in it to carry on. Pictures work with Claude, OpenAI and ChatGPT.
 - **History:** the full timeline: what's coming up, then everything RemindMe answered, changed, sent and failed at, with changed lamps in their own colour.
 - **Settings:** the AI and sign-ins, connectors and calendars, how it talks, skills, connected tools (MCP), scheduled tasks and documents.
