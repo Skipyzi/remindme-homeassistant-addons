@@ -397,3 +397,28 @@ test("a thread with a model of its own answers with it; other threads and chores
 	store.setModel(long.id, undefined);
 	assert.equal(store.get(long.id)?.model, undefined);
 });
+
+test("a tool's card shows under the answer when the answer names it, and nowhere else", async () => {
+	const { home } = fakeHome();
+	const provider = new ScriptedProvider([
+		step({ stop: "tools", calls: [{ id: "1", name: "find_place", input: { query: "Saturn Leipzig Brühl" } }] }),
+		step({ text: "Yes, open until 20:00.\n\n[[c1]]" }),
+	]);
+	const places = {
+		async find() {
+			return [
+				{ name: "Saturn", lat: 51.3436, lon: 12.377, address: "Brühl 1, 04109 Leipzig", status: { text: "Open now, until 20:00", open: true } },
+				{ name: "MediaMarkt", lat: 51.33, lon: 12.4 },
+			];
+		},
+	};
+	const result = await assistantWith(provider, context(home, { places })).ask({ prompt: "Can I pick them up in town today?", channel: "console" });
+	assert.equal(result.text, "Yes, open until 20:00.");
+	assert.equal(result.embeds.length, 1);
+	assert.equal(result.embeds[0].kind, "place");
+	assert.equal((result.embeds[0] as { name: string }).name, "Saturn");
+	const toolResult = JSON.stringify(provider.answers[0]);
+	assert.match(toolResult, /\\"card\\":\\"c1\\"/);
+	assert.match(toolResult, /\\"card\\":\\"c2\\"/);
+	assert.match(String(provider.requests[0].system), /\[\[c3\]\]/, "the AI is told how to show cards");
+});

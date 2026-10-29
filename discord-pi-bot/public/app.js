@@ -505,8 +505,10 @@ function remindme() {
 				id: `e-${entry.id}`,
 				role: "assistant",
 				at: entry.at,
-				text: entry.receipts?.length ? "" : entry.text,
+				// The news shows as its stories card; its text stays for Discord and the phone.
+				text: entry.receipts?.length ? "" : entry.embeds?.some((embed) => embed.kind === "stories") ? `**${firstLine(entry.text)}**` : entry.text,
 				receipts: entry.receipts,
+				embeds: entry.embeds,
 				entry,
 				bad: entry.kind === "failed",
 				meta: `${this.timeOf(new Date(entry.at))}${CHANNEL_NOTES[entry.channel] ? ` · ${CHANNEL_NOTES[entry.channel]}` : ""}`,
@@ -976,6 +978,9 @@ function remindme() {
 			});
 		},
 
+		renderEmbeds(element, embeds) {
+			if (window.RemindMeEmbeds) window.RemindMeEmbeds.render(element, embeds || []);
+		},
 		renderText(element, text) {
 			element.replaceChildren();
 			if (!text) return;

@@ -1,3 +1,4 @@
+import type { Embed } from "./assistant/embeds";
 import type { PhoneButton } from "./phone/ha-app";
 import type { EntryAction } from "./assistant/activity";
 import "dotenv/config";
@@ -47,7 +48,7 @@ async function main() {
 	const messenger = startBot({ assistant, chats, confirmations, home, ownerId, activity, phone: phoneApp });
 
 	// What RemindMe says first goes to Discord and to every phone with the app.
-	const notify = async (text: string, what: "brief" | "bins" | "battery" | "mail" | "heads_up" | "price" | "news" | "feed", extra?: { battery?: string; buttons?: PhoneButton[]; actions?: EntryAction[]; phoneTitle?: string; phoneBody?: string }) => {
+	const notify = async (text: string, what: "brief" | "bins" | "battery" | "mail" | "heads_up" | "price" | "news" | "feed", extra?: { battery?: string; buttons?: PhoneButton[]; actions?: EntryAction[]; phoneTitle?: string; phoneBody?: string; embeds?: Embed[] }) => {
 		const title = what === "brief" ? `☀️ ${new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" })}` : undefined;
 		const [onDiscord, phones] = await Promise.all([
 			messenger ? messenger.send(text, { title }) : Promise.resolve(false),
@@ -64,7 +65,7 @@ async function main() {
 				]
 			: undefined;
 		const channel = what === "brief" ? "brief" : what === "news" ? "news" : "nudge";
-		activity.add(sent ? { kind: "sent", channel, text, ...(actions ? { actions } : {}) } : { kind: "failed", channel, text: `Couldn't send this on Discord: ${text}` });
+		activity.add(sent ? { kind: "sent", channel, text, ...(actions ? { actions } : {}), ...(extra?.embeds ? { embeds: extra.embeds } : {}) } : { kind: "failed", channel, text: `Couldn't send this on Discord: ${text}` });
 		return sent;
 	};
 	// Always on: it does nothing until a mail connector is added in the console.

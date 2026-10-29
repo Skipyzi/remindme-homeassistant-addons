@@ -161,6 +161,17 @@ For pages a plain read can't handle, such as DHL tracking, shops and timetables,
 - It can't reach your home network, Home Assistant or the Supervisor, and Chromium runs as its own user without RemindMe's keys or access to `/data`.
 - It starts when needed and closes after three minutes without use, using about 200–400 MB of memory while open.
 
+## Cards in answers
+
+Answers can come with cards under the text, built from what RemindMe's tools found rather than written by the AI:
+
+- **Offers**: the product's picture, the cheapest few shops with shipping, and whether you watch its price (from **compare_prices** and price watches).
+- **Places**: a small OpenStreetMap map, whether it's open right now (read from its opening hours), the address, the distance from home, and **Directions**, **Website** and **Call**. Ask "is there a pharmacy open near the Hauptbahnhof?" or "when does the Rewe in Gohlis close?". OpenStreetMap's hours can be out of date.
+- **Articles**: posts from your feeds, news headlines and pages RemindMe read, with their pictures; several sit on a shelf you swipe.
+- **The news digest** in RemindMe's thread shows its stories with photos and every source.
+
+Each tool gives its findings an id, and the AI shows the ones that matter, so every price, picture and link on a card comes from a tool. Pictures and map tiles load through RemindMe on the Pi (only addresses it handed out itself, kept for a few weeks in `/data/media`), so your phone never contacts the shops or news sites. Discord, notifications and scheduled tasks get the cards as plain lines.
+
 ## Prices
 
 Ask "where is the Sony WH-1000XM5 cheapest?" and RemindMe reads the offers on [Geizhals](https://geizhals.de), which compares German and Austrian shops: the cheapest few with shop, delivery and shipping, and similar products. (idealo turns automated browsers away, so it isn't used.)
@@ -190,7 +201,7 @@ RemindMe remembers things about you: what it picked up from what you told it ("m
 
 ## Data
 
-Everything lives in `/data`: reminders, chats, the inbox's threads and jobs (`threads.json`), what it remembers about you (`memory.json`), which heads-ups were sent (`triage.json`), batteries you dealt with (`batteries.json`), price watches (`prices.json`), the news settings (`news.json`), which feed posts were seen (`feeds.json`; the feeds themselves are connectors), the phone app's notification keys and devices (`push.json`) and Tailscale's state (`tailscale/`), the AI choice (`ai.json`), today's spend (`spend.json`), Discord chat history (`discord-chats.json`) and which nudges were sent (`proactive.json`). Notes stay in `/share/vault`, shared with the Vault editor app.
+Everything lives in `/data`: reminders, chats, the inbox's threads and jobs (`threads.json`), what it remembers about you (`memory.json`), which heads-ups were sent (`triage.json`), batteries you dealt with (`batteries.json`), price watches (`prices.json`), the news settings (`news.json`), which feed posts were seen (`feeds.json`; the feeds themselves are connectors), pictures and map tiles for cards (`media/`), the phone app's notification keys and devices (`push.json`) and Tailscale's state (`tailscale/`), the AI choice (`ai.json`), today's spend (`spend.json`), Discord chat history (`discord-chats.json`) and which nudges were sent (`proactive.json`). Notes stay in `/share/vault`, shared with the Vault editor app.
 
 ## Upgrading from 3.x
 

@@ -133,8 +133,8 @@ function bestMatch(query: string, results: SearchResult[]): { best?: SearchResul
 	return { best, others: relevant.filter((result) => result !== best) };
 }
 
-/** A Geizhals product page's offers, cheapest first, and the product's name. */
-export function geizhalsOffers(html: string): { name: string; offers: PriceOffer[] } | undefined {
+/** A Geizhals product page's offers, cheapest first, the product's name and its picture. */
+export function geizhalsOffers(html: string): { name: string; offers: PriceOffer[]; image?: string } | undefined {
 	if (geizhalsBlocked(html)) return undefined;
 	const title = decode(/<title>([\s\S]*?)<\/title>/i.exec(html)?.[1] || "");
 	const name = title.replace(/\s+ab\s+€[\s\S]*$/i, "").replace(/\s*\|.*$/, "").trim();
@@ -148,7 +148,8 @@ export function geizhalsOffers(html: string): { name: string; offers: PriceOffer
 	}
 	if (!offers.length) return undefined;
 	offers.sort((a, b) => a.price - b.price);
-	return { name: name || "Product", offers };
+	const image = decode(/<meta\s+property=["']og:image["']\s+content=["']([^"']+)["']/i.exec(html)?.[1] || "");
+	return { name: name || "Product", offers, ...(/^https:\/\//.test(image) ? { image } : {}) };
 }
 
 /**
@@ -245,11 +246,11 @@ export class PriceWatches {
 	}
 
 	/** Where a product is cheapest now, from Geizhals: the best match's offers, and the other matches. */
-	async compare(query: string): Promise<{ name: string; url: string; offers: PriceOffer[]; others: SearchResult[] } | undefined> {
+	async compare(query: string): Promise<{ name: string; url: string; offers: PriceOffer[]; others: SearchResult[]; image?: string; count: number } | undefined> {
 		const { best, others } = bestMatch(query, await this.deps.search(query));
 		if (!best) return undefined;
 		const page = geizhalsOffers(await this.deps.geizhalsPage(best.url));
-		return { name: page?.name || best.name, url: best.url, offers: page?.offers.slice(0, 6) || [], others: others.slice(0, 4) };
+		return { name: page?.name || best.name, url: best.url, offers: page?.offers.slice(0, 6) || [], others: others.slice(0, 4), count: page?.offers.length || 0, ...(page?.image ? { image: page.image } : {}) };
 	}
 
 	/** Start watching a product (found on Geizhals) or a link, with its first price; a link whose price can't be read is refused. */

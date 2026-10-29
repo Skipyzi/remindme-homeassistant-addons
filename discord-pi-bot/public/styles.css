@@ -1571,6 +1571,238 @@ body:has(> .rm-app) {
 	}
 }
 
+/* Cards under an answer: offers, a place, articles, the news. Built from what tools found. */
+.rm-embeds {
+	display: grid;
+	gap: 10px;
+	margin-top: 10px;
+}
+.rm-card {
+	display: block;
+	border: 1px solid #fff;
+	color: inherit;
+	text-decoration: none;
+}
+.rm-embeds > .rm-card {
+	max-width: 520px;
+}
+.rm-card-head {
+	display: grid;
+	grid-template-columns: 64px minmax(0, 1fr);
+	gap: 12px;
+	align-items: center;
+	padding: 10px;
+	border-bottom: 1px solid var(--rule);
+}
+.rm-card-head.no-pic {
+	grid-template-columns: minmax(0, 1fr);
+}
+.rm-card-head img {
+	width: 64px;
+	height: 64px;
+	padding: 4px;
+	object-fit: contain;
+	background: #fff;
+}
+.rm-card-head b {
+	display: block;
+	font-weight: 600;
+}
+.rm-card-head > span > span {
+	color: var(--dim);
+	font-size: 12px;
+}
+.rm-offers {
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+.rm-offers li {
+	display: grid;
+	grid-template-columns: 10ch minmax(0, 1fr);
+	gap: 2px 12px;
+	padding: 9px 10px;
+	border-bottom: 1px solid var(--rule);
+}
+.rm-offers li:last-child {
+	border-bottom: 0;
+}
+.rm-offers .rm-price {
+	grid-row: span 2;
+	text-align: right;
+	font-weight: 600;
+	font-variant-numeric: tabular-nums;
+}
+.rm-offers .rm-best .rm-price {
+	color: var(--lamp);
+}
+.rm-offers small {
+	grid-column: 2;
+	color: var(--dim);
+	font-size: 12px;
+}
+.rm-card-acts {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px 18px;
+	align-items: center;
+	padding: 10px;
+	border-top: 1px solid var(--rule);
+}
+.rm-card-note {
+	color: var(--mute);
+	font-size: 13px;
+}
+.rm-map {
+	position: relative;
+	height: 150px;
+	overflow: hidden;
+	border-bottom: 1px solid var(--rule);
+	background: #1a1a1a;
+}
+.rm-map-tiles {
+	position: absolute;
+	width: 768px;
+	height: 768px;
+}
+.rm-map-tiles img {
+	position: absolute;
+	width: 256px;
+	height: 256px;
+	filter: grayscale(1) contrast(1.05) brightness(0.92);
+}
+.rm-map-pin {
+	position: absolute;
+	left: 50%;
+	top: 50%;
+	width: 14px;
+	height: 14px;
+	margin: -7px 0 0 -7px;
+	background: var(--lamp);
+	outline: 2px solid #000;
+}
+.rm-map-credit {
+	position: absolute;
+	right: 0;
+	bottom: 0;
+	padding: 1px 5px;
+	background: #000;
+	color: var(--dim);
+	font-size: 10px;
+}
+.rm-place {
+	padding: 10px;
+}
+.rm-place b {
+	display: block;
+	font-weight: 600;
+}
+.rm-place p {
+	margin: 2px 0 0;
+	color: var(--mute);
+	font-size: 13px;
+}
+.rm-place .rm-open {
+	color: var(--lamp);
+}
+/* Several articles: a shelf to swipe on a phone, three across on a wide screen */
+.rm-shelf {
+	display: grid;
+	grid-auto-flow: column;
+	grid-auto-columns: minmax(200px, 72%);
+	gap: 10px;
+	margin-right: -16px;
+	padding-right: 16px;
+	overflow-x: auto;
+	scroll-snap-type: x mandatory;
+}
+.rm-shelf .rm-card {
+	display: flex;
+	flex-direction: column;
+	scroll-snap-align: start;
+}
+.rm-shelf img {
+	width: 100%;
+	aspect-ratio: 16 / 9;
+	object-fit: cover;
+	border-bottom: 1px solid var(--rule);
+}
+.rm-art {
+	padding: 9px 10px 10px;
+}
+.rm-art b {
+	display: -webkit-box;
+	-webkit-line-clamp: 3;
+	-webkit-box-orient: vertical;
+	overflow: hidden;
+	font-weight: 600;
+	font-size: 14px;
+}
+.rm-art > span {
+	display: block;
+	margin-top: 6px;
+	color: var(--dim);
+	font-size: 12px;
+}
+.rm-shelf .rm-card.textonly .rm-art b {
+	-webkit-line-clamp: 6;
+	font-size: 16px;
+}
+.rm-story {
+	display: grid;
+	grid-template-columns: 96px minmax(0, 1fr);
+	gap: 12px;
+	padding: 10px 0;
+	border-top: 1px solid var(--rule);
+	color: inherit;
+	text-decoration: none;
+}
+.rm-card-row .rm-story {
+	padding: 10px;
+	border-top: 0;
+}
+.rm-story.textonly {
+	grid-template-columns: minmax(0, 1fr);
+}
+.rm-story img {
+	width: 96px;
+	height: 64px;
+	object-fit: cover;
+}
+.rm-story b {
+	font-weight: 600;
+}
+.rm-story p {
+	margin: 3px 0 0;
+	color: var(--mute);
+	font-size: 13px;
+}
+.rm-story > span > span {
+	display: block;
+	margin-top: 4px;
+	color: var(--dim);
+	font-size: 12px;
+}
+.rm-story-links a {
+	color: var(--mute);
+}
+.rm-stories-label {
+	margin: 14px 0 0;
+	font-weight: 600;
+}
+.rm-stories-label:first-child {
+	margin-top: 0;
+}
+@media (min-width: 821px) {
+	.rm-shelf {
+		grid-auto-flow: row;
+		grid-template-columns: repeat(3, minmax(0, 1fr));
+		margin-right: 0;
+		padding-right: 0;
+		overflow: visible;
+	}
+}
+
 /* A thread's messages */
 .rm-messages > * {
 	max-width: 760px;

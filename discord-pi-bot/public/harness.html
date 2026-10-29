@@ -30,6 +30,7 @@
     <link rel="stylesheet" href="./vendor/xterm.css" />
     <script defer src="./components/highlight.js"></script>
     <script defer src="./components/richtext.js"></script>
+    <script defer src="./components/cards.js"></script>
     <script defer src="./components/account-console.js"></script>
     <script defer src="./vendor/xterm.js"></script>
     <script defer src="./components/cats.js"></script>
@@ -214,7 +215,8 @@
                       <span class="rm-cat rm-cat-say" x-show="!open.readOnly" x-effect="open.readOnly || drawCat($el, open.id, message.id === lastAssistantId ? catState(open) : 'done')"></span>
                       <div>
                         <span class="rm-meta" x-text="message.meta || timeOf(new Date(message.at))"></span>
-                        <div class="rm-md" :class="{ bad: message.bad }" x-effect="renderText($el, message.receipts?.length && /^done\.?$/i.test(message.text) ? '' : message.text)"></div>
+                        <div class="rm-md" :class="{ bad: message.bad }" x-show="message.text" x-effect="renderText($el, message.receipts?.length && /^done\.?$/i.test(message.text) ? '' : message.text)"></div>
+                        <div class="rm-embeds" x-show="message.embeds?.length" x-effect="renderEmbeds($el, message.embeds)"></div>
                         <ul class="rm-receipts" x-show="message.receipts?.length">
                           <template x-for="(receipt, index) in message.receipts || []" :key="index">
                             <li :class="receipt.color ? '' : 'plain'"><span class="rm-sq" :style="receipt.color ? `--c:${receipt.color}` : ''"></span><span x-text="receipt.text"></span></li>
@@ -247,7 +249,7 @@
                 <span class="rm-cat rm-cat-say" x-effect="streaming && drawCat($el, open.id, 'working')"></span>
                 <div>
                   <span class="rm-meta" x-text="streaming?.status"></span>
-                  <div class="rm-md" x-effect="renderText($el, streaming?.text || '')"></div>
+                  <div class="rm-md" x-effect="renderText($el, (streaming?.text || '').replace(/\[\[c\d+\]\]/g, ''))"></div>
                 </div>
               </div>
               <div class="rm-need-acts rm-answers" x-show="open.job?.status === 'needs_you' && open.job.question?.options?.length" x-cloak>

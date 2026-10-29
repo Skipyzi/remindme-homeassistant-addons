@@ -1,6 +1,7 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { localDate } from "../ai/spend";
+import type { Embed } from "./embeds";
 import { minutesOf } from "./proactive";
 
 /**
@@ -116,6 +117,8 @@ export interface FeedItem {
 	summary: string;
 	/** Published, in ms. */
 	at?: number;
+	/** Its picture, when the feed has one. */
+	image?: string;
 }
 
 const NAMED: Record<string, string> = {
@@ -178,6 +181,31 @@ const markdownUrl = (url: string) => url.replace(/\(/g, "%28").replace(/\)/g, "%
 
 const element = (block: string, name: string) => new RegExp(`<${name}(?:\\s[^>]*)?>([\\s\\S]*?)</${name}>`, "i").exec(block)?.[1];
 
+/**
+ * An item's picture: media:content or media:thumbnail (the one nearest 600
+ * pixels wide), an image enclosure, or else the first picture in its text.
+ */
+function feedImage(block: string): string | undefined {
+	const found: Array<{ url: string; width: number }> = [];
+	for (const tag of block.match(/<media:(content|thumbnail)\b[^>]*>/gi) || []) {
+		const url = /\burl=["']([^"']+)/i.exec(tag)?.[1];
+		if (!url || /(medium|type)=["'](video|audio)/i.test(tag)) continue;
+		found.push({ url, width: Number(/\bwidth=["'](\d+)/i.exec(tag)?.[1] || 300) });
+	}
+	for (const tag of block.match(/<enclosure\b[^>]*>/gi) || []) {
+		const url = /\burl=["']([^"']+)/i.exec(tag)?.[1];
+		if (url && /type=["']image\//i.test(tag)) found.push({ url, width: 520 });
+	}
+	if (!found.length) {
+		const html = entities(block.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1"));
+		const src = /<img\b[^>]*\bsrc=["']([^"']+)/i.exec(html)?.[1];
+		if (src) found.push({ url: src, width: 400 });
+	}
+	const best = found.sort((a, b) => Math.abs(a.width - 600) - Math.abs(b.width - 600))[0];
+	const url = best ? entities(best.url).trim() : "";
+	return /^https?:\/\//i.test(url) ? url : undefined;
+}
+
 /** An RSS, RDF or Atom feed's name and items. */
 export function parseFeed(xml: string): { title: string; items: FeedItem[] } {
 	const first = xml.search(/<(item|entry)[\s>]/i);
@@ -195,7 +223,8 @@ export function parseFeed(xml: string): { title: string; items: FeedItem[] } {
 		const when = plain(element(block, "pubDate") || element(block, "dc:date") || element(block, "published") || element(block, "updated"));
 		const at = when ? Date.parse(when) : Number.NaN;
 		const summary = plain(element(block, "description") || element(block, "summary") || element(block, "content"));
-		items.push({ title: heading.slice(0, 200), link, summary: summary.slice(0, 280), ...(Number.isFinite(at) ? { at } : {}) });
+		const image = feedImage(block);
+		items.push({ title: heading.slice(0, 200), link, summary: summary.slice(0, 280), ...(Number.isFinite(at) ? { at } : {}), ...(image ? { image } : {}) });
 	}
 	return { title, items };
 }
@@ -213,6 +242,8 @@ export interface Story {
 	headline: string;
 	summary: string;
 	links: Array<{ source: string; url: string }>;
+	/** The first picture among its sources' items. */
+	image?: string;
 }
 
 export interface Digest {
@@ -225,6 +256,8 @@ export interface Digest {
 	plain?: string;
 	/** Sources that didn't answer. */
 	problems: string[];
+	/** The stories as a card for RemindMe's thread, with their pictures. */
+	embed?: Embed;
 }
 
 /** A feed of the user's own: a feed connector. */
@@ -511,7 +544,8 @@ export function parseStories(answer: string, items: NewsItem[], perSection: numb
 			if (!found.length || !headline) continue;
 			const links: Story["links"] = [];
 			for (const item of found) if (!links.some((link) => link.source === item.source) && links.length < 4) links.push({ source: item.source, url: item.link });
-			stories.push({ region, headline, summary, links });
+			const image = found.find((item) => item.image)?.image;
+			stories.push({ region, headline, summary, links, ...(image ? { image } : {}) });
 		}
 	}
 	return stories;
@@ -532,7 +566,14 @@ export function renderDigest(stories: Story[], problems: string[], language: "en
 		.filter((story): story is Story => Boolean(story))
 		.map((story) => `${FLAGS[story.region]} ${story.headline}`)
 		.join("\n");
-	return { text: parts.join("\n\n"), phone, stories, problems };
+	const embed: Embed = {
+		kind: "stories",
+		sections: REGIONS.map((region) => ({
+			label: `${FLAGS[region]} ${labels[region]}`,
+			items: stories.filter((story) => story.region === region).map((story) => ({ title: story.headline, ...(story.summary ? { summary: story.summary } : {}), ...(story.image ? { image: story.image } : {}), links: story.links })),
+		})).filter((section) => section.items.length),
+	};
+	return { text: parts.join("\n\n"), phone, stories, problems, embed };
 }
 
 /** Without the AI: each section's newest headlines, and the mixed feeds' under "Latest". */

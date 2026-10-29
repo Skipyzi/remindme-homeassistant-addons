@@ -1,0 +1,194 @@
+import type { Embed } from "./embeds";
+
+/**
+ * Places from OpenStreetMap (Nominatim): a shop, a pharmacy, a restaurant,
+ * with its address, opening hours read for right now, phone and website.
+ * Nominatim asks for at most one request a second and a real user agent.
+ */
+
+const DAYS = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"];
+const DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+
+type Ranges = Array<[number, number]>;
+
+/** "Mo-Fr 09:00-18:00; Sa 10:00-14:00; Su off" → minutes open per weekday (Monday first), or nothing when it's beyond this reader. */
+export function weekHours(spec: string): Ranges[] | undefined {
+	const text = spec.trim();
+	if (!text) return undefined;
+	if (/^24\/7$/.test(text)) return DAYS.map(() => [[0, 24 * 60]]);
+	const week: Ranges[] = DAYS.map(() => []);
+	for (const raw of text.split(";")) {
+		const rule = raw.trim();
+		if (!rule) continue;
+		// Public and school holidays can't be known here; their rules are left out.
+		if (/^(PH|SH)\b/.test(rule)) continue;
+		const match = /^((?:(?:Mo|Tu|We|Th|Fr|Sa|Su)(?:-(?:Mo|Tu|We|Th|Fr|Sa|Su))?)(?:,(?:Mo|Tu|We|Th|Fr|Sa|Su)(?:-(?:Mo|Tu|We|Th|Fr|Sa|Su))?)*)?\s*(?:,\s*PH)?\s*(.*)$/.exec(rule);
+		if (!match) return undefined;
+		const days = new Set<number>();
+		if (match[1]) {
+			for (const part of match[1].split(",")) {
+				const [from, to] = part.split("-").map((day) => DAYS.indexOf(day));
+				if (to === undefined) days.add(from);
+				else for (let day = from; ; day = (day + 1) % 7) {
+					days.add(day);
+					if (day === to) break;
+				}
+			}
+		} else DAYS.forEach((_day, index) => days.add(index));
+		const times = match[2].trim();
+		const ranges: Ranges = [];
+		if (!/^(off|closed)$/i.test(times)) {
+			if (!times) return undefined;
+			for (const span of times.split(",")) {
+				const found = /^(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})$/.exec(span.trim());
+				if (!found) return undefined;
+				const start = Number(found[1]) * 60 + Number(found[2]);
+				let end = Number(found[3]) * 60 + Number(found[4]);
+				if (end <= start) end += 24 * 60;
+				ranges.push([start, end]);
+			}
+		}
+		// A later rule replaces what an earlier one said about the same days.
+		for (const day of days) week[day] = ranges;
+	}
+	return week;
+}
+
+const clock = (minutes: number) => {
+	const value = ((minutes % (24 * 60)) + 24 * 60) % (24 * 60);
+	return value === 0 && minutes > 0 ? "midnight" : `${String(Math.floor(value / 60)).padStart(2, "0")}:${String(value % 60).padStart(2, "0")}`;
+};
+
+/** Whether it's open at `now`, in a few words: "Open now, until 20:00", "Closed, opens tomorrow at 09:00". */
+export function openingStatus(spec: string, now = new Date()): { text: string; open: boolean } | undefined {
+	const week = weekHours(spec);
+	if (!week) return undefined;
+	const today = (now.getDay() + 6) % 7;
+	const minute = now.getHours() * 60 + now.getMinutes();
+	// Yesterday's evening can run past midnight.
+	for (const [start, end] of week[(today + 6) % 7]) if (end > 24 * 60 && minute < end - 24 * 60) return { text: `Open now, until ${clock(end)}`, open: true };
+	for (const [start, end] of week[today]) if (minute >= start && minute < end) return { text: `Open now, until ${clock(end)}`, open: true };
+	const later = week[today].filter(([start]) => start > minute).sort((a, b) => a[0] - b[0])[0];
+	if (later) return { text: `Closed, opens at ${clock(later[0])}`, open: false };
+	for (let ahead = 1; ahead <= 7; ahead++) {
+		const day = (today + ahead) % 7;
+		const first = [...week[day]].sort((a, b) => a[0] - b[0])[0];
+		if (first) return { text: `Closed, opens ${ahead === 1 ? "tomorrow" : DAY_NAMES[day]} at ${clock(first[0])}`, open: false };
+	}
+	return { text: "Closed", open: false };
+}
+
+/** Metres between two points. */
+export function distance(a: { lat: number; lon: number }, b: { lat: number; lon: number }): number {
+	const rad = (value: number) => (value * Math.PI) / 180;
+	const dLat = rad(b.lat - a.lat);
+	const dLon = rad(b.lon - a.lon);
+	const h = Math.sin(dLat / 2) ** 2 + Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(dLon / 2) ** 2;
+	return 2 * 6_371_000 * Math.asin(Math.sqrt(h));
+}
+
+export interface Place {
+	name: string;
+	kind?: string;
+	lat: number;
+	lon: number;
+	address?: string;
+	hours?: string;
+	status?: { text: string; open: boolean };
+	phone?: string;
+	website?: string;
+	/** Metres from home, when Home Assistant knows where home is. */
+	away?: number;
+}
+
+interface NominatimHit {
+	lat: string;
+	lon: string;
+	name?: string;
+	display_name?: string;
+	type?: string;
+	category?: string;
+	address?: Record<string, string>;
+	extratags?: Record<string, string>;
+	namedetails?: Record<string, string>;
+}
+
+/** One search result as a place, its hours read for `now`. */
+export function placeFrom(hit: NominatimHit, now = new Date(), home?: { lat: number; lon: number }): Place {
+	const address = hit.address || {};
+	const tags = hit.extratags || {};
+	const street = [address.road || address.pedestrian || address.footway, address.house_number].filter(Boolean).join(" ");
+	const town = address.city || address.town || address.village || address.municipality || "";
+	const lat = Number(hit.lat);
+	const lon = Number(hit.lon);
+	const hours = tags.opening_hours;
+	const status = hours ? openingStatus(hours, now) : undefined;
+	const website = tags.website || tags["contact:website"];
+	const phone = tags.phone || tags["contact:phone"];
+	return {
+		name: hit.name || hit.namedetails?.name || (hit.display_name || "").split(",")[0] || "A place",
+		...(hit.type ? { kind: hit.type.replace(/_/g, " ") } : {}),
+		lat,
+		lon,
+		...(street || town ? { address: [street, [address.postcode, town].filter(Boolean).join(" ")].filter(Boolean).join(", ") } : {}),
+		...(hours ? { hours } : {}),
+		...(status ? { status } : {}),
+		...(phone ? { phone: phone.split(";")[0].trim() } : {}),
+		...(website && /^https?:\/\//i.test(website) ? { website } : {}),
+		...(home ? { away: Math.round(distance(home, { lat, lon })) } : {}),
+	};
+}
+
+const away = (metres: number) => (metres < 1000 ? `${Math.round(metres / 10) * 10} m from home` : `${(metres / 1000).toFixed(metres < 10_000 ? 1 : 0)} km from home`);
+
+/** A place as a card: the map, whether it's open, the address, and what to tap. */
+export function placeEmbed(place: Place): Embed {
+	const lines = [
+		place.address,
+		place.away !== undefined ? away(place.away) : undefined,
+		place.hours && !place.status ? `Hours: ${place.hours}` : undefined,
+	].filter((line): line is string => Boolean(line));
+	const links = [
+		{ label: "Directions", url: `https://maps.apple.com/?daddr=${place.lat},${place.lon}&q=${encodeURIComponent(place.name)}` },
+		...(place.website ? [{ label: "Website", url: place.website }] : []),
+		...(place.phone ? [{ label: "Call", url: `tel:${place.phone.replace(/[^\d+]/g, "")}` }] : []),
+	];
+	return { kind: "place", name: place.name, lat: place.lat, lon: place.lon, ...(place.status ? { status: place.status } : {}), lines, links };
+}
+
+type FetchLike = (input: string | URL, init?: RequestInit) => Promise<Response>;
+
+/** Nominatim's search, one request a second, near home when that's known. */
+export class PlaceSearch {
+	private chain: Promise<unknown> = Promise.resolve();
+	private last = 0;
+
+	constructor(private readonly options: { home?(): Promise<{ lat: number; lon: number } | undefined>; fetch?: FetchLike; spacingMs?: number; endpoint?: string } = {}) {}
+
+	async find(query: string, now = new Date()): Promise<Place[]> {
+		const home = await this.options.home?.().catch(() => undefined);
+		const url = new URL(this.options.endpoint || "https://nominatim.openstreetmap.org/search");
+		url.searchParams.set("q", query);
+		url.searchParams.set("format", "jsonv2");
+		url.searchParams.set("addressdetails", "1");
+		url.searchParams.set("extratags", "1");
+		url.searchParams.set("namedetails", "1");
+		url.searchParams.set("limit", "5");
+		url.searchParams.set("accept-language", "en");
+		// Near home first (about 30 km around), without leaving the rest out.
+		if (home) url.searchParams.set("viewbox", [home.lon - 0.4, home.lat + 0.25, home.lon + 0.4, home.lat - 0.25].map((value) => value.toFixed(4)).join(","));
+		const run = this.chain.then(async () => {
+			const wait = this.last + (this.options.spacingMs ?? 1_100) - Date.now();
+			if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
+			this.last = Date.now();
+			const response = await (this.options.fetch || fetch)(url, { headers: { "User-Agent": "RemindMe/4 (Home Assistant app; personal assistant)", Accept: "application/json" }, signal: AbortSignal.timeout(15_000) });
+			if (!response.ok) throw new Error(`OpenStreetMap's search answered ${response.status}.`);
+			return (await response.json()) as NominatimHit[];
+		});
+		this.chain = run.catch(() => undefined);
+		const hits = await run;
+		// Places, not the streets and districts that share a word with them ("Saturnstraße" for Saturn).
+		const places = (Array.isArray(hits) ? hits : []).filter((hit) => !["highway", "boundary", "landuse", "natural", "waterway"].includes(String(hit.category)));
+		return places.map((hit) => placeFrom(hit, now, home));
+	}
+}

@@ -31,6 +31,38 @@ export interface ReaderResult {
 	text: string;
 	truncated: boolean;
 	finalUrl: string;
+	/** What the page offers as its own preview: picture, site name, description. */
+	preview: PagePreview;
+}
+
+export interface PagePreview {
+	image?: string;
+	site?: string;
+	description?: string;
+}
+
+/** A page's preview tags (Open Graph, then Twitter's), the picture made absolute. */
+export function pagePreview(html: string, base: string): PagePreview {
+	const head = html.slice(0, 200_000);
+	const meta = (...keys: string[]) => {
+		for (const key of keys) {
+			for (const tag of head.match(/<meta\b[^>]*>/gi) || []) {
+				if (!new RegExp(`(?:property|name)=["']${key}["']`, "i").test(tag)) continue;
+				const content = /\bcontent=["']([^"']*)["']/i.exec(tag)?.[1];
+				if (content?.trim()) return decodeEntities(content).trim();
+			}
+		}
+		return undefined;
+	};
+	let image = meta("og:image:secure_url", "og:image", "twitter:image");
+	try {
+		image = image ? new URL(image, base).toString() : undefined;
+	} catch {
+		image = undefined;
+	}
+	const site = meta("og:site_name");
+	const description = meta("og:description", "description", "twitter:description");
+	return { ...(image && /^https?:/i.test(image) ? { image } : {}), ...(site ? { site: site.slice(0, 60) } : {}), ...(description ? { description: description.slice(0, 300) } : {}) };
 }
 
 /** An IPv4 literal that is a normal, routable public address. */
@@ -260,5 +292,6 @@ export async function readablePage(rawUrl: string): Promise<ReaderResult> {
 		text: extracted.text.slice(0, MAX_TEXT),
 		truncated: extracted.text.length > MAX_TEXT,
 		finalUrl: current.toString(),
+		preview: pagePreview(html, current.toString()),
 	};
 }

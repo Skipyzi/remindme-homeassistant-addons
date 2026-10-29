@@ -17,6 +17,7 @@ import {
 import type { Artifact } from "../harness/artifacts";
 import type { ActivityChannel, ActivityLog, Receipt } from "./activity";
 import type { ModelChoice } from "../ai/settings";
+import { takeEmbeds, type Embed } from "./embeds";
 import type { EntityCard } from "../harness/entities";
 import type { VaultNote } from "../harness/vault";
 import type { Confirmation } from "./confirmations";
@@ -108,6 +109,8 @@ export interface AskResult {
 	problem?: string;
 	confirms: Confirmation[];
 	cards: EntityCard[];
+	/** Cards the answer shows: offers, places, articles (its [[c1]] markers, taken out of the text). */
+	embeds: Embed[];
 	artifacts: Artifact[];
 	/** What the tools changed, for the ledger. */
 	did: Receipt[];
@@ -130,7 +133,7 @@ export function trimHistory(history: PriorTurn[]): PriorTurn[] {
 }
 
 function failure(problem: string, model = ""): AskResult {
-	return { text: problem, problem, confirms: [], cards: [], artifacts: [], did: [], model, usage: emptyUsage(), rounds: 0 };
+	return { text: problem, problem, confirms: [], cards: [], embeds: [], artifacts: [], did: [], model, usage: emptyUsage(), rounds: 0 };
 }
 
 /**
@@ -270,11 +273,13 @@ export class Assistant {
 			answer = problem;
 		}
 		const costUsd = usage.inputTokens || usage.outputTokens ? await spend.record(model, usage) : undefined;
+		const shown = takeEmbeds(answer, effects.embeds);
 		return {
-			text: answer || "Done.",
+			text: shown.text || (shown.shown.length ? "" : "Done."),
 			problem,
 			confirms: effects.confirms,
 			cards: [...effects.cards.values()],
+			embeds: shown.shown,
 			artifacts: effects.artifacts,
 			did: effects.did,
 			model,
@@ -352,16 +357,18 @@ export class Assistant {
 			if (input.signal?.aborted) throw error;
 			console.error(`${runner.label} turn failed:`, error);
 			const problem = `${runner.label} couldn't finish: ${error instanceof Error ? error.message : error}`;
-			return { ...failure(problem, runner.model), confirms: effects.confirms, cards: [...effects.cards.values()], artifacts: effects.artifacts, did: effects.did };
+			return { ...failure(problem, runner.model), confirms: effects.confirms, cards: [...effects.cards.values()], embeds: [], artifacts: effects.artifacts, did: effects.did };
 		} finally {
 			capability.close();
 			abort.abort();
 			input.signal?.removeEventListener("abort", cancel);
 		}
+		const shown = takeEmbeds(answer, effects.embeds);
 		return {
-			text: answer.trim() || "Done.",
+			text: shown.text || (shown.shown.length ? "" : "Done."),
 			confirms: effects.confirms,
 			cards: [...effects.cards.values()],
+			embeds: shown.shown,
 			artifacts: effects.artifacts,
 			did: effects.did,
 			model: `${runner.label} · ${runner.model}`,

@@ -230,11 +230,13 @@ export class HomeApi {
 	}
 
 	/** Home Assistant's own settings: the house's time zone, location name, units. */
-	async config(): Promise<{ time_zone?: string; location_name?: string; unit_system?: { temperature?: string } }> {
+	async config(): Promise<{ time_zone?: string; location_name?: string; unit_system?: { temperature?: string }; latitude?: number; longitude?: number }> {
 		return (await this.call("/config")).json() as Promise<{
 			time_zone?: string;
 			location_name?: string;
 			unit_system?: { temperature?: string };
+			latitude?: number;
+			longitude?: number;
 		}>;
 	}
 

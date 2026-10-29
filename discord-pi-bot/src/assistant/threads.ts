@@ -1,3 +1,4 @@
+import type { Embed } from "./embeds";
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
@@ -45,6 +46,8 @@ export interface ThreadMessage {
 	receipts?: Receipt[];
 	/** Actions this message left waiting for the user's tap. */
 	confirms?: Array<{ token: string; message: string; destructive?: boolean }>;
+	/** Cards under the answer: offers, a place, articles. */
+	embeds?: Embed[];
 }
 
 export interface Thread {
@@ -161,7 +164,7 @@ export class ThreadStore {
 	append(id: string, message: Omit<ThreadMessage, "id" | "at"> & { at?: Date }): ThreadMessage | undefined {
 		const thread = this.get(id);
 		const text = message.text.trim();
-		if (!thread || (!text && !message.receipts?.length && !message.confirms?.length)) return undefined;
+		if (!thread || (!text && !message.receipts?.length && !message.confirms?.length && !message.embeds?.length)) return undefined;
 		const saved: ThreadMessage = {
 			id: randomUUID().slice(0, 12),
 			at: (message.at || new Date()).toISOString(),
@@ -169,6 +172,7 @@ export class ThreadStore {
 			text: text.slice(0, MAX_TEXT),
 			...(message.receipts?.length ? { receipts: message.receipts } : {}),
 			...(message.confirms?.length ? { confirms: message.confirms } : {}),
+			...(message.embeds?.length ? { embeds: message.embeds.slice(0, 12) } : {}),
 		};
 		thread.messages = [...thread.messages, saved].slice(-MAX_MESSAGES);
 		thread.updatedAt = saved.at;

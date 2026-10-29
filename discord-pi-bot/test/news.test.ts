@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { type Digest, News, type NewsItem, parseFeed, parseStories } from "../src/assistant/news.ts";
+import { type Digest, News, type NewsItem, parseFeed, parseStories, renderDigest } from "../src/assistant/news.ts";
 
 // Real feeds from 29 October 2026, cut to a few items each.
 const fixture = (name: string) => readFileSync(new URL(`./fixtures/news/${name}.xml`, import.meta.url), "utf8");
@@ -263,4 +263,21 @@ test("the news can be written by a model of its own", async () => {
 	assert.equal(news.view().writer, undefined);
 	await news.sendNow(new Date(NOW.getTime() + 3_600_000));
 	assert.deepEqual(writers, [{ provider: "claude", model: "claude-haiku-5-5" }, undefined]);
+});
+
+test("the digest comes with a stories card: sections, pictures from the feeds, every source linked", () => {
+	const items: NewsItem[] = [
+		{ id: "n1", source: "tagesschau (ARD)", region: "eu", title: "EU-Kanada-Gipfel", summary: "", link: "https://www.tagesschau.de/eu.html", image: "https://images.tagesschau.de/eu.jpg" },
+		{ id: "n2", source: "POLITICO Europe", region: "eu", title: "EU-Canada lovefest", summary: "", link: "https://www.politico.eu/x" },
+		{ id: "n3", source: "The Guardian", region: "world", title: "Ebola", summary: "", link: "https://www.theguardian.com/y" },
+	];
+	const stories = parseStories(JSON.stringify({ eu: [{ ids: ["n2", "n1"], headline: "Canada won't be an associated member", summary: "Plans toned down." }], world: [{ ids: ["n3"], headline: "Ebola spreads", summary: "" }] }), items, 5);
+	const digest = renderDigest(stories, [], "en", NOW);
+	assert.deepEqual(digest.embed, {
+		kind: "stories",
+		sections: [
+			{ label: "🇪🇺 EU", items: [{ title: "Canada won't be an associated member", summary: "Plans toned down.", image: "https://images.tagesschau.de/eu.jpg", links: [{ source: "POLITICO Europe", url: "https://www.politico.eu/x" }, { source: "tagesschau (ARD)", url: "https://www.tagesschau.de/eu.html" }] }] },
+			{ label: "🌍 World", items: [{ title: "Ebola spreads", links: [{ source: "The Guardian", url: "https://www.theguardian.com/y" }] }] },
+		],
+	});
 });

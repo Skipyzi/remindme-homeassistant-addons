@@ -1,3 +1,4 @@
+import { embedText, type Embed } from "./embeds";
 import type { PriorTurn } from "../ai/types";
 import type { AskInput, AskResult } from "./agent";
 import type { Confirmation } from "./confirmations";
@@ -8,7 +9,7 @@ import { titleFrom } from "./threads";
 export interface JobTools {
 	update(step: string, progress?: { done: number; total: number }, note?: string): void;
 	ask(question: string, options: string[]): void;
-	finish(result: string): void;
+	finish(result: string, embeds?: Embed[]): void;
 	/** End this run and look again later: after `hours`, or sooner when a matching email arrives. */
 	checkBack(input: { hours: number; mailWords: string[]; tell?: string; note?: string }): void;
 }
@@ -212,14 +213,15 @@ export class JobRunner {
 		this.current = { id, abort };
 		threads.updateJob(id, { status: "working", error: undefined });
 		this.changed(id);
-		const say = async (text: string, message = text) => {
-			threads.append(id, { role: "assistant", text });
+		const say = async (text: string, message = text, embeds?: Embed[]) => {
+			threads.append(id, { role: "assistant", text, ...(embeds?.length ? { embeds } : {}) });
 			await this.deps.notify(threads.get(id)!, message).catch((error) => console.warn("Could not send a job update:", error instanceof Error ? error.message : error));
 		};
 		try {
 			for (let go = 0; go < (this.deps.runsPerGo ?? RUNS_PER_GO); go++) {
 				const thread = threads.get(id)!;
 				let outcome: "asked" | "finished" | "waiting" | undefined;
+				let finishedWith: Embed[] | undefined;
 				let later: { hours: number; mailWords: string[]; tell?: string; note?: string } | undefined;
 				const tools: JobTools = {
 					update: (step, progress, note) => {
@@ -232,9 +234,10 @@ export class JobRunner {
 						outcome = "asked";
 						threads.updateJob(id, { status: "needs_you", question: { text: question, options } });
 					},
-					finish: (result) => {
+					finish: (result, embeds) => {
 						if (outcome) return;
 						outcome = "finished";
+						finishedWith = embeds;
 						const progress = threads.get(id)?.job?.progress;
 						threads.updateJob(id, { status: "done", result, question: undefined, wakeAt: undefined, wakeWords: undefined, ...(progress ? { progress: { done: progress.total, total: progress.total } } : {}) });
 					},
@@ -284,7 +287,11 @@ export class JobRunner {
 				}
 				const job = threads.get(id)!.job!;
 				if (outcome === "asked" && job.question) return void (await say(job.question.text, `${job.question.text}${optionsLine(job.question.options)}`));
-				if (outcome === "finished") return void (await say(job.result || result.text));
+				if (outcome === "finished") {
+					const said = job.result || result.text;
+					// Discord and the phone get the cards as plain lines; the thread shows them as cards.
+					return void (await say(said, [said, ...(finishedWith || []).map(embedText)].join("\n\n"), finishedWith));
+				}
 				// A watch never loops: if it didn't say when to look again, it looks again in a few hours.
 				if (outcome === "waiting" || watching) return void (await this.sleep(id, later || { hours: DEFAULT_CHECK_HOURS, mailWords: job.wakeWords || [] }, say));
 			}

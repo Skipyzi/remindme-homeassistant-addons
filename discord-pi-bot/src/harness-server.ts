@@ -75,6 +75,10 @@ import { signInRoutes } from "./connectors/signin-routes";
 import { McpAuth } from "./harness/mcp-auth";
 import { WebBrowser } from "./harness/browser";
 import { News } from "./assistant/news";
+import { type Embed, embedText, mapImages } from "./assistant/embeds";
+import { PlaceSearch } from "./assistant/places";
+import { MediaProxy } from "./harness/media";
+import { pagePreview } from "./harness/reader";
 import { GEIZHALS_CHECKING, GEIZHALS_SEARCH, PriceWatches, euro, geizhalsBlocked, parseShopPrice, searchResults, type PriceWatch, type SearchResult } from "./assistant/prices";
 import type { EntryAction } from "./assistant/activity";
 import { modelTable } from "./ai/catalog";
@@ -252,10 +256,10 @@ const webBrowser = WebBrowser.fromEnv();
  * phone and the RemindMe thread. main.ts hands in its sender once the bot runs.
  */
 /** What else a notice to the user carries: phone buttons, inbox buttons, what it is, a shorter text for the phone. */
-type OwnerNews = { buttons?: PhoneButton[]; actions?: EntryAction[]; what?: "price" | "news" | "feed"; phoneTitle?: string; phoneBody?: string };
+type OwnerNews = { buttons?: PhoneButton[]; actions?: EntryAction[]; what?: "price" | "news" | "feed"; phoneTitle?: string; phoneBody?: string; embeds?: Embed[] };
 let ownerNotify = async (text: string, extra: OwnerNews = {}): Promise<boolean> => {
 	const reached = await phoneNotify({ title: extra.phoneTitle || (extra.what === "news" ? "News" : "RemindMe"), body: extra.phoneBody || text, url: "./#t/remindme", tag: extra.what === "news" ? "news" : `notice-${Date.now()}`, ...(extra.buttons ? { buttons: extra.buttons } : {}) });
-	activity.add({ kind: reached ? "sent" : "failed", channel: "nudge", text, ...(extra.actions ? { actions: extra.actions } : {}) });
+	activity.add({ kind: reached ? "sent" : "failed", channel: "nudge", text, ...(extra.actions ? { actions: extra.actions } : {}), ...(extra.embeds ? { embeds: extra.embeds } : {}) });
 	return reached > 0;
 };
 export function setOwnerNotifier(notify: (text: string, extra?: OwnerNews) => Promise<boolean>): void {
@@ -355,7 +359,7 @@ async function fetchFeed(url: string): Promise<string> {
 export const news = new News({
 	fetchFeed,
 	ask: (prompt, writer) => assistant.quick(prompt, undefined, { model: aiSettings.checkChoice(writer) }),
-	send: (digest) => ownerNotify(digest.text, { what: "news", phoneBody: digest.phone }),
+	send: (digest) => ownerNotify(digest.text, { what: "news", phoneBody: digest.phone, ...(digest.embed ? { embeds: [digest.embed] } : {}) }),
 	ownFeeds: () => feeds.list().filter((feed) => feed.enabled).map((feed) => ({ id: feed.id, name: feed.name, url: feed.values.url, news: feedFlag(feed, "news") })),
 	quietUntil: (at) => afterQuietHours(process.env.QUIET_HOURS ?? "22:30-07:00", at),
 });
@@ -402,6 +406,40 @@ const feedResult = (id: string) => {
 	if (!status.ok) return `It didn't answer: ${status.error}`;
 	return `It answered: ${status.posts} posts${status.newest ? `, the newest from ${new Date(status.newest).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}` : ""}.`;
 };
+/* Places from OpenStreetMap, near home (Home Assistant knows where that is). */
+let homeSpot: Promise<{ lat: number; lon: number } | undefined> | undefined;
+const placeSearch = new PlaceSearch({
+	home: () =>
+		(homeSpot ||= (async () => {
+			const config = await home?.config().catch(() => undefined);
+			return typeof config?.latitude === "number" && typeof config.longitude === "number" ? { lat: config.latitude, lon: config.longitude } : undefined;
+		})()),
+});
+/* Pictures on cards and map tiles come through RemindMe: the phone never asks the shops or news sites itself. */
+const media = new MediaProxy({ dir: process.env.MEDIA_CACHE_PATH || "./data/media", userAgent: BROWSER_UA });
+const proxiedEmbed = (embed: Embed) => mapImages(embed, (url) => media.link(url));
+/**
+ * Articles shown without a picture get the one their page names: feeds
+ * like Home Assistant's carry none. A few at most, and quickly, or none.
+ */
+async function withPreviews(embeds: Embed[]): Promise<Embed[]> {
+	const missing = [...new Set(embeds.flatMap((embed) => (embed.kind === "article" && !embed.image ? [embed.url] : [])))].slice(0, 4);
+	if (!missing.length) return embeds;
+	const found = new Map<string, string>();
+	await Promise.all(
+		missing.map(async (url) => {
+			const html = await Promise.race([fetchFeed(url), new Promise<string>((_resolve, reject) => setTimeout(() => reject(new Error("slow")), 6_000))]).catch(() => "");
+			const image = html ? pagePreview(html, url).image : undefined;
+			if (image) found.set(url, image);
+		}),
+	);
+	return embeds.map((embed) => (embed.kind === "article" && !embed.image && found.has(embed.url) ? { ...embed, image: found.get(embed.url) } : embed));
+}
+/** A thread as the console gets it: its cards' pictures through the proxy. */
+function withMedia(thread: Thread): Thread {
+	if (!thread.messages.some((message) => message.embeds?.length)) return thread;
+	return { ...thread, messages: thread.messages.map((message) => (message.embeds?.length ? { ...message, embeds: message.embeds.map(proxiedEmbed) } : message)) };
+}
 /** A watch as the console shows it. */
 const priceView = (watch: PriceWatch) => ({ ...watch, history: watch.history.slice(-60) });
 const mcpAuth = new McpAuth((id, signIn) => mcpServers.setSignIn(id, signIn));
@@ -1384,7 +1422,7 @@ app.put("/api/memory/settings", async (request, response) => {
 app.get("/api/threads/:id", (request, response) => {
 	const thread = threads.get(request.params.id);
 	if (!thread) return response.status(404).json({ error: "That conversation is gone." });
-	response.set("Cache-Control", "no-store").json(thread);
+	response.set("Cache-Control", "no-store").json(withMedia(thread));
 });
 
 /*
@@ -1430,9 +1468,11 @@ async function threadTurn(request: express.Request, response: express.Response, 
 			signal: abort.signal,
 			...(thread.id === FEED_ID ? { extra: feedContext() } : {}),
 		});
+		const embeds = await withPreviews(result.embeds);
 		threads.append(thread.id, {
 			role: "assistant",
 			text: result.text,
+			...(embeds.length ? { embeds } : {}),
 			receipts: result.did,
 			confirms: result.confirms.map((item) => ({ token: item.token, message: item.message, destructive: item.destructive })),
 		});
@@ -1539,8 +1579,22 @@ app.post("/api/news/send", async (_request, response) => {
 		response.status(400).json({ error: error instanceof Error ? error.message : "The news didn't go out." });
 	}
 });
+/* A card's picture, fetched once and kept: only addresses RemindMe signed itself. */
+app.get("/api/media", async (request, response) => {
+	const found = await media.get(String(request.query.u || ""), String(request.query.s || "")).catch((error: Error) => ({ error: error.message }));
+	if ("error" in found) return response.status(found.error === "forbidden" ? 403 : 502).end();
+	response.set({ "Content-Type": found.type, "Cache-Control": "private, max-age=604800", "X-Content-Type-Options": "nosniff" }).send(found.body);
+});
+/* Map tiles for place cards, from OpenStreetMap, kept a week. */
+app.get("/api/tiles/:z/:x/:y", async (request, response) => {
+	const [z, x, y] = [request.params.z, request.params.x, request.params.y].map(Number);
+	const found = await media.tile(z, x, y).catch((error: Error) => ({ error: error.message }));
+	if ("error" in found) return response.status(found.error === "forbidden" ? 400 : 502).end();
+	response.set({ "Content-Type": found.type, "Cache-Control": "private, max-age=604800" }).send(found.body);
+});
 app.get("/api/feed", (_request, response) => {
-	response.set("Cache-Control", "no-store").json({ entries: feedEntries(14), thread: threads.get(FEED_ID) || null });
+	const thread = threads.get(FEED_ID);
+	response.set("Cache-Control", "no-store").json({ entries: feedEntries(14).map((entry) => (entry.embeds?.length ? { ...entry, embeds: entry.embeds.map(proxiedEmbed) } : entry)), thread: thread ? withMedia(thread) : null });
 });
 app.post("/api/activity/:id/act/:index", async (request, response) => {
 	const entry = activity.get(request.params.id);
@@ -2011,8 +2065,9 @@ export function toolContext(): ToolContext {
 		webSearch: searchFallback() ? webSearch : undefined,
 		async readPage(url) {
 			const page = await readablePage(url);
-			return { title: page.title, url: page.finalUrl, text: page.text };
+			return { title: page.title, url: page.finalUrl, text: page.text, ...page.preview };
 		},
+		places: { find: (query) => placeSearch.find(query) },
 		parcels: parcelTracking()
 			? {
 					async track(number, label) {
@@ -2521,7 +2576,8 @@ async function webSearch(query: string) {
 async function runTaskPrompt(prompt: string): Promise<string> {
 	const result = await assistant.ask({ prompt, channel: "task", effort: "medium" });
 	if (result.problem) throw new Error(result.problem);
-	return result.text;
+	// A message has no cards: they follow as plain lines.
+	return [result.text, ...result.embeds.map(embedText)].filter(Boolean).join("\n\n");
 }
 
 /** A one-line headline from a report, for the notification and the UI. */

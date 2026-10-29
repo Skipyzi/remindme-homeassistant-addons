@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
+import type { Embed } from "./embeds";
 
 /**
  * What a ledger row is: the assistant answered, changed something, sent a
@@ -40,6 +41,8 @@ export interface ActivityEntry {
 	actions?: EntryAction[];
 	/** What a tap on one of them did; the buttons go then. */
 	acted?: string;
+	/** Cards under it in the RemindMe thread, such as the news digest's stories. */
+	embeds?: Embed[];
 }
 
 const MAX_ENTRIES = 1_000;

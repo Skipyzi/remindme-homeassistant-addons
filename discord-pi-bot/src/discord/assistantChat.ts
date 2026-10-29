@@ -9,6 +9,7 @@ import {
 	type Message,
 } from "discord.js";
 import type { ImageInput } from "../ai/types";
+import { embedText } from "../assistant/embeds";
 import type { HomeApi } from "../agent/home";
 import type { Assistant } from "../assistant/agent";
 import type { ActivityLog } from "../assistant/activity";
@@ -129,12 +130,14 @@ async function handleMessage(client: Client, deps: ChatDeps, message: Message): 
 				conversationId: deps.chats.conversationId(message.channelId),
 				images,
 			});
+			// Discord has no cards: they follow the answer as plain lines.
+			const text = [result.text, ...result.embeds.map(embedText)].filter(Boolean).join("\n\n") || "Done.";
 			if (!result.problem)
 				deps.chats.append(message.channelId, [
 					{ role: "user", text: images.length ? `${prompt} (with ${images.length} image${images.length === 1 ? "" : "s"})` : prompt },
-					{ role: "assistant", text: result.text },
+					{ role: "assistant", text },
 				]);
-			await reply(message, result.text, result.confirms);
+			await reply(message, text, result.confirms);
 		} catch (error) {
 			console.error("Discord turn failed:", error);
 			await message.reply("Something went wrong on my side. Try again in a moment.").catch(() => {});
