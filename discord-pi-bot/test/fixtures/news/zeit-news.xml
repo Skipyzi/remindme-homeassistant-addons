@@ -1,0 +1,108 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<rss xmlns:atom="http://www.w3.org/2005/Atom" xmlns:content="http://purl.org/rss/1.0/modules/content/" xmlns:dc="http://purl.org/dc/elements/1.1/" version="2.0">
+  <channel>
+    <title>Aktuelle Schlagzeilen und Newsticker</title>
+    <link>https://www.zeit.de/news/index</link>
+    <description>Aktuelle Schlagzeilen im Newsticker von der ZEIT. Lesen Sie hier die neuesten Nachrichten.</description>
+    <language>de-de</language>
+    <copyright>Copyright © 2026, Zeitverlag Gerd Bucerius GmbH &amp; Co. KG</copyright>
+    <atom:link href="https://newsfeed.zeit.de/news/index" rel="self" type="application/rss+xml"/>
+    <docs>https://www.zeit.de/hilfe/rss</docs>
+    <generator>zeit.web 4.619</generator>
+    <managingEditor>online-cr@zeit.de (Chefredaktion DIE ZEIT)</managingEditor>
+    <webMaster>webmaster@zeit.de (Technik DIE ZEIT)</webMaster>
+    <image>
+      <url>https://static.zeit.de/p/zeit.web/icons/rss-feed-icon-96x96.png</url>
+      <title>Aktuelle Schlagzeilen und Newsticker</title>
+      <link>https://www.zeit.de/news/index</link>
+    </image>
+    <item>
+      <title>Europa und Kanada: Der aufrechte Gang ist teuer, aber er lohnt sich</title>
+      <link>https://www.zeit.de/politik/2026-10/eu-kanada-gipfel-friedrich-merz-donald-trump-5vor8</link>
+      <description>Auf einem Gipfel in Montreal wollen sich die EU und Kanada enger zusammenschließen. Doch ausgerechnet der Bundeskanzler will verhindern, dass daraus etwas Großes wird.</description>
+      <enclosure url="https://img.zeit.de/politik/ausland/2026-10/eu-kanada-gipfel-friedrich-merz-donald-trump-5vor8-bild/original__640x360" length="20480" type="image/jpeg"/>
+      <category>Politik</category>
+      <dc:creator>DIE ZEIT: Politik - Petra Pinzler</dc:creator>
+      <pubDate>Thu, 29 Oct 2026 07:07:55 -0000</pubDate>
+      <guid isPermaLink="false">{urn:uuid:49ae1c56-376a-4e77-bf18-585a1fb2544f}</guid>
+      <content:encoded><![CDATA[<a href="https://www.zeit.de/politik/2026-10/eu-kanada-gipfel-friedrich-merz-donald-trump-5vor8"><img style="float:left; margin-right:5px" src="https://img.zeit.de/politik/ausland/2026-10/eu-kanada-gipfel-friedrich-merz-donald-trump-5vor8-bild/wide__148x84"></a> Auf einem Gipfel in Montreal wollen sich die EU und Kanada enger zusammenschließen. Doch ausgerechnet der Bundeskanzler will verhindern, dass daraus etwas Großes wird.]]></content:encoded>
+    </item>
+<item>
+      <title>VW: Volkswagen macht im dritten Quartal Milliardenverlust</title>
+      <link>https://www.zeit.de/mobilitaet/2026-10/volkswagen-macht-im-dritten-quartal-milliardenverlust</link>
+      <description>VW hat zuletzt deutlich weniger Autos verkauft und hohe Verluste verzeichnet. Das Konzernergebnis lag in den Monaten Juli bis September bei minus 5,82 Milliarden Euro.</description>
+      <enclosure url="https://img.zeit.de/wirtschaft/2026-10/vw-quartalszahlen-eil-bild/original__640x360" length="20480" type="image/jpeg"/>
+      <category>Mobilitaet</category>
+      <dc:creator>DIE ZEIT: Mobilitaet - Katrin Scheib, Alara  Yılmaz</dc:creator>
+      <pubDate>Thu, 29 Oct 2026 07:05:55 -0000</pubDate>
+      <guid isPermaLink="false">{urn:uuid:67f63a6f-95b1-4b0d-a880-a2afb82e6ebb}</guid>
+      <content:encoded><![CDATA[<a href="https://www.zeit.de/mobilitaet/2026-10/volkswagen-macht-im-dritten-quartal-milliardenverlust"><img style="float:left; margin-right:5px" src="https://img.zeit.de/wirtschaft/2026-10/vw-quartalszahlen-eil-bild/wide__148x84"></a> VW hat zuletzt deutlich weniger Autos verkauft und hohe Verluste verzeichnet. Das Konzernergebnis lag in den Monaten Juli bis September bei minus 5,82 Milliarden Euro.]]></content:encoded>
+    </item>
+<item>
+      <title>ARD-Tragikomödie: «Doitscha» erzählt von deutschen Juden nach dem 7. Oktober</title>
+      <link>https://www.zeit.de/news/2026-10/29/doitscha-erzaehlt-von-deutschen-juden-nach-dem-7-oktober</link>
+      <description></description>
+      <enclosure url="https://img.zeit.de/news/2026-10/29/doitscha-erzaehlt-von-deutschen-juden-nach-dem-7-oktober-image-group/original__640x360" length="20480" type="image/jpeg"/>
+      <category>News</category>
+      <dc:creator>DIE ZEIT: News - </dc:creator>
+      <pubDate>Thu, 29 Oct 2026 07:00:10 -0000</pubDate>
+      <guid isPermaLink="false">{urn:uuid:7c13d1fd-699b-42f4-a60a-1bd2cad6899b}</guid>
+      <content:encoded><![CDATA[<a href="https://www.zeit.de/news/2026-10/29/doitscha-erzaehlt-von-deutschen-juden-nach-dem-7-oktober"><img style="float:left; margin-right:5px" src="https://img.zeit.de/news/2026-10/29/doitscha-erzaehlt-von-deutschen-juden-nach-dem-7-oktober-image-group/wide__148x84"></a> None]]></content:encoded>
+    </item>
+<item>
+      <title>Im dritten Quartal: Volkswagen meldet 5,82 Milliarden Euro Verlust</title>
+      <link>https://www.zeit.de/news/2026-10/29/vw-meldet-milliardenverlust-im-dritten-quartal</link>
+      <description></description>
+      <enclosure url="https://img.zeit.de/news/2026-10/29/vw-meldet-milliardenverlust-im-dritten-quartal-image-group/original__640x360" length="20480" type="image/jpeg"/>
+      <category>News</category>
+      <dc:creator>DIE ZEIT: News - </dc:creator>
+      <pubDate>Thu, 29 Oct 2026 06:48:52 -0000</pubDate>
+      <guid isPermaLink="false">{urn:uuid:bd2f13d0-0944-4ee5-9c63-7433be8716d9}</guid>
+      <content:encoded><![CDATA[<a href="https://www.zeit.de/news/2026-10/29/vw-meldet-milliardenverlust-im-dritten-quartal"><img style="float:left; margin-right:5px" src="https://img.zeit.de/news/2026-10/29/vw-meldet-milliardenverlust-im-dritten-quartal-image-group/wide__148x84"></a> None]]></content:encoded>
+    </item>
+<item>
+      <title>Sucheinsatz mit Risiken: Hausexplosion in Regensburg: Sicherungsarbeiten beendet</title>
+      <link>https://www.zeit.de/news/2026-10/29/hausexplosion-in-regensburg-sorge-um-vermisste-bewohner</link>
+      <description></description>
+      <enclosure url="https://img.zeit.de/news/2026-10/29/hausexplosion-in-regensburg-sorge-um-vermisste-bewohner-image-group/original__640x360" length="20480" type="image/jpeg"/>
+      <category>News</category>
+      <dc:creator>DIE ZEIT: News - </dc:creator>
+      <pubDate>Thu, 29 Oct 2026 06:46:50 -0000</pubDate>
+      <guid isPermaLink="false">{urn:uuid:a287fffa-b017-43ba-97f8-9632cf35da6f}</guid>
+      <content:encoded><![CDATA[<a href="https://www.zeit.de/news/2026-10/29/hausexplosion-in-regensburg-sorge-um-vermisste-bewohner"><img style="float:left; margin-right:5px" src="https://img.zeit.de/news/2026-10/29/hausexplosion-in-regensburg-sorge-um-vermisste-bewohner-image-group/wide__148x84"></a> None]]></content:encoded>
+    </item>
+<item>
+      <title>Jugendbewegung »GenZ regelt«: Sie fürchten sich vor Gewalt. Auf die Straße wollen sie trotzdem</title>
+      <link>https://www.zeit.de/2026/47/jugendbewegung-genz-regelt-akram-selo-demonstrationen-protest</link>
+      <description>Am kommenden Wochenende soll auch in Deutschland demonstriert werden. Die Initiative »GenZ regelt« will 140.000 Menschen auf die Straße bringen. Wer steckt dahinter?</description>
+      <enclosure url="https://img.zeit.de/2026/47/alles-ein-bisschen-kaputt-bild-3/original__640x360" length="20480" type="image/jpeg"/>
+      <category>Bildung</category>
+      <dc:creator>DIE ZEIT: Bildung - Mariya Martiyenko, Jeannette Otto, Giosuè Tolu</dc:creator>
+      <pubDate>Thu, 29 Oct 2026 06:44:30 -0000</pubDate>
+      <guid isPermaLink="false">{urn:uuid:d9ab358f-dabc-4e04-8ff0-7b5ae31d3d58}</guid>
+      <content:encoded><![CDATA[<a href="https://www.zeit.de/2026/47/jugendbewegung-genz-regelt-akram-selo-demonstrationen-protest"><img style="float:left; margin-right:5px" src="https://img.zeit.de/2026/47/alles-ein-bisschen-kaputt-bild-3/wide__148x84"></a> Am kommenden Wochenende soll auch in Deutschland demonstriert werden. Die Initiative »GenZ regelt« will 140.000 Menschen auf die Straße bringen. Wer steckt dahinter?]]></content:encoded>
+    </item>
+<item>
+      <title>Horror-Spaß im Nahen Osten: Gruseln oder nicht? Debatte in Ägypten um Halloween</title>
+      <link>https://www.zeit.de/news/2026-10/29/gruseln-oder-nicht-debatte-in-aegypten-um-halloween</link>
+      <description></description>
+      <enclosure url="https://img.zeit.de/news/2026-10/29/gruseln-oder-nicht-debatte-in-aegypten-um-halloween-image-group/original__640x360" length="20480" type="image/jpeg"/>
+      <category>News</category>
+      <dc:creator>DIE ZEIT: News - </dc:creator>
+      <pubDate>Thu, 29 Oct 2026 06:39:02 -0000</pubDate>
+      <guid isPermaLink="false">{urn:uuid:c3a3161a-c82d-48dc-b93d-db2122fbb02c}</guid>
+      <content:encoded><![CDATA[<a href="https://www.zeit.de/news/2026-10/29/gruseln-oder-nicht-debatte-in-aegypten-um-halloween"><img style="float:left; margin-right:5px" src="https://img.zeit.de/news/2026-10/29/gruseln-oder-nicht-debatte-in-aegypten-um-halloween-image-group/wide__148x84"></a> None]]></content:encoded>
+    </item>
+<item>
+      <title>Bahnkatastrophe: Bergungsarbeiten nach Zugunglück in Spanien gehen weiter</title>
+      <link>https://www.zeit.de/news/2026-10/29/zugunglueck-in-spanien-suche-nach-opfern-geht-nachts-weiter</link>
+      <description></description>
+      <enclosure url="https://img.zeit.de/news/2026-10/29/zugunglueck-in-spanien-suche-nach-opfern-geht-nachts-weiter-image-group/original__640x360" length="20480" type="image/jpeg"/>
+      <category>News</category>
+      <dc:creator>DIE ZEIT: News - </dc:creator>
+      <pubDate>Thu, 29 Oct 2026 06:35:59 -0000</pubDate>
+      <guid isPermaLink="false">{urn:uuid:05680156-5b77-48fb-8780-537974b4c177}</guid>
+      <content:encoded><![CDATA[<a href="https://www.zeit.de/news/2026-10/29/zugunglueck-in-spanien-suche-nach-opfern-geht-nachts-weiter"><img style="float:left; margin-right:5px" src="https://img.zeit.de/news/2026-10/29/zugunglueck-in-spanien-suche-nach-opfern-geht-nachts-weiter-image-group/wide__148x84"></a> None]]></content:encoded>
+    </item>
+  </channel>
+</rss>

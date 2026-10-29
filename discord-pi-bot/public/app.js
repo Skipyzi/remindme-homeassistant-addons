@@ -28,6 +28,7 @@ const storedNumber = (key) => {
 const CHANNEL_NOTES = {
 	discord: "On Discord",
 	brief: "Morning brief, on Discord",
+	news: "Daily news",
 	nudge: "On Discord",
 	reminder: "Reminder, on Discord and your phone",
 	task: "Scheduled task",
@@ -139,11 +140,17 @@ function remindme() {
 			{ id: "connectors", label: "Mail and calendars", group: "Accounts and devices" },
 			{ id: "phone", label: "Phone app", group: "Accounts and devices" },
 			{ id: "mcp", label: "Connected tools", group: "Accounts and devices" },
+			{ id: "news", label: "News", group: "On its own" },
 			{ id: "prices", label: "Price watches", group: "On its own" },
 			{ id: "tasks", label: "Scheduled tasks", group: "On its own" },
 			{ id: "documents", label: "Documents", group: "On its own" },
 		],
 		phoneLayout: window.matchMedia("(max-width: 820px)").matches,
+		/* The daily news */
+		news: { on: false, time: "07:30", language: "en", stories: 5, sources: [], custom: [], catalog: [] },
+		newsNote: "",
+		newsBusy: false,
+		newFeed: "",
 		/* Price watches */
 		priceWatches: [],
 		newPrice: { what: "", target: "" },
@@ -524,6 +531,66 @@ function remindme() {
 				await this.loadInbox();
 			} catch (error) {
 				this.error = error.message;
+			}
+		},
+
+		/* ── The daily news ────────────────────────────────────────────── */
+
+		newsGroups() {
+			const groups = [
+				["Germany", "From Germany"],
+				["Europe", "European"],
+				["International", "International"],
+				["Yours", "Your feeds"],
+			];
+			return groups.map(([from, label]) => ({ label, sources: this.news.catalog.filter((source) => source.from === from) })).filter((group) => group.sources.length);
+		},
+		sourceLine(source) {
+			return [{ de: "German", en: "English" }[source.language], source.covers, source.note].filter(Boolean).join(" · ");
+		},
+		async saveNews(patch, note = "Saved.") {
+			try {
+				this.news = await this.request("./api/news", "PUT", patch);
+				this.newsNote = note;
+			} catch (error) {
+				this.newsNote = error.message;
+				await this.loadSection("news");
+			}
+		},
+		toggleNewsSource(id, on) {
+			const sources = on ? [...this.news.sources, id] : this.news.sources.filter((source) => source !== id);
+			return this.saveNews({ sources }, sources.length ? "Saved." : "No source ticked: the digest uses the five suggested ones until you tick some.");
+		},
+		async addNewsFeed() {
+			this.newsBusy = true;
+			this.newsNote = "";
+			try {
+				this.news = await this.request("./api/news/feeds", "POST", { url: this.newFeed.trim() });
+				this.newsNote = "Added under Your feeds, and ticked.";
+				this.newFeed = "";
+			} catch (error) {
+				this.newsNote = `Not added: ${error.message}`;
+			} finally {
+				this.newsBusy = false;
+			}
+		},
+		async removeNewsFeed(source) {
+			const response = await fetch(`./api/news/feeds/${encodeURIComponent(source.id)}`, { method: "DELETE" });
+			if (response.ok) this.news = await response.json();
+			this.newsNote = `Removed ${source.name}.`;
+		},
+		async sendNewsNow() {
+			this.newsBusy = true;
+			this.newsNote = "Reading the headlines and writing it up. This takes up to a minute.";
+			try {
+				const result = await this.request("./api/news/send", "POST", {});
+				this.newsNote = result.plain ? `Sent as headlines only, because ${result.plain}.` : `Sent: ${result.stories} stories, in the RemindMe thread, on Discord and on your phone.`;
+				if (result.problems?.length) this.newsNote += ` Not reached: ${result.problems.join(", ")}.`;
+			} catch (error) {
+				this.newsNote = error.message;
+			} finally {
+				this.newsBusy = false;
+				await this.loadSection("news");
 			}
 		},
 
@@ -1165,6 +1232,7 @@ function remindme() {
 			if (tab === "mcp") this.mcpServers = await this.getJson("./api/mcp", []);
 			if (tab === "tasks") this.tasks = await this.getJson("./api/tasks", []);
 			if (tab === "prices") this.priceWatches = await this.getJson("./api/prices", []);
+			if (tab === "news") this.news = await this.getJson("./api/news", this.news);
 			if (tab === "connectors") await this.loadConnectors();
 			if (tab === "phone") await this.loadPhone();
 			if (tab === "memory") this.memory = await this.getJson("./api/memory", { learn: true, facts: [] });
@@ -1204,6 +1272,12 @@ function remindme() {
 				if (wants) return { text: `${wants.name} wants you to sign in`, bad: true };
 				const on = this.mcpServers.filter((server) => server.enabled);
 				return { text: on.length ? on.map((server) => server.name).join(", ") : this.mcpServers.length ? "All off" : "None yet" };
+			}
+			if (id === "news") {
+				if (!this.news.on) return { text: "Off" };
+				if (this.news.lastProblem && !/^Not reached/.test(this.news.lastProblem)) return { text: this.news.lastProblem, bad: true };
+				const count = this.news.sources.length;
+				return { text: `Every day at ${this.news.time} · ${count} ${count === 1 ? "source" : "sources"}` };
 			}
 			if (id === "prices") {
 				const broken = this.priceWatches.find((watch) => watch.error && watch.price === undefined);

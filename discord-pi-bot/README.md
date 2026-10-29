@@ -151,13 +151,23 @@ Ask it to watch a price ("tell me when the XM5 is under 180 €"), or add one un
 
 Searching Geizhals needs the web browser (`web_browser`).
 
+## News
+
+Every day at a time you choose, RemindMe sends a short digest of the news from Germany, the EU and the world. Set it up under **Settings → News**:
+
+- Tick your sources. From Germany: tagesschau, Deutschlandfunk, ZDFheute, DER SPIEGEL, ZEIT ONLINE, Süddeutsche Zeitung, taz, n-tv, Handelsblatt and DW. European: Euronews, POLITICO Europe and Euractiv. International: BBC News, the Guardian, France 24, Al Jazeera, NPR and the New York Times. Any other RSS or Atom feed can be added by its link.
+- The news agencies themselves (dpa, Reuters, AP, AFP) publish no feeds. dpa's wire comes in as headlines through ZEIT ONLINE's newsticker.
+- RemindMe reads the last day's headlines and teasers. The AI picks the 3 or 5 most important stories per section, merges a story that several sources tell, and writes a line or two on each, in English or German, with a link to every source. Links always come from the feeds, never from the AI. That's one AI answer a day, roughly 5–10 cents on Claude Opus and much less on smaller models.
+- The digest goes to Discord, your phone (one headline per section) and the RemindMe thread, never during quiet hours. Without the AI (no key, or over the day's budget) it sends the headlines themselves.
+- Ask "what's in the news about the Bundestag?" at any time: the assistant reads the same sources.
+
 ## Memory
 
 RemindMe remembers things about you: what it picked up from what you told it ("my sister Anna lives in Berlin"), and what you add yourself. Every answer gets them, so you don't have to say them twice. It learns only from your own messages, never from emails or web pages, and never keeps passwords, codes or long numbers. **Settings → Memory** lists everything it remembers: forget any of it, add to it, or switch learning off.
 
 ## Data
 
-Everything lives in `/data`: reminders, chats, the inbox's threads and jobs (`threads.json`), what it remembers about you (`memory.json`), which heads-ups were sent (`triage.json`), batteries you dealt with (`batteries.json`), price watches (`prices.json`), the phone app's notification keys and devices (`push.json`) and Tailscale's state (`tailscale/`), the AI choice (`ai.json`), today's spend (`spend.json`), Discord chat history (`discord-chats.json`) and which nudges were sent (`proactive.json`). Notes stay in `/share/vault`, shared with the Vault editor app.
+Everything lives in `/data`: reminders, chats, the inbox's threads and jobs (`threads.json`), what it remembers about you (`memory.json`), which heads-ups were sent (`triage.json`), batteries you dealt with (`batteries.json`), price watches (`prices.json`), the news settings (`news.json`), the phone app's notification keys and devices (`push.json`) and Tailscale's state (`tailscale/`), the AI choice (`ai.json`), today's spend (`spend.json`), Discord chat history (`discord-chats.json`) and which nudges were sent (`proactive.json`). Notes stay in `/share/vault`, shared with the Vault editor app.
 
 ## Upgrading from 3.x
 

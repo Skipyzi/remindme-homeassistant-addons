@@ -1,0 +1,180 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns="http://purl.org/rss/1.0/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:sy="http://purl.org/rss/modules/syndication/" xmlns:content="http://purl.org/rss/1.0/modules/content/" xmlns:dwsyn="http://rss.dw.com/syndication/dwsyn/">
+ <channel rdf:about="https://rss.dw.com/syndication/feeds/rss-de-all.1119.rdf">
+  <description>Deutsche Welle: DW.com Deutsch</description>
+  <link>https://www.dw.com/german/?maca=de-rss-de-all-1119-rdf</link>
+  <title>Deutsche Welle: DW.com Deutsch</title>
+  <sy:updatePeriod>hourly</sy:updatePeriod>
+  <sy:updateFequency>4</sy:updateFequency>
+  <sy:updateBase>2002-05-01T00:00:00Z</sy:updateBase>
+  <dc:date>2026-10-29T07:11:23Z</dc:date>
+  <image rdf:resource="https://rss.dw.com/images/DW-L-RGB_whitebg.png"/>
+  <items><rdf:Seq></rdf:Seq></items>
+ </channel>
+ <image rdf:about="https://rss.dw.com/images/DW-L-RGB_whitebg.png">
+  <url>https://rss.dw.com/images/DW-L-RGB_whitebg.png</url>
+  <link>https://www.dw.com/german/?maca=de-rss-de-all-1119-rdf</link>
+  <title>DW</title>
+  <description>News, Analysis and Service from Germany and Europe - in 30 Languages</description>
+ </image>
+ <item rdf:about="https://www.dw.com/de/gen-z-proteste-an-halloween-drohen-szenen-wie-in-frankreich/a-79774624?maca=de-rss-de-all-1119-rdf">
+  <title>Gen-Z-Proteste an Halloween: Drohen Szenen wie in Frankreich?</title>
+  <link>https://www.dw.com/de/gen-z-proteste-an-halloween-drohen-szenen-wie-in-frankreich/a-79774624?maca=de-rss-de-all-1119-rdf</link>
+  <description>Jetzt auch in Deutschland: Jugendliche der &quot;Gen Z&quot; wollen für bessere Bildung und mehr Klimaschutz demonstrieren. Politiker warnen vor Gewalt wie in Frankreich, Experten sehen jedoch Unterschiede zwischen beiden Ländern.</description>
+  <dc:date>2026-10-29T06:02:00Z</dc:date>
+  <dc:subject>THEMEN</dc:subject>
+  <dc:language>de</dc:language>
+  <dwsyn:contentID>79774624</dwsyn:contentID>
+  <dwsyn:image rdf:about="https://static.dw.com/image/79754386_302.jpg">
+   <dwsyn:imageURL>https://static.dw.com/image/79754386_302.jpg</dwsyn:imageURL>
+   <dwsyn:imageDesc>Proteste in Frankreich gegen hohe Mieten, schlechte Bildung und für mehr soziale Gerechtigkeit: Auch in Deutschland wollen junge Leute jetzt auf die Straße gehen</dwsyn:imageDesc>
+   <dwsyn:imageWidth>460</dwsyn:imageWidth>
+   <dwsyn:imageHeight>259</dwsyn:imageHeight>
+  </dwsyn:image>
+  <dwsyn:additionalImages>
+   <rdf:Seq>
+    <rdf:li rdf:resource="https://static.dw.com/image/75087509_302.jpg"/>
+    <rdf:li rdf:resource="https://static.dw.com/image/79755176_302.jpg"/>
+   </rdf:Seq>
+  </dwsyn:additionalImages>
+  <dwsyn:additionalImage rdf:about="https://static.dw.com/image/75087509_302.jpg">
+   <dwsyn:imageURL>https://static.dw.com/image/75087509_302.jpg</dwsyn:imageURL>
+   <dwsyn:imageDesc>Quentin Gärtner, Ex-Generalsekretär der Bundesschülerkonferenz: &quot;Wir sind am Ende der Geduld mit dem Bildungssystem&quot;</dwsyn:imageDesc>
+   <dwsyn:imageWidth>460</dwsyn:imageWidth>
+   <dwsyn:imageHeight>259</dwsyn:imageHeight>
+  </dwsyn:additionalImage>
+  <dwsyn:additionalImage rdf:about="https://static.dw.com/image/79755176_302.jpg">
+   <dwsyn:imageURL>https://static.dw.com/image/79755176_302.jpg</dwsyn:imageURL>
+   <dwsyn:imageDesc>Furcht vor Gewalt - wie hier in Paris am vergangenen Wochenende - gibt es jetzt auch in Deutschland</dwsyn:imageDesc>
+   <dwsyn:imageWidth>460</dwsyn:imageWidth>
+   <dwsyn:imageHeight>259</dwsyn:imageHeight>
+  </dwsyn:additionalImage>
+ </item>
+<item rdf:about="https://www.dw.com/de/merz-wirbt-für-neue-wirtschaftsallianz-mit-japan/a-79789621?maca=de-rss-de-all-1119-rdf">
+  <title>Merz wirbt für neue Wirtschaftsallianz mit Japan</title>
+  <link>https://www.dw.com/de/merz-wirbt-für-neue-wirtschaftsallianz-mit-japan/a-79789621?maca=de-rss-de-all-1119-rdf</link>
+  <description>Viele Spitzenmanager reisen mit dem Kanzler im Tross. Doch dem deutschen Regierungschef geht es um mehr als um volle Auftragsbücher: Angesichts geopolitischer Herausforderungen wirbt er für eine Bündelung der Kräfte.</description>
+  <dc:date>2026-10-28T16:15:00Z</dc:date>
+  <dc:subject>Aktuelles</dc:subject>
+  <dc:language>de</dc:language>
+  <dwsyn:contentID>79789621</dwsyn:contentID>
+  <dwsyn:image rdf:about="https://static.dw.com/image/79786704_302.jpg">
+   <dwsyn:imageURL>https://static.dw.com/image/79786704_302.jpg</dwsyn:imageURL>
+   <dwsyn:imageDesc>Engere Partnerschaft: Friedrich Merz und Sanae Takaichi</dwsyn:imageDesc>
+   <dwsyn:imageWidth>460</dwsyn:imageWidth>
+   <dwsyn:imageHeight>259</dwsyn:imageHeight>
+  </dwsyn:image>
+  <dwsyn:additionalImages>
+   <rdf:Seq>
+    <rdf:li rdf:resource="https://static.dw.com/image/79784425_302.jpg"/>
+    <rdf:li rdf:resource="https://static.dw.com/image/78035663_302.jpg"/>
+   </rdf:Seq>
+  </dwsyn:additionalImages>
+  <dwsyn:additionalImage rdf:about="https://static.dw.com/image/79784425_302.jpg">
+   <dwsyn:imageURL>https://static.dw.com/image/79784425_302.jpg</dwsyn:imageURL>
+   <dwsyn:imageDesc>Friedrich Merz beim German-Japanese Business Summit in Tokio</dwsyn:imageDesc>
+   <dwsyn:imageWidth>460</dwsyn:imageWidth>
+   <dwsyn:imageHeight>259</dwsyn:imageHeight>
+  </dwsyn:additionalImage>
+  <dwsyn:additionalImage rdf:about="https://static.dw.com/image/78035663_302.jpg">
+   <dwsyn:imageURL>https://static.dw.com/image/78035663_302.jpg</dwsyn:imageURL>
+   <dwsyn:imageDesc>Auch die Metalle der Seltenen Erden gehören zu den kritischen Mineralien auf einer Liste der EU</dwsyn:imageDesc>
+   <dwsyn:imageWidth>460</dwsyn:imageWidth>
+   <dwsyn:imageHeight>259</dwsyn:imageHeight>
+  </dwsyn:additionalImage>
+ </item>
+<item rdf:about="https://www.dw.com/de/wer-folgt-auf-bundespräsident-steinmeier-frau-oder-mann/a-79785223?maca=de-rss-de-all-1119-rdf">
+  <title>Wer folgt auf Bundespräsident Steinmeier - Frau oder Mann?</title>
+  <link>https://www.dw.com/de/wer-folgt-auf-bundespräsident-steinmeier-frau-oder-mann/a-79785223?maca=de-rss-de-all-1119-rdf</link>
+  <description>Wer soll neues Staatsoberhaupt werden? Diese Frage wird immer drängender. Viele sagen, es sollte erstmals eine Frau sein. Kanzler Friedrich Merz hält sich noch bedeckt.</description>
+  <dc:date>2026-10-28T15:20:00Z</dc:date>
+  <dc:subject>Deutschland</dc:subject>
+  <dc:language>de</dc:language>
+  <dwsyn:contentID>79785223</dwsyn:contentID>
+  <dwsyn:image rdf:about="https://static.dw.com/image/79788451_302.jpg">
+   <dwsyn:imageURL>https://static.dw.com/image/79788451_302.jpg</dwsyn:imageURL>
+   <dwsyn:imageDesc>Repräsentieren und reden - Bundespräsident Frank-Walter Steinmeier bei seiner China-Reise</dwsyn:imageDesc>
+   <dwsyn:imageWidth>460</dwsyn:imageWidth>
+   <dwsyn:imageHeight>259</dwsyn:imageHeight>
+  </dwsyn:image>
+  <dwsyn:additionalImages>
+   <rdf:Seq>
+    <rdf:li rdf:resource="https://static.dw.com/image/71745127_302.jpg"/>
+    <rdf:li rdf:resource="https://static.dw.com/image/79774208_302.jpg"/>
+    <rdf:li rdf:resource="https://static.dw.com/image/79784623_302.jpg"/>
+    <rdf:li rdf:resource="https://static.dw.com/image/79774382_302.jpg"/>
+    <rdf:li rdf:resource="https://static.dw.com/image/79774480_302.jpg"/>
+   </rdf:Seq>
+  </dwsyn:additionalImages>
+  <dwsyn:additionalImage rdf:about="https://static.dw.com/image/71745127_302.jpg">
+   <dwsyn:imageURL>https://static.dw.com/image/71745127_302.jpg</dwsyn:imageURL>
+   <dwsyn:imageDesc>&quot;Es könnte noch eine Überraschung geben&quot; - Ursula Münch ist Direktorin der Akademie für Politische Bildung in Tutzing</dwsyn:imageDesc>
+   <dwsyn:imageWidth>460</dwsyn:imageWidth>
+   <dwsyn:imageHeight>259</dwsyn:imageHeight>
+  </dwsyn:additionalImage>
+  <dwsyn:additionalImage rdf:about="https://static.dw.com/image/79774208_302.jpg">
+   <dwsyn:imageURL>https://static.dw.com/image/79774208_302.jpg</dwsyn:imageURL>
+   <dwsyn:imageDesc>Wird sie Bundespräsidentin? Beim CSU-Parteitag begrüßt Kanzler Friedrich Merz (2.v.l.) Ilse Aigner (24.10.2026)</dwsyn:imageDesc>
+   <dwsyn:imageWidth>460</dwsyn:imageWidth>
+   <dwsyn:imageHeight>259</dwsyn:imageHeight>
+  </dwsyn:additionalImage>
+  <dwsyn:additionalImage rdf:about="https://static.dw.com/image/79784623_302.jpg">
+   <dwsyn:imageURL>https://static.dw.com/image/79784623_302.jpg</dwsyn:imageURL>
+   <dwsyn:imageDesc>Selbst 9000 Kilometer von Berlin entfernt: In Tokio beim Treffen mit Premierministerin Sanae Takaichi verfolgt Friedrich Merz die deutsche Debatte über die Nachfolge im Amt des Bundespräsidenten</dwsyn:imageDesc>
+   <dwsyn:imageWidth>460</dwsyn:imageWidth>
+   <dwsyn:imageHeight>259</dwsyn:imageHeight>
+  </dwsyn:additionalImage>
+  <dwsyn:additionalImage rdf:about="https://static.dw.com/image/79774382_302.jpg">
+   <dwsyn:imageURL>https://static.dw.com/image/79774382_302.jpg</dwsyn:imageURL>
+   <dwsyn:imageDesc/>
+   <dwsyn:imageWidth>460</dwsyn:imageWidth>
+   <dwsyn:imageHeight>259</dwsyn:imageHeight>
+  </dwsyn:additionalImage>
+  <dwsyn:additionalImage rdf:about="https://static.dw.com/image/79774480_302.jpg">
+   <dwsyn:imageURL>https://static.dw.com/image/79774480_302.jpg</dwsyn:imageURL>
+   <dwsyn:imageDesc>Am 13.2.2022 trat zum letzten Mal eine Bundesversammlung zur Wahl des Bundespräsidenten zusammen - damals unter Pandemie-Bedingungen</dwsyn:imageDesc>
+   <dwsyn:imageWidth>460</dwsyn:imageWidth>
+   <dwsyn:imageHeight>259</dwsyn:imageHeight>
+  </dwsyn:additionalImage>
+ </item>
+<item rdf:about="https://www.dw.com/de/netanjahu-bei-wahl-in-israel-vorn-ohne-regierungsmehrheit/a-79783510?maca=de-rss-de-all-1119-rdf">
+  <title>Netanjahu bei Wahl in Israel vorn - ohne Regierungsmehrheit</title>
+  <link>https://www.dw.com/de/netanjahu-bei-wahl-in-israel-vorn-ohne-regierungsmehrheit/a-79783510?maca=de-rss-de-all-1119-rdf</link>
+  <description>Der Likud-Chef, der mit Unterbrechungen fast 19 Jahre lang regiert, will wieder eine Koalition bilden. Doch dafür fehlen ihm bisher noch entscheidende Sitze in der Knesset.</description>
+  <dc:date>2026-10-28T15:04:00Z</dc:date>
+  <dc:subject>Aktuelles</dc:subject>
+  <dc:language>de</dc:language>
+  <dwsyn:contentID>79783510</dwsyn:contentID>
+  <dwsyn:image rdf:about="https://static.dw.com/image/79783714_302.jpg">
+   <dwsyn:imageURL>https://static.dw.com/image/79783714_302.jpg</dwsyn:imageURL>
+   <dwsyn:imageDesc>Benjamin Netanjahu spricht zu seinen Anhängern</dwsyn:imageDesc>
+   <dwsyn:imageWidth>460</dwsyn:imageWidth>
+   <dwsyn:imageHeight>259</dwsyn:imageHeight>
+  </dwsyn:image>
+  <dwsyn:additionalImages>
+   <rdf:Seq>
+    <rdf:li rdf:resource="https://static.dw.com/image/79759961_302.jpg"/>
+    <rdf:li rdf:resource="https://static.dw.com/image/76296986_302.jpg"/>
+    <rdf:li rdf:resource="https://static.dw.com/image/79783030_302.jpg"/>
+   </rdf:Seq>
+  </dwsyn:additionalImages>
+  <dwsyn:additionalImage rdf:about="https://static.dw.com/image/79759961_302.jpg">
+   <dwsyn:imageURL>https://static.dw.com/image/79759961_302.jpg</dwsyn:imageURL>
+   <dwsyn:imageDesc>Der frühere Generalstabschef Gadi Eisenkot ging als wichtigster Herausforderer Netanjahus ins Rennen (Archivbild)</dwsyn:imageDesc>
+   <dwsyn:imageWidth>460</dwsyn:imageWidth>
+   <dwsyn:imageHeight>259</dwsyn:imageHeight>
+  </dwsyn:additionalImage>
+  <dwsyn:additionalImage rdf:about="https://static.dw.com/image/76296986_302.jpg">
+   <dwsyn:imageURL>https://static.dw.com/image/76296986_302.jpg</dwsyn:imageURL>
+   <dwsyn:imageDesc>Präsident Izchak Herzog spielt auf dem Weg zu einer neuen Regierung eine wichtige Rolle (Archivbild)</dwsyn:imageDesc>
+   <dwsyn:imageWidth>460</dwsyn:imageWidth>
+   <dwsyn:imageHeight>259</dwsyn:imageHeight>
+  </dwsyn:additionalImage>
+  <dwsyn:additionalImage rdf:about="https://static.dw.com/image/79783030_302.jpg">
+   <dwsyn:imageURL>https://static.dw.com/image/79783030_302.jpg</dwsyn:imageURL>
+   <dwsyn:imageDesc>Sicherheitsbeamte vor der israelischen Botschaft in der serbischen Hauptstadt Belgrad</dwsyn:imageDesc>
+   <dwsyn:imageWidth>460</dwsyn:imageWidth>
+   <dwsyn:imageHeight>259</dwsyn:imageHeight>
+  </dwsyn:additionalImage>
+ </item>
+</rdf:RDF>

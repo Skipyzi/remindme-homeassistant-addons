@@ -20,6 +20,7 @@ import {
 	home,
 	jobs,
 	mailboxes,
+	news,
 	parcelSummary,
 	phoneApp,
 	setBriefSender,
@@ -46,12 +47,12 @@ async function main() {
 	const messenger = startBot({ assistant, chats, confirmations, home, ownerId, activity, phone: phoneApp });
 
 	// What RemindMe says first goes to Discord and to every phone with the app.
-	const notify = async (text: string, what: "brief" | "bins" | "battery" | "mail" | "heads_up" | "price", extra?: { battery?: string; buttons?: PhoneButton[]; actions?: EntryAction[] }) => {
+	const notify = async (text: string, what: "brief" | "bins" | "battery" | "mail" | "heads_up" | "price" | "news", extra?: { battery?: string; buttons?: PhoneButton[]; actions?: EntryAction[]; phoneBody?: string }) => {
 		const title = what === "brief" ? `☀️ ${new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" })}` : undefined;
 		const [onDiscord, phones] = await Promise.all([
 			messenger ? messenger.send(text, { title }) : Promise.resolve(false),
 			// A tap opens RemindMe's own thread, where this message is, with its buttons.
-			phoneApp.send({ title: what === "brief" ? "Morning brief" : what === "price" ? "Price drop" : "RemindMe", body: text, url: "./#t/remindme", tag: what === "price" ? `price-${Date.now()}` : what, ...(extra?.buttons ? { buttons: extra.buttons } : extra?.battery ? { buttons: batteryButtons(extra.battery) } : {}) }),
+			phoneApp.send({ title: what === "brief" ? "Morning brief" : what === "price" ? "Price drop" : what === "news" ? "News" : "RemindMe", body: extra?.phoneBody || text, url: "./#t/remindme", tag: what === "price" ? `price-${Date.now()}` : what, ...(extra?.buttons ? { buttons: extra.buttons } : extra?.battery ? { buttons: batteryButtons(extra.battery) } : {}) }),
 		]);
 		const sent = onDiscord || phones > 0;
 		const actions = extra?.actions
@@ -62,11 +63,8 @@ async function main() {
 					{ label: "Got it", kind: "battery-hide" as const, ref: extra.battery },
 				]
 			: undefined;
-		activity.add(
-			sent
-				? { kind: "sent", channel: what === "brief" ? "brief" : "nudge", text, ...(actions ? { actions } : {}) }
-				: { kind: "failed", channel: what === "brief" ? "brief" : "nudge", text: `Couldn't send this on Discord: ${text}` },
-		);
+		const channel = what === "brief" ? "brief" : what === "news" ? "news" : "nudge";
+		activity.add(sent ? { kind: "sent", channel, text, ...(actions ? { actions } : {}) } : { kind: "failed", channel, text: `Couldn't send this on Discord: ${text}` });
 		return sent;
 	};
 	// Always on: it does nothing until a mail connector is added in the console.
@@ -120,8 +118,8 @@ async function main() {
 		},
 	});
 	await proactive.load();
-	// Price drops go where the other nudges go: Discord, the phone and the RemindMe thread.
-	setOwnerNotifier((text, extra) => notify(text, "price", extra));
+	// Price drops and the daily news go where the other nudges go: Discord, the phone and the RemindMe thread.
+	setOwnerNotifier((text, extra) => notify(text, extra?.what || "price", extra));
 	// A job's question or result comes as a DM card titled with the job; reply there or in the console.
 	setJobNotifier(async (thread, text) => {
 		const sent = messenger ? await messenger.send(`${text}\n\n_Reply here or in the RemindMe console._`, { title: thread.title }) : false;
@@ -130,7 +128,7 @@ async function main() {
 	if (messenger) {
 		proactive.start();
 		setBriefSender(() => proactive.sendBrief());
-		setPlannedSends(() => proactive.upcoming());
+		setPlannedSends(async () => [...(await proactive.upcoming()), ...news.upcoming()].sort((a, b) => a.at.getTime() - b.at.getTime()));
 	} else console.log("No Discord bot: the morning brief and nudges are off.");
 }
 

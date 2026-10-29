@@ -72,6 +72,7 @@ import { GoogleApp, GoogleContacts, GoogleTokens, signedInWithGoogle } from "./c
 import { signInRoutes } from "./connectors/signin-routes";
 import { McpAuth } from "./harness/mcp-auth";
 import { WebBrowser } from "./harness/browser";
+import { News } from "./assistant/news";
 import { GEIZHALS_CHECKING, GEIZHALS_SEARCH, PriceWatches, euro, geizhalsBlocked, parseShopPrice, searchResults, type PriceWatch, type SearchResult } from "./assistant/prices";
 import type { EntryAction } from "./assistant/activity";
 import { modelTable } from "./ai/catalog";
@@ -248,9 +249,10 @@ const webBrowser = WebBrowser.fromEnv();
  * Something RemindMe tells the owner on its own, with buttons: Discord, the
  * phone and the RemindMe thread. main.ts hands in its sender once the bot runs.
  */
-type OwnerNews = { buttons?: PhoneButton[]; actions?: EntryAction[] };
+/** What else a notice to the user carries: phone buttons, inbox buttons, what it is, a shorter text for the phone. */
+type OwnerNews = { buttons?: PhoneButton[]; actions?: EntryAction[]; what?: "price" | "news"; phoneBody?: string };
 let ownerNotify = async (text: string, extra: OwnerNews = {}): Promise<boolean> => {
-	const reached = await phoneNotify({ title: "RemindMe", body: text, url: "./#t/remindme", tag: `news-${Date.now()}`, ...(extra.buttons ? { buttons: extra.buttons } : {}) });
+	const reached = await phoneNotify({ title: extra.what === "news" ? "News" : "RemindMe", body: extra.phoneBody || text, url: "./#t/remindme", tag: extra.what === "news" ? "news" : `notice-${Date.now()}`, ...(extra.buttons ? { buttons: extra.buttons } : {}) });
 	activity.add({ kind: reached ? "sent" : "failed", channel: "nudge", text, ...(extra.actions ? { actions: extra.actions } : {}) });
 	return reached > 0;
 };
@@ -318,6 +320,38 @@ async function stopWatching(id: string): Promise<PriceWatch | undefined> {
 	if (watch) activity.settle(id, `Stopped watching ${watch.name}.`);
 	return watch;
 }
+/**
+ * A feed's XML: every redirect checked like the first address (a feed of
+ * the user's own could point anywhere), at most 5 MB.
+ */
+async function fetchFeed(url: string): Promise<string> {
+	let current = await assertPublicUrl(url);
+	for (let hop = 0; hop <= 5; hop++) {
+		const response = await fetch(current, {
+			redirect: "manual",
+			headers: { "User-Agent": BROWSER_UA, Accept: "application/rss+xml, application/atom+xml, application/xml;q=0.9, text/xml;q=0.9, */*;q=0.5" },
+			signal: AbortSignal.timeout(15_000),
+		});
+		const location = response.headers.get("location");
+		if (response.status >= 300 && response.status < 400 && location) {
+			await response.arrayBuffer().catch(() => undefined);
+			current = await assertPublicUrl(new URL(location, current).toString());
+			continue;
+		}
+		if (!response.ok) throw new Error(`HTTP ${response.status}`);
+		if (Number(response.headers.get("content-length") || 0) > 5_000_000) throw new Error("the feed is too large");
+		return (await response.text()).slice(0, 5_000_000);
+	}
+	throw new Error("too many redirects");
+}
+/* The daily news: the chosen sources' headlines, written up by the AI. */
+export const news = new News({
+	fetchFeed,
+	ask: (prompt) => assistant.quick(prompt),
+	send: (digest) => ownerNotify(digest.text, { what: "news", phoneBody: digest.phone }),
+	checkUrl: assertPublicUrl,
+	quietUntil: (at) => afterQuietHours(process.env.QUIET_HOURS ?? "22:30-07:00", at),
+});
 /** A watch as the console shows it. */
 const priceView = (watch: PriceWatch) => ({ ...watch, history: watch.history.slice(-60) });
 const mcpAuth = new McpAuth((id, signIn) => mcpServers.setSignIn(id, signIn));
@@ -1409,6 +1443,38 @@ app.post("/api/prices/:id/check", async (request, response) => {
 app.delete("/api/prices/:id", async (request, response) => {
 	response.status((await stopWatching(request.params.id)) ? 204 : 404).end();
 });
+/* The daily news: settings, the user's own feeds, and "send it now". */
+app.get("/api/news", (_request, response) => {
+	response.set("Cache-Control", "no-store").json(news.view());
+});
+app.put("/api/news", async (request, response) => {
+	try {
+		await news.update(request.body || {});
+		response.json(news.view());
+	} catch (error) {
+		response.status(400).json({ error: error instanceof Error ? error.message : "Couldn't save that." });
+	}
+});
+app.post("/api/news/feeds", async (request, response) => {
+	try {
+		await news.addFeed(typeof request.body?.url === "string" ? request.body.url.slice(0, 2_000) : "");
+		response.status(201).json(news.view());
+	} catch (error) {
+		response.status(400).json({ error: error instanceof Error ? error.message : "Couldn't add that feed." });
+	}
+});
+app.delete("/api/news/feeds/:id", async (request, response) => {
+	if (!(await news.removeFeed(request.params.id))) return response.status(404).json({ error: "That feed is gone." });
+	response.json(news.view());
+});
+app.post("/api/news/send", async (_request, response) => {
+	try {
+		const digest = await news.sendNow();
+		response.json({ stories: digest.stories.length, plain: digest.plain, problems: digest.problems });
+	} catch (error) {
+		response.status(400).json({ error: error instanceof Error ? error.message : "The news didn't go out." });
+	}
+});
 app.get("/api/feed", (_request, response) => {
 	response.set("Cache-Control", "no-store").json({ entries: feedEntries(14), thread: threads.get(FEED_ID) || null });
 });
@@ -1853,6 +1919,7 @@ export function toolContext(): ToolContext {
 		artifacts,
 		mail: mailboxes,
 		contacts,
+		news: { headlines: () => news.headlines() },
 		prices: {
 			compare: (query) => prices.compare(query),
 			watch: (input) => prices.add(input),
@@ -2550,8 +2617,9 @@ export function createHarnessApp(): Express {
  * runs on the container's clock.
  */
 export async function startHarness(): Promise<void> {
-	await Promise.all([loadConnectors(), threads.load(), phonePush.load(), memory.load(), batteryHides.load(), haApp.load(), loadAppSlug(), prices.load()]);
+	await Promise.all([loadConnectors(), threads.load(), phonePush.load(), memory.load(), batteryHides.load(), haApp.load(), loadAppSlug(), prices.load(), news.load()]);
 	prices.startClock();
+	news.startClock();
 	haEvents?.start();
 	app.listen(port, () => console.log(`RemindMe console listening on port ${port}`));
 	jobs.resume();

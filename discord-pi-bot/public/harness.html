@@ -725,6 +725,52 @@
               <p class="rm-note" x-show="mcpError" x-text="mcpError"></p>
             </div>
 
+            <!-- News -->
+            <div class="rm-panel" x-show="settingsTab === 'news'">
+              <h3>News</h3>
+              <p>A short digest of the day's news from Germany, the EU and the world, from the sources you tick. RemindMe reads their headlines, merges a story that several of them tell, and writes a line or two on each, with a link to every source. It comes to Discord, your phone and the RemindMe thread, never during quiet hours.</p>
+              <label class="rm-toggle"><input type="checkbox" :checked="news.on" @change="saveNews({ on: $event.target.checked }, $event.target.checked ? `On: the news comes every day at ${news.time}.` : 'Off.')" /><span x-text="news.on ? 'Every day' : 'Off'"></span></label>
+              <div class="rm-news-when">
+                <label class="rm-field">At<input type="time" :value="news.time" @change="saveNews({ time: $event.target.value }, `The news comes at ${$event.target.value}.`)" /></label>
+                <label class="rm-field">Written in
+                  <select @change="saveNews({ language: $event.target.value })">
+                    <option value="en" :selected="news.language === 'en'">English</option>
+                    <option value="de" :selected="news.language === 'de'">Deutsch</option>
+                  </select>
+                </label>
+                <label class="rm-field">Stories per section
+                  <select @change="saveNews({ stories: Number($event.target.value) })">
+                    <option value="3" :selected="news.stories === 3">3</option>
+                    <option value="5" :selected="news.stories === 5">5</option>
+                  </select>
+                </label>
+              </div>
+              <template x-for="group in newsGroups()" :key="group.label">
+                <div>
+                  <h4 class="rm-news-group" x-text="group.label"></h4>
+                  <div class="rm-news-sources">
+                    <template x-for="source in group.sources" :key="source.id">
+                      <div class="rm-news-source">
+                        <label>
+                          <input type="checkbox" :checked="news.sources.includes(source.id)" @change="toggleNewsSource(source.id, $event.target.checked)" />
+                          <span><span x-text="source.name"></span><small x-text="sourceLine(source)"></small></span>
+                        </label>
+                        <button class="rm-link" type="button" x-show="source.from === 'Yours'" @click="removeNewsFeed(source)">Remove</button>
+                      </div>
+                    </template>
+                  </div>
+                </div>
+              </template>
+              <p class="rm-note">The agencies themselves (dpa, Reuters, AP, AFP) sell their wires to newsrooms and publish no feeds; dpa's comes through ZEIT ONLINE's newsticker.</p>
+              <form class="rm-ask" @submit.prevent="addNewsFeed()">
+                <input type="url" x-model="newFeed" placeholder="Another source: the link to its RSS feed" aria-label="Link to an RSS feed" />
+                <button class="rm-btn" type="submit" :disabled="newsBusy || !newFeed.trim()">Add</button>
+              </form>
+              <div class="rm-actions"><button class="rm-btn solid" type="button" :disabled="newsBusy" @click="sendNewsNow()" x-text="newsBusy ? 'Writing it' : 'Send today’s news now'"></button></div>
+              <p class="rm-note" role="status" x-show="newsNote" x-text="newsNote"></p>
+              <p class="rm-note" x-show="news.lastDigestAt" x-text="`Last sent ${formatWhen(news.lastDigestAt)}.${news.lastProblem ? ` ${news.lastProblem}.` : ''}`"></p>
+            </div>
+
             <!-- Price watches -->
             <div class="rm-panel" x-show="settingsTab === 'prices'">
               <h3>Price watches</h3>
