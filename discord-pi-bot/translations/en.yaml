@@ -43,13 +43,13 @@ configuration:
     description: The to-do list that gets "Put the paper bin out" on the morning before a collection, such as todo.chores. Blank turns it off.
   gmail_address:
     name: Gmail address
-    description: Optional, and better added in the console under Settings, Mail and calendars. Taken in as a connector once.
+    description: Optional, and better added in the console under Settings, Connectors. Taken in as a connector once.
   gmail_app_password:
     name: Gmail app password
     description: Google Account, Security, 2-step verification, App passwords. Not your normal password.
   gmx_address:
     name: GMX address
-    description: Optional, and better added in the console under Settings, Mail and calendars. Taken in as a connector once.
+    description: Optional, and better added in the console under Settings, Connectors. Taken in as a connector once.
   gmx_password:
     name: GMX password
     description: Your GMX password, or an app password if you use 2-factor sign-in.

@@ -194,18 +194,50 @@ test("every day at its time, once, never in quiet hours, and not when off", asyn
 	assert.deepEqual(again.view().sources, ["tagesschau"]);
 });
 
-test("a feed of your own: checked, named from the feed, ticked; unknown sources are ignored", async () => {
-	const { news } = setup();
-	const feed = await news.addFeed("https://example.org/dw.rdf");
-	assert.equal(feed.name, "Deutsche Welle: DW.com Deutsch");
-	const view = news.view();
-	assert.ok(view.sources.includes(feed.id));
-	assert.deepEqual(view.catalog.at(-1), { id: feed.id, name: "Deutsche Welle: DW.com Deutsch", from: "Yours", url: "https://example.org/dw.rdf", covers: "All news" });
-	await assert.rejects(() => news.addFeed("https://example.org/dw.rdf"), /in the list already/);
-	await assert.rejects(() => news.addFeed("http://192.168.178.49/feed"), /not a public one/);
-	await assert.rejects(() => news.addFeed("https://example.org/missing"), /didn't answer: HTTP 404/);
-	await news.update({ sources: ["tagesschau", "made-up", feed.id] });
-	assert.deepEqual(news.view().sources, ["tagesschau", feed.id]);
-	assert.equal(await news.removeFeed(feed.id), true);
+test("your own feeds that are in the news join the ticked sources; unknown sources are ignored", async () => {
+	const sent: Digest[] = [];
+	const fetched: string[] = [];
+	const news = new News({
+		path: join(mkdtempSync(join(tmpdir(), "rm-news-")), "news.json"),
+		fetchFeed: async (url) => {
+			fetched.push(url);
+			if (FEEDS[url]) return FEEDS[url];
+			throw new Error("HTTP 404");
+		},
+		ask: async () => undefined,
+		send: async (digest) => void sent.push(digest) || true,
+		ownFeeds: () => [
+			{ id: "f1", name: "DW Deutsch", url: "https://example.org/dw.rdf", news: true },
+			{ id: "f2", name: "A blog", url: "https://example.org/blog.xml", news: false },
+		],
+	});
+	await news.update({ sources: ["tagesschau", "made-up"] });
 	assert.deepEqual(news.view().sources, ["tagesschau"]);
+	assert.deepEqual(news.view().own.map((feed) => feed.name), ["DW Deutsch", "A blog"]);
+	const { items } = await news.headlines(NOW);
+	assert.ok(fetched.includes("https://example.org/dw.rdf"));
+	assert.ok(!fetched.includes("https://example.org/blog.xml"), "a feed out of the news isn't read");
+	assert.ok(items.some((item) => item.source === "DW Deutsch" && item.region === undefined));
+	// Only own feeds ticked: they're the news, without the suggested sources.
+	await news.update({ sources: [] });
+	fetched.length = 0;
+	await news.headlines(new Date(NOW.getTime() + 3_600_000));
+	assert.deepEqual(fetched, ["https://example.org/dw.rdf"]);
+});
+
+test("feeds added under News in 4.18 come out once, to become connectors", async () => {
+	const path = join(mkdtempSync(join(tmpdir(), "rm-news-")), "news.json");
+	const { writeFileSync } = await import("node:fs");
+	writeFileSync(path, JSON.stringify({ on: true, time: "07:30", language: "en", stories: 5, sources: ["tagesschau", "feed-1"], custom: [{ id: "feed-1", name: "DW", url: "https://example.org/dw.rdf" }, { id: "feed-2", name: "Off", url: "https://example.org/off.xml" }] }));
+	const news = new News({ path, fetchFeed: async () => "", ask: async () => undefined, send: async () => true });
+	await news.load();
+	assert.deepEqual(await news.takeOldFeeds(), [
+		{ name: "DW", url: "https://example.org/dw.rdf", on: true },
+		{ name: "Off", url: "https://example.org/off.xml", on: false },
+	]);
+	assert.deepEqual(news.view().sources, ["tagesschau"]);
+	assert.deepEqual(await news.takeOldFeeds(), []);
+	const again = new News({ path, fetchFeed: async () => "", ask: async () => undefined, send: async () => true });
+	await again.load();
+	assert.deepEqual(await again.takeOldFeeds(), []);
 });

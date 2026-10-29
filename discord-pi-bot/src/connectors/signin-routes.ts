@@ -63,7 +63,7 @@ export function signInRoutes(deps: SignInDeps): Router {
 			const redirectUri = callbackFor(base);
 			if (request.query.for === "google") {
 				const app = deps.googleApp.get();
-				if (!app) throw new Error("Add your Google app under Settings, Mail and calendars first.");
+				if (!app) throw new Error("Add your Google app under Settings, Connectors first.");
 				const started = signIns.start(asked, { kind: "google", app, redirectUri });
 				const hint = typeof request.query.hint === "string" ? request.query.hint.slice(0, 200) : undefined;
 				return response.redirect(302, googleSignInUrl(app, { redirectUri, state: started.state, challenge: started.challenge, loginHint: hint }));

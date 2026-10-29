@@ -137,7 +137,7 @@ function remindme() {
 			{ id: "prompt", label: "How it talks", group: "AI" },
 			{ id: "memory", label: "Memory", group: "AI" },
 			{ id: "skills", label: "Skills", group: "AI" },
-			{ id: "connectors", label: "Mail and calendars", group: "Accounts and devices" },
+			{ id: "connectors", label: "Connectors", group: "Accounts and devices" },
 			{ id: "phone", label: "Phone app", group: "Accounts and devices" },
 			{ id: "mcp", label: "Connected tools", group: "Accounts and devices" },
 			{ id: "news", label: "News", group: "On its own" },
@@ -147,10 +147,13 @@ function remindme() {
 		],
 		phoneLayout: window.matchMedia("(max-width: 820px)").matches,
 		/* The daily news */
-		news: { on: false, time: "07:30", language: "en", stories: 5, sources: [], custom: [], catalog: [] },
+		news: { on: false, time: "07:30", language: "en", stories: 5, sources: [], catalog: [], own: [] },
 		newsNote: "",
 		newsBusy: false,
 		newFeed: "",
+		feedBusy: false,
+		feedResult: null,
+		newFeedLink: "",
 		/* Price watches */
 		priceWatches: [],
 		newPrice: { what: "", target: "" },
@@ -541,7 +544,6 @@ function remindme() {
 				["Germany", "From Germany"],
 				["Europe", "European"],
 				["International", "International"],
-				["Yours", "Your feeds"],
 			];
 			return groups.map(([from, label]) => ({ label, sources: this.news.catalog.filter((source) => source.from === from) })).filter((group) => group.sources.length);
 		},
@@ -561,23 +563,36 @@ function remindme() {
 			const sources = on ? [...this.news.sources, id] : this.news.sources.filter((source) => source !== id);
 			return this.saveNews({ sources }, sources.length ? "Saved." : "No source ticked: the digest uses the five suggested ones until you tick some.");
 		},
+		/* A feed added here is a feed connector that's in the news, without new-post notices. */
 		async addNewsFeed() {
 			this.newsBusy = true;
 			this.newsNote = "";
 			try {
-				this.news = await this.request("./api/news/feeds", "POST", { url: this.newFeed.trim() });
-				this.newsNote = "Added under Your feeds, and ticked.";
+				const data = await this.request("./api/connectors", "POST", { kind: "feed", values: { url: this.newFeed.trim(), news: "on", alerts: "off" } });
+				this.newsNote = `${data.connector.name} added under Your feeds, and ticked. It's under Connectors too.`;
 				this.newFeed = "";
+				await this.loadSection("news");
 			} catch (error) {
 				this.newsNote = `Not added: ${error.message}`;
 			} finally {
 				this.newsBusy = false;
 			}
 		},
-		async removeNewsFeed(source) {
-			const response = await fetch(`./api/news/feeds/${encodeURIComponent(source.id)}`, { method: "DELETE" });
-			if (response.ok) this.news = await response.json();
-			this.newsNote = `Removed ${source.name}.`;
+		async toggleOwnFeed(feed, on) {
+			try {
+				await this.request(`./api/connectors/${encodeURIComponent(feed.id)}`, "PATCH", { values: { news: on ? "on" : "off" } });
+				this.newsNote = on ? `${feed.name} is in the news.` : `${feed.name} is out of the news.`;
+			} catch (error) {
+				this.newsNote = error.message;
+			}
+			await this.loadSection("news");
+		},
+		feedHost(url) {
+			try {
+				return new URL(url).hostname.replace(/^www\./, "");
+			} catch {
+				return url;
+			}
 		},
 		async sendNewsNow() {
 			this.newsBusy = true;
@@ -1254,7 +1269,9 @@ function remindme() {
 			if (id === "connectors") {
 				const failed = this.connectors.find((connector) => connector.enabled && connector.status && !connector.status.ok);
 				if (failed) return { text: `${failed.name}'s last check failed`, bad: true };
-				return { text: this.connectors.length ? this.connectors.map((connector) => connector.name).join(", ") : "No mail accounts yet" };
+				const feeds = this.feedConnectors().length;
+				const parts = [this.mailConnectors().map((connector) => connector.name).join(", "), feeds ? plural(feeds, "feed") : ""].filter(Boolean);
+				return { text: parts.length ? parts.join(" · ") : "Nothing connected yet" };
 			}
 			if (id === "phone") {
 				const name = this.haPhone.phones.find((phone) => phone.id === this.haPhone.target)?.name;
@@ -1717,6 +1734,34 @@ function remindme() {
 				this.calendars.note = `Not saved: ${error.message}`;
 			}
 		},
+		connectorKind(id) {
+			return this.connectorKinds.find((kind) => kind.id === id);
+		},
+		mailConnectors() {
+			return this.connectors.filter((connector) => connector.kind !== "feed");
+		},
+		feedConnectors() {
+			return this.connectors.filter((connector) => connector.kind === "feed");
+		},
+		feedLine(feed) {
+			const status = feed.status;
+			const read = !status ? "Not read yet" : status.ok ? `${status.posts || 0} ${status.posts === 1 ? "post" : "posts"}${status.newest ? `, newest ${this.formatWhen(status.newest)}` : ""} · read ${this.formatWhen(status.at)}` : `Last read ${this.formatWhen(status.at)} failed: ${status.error}`;
+			return `${this.feedHost(feed.values.url)} · ${read}`;
+		},
+		async addFeedConnector() {
+			this.feedBusy = true;
+			this.feedResult = null;
+			try {
+				const data = await this.request("./api/connectors", "POST", { kind: "feed", values: { url: this.newFeedLink.trim(), news: "off", alerts: "on" } });
+				this.feedResult = { ok: true, text: `${data.connector.name} added. ${data.result} You'll hear about new posts; put it in the daily news with its switch.` };
+				this.newFeedLink = "";
+				await this.loadConnectors();
+			} catch (error) {
+				this.feedResult = { ok: false, text: error.message };
+			} finally {
+				this.feedBusy = false;
+			}
+		},
 		presetOf(id) {
 			return this.connectorKinds[0]?.presets?.find((preset) => preset.id === id);
 		},
@@ -1827,7 +1872,7 @@ function remindme() {
 			connector.probe = data.ok ? data.message : `Failed: ${data.error}`;
 		},
 		async removeConnector(connector) {
-			if (!window.confirm(`Remove ${connector.name}? RemindMe stops reading it; nothing in the mailbox changes.`)) return;
+			if (!window.confirm(connector.kind === "feed" ? `Remove the feed ${connector.name}?` : `Remove ${connector.name}? RemindMe stops reading it; nothing in the mailbox changes.`)) return;
 			await fetch(`./api/connectors/${encodeURIComponent(connector.id)}`, { method: "DELETE" });
 			await this.loadConnectors();
 		},

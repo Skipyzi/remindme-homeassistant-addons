@@ -1309,6 +1309,12 @@ body:has(> .rm-app) {
 	padding: 8px 0;
 	border-bottom: 1px solid var(--rule);
 }
+/* A feed connector's two switches, side by side */
+.rm-feed-switches {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px 24px;
+}
 /* News: when, then the sources as a grid of ticks */
 .rm-news-when {
 	display: flex;

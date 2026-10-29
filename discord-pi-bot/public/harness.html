@@ -501,10 +501,10 @@
 
             <!-- Connectors -->
             <div class="rm-panel" x-show="settingsTab === 'connectors'">
-              <h3>Connectors</h3>
-              <p>Outside sources RemindMe reads, such as your mail. Passwords and sign-ins stay on the Pi and are never shown again.</p>
+              <h3>Mail</h3>
+              <p>Outside sources RemindMe reads: your mail, your calendars and feeds. Passwords and sign-ins stay on the Pi and are never shown again.</p>
               <div>
-                <template x-for="connector in connectors" :key="connector.id">
+                <template x-for="connector in mailConnectors()" :key="connector.id">
                   <div class="rm-item">
                     <div class="rm-item-head">
                       <span><b x-text="connector.name"></b><br /><span class="rm-mute" x-text="connectorLine(connector)"></span></span>
@@ -525,7 +525,7 @@
                     </form>
                   </div>
                 </template>
-                <p class="rm-note" x-show="!connectors.length">Nothing connected yet.</p>
+                <p class="rm-note" x-show="!mailConnectors().length">No mail accounts yet. Add one below.</p>
               </div>
 
               <h3>Calendars</h3>
@@ -551,12 +551,39 @@
               <p class="rm-note" x-show="calendars.note" x-text="calendars.note"></p>
               <p class="rm-note">iCloud: in Home Assistant, Settings, Devices &amp; services, add CalDAV with server https://caldav.icloud.com, your Apple ID and an app-specific password from account.apple.com. Events then show in both.</p>
 
+              <h3>Feeds</h3>
+              <p x-text="connectorKind('feed')?.description"></p>
+              <div>
+                <template x-for="feed in feedConnectors()" :key="feed.id">
+                  <div class="rm-item">
+                    <div class="rm-item-head">
+                      <span><b x-text="feed.name"></b><br /><span class="rm-mute" x-text="feedLine(feed)"></span></span>
+                      <label class="rm-toggle"><input type="checkbox" :checked="feed.enabled" @change="updateConnector(feed, { enabled: $event.target.checked })" /><span x-text="feed.enabled ? 'On' : 'Off'"></span></label>
+                      <button class="rm-link" type="button" @click="testConnector(feed)">Test</button>
+                      <button class="rm-link" type="button" @click="removeConnector(feed)">Remove</button>
+                    </div>
+                    <div class="rm-feed-switches" x-show="feed.enabled">
+                      <label class="rm-toggle"><input type="checkbox" :checked="feed.values.news === 'on'" @change="updateConnector(feed, { values: { news: $event.target.checked ? 'on' : 'off' } })" /><span>In the daily news</span></label>
+                      <label class="rm-toggle"><input type="checkbox" :checked="feed.values.alerts === 'on'" @change="updateConnector(feed, { values: { alerts: $event.target.checked ? 'on' : 'off' } })" /><span>Tell me about new posts</span></label>
+                    </div>
+                    <label class="rm-field" x-show="feed.enabled && feed.values.alerts === 'on'">Only posts about (optional, comma-separated)<input :value="feed.values.words || ''" placeholder="Anything" @change="updateConnector(feed, { values: { words: $event.target.value } })" /></label>
+                    <p class="rm-note" x-show="feed.probe" x-text="feed.probe"></p>
+                  </div>
+                </template>
+                <p class="rm-note" x-show="!feedConnectors().length">No feeds yet. Most sites have one: look for an RSS icon, or try the site's address with /feed, /rss or /atom.xml at the end.</p>
+              </div>
+              <form class="rm-ask" @submit.prevent="addFeedConnector()">
+                <input type="url" x-model="newFeedLink" placeholder="Link to an RSS or Atom feed" aria-label="Link to an RSS or Atom feed" />
+                <button class="rm-btn solid" type="submit" :disabled="feedBusy || !newFeedLink.trim()" x-text="feedBusy ? 'Checking' : 'Add feed'"></button>
+              </form>
+              <p class="rm-result" x-show="feedResult" x-cloak :class="{ bad: feedResult && !feedResult.ok }" x-text="feedResult?.text"></p>
+
               <h3>Add a mail account</h3>
-              <p x-text="connectorKinds[0]?.description"></p>
+              <p x-text="connectorKind('mail')?.description"></p>
               <div class="rm-two">
                 <label class="rm-field">Service
                   <select x-model="newConnector.preset">
-                    <template x-for="preset in connectorKinds[0]?.presets || []" :key="preset.id"><option :value="preset.id" x-text="preset.label"></option></template>
+                    <template x-for="preset in connectorKind('mail')?.presets || []" :key="preset.id"><option :value="preset.id" x-text="preset.label"></option></template>
                   </select>
                 </label>
                 <template x-if="!googleWay">
@@ -624,6 +651,7 @@
                 <button class="rm-btn solid" type="button" :disabled="connectorBusy || !newConnector.address || !newConnector.password" @click="addConnector()" x-text="connectorBusy ? 'Testing the connection' : 'Test and add'"></button>
               </div>
               <p class="rm-result" x-show="connectorResult" x-cloak :class="{ bad: connectorResult && !connectorResult.ok }" x-text="connectorResult?.text"></p>
+
             </div>
 
             <!-- Memory -->
@@ -755,13 +783,25 @@
                           <input type="checkbox" :checked="news.sources.includes(source.id)" @change="toggleNewsSource(source.id, $event.target.checked)" />
                           <span><span x-text="source.name"></span><small x-text="sourceLine(source)"></small></span>
                         </label>
-                        <button class="rm-link" type="button" x-show="source.from === 'Yours'" @click="removeNewsFeed(source)">Remove</button>
                       </div>
                     </template>
                   </div>
                 </div>
               </template>
-              <p class="rm-note">The agencies themselves (dpa, Reuters, AP, AFP) sell their wires to newsrooms and publish no feeds; dpa's comes through ZEIT ONLINE's newsticker.</p>
+              <div x-show="news.own.length">
+                <h4 class="rm-news-group">Your feeds</h4>
+                <div class="rm-news-sources">
+                  <template x-for="feed in news.own" :key="feed.id">
+                    <div class="rm-news-source">
+                      <label>
+                        <input type="checkbox" :checked="feed.news" @change="toggleOwnFeed(feed, $event.target.checked)" />
+                        <span><span x-text="feed.name"></span><small x-text="feedHost(feed.url)"></small></span>
+                      </label>
+                    </div>
+                  </template>
+                </div>
+              </div>
+              <p class="rm-note">The agencies themselves (dpa, Reuters, AP, AFP) sell their wires to newsrooms and publish no feeds; dpa's comes through ZEIT ONLINE's newsticker. Any other source with an RSS feed can be added here, or under Connectors, where it can also tell you about new posts.</p>
               <form class="rm-ask" @submit.prevent="addNewsFeed()">
                 <input type="url" x-model="newFeed" placeholder="Another source: the link to its RSS feed" aria-label="Link to an RSS feed" />
                 <button class="rm-btn" type="submit" :disabled="newsBusy || !newFeed.trim()">Add</button>

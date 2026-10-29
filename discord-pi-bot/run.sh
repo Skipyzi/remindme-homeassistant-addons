@@ -80,6 +80,7 @@ export MEMORY_DATA_PATH=/data/memory.json
 export BATTERY_DATA_PATH=/data/batteries.json
 export PRICES_DATA_PATH=/data/prices.json
 export NEWS_DATA_PATH=/data/news.json
+export FEEDS_DATA_PATH=/data/feeds.json
 export HA_APP_DATA_PATH=/data/ha-app.json
 export CONNECTORS_DATA_PATH=/data/connectors.json
 export GOOGLE_APP_PATH=/data/google-app.json

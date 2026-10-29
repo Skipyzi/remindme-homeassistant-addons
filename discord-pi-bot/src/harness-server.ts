@@ -67,6 +67,7 @@ import { DiscordChats } from "./discord/chats";
 import { Mailboxes, type MailAccount } from "./mail/mailboxes";
 import { ConnectorStore, publicView } from "./connectors/store";
 import { CONNECTOR_KINDS, checkMailInput, importMailOptions, mailAccount } from "./connectors/mail";
+import { FEED_KIND, FeedWatch, feedFlag, newPostsText } from "./connectors/feeds";
 import { CalendarChoice, listCalendars } from "./connectors/calendar";
 import { GoogleApp, GoogleContacts, GoogleTokens, signedInWithGoogle } from "./connectors/google";
 import { signInRoutes } from "./connectors/signin-routes";
@@ -250,9 +251,9 @@ const webBrowser = WebBrowser.fromEnv();
  * phone and the RemindMe thread. main.ts hands in its sender once the bot runs.
  */
 /** What else a notice to the user carries: phone buttons, inbox buttons, what it is, a shorter text for the phone. */
-type OwnerNews = { buttons?: PhoneButton[]; actions?: EntryAction[]; what?: "price" | "news"; phoneBody?: string };
+type OwnerNews = { buttons?: PhoneButton[]; actions?: EntryAction[]; what?: "price" | "news" | "feed"; phoneTitle?: string; phoneBody?: string };
 let ownerNotify = async (text: string, extra: OwnerNews = {}): Promise<boolean> => {
-	const reached = await phoneNotify({ title: extra.what === "news" ? "News" : "RemindMe", body: extra.phoneBody || text, url: "./#t/remindme", tag: extra.what === "news" ? "news" : `notice-${Date.now()}`, ...(extra.buttons ? { buttons: extra.buttons } : {}) });
+	const reached = await phoneNotify({ title: extra.phoneTitle || (extra.what === "news" ? "News" : "RemindMe"), body: extra.phoneBody || text, url: "./#t/remindme", tag: extra.what === "news" ? "news" : `notice-${Date.now()}`, ...(extra.buttons ? { buttons: extra.buttons } : {}) });
 	activity.add({ kind: reached ? "sent" : "failed", channel: "nudge", text, ...(extra.actions ? { actions: extra.actions } : {}) });
 	return reached > 0;
 };
@@ -329,7 +330,12 @@ async function fetchFeed(url: string): Promise<string> {
 	for (let hop = 0; hop <= 5; hop++) {
 		const response = await fetch(current, {
 			redirect: "manual",
-			headers: { "User-Agent": BROWSER_UA, Accept: "application/rss+xml, application/atom+xml, application/xml;q=0.9, text/xml;q=0.9, */*;q=0.5" },
+			headers: {
+				"User-Agent": BROWSER_UA,
+				Accept: "application/rss+xml, application/atom+xml, application/xml;q=0.9, text/xml;q=0.9, */*;q=0.5",
+				// YouTube sends European visitors to its cookie question first; this answers it with "reject all".
+				...(/(^|\.)youtube\.com$/.test(current.hostname) ? { Cookie: "SOCS=CAI" } : {}),
+			},
 			signal: AbortSignal.timeout(15_000),
 		});
 		const location = response.headers.get("location");
@@ -349,9 +355,41 @@ export const news = new News({
 	fetchFeed,
 	ask: (prompt) => assistant.quick(prompt),
 	send: (digest) => ownerNotify(digest.text, { what: "news", phoneBody: digest.phone }),
-	checkUrl: assertPublicUrl,
+	ownFeeds: () => feeds.list().filter((feed) => feed.enabled).map((feed) => ({ id: feed.id, name: feed.name, url: feed.values.url, news: feedFlag(feed, "news") })),
 	quietUntil: (at) => afterQuietHours(process.env.QUIET_HOURS ?? "22:30-07:00", at),
 });
+/* Feeds as connectors: in the news, new posts told, read when asked. */
+export const feeds = new FeedWatch({
+	store: connectors,
+	fetchFeed,
+	checkUrl: assertPublicUrl,
+	notify: (feed, posts) =>
+		ownerNotify(newPostsText(feed, posts), {
+			what: "feed",
+			phoneTitle: `New on ${feed.name}`.slice(0, 60),
+			phoneBody: posts.length === 1 ? posts[0].title : posts.slice(0, 3).map((post) => `• ${post.title}`).join("\n"),
+			...(posts.length === 1 ? { buttons: [{ title: "Open", uri: posts[0].link }] } : {}),
+		}),
+	quietUntil: (at) => afterQuietHours(process.env.QUIET_HOURS ?? "22:30-07:00", at),
+});
+const feedInput = (body: Record<string, unknown>) => {
+	const values = (body.values || {}) as Record<string, unknown>;
+	const flag = (value: unknown) => (value === undefined ? undefined : value === true || value === "on");
+	return {
+		url: typeof values.url === "string" ? values.url.slice(0, 2_000) : undefined,
+		name: typeof body.name === "string" ? body.name : undefined,
+		news: flag(values.news),
+		alerts: flag(values.alerts),
+		words: typeof values.words === "string" ? values.words : undefined,
+		enabled: typeof body.enabled === "boolean" ? body.enabled : undefined,
+	};
+};
+const feedResult = (id: string) => {
+	const status = feeds.status(id);
+	if (!status) return "";
+	if (!status.ok) return `It didn't answer: ${status.error}`;
+	return `It answered: ${status.posts} posts${status.newest ? `, the newest from ${new Date(status.newest).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}` : ""}.`;
+};
 /** A watch as the console shows it. */
 const priceView = (watch: PriceWatch) => ({ ...watch, history: watch.history.slice(-60) });
 const mcpAuth = new McpAuth((id, signIn) => mcpServers.setSignIn(id, signIn));
@@ -1455,18 +1493,6 @@ app.put("/api/news", async (request, response) => {
 		response.status(400).json({ error: error instanceof Error ? error.message : "Couldn't save that." });
 	}
 });
-app.post("/api/news/feeds", async (request, response) => {
-	try {
-		await news.addFeed(typeof request.body?.url === "string" ? request.body.url.slice(0, 2_000) : "");
-		response.status(201).json(news.view());
-	} catch (error) {
-		response.status(400).json({ error: error instanceof Error ? error.message : "Couldn't add that feed." });
-	}
-});
-app.delete("/api/news/feeds/:id", async (request, response) => {
-	if (!(await news.removeFeed(request.params.id))) return response.status(404).json({ error: "That feed is gone." });
-	response.json(news.view());
-});
 app.post("/api/news/send", async (_request, response) => {
 	try {
 		const digest = await news.sendNow();
@@ -1618,12 +1644,17 @@ app.post("/api/reminders", async (request, response) => {
  */
 app.get("/api/connectors", (_request, response) => {
 	response.set("Cache-Control", "no-store").json({
-		kinds: CONNECTOR_KINDS,
-		connectors: connectors.list().map((connector) => ({ ...publicView(connector), status: mailboxes.status(connector.id) })),
+		kinds: [...CONNECTOR_KINDS, FEED_KIND],
+		connectors: connectors.list().map((connector) => ({ ...publicView(connector), status: connector.kind === "feed" ? feeds.status(connector.id) : mailboxes.status(connector.id) })),
 	});
 });
 app.post("/api/connectors", async (request, response) => {
 	try {
+		if (request.body?.kind === "feed") {
+			const saved = await feeds.add(feedInput(request.body));
+			activity.add({ kind: "did", channel: "console", text: `Connected the feed ${saved.name}`, receipts: [{ text: `Connected the feed ${saved.name}` }] });
+			return response.status(201).json({ connector: publicView(saved), result: feedResult(saved.id) });
+		}
 		if (request.body?.kind !== "mail") throw new Error("Unknown kind of connector");
 		const input = checkMailInput(request.body, true);
 		const draftId = `draft-${Date.now()}`;
@@ -1641,6 +1672,10 @@ app.post("/api/connectors", async (request, response) => {
 app.patch("/api/connectors/:id", async (request, response) => {
 	const existing = connectors.get(request.params.id);
 	if (!existing) return response.status(404).json({ error: "No such connector" });
+	if (existing.kind === "feed") {
+		const saved = await feeds.update(existing.id, feedInput(request.body || {}));
+		return response.json({ connector: saved && publicView(saved) });
+	}
 	try {
 		const body = request.body || {};
 		const patch: Parameters<ConnectorStore["update"]>[1] = {};
@@ -1668,6 +1703,7 @@ app.delete("/api/connectors/:id", async (request, response) => {
 	// A Google sign-in is taken back too, so it doesn't linger in the Google account.
 	if (connector && signedInWithGoogle(connector) && connector.secrets.refreshToken) await googleTokens.revoke(connector.secrets.refreshToken);
 	if (connector) googleTokens.forget(connector.id);
+	if (connector?.kind === "feed") return response.status((await feeds.remove(connector.id)) ? 204 : 404).end();
 	response.status((await connectors.remove(request.params.id)) ? 204 : 404).end();
 });
 /* Home Assistant's calendars, and which one takes new events. */
@@ -1690,6 +1726,10 @@ app.put("/api/calendars/new-events", async (request, response) => {
 });
 app.post("/api/connectors/:id/test", async (request, response) => {
 	const connector = connectors.get(request.params.id);
+	if (connector?.kind === "feed") {
+		const posts = await feeds.posts(connector, new Date(Date.now() + 5 * 60_000)).catch(() => undefined);
+		return response.json(posts ? { ok: true, message: feedResult(connector.id) } : { ok: false, error: feeds.status(connector.id)?.error || "It didn't answer." });
+	}
 	const account = connector && withSignIn(connector);
 	if (!account) return response.status(404).json({ ok: false, error: "No such connector, or it has no password or sign-in." });
 	try {
@@ -1920,6 +1960,7 @@ export function toolContext(): ToolContext {
 		mail: mailboxes,
 		contacts,
 		news: { headlines: () => news.headlines() },
+		feeds: { latest: (which) => feeds.latest(which), names: () => feeds.list().filter((feed) => feed.enabled).map((feed) => feed.name) },
 		prices: {
 			compare: (query) => prices.compare(query),
 			watch: (input) => prices.add(input),
@@ -2617,9 +2658,12 @@ export function createHarnessApp(): Express {
  * runs on the container's clock.
  */
 export async function startHarness(): Promise<void> {
-	await Promise.all([loadConnectors(), threads.load(), phonePush.load(), memory.load(), batteryHides.load(), haApp.load(), loadAppSlug(), prices.load(), news.load()]);
+	await Promise.all([loadConnectors(), threads.load(), phonePush.load(), memory.load(), batteryHides.load(), haApp.load(), loadAppSlug(), prices.load(), news.load(), feeds.load()]);
+	// Feeds added under News in 4.18 become feed connectors.
+	for (const old of await news.takeOldFeeds()) await feeds.add({ url: old.url, name: old.name, news: old.on, alerts: false }).catch((error) => console.warn(`Couldn't move the feed ${old.name}:`, error instanceof Error ? error.message : error));
 	prices.startClock();
 	news.startClock();
+	feeds.startClock();
 	haEvents?.start();
 	app.listen(port, () => console.log(`RemindMe console listening on port ${port}`));
 	jobs.resume();

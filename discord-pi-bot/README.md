@@ -51,14 +51,14 @@ Nothing is sent during `quiet_hours` (default 22:30-07:00); nudges wait until th
 
 ## Connectors: your mail
 
-Add mail accounts in the console under **Settings → Mail and calendars**: Gmail, GMX, WEB.DE, iCloud Mail, or any other IMAP server. Each one is tested before it's saved, shows its last check, and can be switched off or removed. Passwords and sign-ins stay in the app's private data on the Pi and are never shown again. RemindMe reads over IMAP and never deletes, moves or marks mail as read. It writes a draft when you ask for one, and sends an email only after you tap Send.
+Add mail accounts in the console under **Settings → Connectors**: Gmail, GMX, WEB.DE, iCloud Mail, or any other IMAP server. Each one is tested before it's saved, shows its last check, and can be switched off or removed. Passwords and sign-ins stay in the app's private data on the Pi and are never shown again. RemindMe reads over IMAP and never deletes, moves or marks mail as read. It writes a draft when you ask for one, and sends an email only after you tap Send.
 
 - **Gmail** can sign in with Google, or use an app password (Google Account → Security → App passwords; needs 2-step verification). Signing in also lets RemindMe look up addresses in your Google contacts. It needs your own Google app, made once: the console walks through it and shows the two values Google asks for. Publish the app ("In production"), or Google ends the sign-in after 7 days, and sign in from a device with Tailscale on, since Google sends you back to the phone app's address.
 - **GMX** and **WEB.DE** need "POP3/IMAP Abruf" turned on in their mail settings.
 - **iCloud Mail** needs an app-specific password from account.apple.com.
 - **Outlook.com** isn't offered: Microsoft no longer accepts passwords over IMAP.
 
-Gmail and GMX set in the 4.2 app options are taken in as connectors once. Connectors are built so other kinds (calendars, feeds) can be added the same way.
+Gmail and GMX set in the 4.2 app options are taken in as connectors once.
 
 - **Ask about it:** "did the landlord reply?", "when is my dentist appointment?". Gmail searches all mail, archived included; GMX searches the inbox.
 - **Drafts:** "write the landlord that Tuesday works" saves a reply in that account's Drafts folder, threaded under their mail, for you to finish and send yourself.
@@ -68,9 +68,18 @@ Gmail and GMX set in the 4.2 app options are taken in as connectors once. Connec
 
 Mail text reaches the AI only when a question or the brief needs it, and is treated as information, never as instructions.
 
+## Connectors: feeds
+
+Any RSS or Atom feed can be a connector too, such as a blog, a newsroom, a YouTube channel or a project's releases on GitHub. Add it under **Settings → Connectors → Feeds** by its link. A site's own address works when the site names its feed (Home Assistant, GitHub releases, YouTube channels and most blogs do). Each feed has two switches:
+
+- **In the daily news**: its posts join the digest under **News**, with the sources ticked there.
+- **Tell me about new posts**: it's checked every half hour, never during quiet hours, with no AI. A new post comes to your phone (with **Open**), Discord and the RemindMe thread; several come as one short list. Give it a few words ("Zigbee, Matter") to hear only about posts that mention one of them. The posts already there when you add the feed aren't news.
+
+Ask "anything new on the Home Assistant blog?" and the assistant reads your feeds. A feed added under **News** is a feed connector that's in the news, with new-post notices off.
+
 ## Calendars
 
-RemindMe reads every calendar in Home Assistant and adds events to the one chosen under **Settings → Mail and calendars → New events go to**. "Put the dentist on Friday at 10" comes back as a button; nothing is added until you tap it. With no calendar chosen, it asks which one.
+RemindMe reads every calendar in Home Assistant and adds events to the one chosen under **Settings → Connectors → New events go to**. "Put the dentist on Friday at 10" comes back as a button; nothing is added until you tap it. With no calendar chosen, it asks which one.
 
 To use iCloud, add Home Assistant's **CalDAV** integration (Settings → Devices & services → Add integration): server `https://caldav.icloud.com`, your Apple ID, and an app-specific password from account.apple.com. Your iCloud calendars then show in Home Assistant, and events RemindMe adds show on your iPhone and Mac.
 
@@ -155,7 +164,7 @@ Searching Geizhals needs the web browser (`web_browser`).
 
 Every day at a time you choose, RemindMe sends a short digest of the news from Germany, the EU and the world. Set it up under **Settings → News**:
 
-- Tick your sources. From Germany: tagesschau, Deutschlandfunk, ZDFheute, DER SPIEGEL, ZEIT ONLINE, Süddeutsche Zeitung, taz, n-tv, Handelsblatt and DW. European: Euronews, POLITICO Europe and Euractiv. International: BBC News, the Guardian, France 24, Al Jazeera, NPR and the New York Times. Any other RSS or Atom feed can be added by its link.
+- Tick your sources. From Germany: tagesschau, Deutschlandfunk, ZDFheute, DER SPIEGEL, ZEIT ONLINE, Süddeutsche Zeitung, taz, n-tv, Handelsblatt and DW. European: Euronews, POLITICO Europe and Euractiv. International: BBC News, the Guardian, France 24, Al Jazeera, NPR and the New York Times. Any other RSS or Atom feed can be added by its link; it becomes a feed connector (below) that's in the news.
 - The news agencies themselves (dpa, Reuters, AP, AFP) publish no feeds. dpa's wire comes in as headlines through ZEIT ONLINE's newsticker.
 - RemindMe reads the last day's headlines and teasers. The AI picks the 3 or 5 most important stories per section, merges a story that several sources tell, and writes a line or two on each, in English or German, with a link to every source. Links always come from the feeds, never from the AI. That's one AI answer a day, roughly 5–10 cents on Claude Opus and much less on smaller models.
 - The digest goes to Discord, your phone (one headline per section) and the RemindMe thread, never during quiet hours. Without the AI (no key, or over the day's budget) it sends the headlines themselves.
@@ -167,7 +176,7 @@ RemindMe remembers things about you: what it picked up from what you told it ("m
 
 ## Data
 
-Everything lives in `/data`: reminders, chats, the inbox's threads and jobs (`threads.json`), what it remembers about you (`memory.json`), which heads-ups were sent (`triage.json`), batteries you dealt with (`batteries.json`), price watches (`prices.json`), the news settings (`news.json`), the phone app's notification keys and devices (`push.json`) and Tailscale's state (`tailscale/`), the AI choice (`ai.json`), today's spend (`spend.json`), Discord chat history (`discord-chats.json`) and which nudges were sent (`proactive.json`). Notes stay in `/share/vault`, shared with the Vault editor app.
+Everything lives in `/data`: reminders, chats, the inbox's threads and jobs (`threads.json`), what it remembers about you (`memory.json`), which heads-ups were sent (`triage.json`), batteries you dealt with (`batteries.json`), price watches (`prices.json`), the news settings (`news.json`), which feed posts were seen (`feeds.json`; the feeds themselves are connectors), the phone app's notification keys and devices (`push.json`) and Tailscale's state (`tailscale/`), the AI choice (`ai.json`), today's spend (`spend.json`), Discord chat history (`discord-chats.json`) and which nudges were sent (`proactive.json`). Notes stay in `/share/vault`, shared with the Vault editor app.
 
 ## Upgrading from 3.x
 

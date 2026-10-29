@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { localDate } from "../ai/spend";
@@ -228,10 +227,13 @@ export interface Digest {
 	problems: string[];
 }
 
-export interface CustomFeed {
+/** A feed of the user's own: a feed connector. */
+export interface OwnFeed {
 	id: string;
 	name: string;
 	url: string;
+	/** Its "In the daily news" switch. */
+	news: boolean;
 }
 
 export interface NewsSettings {
@@ -242,10 +244,11 @@ export interface NewsSettings {
 	/** Stories per section. */
 	stories: 3 | 5;
 	sources: string[];
-	custom: CustomFeed[];
 }
 
 interface State extends NewsSettings {
+	/** Feeds added here in 4.18, before feeds were connectors: moved there on start. */
+	custom?: Array<{ id: string; name: string; url: string }>;
 	/** The day the digest last went out on its own. */
 	lastSent?: string;
 	lastDigestAt?: string;
@@ -260,8 +263,8 @@ export interface NewsDeps {
 	ask(prompt: string): Promise<string | undefined>;
 	/** Send the digest to the user. */
 	send(digest: Digest): Promise<boolean>;
-	/** Throws for a link RemindMe mustn't open (a private address). */
-	checkUrl?(url: string): Promise<unknown>;
+	/** The user's feed connectors. */
+	ownFeeds?(): OwnFeed[];
 	/** A time moved out of the quiet hours. */
 	quietUntil?(at: Date): Date;
 	path?: string;
@@ -276,10 +279,10 @@ const DAY = 86_400_000;
 const MAX_ITEMS = 240;
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
 /** Links compared without tracking: DW's sections differ only in "?maca=…". */
-const sameLink = (url: string) => url.replace(/[?#].*$/, "").replace(/\/$/, "").toLowerCase();
+export const sameLink = (url: string) => url.replace(/[?#].*$/, "").replace(/\/$/, "").toLowerCase();
 
 export class News {
-	private state: State = { on: false, time: "07:30", language: "en", stories: 5, sources: [...DEFAULT_SOURCES], custom: [] };
+	private state: State = { on: false, time: "07:30", language: "en", stories: 5, sources: [...DEFAULT_SOURCES] };
 	private running = false;
 	private cache?: { at: number; key: string; result: { items: NewsItem[]; problems: string[] } };
 
@@ -292,7 +295,7 @@ export class News {
 	async load(): Promise<void> {
 		try {
 			const saved = JSON.parse(await readFile(this.path, "utf8")) as Partial<State>;
-			this.state = { ...this.state, ...saved, custom: Array.isArray(saved.custom) ? saved.custom : [], sources: Array.isArray(saved.sources) ? saved.sources : [...DEFAULT_SOURCES] };
+			this.state = { ...this.state, ...saved, sources: Array.isArray(saved.sources) ? saved.sources : [...DEFAULT_SOURCES] };
 		} catch {
 			// Nothing saved yet: the defaults.
 		}
@@ -306,15 +309,24 @@ export class News {
 
 	/** Settings and what happened last, for the console. */
 	view() {
-		const { lastSent: _sent, ...rest } = this.state;
+		const { lastSent: _sent, custom: _custom, ...rest } = this.state;
 		const covers = (source: NewsSource) => (source.feeds.every((feed) => feed.region) ? source.feeds.map((feed) => LABELS.en[feed.region!]).join(", ") : "All news");
 		return {
 			...rest,
-			catalog: [
-				...NEWS_SOURCES.map((source) => ({ id: source.id, name: source.name, from: source.from, language: source.language, covers: covers(source), ...(source.note ? { note: source.note } : {}) })),
-				...this.state.custom.map((feed) => ({ id: feed.id, name: feed.name, from: "Yours", url: feed.url, covers: "All news" })),
-			],
+			catalog: NEWS_SOURCES.map((source) => ({ id: source.id, name: source.name, from: source.from, language: source.language, covers: covers(source), ...(source.note ? { note: source.note } : {}) })),
+			own: this.deps.ownFeeds?.() || [],
 		};
+	}
+
+	/** Feeds added under News in 4.18, to become feed connectors; they're gone from here after. */
+	async takeOldFeeds(): Promise<Array<{ name: string; url: string; on: boolean }>> {
+		const old = (this.state.custom || []).map((feed) => ({ name: feed.name, url: feed.url, on: this.state.sources.includes(feed.id) }));
+		if (!this.state.custom) return old;
+		const ids = new Set(this.state.custom.map((feed) => feed.id));
+		this.state.sources = this.state.sources.filter((id) => !ids.has(id));
+		delete this.state.custom;
+		await this.save();
+		return old;
 	}
 
 	/** Change the settings; anything unknown is ignored. */
@@ -330,54 +342,23 @@ export class News {
 		if (patch.language === "en" || patch.language === "de") this.state.language = patch.language;
 		if (patch.stories === 3 || patch.stories === 5) this.state.stories = patch.stories;
 		if (Array.isArray(patch.sources)) {
-			const known = new Set([...NEWS_SOURCES.map((source) => source.id), ...this.state.custom.map((feed) => feed.id)]);
+			const known = new Set(NEWS_SOURCES.map((source) => source.id));
 			this.state.sources = [...new Set(patch.sources.filter((id) => typeof id === "string" && known.has(id)))];
 		}
 		this.cache = undefined;
 		await this.save();
 	}
 
-	/** A feed of the user's own, by its link; it's ticked right away. */
-	async addFeed(url: string): Promise<CustomFeed> {
-		const link = url.trim();
-		if (!/^https?:\/\//i.test(link)) throw new Error("That isn't a link to a feed.");
-		if (this.state.custom.some((feed) => feed.url === link)) throw new Error("That feed is in the list already.");
-		if (this.state.custom.length >= 10) throw new Error("Ten feeds of your own at most. Remove one first.");
-		await this.deps.checkUrl?.(link);
-		let feed: { title: string; items: FeedItem[] };
-		try {
-			feed = parseFeed(await this.deps.fetchFeed(link));
-		} catch (error) {
-			throw new Error(`That address didn't answer: ${message(error)}`);
-		}
-		if (!feed.items.length) throw new Error("No news at that address. Is it an RSS or Atom feed?");
-		const added = { id: `feed-${randomUUID().slice(0, 8)}`, name: (feed.title || new URL(link).hostname).slice(0, 60), url: link };
-		this.state.custom.push(added);
-		this.state.sources.push(added.id);
-		this.cache = undefined;
-		await this.save();
-		return added;
-	}
-
-	async removeFeed(id: string): Promise<boolean> {
-		const before = this.state.custom.length;
-		this.state.custom = this.state.custom.filter((feed) => feed.id !== id);
-		this.state.sources = this.state.sources.filter((source) => source !== id);
-		this.cache = undefined;
-		await this.save();
-		return this.state.custom.length < before;
-	}
-
-	/** The chosen sources' feeds, or the defaults when none are ticked. */
+	/** The ticked sources' feeds (the suggested ones when none are), and the user's own feeds that are in the news. */
 	private chosen(): Array<{ name: string; url: string; region?: Region; only?: RegExp }> {
-		const ids = this.state.sources.length ? this.state.sources : DEFAULT_SOURCES;
+		const own = (this.deps.ownFeeds?.() || []).filter((feed) => feed.news);
+		const ids = this.state.sources.length || own.length ? this.state.sources : DEFAULT_SOURCES;
 		const feeds: Array<{ name: string; url: string; region?: Region; only?: RegExp }> = [];
 		for (const id of ids) {
 			const source = NEWS_SOURCES.find((entry) => entry.id === id);
 			if (source) for (const feed of source.feeds) feeds.push({ name: source.name, url: feed.url, ...(feed.region ? { region: feed.region } : {}), ...(source.only ? { only: source.only } : {}) });
-			const custom = this.state.custom.find((entry) => entry.id === id);
-			if (custom) feeds.push({ name: custom.name, url: custom.url });
 		}
+		for (const feed of own) feeds.push({ name: feed.name, url: feed.url });
 		return feeds;
 	}
 
