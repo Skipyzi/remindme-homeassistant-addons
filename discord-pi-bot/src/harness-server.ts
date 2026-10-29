@@ -39,6 +39,7 @@ import {
 	deleteTracking,
 	getTracking,
 } from "./harness/trackingmore";
+import { DHL_BACKGROUND_SHARE, DHL_KIND, DhlTracker, chooseTracker } from "./connectors/dhl";
 import { readSystemStats } from "./harness/systemStats";
 import { ArtifactStore, toDocument } from "./harness/artifacts";
 import { assertPublicUrl, readablePage, ReaderError } from "./harness/reader";
@@ -384,6 +385,17 @@ const feedInput = (body: Record<string, unknown>) => {
 		enabled: typeof body.enabled === "boolean" ? body.enabled : undefined,
 	};
 };
+/** What the console sends for DHL: a key (left out to keep the saved one) and a postcode for more detail. */
+const dhlInput = (body: Record<string, unknown>) => {
+	const secrets = (body.secrets || {}) as Record<string, unknown>;
+	const values = (body.values || {}) as Record<string, unknown>;
+	const apiKey = typeof secrets.apiKey === "string" ? secrets.apiKey.trim() : "";
+	if (apiKey && !/^[\w-]{8,128}$/.test(apiKey)) throw new Error("That doesn't look like a DHL API key: copy the key (not the secret) from your app at developer.dhl.com.");
+	if (/^demo-key$/i.test(apiKey)) throw new Error("That's DHL's demo key, which answers every number with the same made-up parcel. Use your own app's key.");
+	const postcode = typeof values.postcode === "string" ? values.postcode.trim() : undefined;
+	if (postcode && !/^\d{4,5}$/.test(postcode)) throw new Error("A postcode is four or five digits.");
+	return { apiKey, postcode };
+};
 const feedResult = (id: string) => {
 	const status = feeds.status(id);
 	if (!status) return "";
@@ -445,6 +457,11 @@ void persona.load();
  */
 const parcels = new ParcelStore();
 void parcels.load();
+/* DHL's own tracking API, as a connector: its key lives with the other connectors. */
+const dhlConnector = () => connectors.list("parcel").find((connector) => connector.preset === "dhl" && connector.enabled);
+const dhl = new DhlTracker({ key: () => dhlConnector()?.secrets.apiKey, postcode: () => dhlConnector()?.values.postcode });
+/** Parcels can be tracked: through DHL, TrackingMore, or both. */
+const parcelTracking = () => Boolean(config.trackingMoreApiKey || dhlConnector());
 type Send = (event: string, data: unknown) => void;
 
 /** A filesystem- and link-safe slug from a title. */
@@ -851,7 +868,7 @@ app.post("/api/tasks/:id/run", async (request, response) => {
  */
 app.get("/api/parcels", (_request, response) => {
 	response.json({
-		enabled: Boolean(config.trackingMoreApiKey),
+		enabled: parcelTracking(),
 		parcels: parcels.list().map(parcelCard),
 	});
 });
@@ -1665,12 +1682,24 @@ app.post("/api/reminders", async (request, response) => {
  */
 app.get("/api/connectors", (_request, response) => {
 	response.set("Cache-Control", "no-store").json({
-		kinds: [...CONNECTOR_KINDS, FEED_KIND],
-		connectors: connectors.list().map((connector) => ({ ...publicView(connector), status: connector.kind === "feed" ? feeds.status(connector.id) : mailboxes.status(connector.id) })),
+		kinds: [...CONNECTOR_KINDS, FEED_KIND, DHL_KIND],
+		connectors: connectors.list().map((connector) => ({
+			...publicView(connector),
+			status: connector.kind === "feed" ? feeds.status(connector.id) : connector.kind === "parcel" ? dhl.status() : mailboxes.status(connector.id),
+		})),
 	});
 });
 app.post("/api/connectors", async (request, response) => {
 	try {
+		if (request.body?.kind === "parcel") {
+			if (connectors.list("parcel").some((connector) => connector.preset === "dhl")) throw new Error("DHL is connected already. Change its key there.");
+			const input = dhlInput(request.body);
+			if (!input.apiKey) throw new Error("Paste the API key from your app at developer.dhl.com.");
+			const result = await dhl.test(input.apiKey);
+			const saved = await connectors.create({ kind: "parcel", preset: "dhl", name: "DHL", enabled: true, values: { postcode: input.postcode || "" }, secrets: { apiKey: input.apiKey } });
+			activity.add({ kind: "did", channel: "console", text: "Connected DHL for parcel tracking", receipts: [{ text: "Connected DHL for parcel tracking" }] });
+			return response.status(201).json({ connector: publicView(saved), result });
+		}
 		if (request.body?.kind === "feed") {
 			const saved = await feeds.add(feedInput(request.body));
 			activity.add({ kind: "did", channel: "console", text: `Connected the feed ${saved.name}`, receipts: [{ text: `Connected the feed ${saved.name}` }] });
@@ -1696,6 +1725,21 @@ app.patch("/api/connectors/:id", async (request, response) => {
 	if (existing.kind === "feed") {
 		const saved = await feeds.update(existing.id, feedInput(request.body || {}));
 		return response.json({ connector: saved && publicView(saved) });
+	}
+	if (existing.kind === "parcel") {
+		try {
+			const input = dhlInput(request.body || {});
+			// A new key is tried before it replaces the one that works.
+			if (input.apiKey) await dhl.test(input.apiKey);
+			const saved = await connectors.update(existing.id, {
+				...(typeof request.body?.enabled === "boolean" ? { enabled: request.body.enabled } : {}),
+				...(input.postcode !== undefined ? { values: { postcode: input.postcode } } : {}),
+				...(input.apiKey ? { secrets: { apiKey: input.apiKey } } : {}),
+			});
+			return response.json({ connector: saved && publicView(saved) });
+		} catch (error) {
+			return response.status(400).json({ error: error instanceof Error ? error.message : "Could not save DHL" });
+		}
 	}
 	try {
 		const body = request.body || {};
@@ -1747,6 +1791,14 @@ app.put("/api/calendars/new-events", async (request, response) => {
 });
 app.post("/api/connectors/:id/test", async (request, response) => {
 	const connector = connectors.get(request.params.id);
+	if (connector?.kind === "parcel") {
+		try {
+			const result = await dhl.test(connector.secrets.apiKey);
+			return response.json({ ok: true, message: `${result} ${dhl.callsToday()} of 250 checks used today.` });
+		} catch (error) {
+			return response.json({ ok: false, error: error instanceof Error ? error.message : "DHL didn't answer." });
+		}
+	}
 	if (connector?.kind === "feed") {
 		const posts = await feeds.posts(connector, new Date(Date.now() + 5 * 60_000)).catch(() => undefined);
 		return response.json(posts ? { ok: true, message: feedResult(connector.id) } : { ok: false, error: feeds.status(connector.id)?.error || "It didn't answer." });
@@ -1848,23 +1900,29 @@ async function trackParcel(
 	label: string,
 	courier: string,
 ): Promise<TrackResult> {
-	if (!config.trackingMoreApiKey)
-		return {
-			ok: false,
-			error:
-				"Parcel tracking is off. Set the TrackingMore API key in the add-on configuration.",
-		};
-	const number = trackingNumber.trim();
+	// "3404 3416 1094" and "340434161094" are the same parcel.
+	const number = trackingNumber.replace(/\s+/g, "");
 	if (!number) return { ok: false, error: "A tracking number is required." };
 	const existing = parcels.findByNumber(number);
 	if (existing) return { ok: true, parcel: existing, existed: true };
+	// DHL's own API for DHL numbers (and any number when it's the only tracker); TrackingMore for the rest.
+	const tracker = chooseTracker(number, courier, { dhl: Boolean(dhlConnector()), trackingMore: Boolean(config.trackingMoreApiKey) });
+	if (typeof tracker === "object") return { ok: false, error: tracker.error };
 	try {
-		const status = await createTracking(
-			config.trackingMoreApiKey,
-			number,
-			courier.trim() || undefined,
-		);
+		let status: Awaited<ReturnType<typeof createTracking>> | undefined;
+		let via: "dhl" | undefined;
+		if (tracker === "dhl") {
+			try {
+				status = await dhl.track(number);
+				via = "dhl";
+			} catch (error) {
+				// Not a DHL number after all: TrackingMore may know the carrier.
+				if (!(error instanceof TrackingError && error.status === 404 && config.trackingMoreApiKey && !/^dhl/i.test(courier.trim()))) throw error;
+			}
+		}
+		status ||= await createTracking(config.trackingMoreApiKey, number, courier.trim() || undefined);
 		const parcel = await parcels.add({
+			...(via ? { via } : {}),
 			trackingNumber: number,
 			slug: status.courierSlug,
 			providerId: status.providerId,
@@ -1897,7 +1955,7 @@ async function trackParcel(
  * provider longer than it is useful.
  */
 async function purgeParcel(parcel: Parcel): Promise<void> {
-	if (config.trackingMoreApiKey && parcel.providerId) {
+	if (parcel.via !== "dhl" && config.trackingMoreApiKey && parcel.providerId) {
 		try {
 			await deleteTracking(config.trackingMoreApiKey, parcel.providerId);
 		} catch (error) {
@@ -1955,7 +2013,7 @@ export function toolContext(): ToolContext {
 			const page = await readablePage(url);
 			return { title: page.title, url: page.finalUrl, text: page.text };
 		},
-		parcels: config.trackingMoreApiKey
+		parcels: parcelTracking()
 			? {
 					async track(number, label) {
 						const result = await trackParcel(number, label, "");
@@ -2580,11 +2638,7 @@ function startTaskScheduler(intervalMs = 60_000): ReturnType<typeof setInterval>
  * them. Errors are swallowed per-parcel so one bad number cannot stall the sweep.
  */
 async function refreshParcel(parcel: Parcel): Promise<void> {
-	const status = await getTracking(
-		config.trackingMoreApiKey,
-		parcel.slug,
-		parcel.trackingNumber,
-	);
+	const status = parcel.via === "dhl" ? await dhl.track(parcel.trackingNumber) : await getTracking(config.trackingMoreApiKey, parcel.slug, parcel.trackingNumber);
 	const notice = parcelNotice(
 		parcel.label,
 		parcel.lastNotifiedTag,
@@ -2619,25 +2673,34 @@ async function refreshParcel(parcel: Parcel): Promise<void> {
 }
 
 /**
- * Poll tracked, not-yet-delivered parcels on a cadence. Six hours is plenty for
- * a package and cheap; a sweep still running when the next fires is skipped, not
- * stacked. Does nothing without an TrackingMore key.
+ * Poll tracked, not-yet-delivered parcels. DHL's own API is asked every 45
+ * minutes outside quiet hours (a parcel out for delivery every 15), within
+ * the part of its 250 daily calls kept for the background; TrackingMore's
+ * cached status every six hours. A sweep still running when the next fires
+ * is skipped, not stacked; a tracker that isn't set up any more is skipped.
  */
 let parcelSweepRunning = false;
-function startParcelScheduler(
-	intervalMs = 6 * 60 * 60_000,
-): ReturnType<typeof setInterval> | undefined {
-	if (!config.trackingMoreApiKey) return undefined;
+function parcelDue(parcel: Parcel, now: Date): boolean {
+	const last = Date.parse(parcel.lastCheckedAt || "");
+	if (!Number.isFinite(last)) return true;
+	if (parcel.via === "dhl") return now.getTime() - last >= (parcel.tag === "OutForDelivery" ? 15 : 45) * 60_000;
+	return now.getTime() - last >= 6 * 60 * 60_000;
+}
+function startParcelScheduler(intervalMs = 5 * 60_000): ReturnType<typeof setInterval> {
 	const sweep = async () => {
 		if (parcelSweepRunning) return;
 		parcelSweepRunning = true;
 		try {
+			const now = new Date();
+			const quiet = afterQuietHours(process.env.QUIET_HOURS ?? "22:30-07:00", now).getTime() > now.getTime();
 			for (const parcel of parcels.list()) {
-				if (parcel.delivered) continue;
+				if (parcel.delivered || !parcelDue(parcel, now)) continue;
+				if (parcel.via === "dhl" ? !dhlConnector() || quiet || dhl.callsToday() >= DHL_BACKGROUND_SHARE : !config.trackingMoreApiKey) continue;
 				try {
 					await refreshParcel(parcel);
 				} catch (error) {
-					console.error(`Parcel "${parcel.label}" refresh failed:`, error);
+					console.error(`Parcel "${parcel.label}" refresh failed:`, error instanceof Error ? error.message : error);
+					await parcels.update(parcel.id, { lastCheckedAt: new Date().toISOString() });
 				}
 			}
 		} finally {
@@ -2699,6 +2762,6 @@ export async function startHarness(): Promise<void> {
 		}, 5_000);
 	await loadHomeName();
 	startTaskScheduler();
-	// Parcel polling starts only when a TrackingMore key is configured.
+	// Parcels are polled through whichever tracker each one uses (DHL, TrackingMore).
 	startParcelScheduler();
 }

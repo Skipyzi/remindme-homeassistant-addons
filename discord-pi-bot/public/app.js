@@ -156,6 +156,9 @@ function remindme() {
 		newFeed: "",
 		feedBusy: false,
 		feedResult: null,
+		newDhl: { apiKey: "", postcode: "" },
+		dhlBusy: false,
+		dhlResult: null,
 		newFeedLink: "",
 		/* Price watches */
 		priceWatches: [],
@@ -1309,7 +1312,7 @@ function remindme() {
 				const failed = this.connectors.find((connector) => connector.enabled && connector.status && !connector.status.ok);
 				if (failed) return { text: `${failed.name}'s last check failed`, bad: true };
 				const feeds = this.feedConnectors().length;
-				const parts = [this.mailConnectors().map((connector) => connector.name).join(", "), feeds ? plural(feeds, "feed") : ""].filter(Boolean);
+				const parts = [this.mailConnectors().map((connector) => connector.name).join(", "), this.parcelConnectors().map((connector) => connector.name).join(", "), feeds ? plural(feeds, "feed") : ""].filter(Boolean);
 				return { text: parts.length ? parts.join(" · ") : "Nothing connected yet" };
 			}
 			if (id === "phone") {
@@ -1778,7 +1781,31 @@ function remindme() {
 			return this.connectorKinds.find((kind) => kind.id === id);
 		},
 		mailConnectors() {
-			return this.connectors.filter((connector) => connector.kind !== "feed");
+			return this.connectors.filter((connector) => connector.kind === "mail");
+		},
+		parcelConnectors() {
+			return this.connectors.filter((connector) => connector.kind === "parcel");
+		},
+		dhlLine(service) {
+			const status = service.status;
+			const postcode = service.values.postcode ? ` · postcode ${service.values.postcode}` : "";
+			const use = status ? ` · ${status.calls} of ${status.limit} checks today` : " · not used yet";
+			const problem = status && !status.ok ? ` · last check failed: ${status.error}` : "";
+			return `Tracking from DHL itself${postcode}${use}${problem}`;
+		},
+		async addDhl() {
+			this.dhlBusy = true;
+			this.dhlResult = null;
+			try {
+				const data = await this.request("./api/connectors", "POST", { kind: "parcel", preset: "dhl", secrets: { apiKey: this.newDhl.apiKey.trim() }, values: { postcode: this.newDhl.postcode.trim() } });
+				this.dhlResult = { ok: true, text: `${data.result} Tell RemindMe a tracking number, or ask it to track the parcel from a shipping email.` };
+				this.newDhl = { apiKey: "", postcode: "" };
+				await this.loadConnectors();
+			} catch (error) {
+				this.dhlResult = { ok: false, text: error.message };
+			} finally {
+				this.dhlBusy = false;
+			}
 		},
 		feedConnectors() {
 			return this.connectors.filter((connector) => connector.kind === "feed");
@@ -1897,11 +1924,12 @@ function remindme() {
 			}
 		},
 		async updateConnector(connector, change) {
-			connector.probe = change.secrets ? "Testing the new password" : "";
+			const what = connector.kind === "parcel" ? "key" : "password";
+			connector.probe = change.secrets ? `Testing the new ${what}` : "";
 			try {
 				await this.request(`./api/connectors/${encodeURIComponent(connector.id)}`, "PATCH", change);
 				await this.loadConnectors();
-				if (change.secrets) this.connectors.find((entry) => entry.id === connector.id).probe = "Password changed.";
+				if (change.secrets) this.connectors.find((entry) => entry.id === connector.id).probe = `${what === "key" ? "Key" : "Password"} changed.`;
 			} catch (error) {
 				connector.probe = `Not saved: ${error.message}`;
 			}
@@ -1912,7 +1940,8 @@ function remindme() {
 			connector.probe = data.ok ? data.message : `Failed: ${data.error}`;
 		},
 		async removeConnector(connector) {
-			if (!window.confirm(connector.kind === "feed" ? `Remove the feed ${connector.name}?` : `Remove ${connector.name}? RemindMe stops reading it; nothing in the mailbox changes.`)) return;
+			const question = { feed: `Remove the feed ${connector.name}?`, parcel: `Remove ${connector.name}? Parcels tracked through it stop being checked.` }[connector.kind] || `Remove ${connector.name}? RemindMe stops reading it; nothing in the mailbox changes.`;
+			if (!window.confirm(question)) return;
 			await fetch(`./api/connectors/${encodeURIComponent(connector.id)}`, { method: "DELETE" });
 			await this.loadConnectors();
 		},

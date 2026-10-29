@@ -81,6 +81,16 @@ Any RSS or Atom feed can be a connector too, such as a blog, a newsroom, a YouTu
 
 Ask "anything new on the Home Assistant blog?" and the assistant reads your feeds. A feed added under **News** is a feed connector that's in the news, with new-post notices off.
 
+## Connectors: parcels (DHL)
+
+DHL's own Shipment Tracking API can be a connector, so DHL parcels are tracked straight from DHL, without an aggregator in between. It covers DHL Paket, Express, eCommerce and Post shipments. Add it under **Settings → Connectors → Parcels** with a free key of your own:
+
+1. Sign up at [developer.dhl.com](https://developer.dhl.com/user/register).
+2. Under **My Apps**, create an app named RemindMe with the API **Shipment Tracking - Unified**.
+3. Show the app's **API Key** (not the secret) and paste it in. RemindMe tries it before saving it.
+
+Your postcode is optional; with it, DHL names the towns along the way. Give RemindMe a tracking number ("track 340434161094, it's the keyboard"), or ask it to track the parcel from a shipping email, and you hear when it moves, is out for delivery, waits at a Packstation or arrives. DHL's free level allows 250 checks a day. RemindMe checks each parcel every 45 minutes outside quiet hours (every 15 once it's out for delivery), keeps 50 checks for when you ask, and stops tracking once it's delivered. Hermes, DPD, GLS and UPS still go through TrackingMore (`trackingmore_api_key`).
+
 ## Calendars
 
 RemindMe reads every calendar in Home Assistant and adds events to the one chosen under **Settings → Connectors → New events go to**. "Put the dentist on Friday at 10" comes back as a button; nothing is added until you tap it. With no calendar chosen, it asks which one.
@@ -89,7 +99,7 @@ To use iCloud, add Home Assistant's **CalDAV** integration (Settings → Devices
 
 ## What the assistant can do
 
-House overview, find and control devices, calendar events (read, and add once you confirm), mail (search, read, save drafts), weather forecasts, to-do lists (read, add, complete), reminders (set, list, cancel), notes in the shared vault (search, save when asked), web search (built into Claude, OpenAI and ChatGPT; SearXNG or Exa for the Claude Code and Codex agents), reading a web page, parcel tracking (with `trackingmore_api_key`), documents in the console, and tools from MCP servers added in the console. Servers with their own sign-in, such as Notion, Linear and Todoist, need only their address and a tap on Sign in.
+House overview, find and control devices, calendar events (read, and add once you confirm), mail (search, read, save drafts), weather forecasts, to-do lists (read, add, complete), reminders (set, list, cancel), notes in the shared vault (search, save when asked), web search (built into Claude, OpenAI and ChatGPT; SearXNG or Exa for the Claude Code and Codex agents), reading a web page, parcel tracking (DHL as a connector, other carriers with `trackingmore_api_key`), documents in the console, and tools from MCP servers added in the console. Servers with their own sign-in, such as Notion, Linear and Todoist, need only their address and a tap on Sign in.
 
 It only sees and changes devices through these tools. Each turn sends your recent chat, the tool results and any recalled notes to the provider you chose.
 

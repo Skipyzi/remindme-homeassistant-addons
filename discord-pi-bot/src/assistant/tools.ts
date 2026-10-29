@@ -886,7 +886,7 @@ function parcelTools(ctx: ToolContext): AssistantTool[] {
 		{
 			spec: {
 				name: "track_parcel",
-				description: "Start tracking a parcel by its tracking number. Status changes are messaged to the user.",
+				description: "Start tracking a parcel by its tracking number: DHL's straight from DHL when DHL is connected, other carriers through TrackingMore. Status changes are messaged to the user. A shipping email usually has the number; prefer this over a watch job for parcels.",
 				parameters: object({ tracking_number: { type: "string" }, label: { type: "string" } }, ["tracking_number"]),
 			},
 			async run(input, effects) {

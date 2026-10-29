@@ -41,6 +41,8 @@ export interface Parcel {
 	lastCheckedAt?: string;
 	/** The tag the owner was last notified about, to detect changes. */
 	lastNotifiedTag?: ParcelTag;
+	/** Tracked straight from DHL's own API; without it, through TrackingMore. */
+	via?: "dhl";
 }
 
 /** The fields an add or update supplies — everything else is derived. */
@@ -59,6 +61,7 @@ export type ParcelInput = Partial<
 		| "delivered"
 		| "lastCheckedAt"
 		| "lastNotifiedTag"
+		| "via"
 	>
 >;
 
@@ -132,6 +135,7 @@ export class ParcelStore {
 			updatedAt: now,
 			lastCheckedAt: values.lastCheckedAt,
 			lastNotifiedTag: values.lastNotifiedTag,
+			...(values.via ? { via: values.via } : {}),
 		};
 		this.parcels.unshift(parcel);
 		await this.persist();

@@ -88,4 +88,4 @@ configuration:
     description: Optional. Links notes to the RemindMe Vault editor app.
   trackingmore_api_key:
     name: TrackingMore API key
-    description: Optional. Turns on parcel tracking.
+    description: Optional. Parcel tracking for carriers other than DHL (DHL is a connector in the console).

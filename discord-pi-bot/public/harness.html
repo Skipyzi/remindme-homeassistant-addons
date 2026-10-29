@@ -602,6 +602,43 @@
               </form>
               <p class="rm-result" x-show="feedResult" x-cloak :class="{ bad: feedResult && !feedResult.ok }" x-text="feedResult?.text"></p>
 
+              <h3>Parcels</h3>
+              <p x-text="connectorKind('parcel')?.description"></p>
+              <div>
+                <template x-for="service in parcelConnectors()" :key="service.id">
+                  <div class="rm-item">
+                    <div class="rm-item-head">
+                      <span><b x-text="service.name"></b><br /><span class="rm-mute" x-text="dhlLine(service)"></span></span>
+                      <label class="rm-toggle"><input type="checkbox" :checked="service.enabled" @change="updateConnector(service, { enabled: $event.target.checked })" /><span x-text="service.enabled ? 'On' : 'Off'"></span></label>
+                      <button class="rm-link" type="button" @click="testConnector(service)">Test</button>
+                      <button class="rm-link" type="button" @click="service.editing = !service.editing">Key</button>
+                      <button class="rm-link" type="button" @click="removeConnector(service)">Remove</button>
+                    </div>
+                    <p class="rm-note" x-show="service.probe" x-text="service.probe"></p>
+                    <form class="rm-ask" x-show="service.editing" x-cloak @submit.prevent="updateConnector(service, { secrets: { apiKey: service.newPassword } })">
+                      <input type="password" x-model="service.newPassword" autocomplete="off" placeholder="New API key" aria-label="New DHL API key" />
+                      <button class="rm-btn" type="submit" :disabled="!service.newPassword">Change key</button>
+                    </form>
+                    <label class="rm-field">Your postcode (optional: DHL then names the towns along the way)<input inputmode="numeric" maxlength="5" :value="service.values.postcode || ''" placeholder="04109" @change="updateConnector(service, { values: { postcode: $event.target.value } })" /></label>
+                  </div>
+                </template>
+              </div>
+              <div class="rm-stack" x-show="!parcelConnectors().length">
+                <p>Add DHL with a free key of your own. It tracks every DHL parcel, Express and eCommerce shipment straight from DHL.</p>
+                <ol class="rm-steps">
+                  <li>Sign up at <a class="rm-link" href="https://developer.dhl.com/user/register" target="_blank" rel="noopener">developer.dhl.com</a>. It's free.</li>
+                  <li>Under My Apps, tap Create App, name it RemindMe and pick the API "Shipment Tracking - Unified".</li>
+                  <li>Open the app, show its API Key (not the secret) and paste it here.</li>
+                </ol>
+                <div class="rm-two">
+                  <label class="rm-field">DHL API key<input type="password" x-model="newDhl.apiKey" autocomplete="off" /></label>
+                  <label class="rm-field">Your postcode (optional)<input x-model="newDhl.postcode" inputmode="numeric" maxlength="5" placeholder="04109" /></label>
+                </div>
+                <div class="rm-actions"><button class="rm-btn solid" type="button" :disabled="dhlBusy || !newDhl.apiKey.trim()" @click="addDhl()" x-text="dhlBusy ? 'Checking the key' : 'Add DHL'"></button></div>
+              </div>
+              <p class="rm-result" x-show="dhlResult" x-cloak :class="{ bad: dhlResult && !dhlResult.ok }" x-text="dhlResult?.text"></p>
+              <p class="rm-note">DHL allows 250 checks a day for free. RemindMe checks each parcel every 45 minutes outside quiet hours (every 15 once it's out for delivery) and keeps 50 for when you ask. Other carriers (Hermes, DPD, GLS, UPS) still go through a TrackingMore key in the app's options.</p>
+
               <h3>Add a mail account</h3>
               <p x-text="connectorKind('mail')?.description"></p>
               <div class="rm-two">
