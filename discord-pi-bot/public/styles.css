@@ -546,6 +546,8 @@ a {
 	grid-column: 4 / 12;
 	min-width: 0;
 	display: grid;
+	/* One column as wide as the panel: a long row wraps instead of widening it. */
+	grid-template-columns: minmax(0, 1fr);
 	gap: 16px;
 	align-content: start;
 }
@@ -769,6 +771,8 @@ a {
 .rm-item-head > :first-child {
 	flex: 1;
 	min-width: 0;
+	/* Long addresses and links break rather than push the buttons off screen. */
+	overflow-wrap: anywhere;
 }
 .rm-toggle {
 	display: flex;
@@ -1588,6 +1592,14 @@ body:has(> .rm-app) {
 }
 
 @media (max-width: 820px) {
+	/* A row with several options: the name on top, the options on a line of their own. */
+	.rm-item-head:has(> :nth-child(4)) {
+		flex-wrap: wrap;
+		gap: 10px 18px;
+	}
+	.rm-item-head:has(> :nth-child(4)) > :first-child {
+		flex-basis: 100%;
+	}
 	.rm-models .rm-wide,
 	.rm-models .rm-perday {
 		display: none !important;
