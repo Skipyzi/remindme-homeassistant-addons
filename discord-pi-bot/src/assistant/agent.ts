@@ -16,6 +16,7 @@ import {
 } from "../ai/types";
 import type { Artifact } from "../harness/artifacts";
 import type { ActivityChannel, ActivityLog, Receipt } from "./activity";
+import type { ModelChoice } from "../ai/settings";
 import type { EntityCard } from "../harness/entities";
 import type { VaultNote } from "../harness/vault";
 import type { Confirmation } from "./confirmations";
@@ -35,6 +36,8 @@ export interface AssistantDeps {
 	spend: SpendLedger;
 	/** Persona plus enabled skills. */
 	persona(): string;
+	/** The model a thread was given, if any. */
+	modelFor?(threadId: string): ModelChoice | undefined;
 	/** Built per turn so option changes (search, TrackingMore, MCP) apply at once. */
 	tools(): ToolContext;
 	recall?(prompt: string): VaultNote[];
@@ -71,6 +74,8 @@ export interface AskInput {
 	threadId?: string;
 	/** Tools for this turn only, such as a running job's own. */
 	tools?: Partial<ToolContext>;
+	/** A model for this turn; without it, the thread's own, then the one chosen under AI. */
+	model?: ModelChoice;
 	signal?: AbortSignal;
 }
 
@@ -172,14 +177,16 @@ export class Assistant {
 
 	private async answer(input: AskInput, events: AskEvents): Promise<AskResult> {
 		const { settings, spend } = this.deps;
-		const runner = settings.runner();
+		// A thread with a model of its own (Opus for a long job, say) answers with it.
+		const picked = settings.pick(input.model ?? (input.threadId ? this.deps.modelFor?.(input.threadId) : undefined));
+		const runner = picked.runner;
 		if (runner) {
 			const turn = this.runnerQueue.then(() => this.askRunner(runner, input, events));
 			this.runnerQueue = turn.catch(() => {});
 			return turn;
 		}
-		const provider = settings.provider();
-		if (!provider) return failure(settings.problem());
+		const provider = picked.provider;
+		if (!provider) return failure(picked.problem || settings.problem());
 		const budget = settings.dailyBudget();
 		if (spend.overBudget(budget))
 			return failure(
@@ -364,8 +371,9 @@ export class Assistant {
 	}
 
 	/** One plain answer without tools or history, for small jobs like reading a reminder request. `cheap`: on the AI's cheapest model, for chores like reading a price. */
-	async quick(prompt: string, signal?: AbortSignal, options: { cheap?: boolean } = {}): Promise<string | undefined> {
-		const provider = (options.cheap && this.deps.settings.cheapProvider?.()) || this.deps.settings.provider();
+	async quick(prompt: string, signal?: AbortSignal, options: { cheap?: boolean; model?: ModelChoice } = {}): Promise<string | undefined> {
+		const chosen = options.model ? this.deps.settings.pick(options.model).provider : undefined;
+		const provider = chosen || (options.cheap && this.deps.settings.cheapProvider?.()) || this.deps.settings.provider();
 		if (!provider || this.deps.spend.overBudget(this.deps.settings.dailyBudget())) return undefined;
 		const session = provider.start({
 			system: "Follow the instruction exactly and answer with nothing else.",

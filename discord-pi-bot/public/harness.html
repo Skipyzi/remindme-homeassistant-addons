@@ -167,6 +167,18 @@
             <button type="button" @click="pictures.splice(index, 1)" :title="`Remove ${picture.name}`" x-text="`${picture.name} ✕`"></button>
           </template>
         </div>
+        <label class="rm-model-pick" x-show="(draft.trim() || newModel) && modelChoices.groups.length" x-cloak>Answers with
+              <select aria-label="Model for this request" x-model="newModel">
+                <option value="" x-text="defaultModelLabel()"></option>
+                <template x-for="group in modelChoices.groups" :key="group.provider">
+                  <optgroup :label="group.label">
+                    <template x-for="model in group.models" :key="model.id">
+                      <option :value="`${group.provider}|${model.id}`" x-text="model.name"></option>
+                    </template>
+                  </optgroup>
+                </template>
+              </select>
+        </label>
         <form class="rm-compose" @submit.prevent="send()">
           <label class="rm-plus" title="Add a picture"><input type="file" accept="image/jpeg,image/png,image/webp" multiple hidden @change="attach($event)" />+</label>
           <input type="text" x-model="draft" x-ref="ask" placeholder="Ask, or hand something off" aria-label="Ask, or hand something off" autocomplete="off" enterkeyhint="send" />
@@ -245,6 +257,18 @@
               </div>
               <p class="rm-empty" x-show="open.feed && !open.messages.length">Nothing yet. The morning brief, nudges, reminders and what RemindMe does on its own show up here, and you can answer them.</p>
             </div>
+            <label class="rm-model-pick" x-show="!open.readOnly && modelChoices.groups.length">Answers with
+              <select aria-label="Model for this thread" @change="setThreadModel($event.target.value)">
+                <option value="" x-text="defaultModelLabel()"></option>
+                <template x-for="group in modelChoices.groups" :key="group.provider">
+                  <optgroup :label="group.label">
+                    <template x-for="model in group.models" :key="model.id">
+                      <option :value="`${group.provider}|${model.id}`" x-text="model.name" :selected="modelValue(open.model) === `${group.provider}|${model.id}`"></option>
+                    </template>
+                  </optgroup>
+                </template>
+              </select>
+            </label>
             <form class="rm-compose" x-show="!open.readOnly" @submit.prevent="reply()">
               <input type="text" x-model="replyDraft" x-ref="reply" :placeholder="open.feed ? 'Reply to RemindMe, such as: done, or remind me at 9' : open.job ? 'Reply to this job' : 'Reply'" aria-label="Reply" autocomplete="off" enterkeyhint="send" />
               <button class="rm-btn solid" type="submit" :disabled="sending || !replyDraft.trim()">Send</button>
@@ -765,6 +789,18 @@
                     <option value="en" :selected="news.language === 'en'">English</option>
                     <option value="de" :selected="news.language === 'de'">Deutsch</option>
                   </select>
+                </label>
+                <label class="rm-field">Written by
+              <select @change="saveNews({ writer: modelOf($event.target.value) }, `Written by ${modelName(modelOf($event.target.value))} from now on.`)">
+                <option value="" x-text="defaultModelLabel()"></option>
+                <template x-for="group in modelChoices.groups" :key="group.provider">
+                  <optgroup :label="group.label">
+                    <template x-for="model in group.models" :key="model.id">
+                      <option :value="`${group.provider}|${model.id}`" x-text="model.name" :selected="modelValue(news.writer) === `${group.provider}|${model.id}`"></option>
+                    </template>
+                  </optgroup>
+                </template>
+              </select>
                 </label>
                 <label class="rm-field">Stories per section
                   <select @change="saveNews({ stories: Number($event.target.value) })">

@@ -84,7 +84,7 @@ registerBridge(app);
 			{ id: "claude-code", label: "Claude subscription", model: "sonnet", nativeAuth: false },
 			{ id: "codex", label: "Codex", model: "gpt-fixture", nativeAuth: false },
 		]) {
-			const settings = { runner: () => runner, provider: () => undefined, problem: () => "", effort: () => "low", dailyBudget: () => 0 };
+			const settings = { runner: () => runner, provider: () => undefined, pick: () => ({ runner, provider: undefined, problem: "" }), problem: () => "", effort: () => "low", dailyBudget: () => 0 };
 			const assistant = new Assistant({
 				settings,
 				spend: new SpendLedger(path.join(directory, "spend.json")),

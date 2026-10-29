@@ -60,6 +60,8 @@ export interface Thread {
 	archivedAt?: string;
 	/** Out of the inbox until then; it comes back on top. */
 	snoozedUntil?: string;
+	/** The model that answers here and runs its job, instead of the one chosen under AI. */
+	model?: { provider: string; model: string };
 }
 
 /** A thread as a line in the inbox: no messages, just where it stands. */
@@ -134,6 +136,16 @@ export class ThreadStore {
 			if (value === null) delete thread[key];
 			else if (value !== undefined) thread[key] = value;
 		}
+		this.save();
+		return thread;
+	}
+
+	/** Give a thread a model of its own, or (with none) back to the one chosen under AI. */
+	setModel(id: string, model: Thread["model"] | undefined): Thread | undefined {
+		const thread = this.get(id);
+		if (!thread) return undefined;
+		if (model) thread.model = { provider: model.provider, model: model.model };
+		else delete thread.model;
 		this.save();
 		return thread;
 	}

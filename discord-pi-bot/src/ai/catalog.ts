@@ -42,6 +42,9 @@ const CLAUDE_CODE: CatalogEntry[] = [
 /** How a provider's use is paid for, which decides the cost column. */
 export type Billing = "credits" | "plan" | "unknown";
 
+/** A provider's current models, best first, without its older ones. */
+export const catalogEntries = (provider: AssistantId): CatalogEntry[] => catalogFor(provider).entries;
+
 function catalogFor(provider: AssistantId): { entries: CatalogEntry[]; billing: Billing } {
 	switch (provider) {
 		case "claude":

@@ -10,6 +10,7 @@ import { HomeApi } from "../src/agent/home.ts";
 import { Assistant, trimHistory } from "../src/assistant/agent.ts";
 import { ConfirmationStore } from "../src/assistant/confirmations.ts";
 import { ActivityLog } from "../src/assistant/activity.ts";
+import { ThreadStore } from "../src/assistant/threads.ts";
 import { buildTools, newEffects, runTool, type Effects, type ToolContext } from "../src/assistant/tools.ts";
 
 /* ── A small Home Assistant ─────────────────────────────────────────── */
@@ -116,10 +117,12 @@ class ScriptedProvider implements Provider {
 const usage = { inputTokens: 1000, outputTokens: 100, cacheReadTokens: 0, cacheWriteTokens: 0 };
 const step = (values: Partial<Step>): Step => ({ text: "", calls: [], stop: "end", usage, model: "claude-opus-5-5", ...values });
 
-function settings(provider: Provider | undefined, budget = 2): AiSettings {
+function settings(provider: Provider | undefined, budget = 2, others: Record<string, Provider> = {}): AiSettings {
 	return {
 		provider: () => provider,
 		runner: () => undefined,
+		// A thread's own model: one of `others`, by model name; anything else gets the default.
+		pick: (choice?: { model: string }) => (choice && others[choice.model] ? { provider: others[choice.model], problem: "" } : { provider, problem: provider ? "" : "No Claude API key is set." }),
 		problem: () => (provider ? "" : "No Claude API key is set."),
 		dailyBudget: () => budget,
 		effort: () => "low",
@@ -363,4 +366,34 @@ test("chat turns are looked at for things to remember; jobs, briefs and failures
 	assert.deepEqual(learned, ["discord: My sister Anna lives in Berlin", "console: I like tea"]);
 	assert.match(String(provider.requests[0].context), /Prefers Friday flights/, "what it remembers goes into the turn");
 	assert.match(String(provider.requests[2].context), /Prefers Friday flights/, "jobs get it too");
+});
+
+test("a thread with a model of its own answers with it; other threads and chores keep the default", async () => {
+	const { home } = fakeHome();
+	const opus = new ScriptedProvider([step({ text: "Opus here." })]);
+	const haiku = new ScriptedProvider([step({ text: "Haiku here." })]);
+	const store = new ThreadStore(join(mkdtempSync(join(tmpdir(), "threads-")), "threads.json"));
+	const long = store.create({ title: "Find me a flat", origin: "console" });
+	const other = store.create({ title: "Lights", origin: "console" });
+	store.setModel(long.id, { provider: "claude", model: "claude-haiku-5-5" });
+	assert.deepEqual(store.get(long.id)?.model, { provider: "claude", model: "claude-haiku-5-5" });
+	const assistant = new Assistant({
+		settings: settings(opus, 2, { "claude-haiku-5-5": haiku }),
+		spend: ledger(),
+		persona: () => "You are RemindMe.",
+		tools: () => context(home),
+		searchFallback: () => false,
+		modelFor: (id) => store.get(id)?.model as { provider: "claude"; model: string } | undefined,
+	});
+	assert.equal((await assistant.ask({ prompt: "Go on", channel: "job", threadId: long.id })).text, "Haiku here.");
+	assert.equal((await assistant.ask({ prompt: "Lamp on", channel: "console", threadId: other.id })).text, "Opus here.");
+	assert.equal(haiku.requests.length, 1);
+	assert.equal(opus.requests.length, 1);
+	// A model for one turn wins over the thread's.
+	const sonnet = new ScriptedProvider([step({ text: "Sonnet here." })]);
+	const once = new Assistant({ settings: settings(opus, 2, { "claude-haiku-5-5": haiku, "claude-sonnet-5-5": sonnet }), spend: ledger(), persona: () => "", tools: () => context(home), searchFallback: () => false, modelFor: () => ({ provider: "claude", model: "claude-haiku-5-5" }) });
+	assert.equal((await once.ask({ prompt: "Hi", channel: "console", threadId: long.id, model: { provider: "claude", model: "claude-sonnet-5-5" } })).text, "Sonnet here.");
+	// Back to the default.
+	store.setModel(long.id, undefined);
+	assert.equal(store.get(long.id)?.model, undefined);
 });

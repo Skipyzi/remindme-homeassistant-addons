@@ -241,3 +241,26 @@ test("feeds added under News in 4.18 come out once, to become connectors", async
 	await again.load();
 	assert.deepEqual(await again.takeOldFeeds(), []);
 });
+
+test("the news can be written by a model of its own", async () => {
+	const writers: unknown[] = [];
+	const news = new News({
+		path: join(mkdtempSync(join(tmpdir(), "rm-news-")), "news.json"),
+		fetchFeed: async (url) => {
+			if (FEEDS[url]) return FEEDS[url];
+			throw new Error("HTTP 404");
+		},
+		ask: async (_prompt, writer) => {
+			writers.push(writer);
+			return undefined;
+		},
+		send: async () => true,
+	});
+	await news.update({ sources: ["tagesschau"], writer: { provider: "claude", model: "claude-haiku-5-5" } });
+	assert.deepEqual(news.view().writer, { provider: "claude", model: "claude-haiku-5-5" });
+	await news.sendNow(NOW);
+	await news.update({ writer: null });
+	assert.equal(news.view().writer, undefined);
+	await news.sendNow(new Date(NOW.getTime() + 3_600_000));
+	assert.deepEqual(writers, [{ provider: "claude", model: "claude-haiku-5-5" }, undefined]);
+});

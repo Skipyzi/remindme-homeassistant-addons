@@ -244,6 +244,8 @@ export interface NewsSettings {
 	/** Stories per section. */
 	stories: 3 | 5;
 	sources: string[];
+	/** The model that writes it, instead of the one chosen under AI. */
+	writer?: { provider: string; model: string };
 }
 
 interface State extends NewsSettings {
@@ -259,8 +261,8 @@ interface State extends NewsSettings {
 export interface NewsDeps {
 	/** A feed's XML. */
 	fetchFeed(url: string): Promise<string>;
-	/** The AI's answer, or nothing when it can't (no AI, over budget). */
-	ask(prompt: string): Promise<string | undefined>;
+	/** The AI's answer, from `writer` when given, or nothing when it can't (no AI, over budget). */
+	ask(prompt: string, writer?: { provider: string; model: string }): Promise<string | undefined>;
 	/** Send the digest to the user. */
 	send(digest: Digest): Promise<boolean>;
 	/** The user's feed connectors. */
@@ -330,8 +332,10 @@ export class News {
 	}
 
 	/** Change the settings; anything unknown is ignored. */
-	async update(patch: Partial<NewsSettings>, now = new Date()): Promise<void> {
+	async update(patch: Partial<Omit<NewsSettings, "writer">> & { writer?: NewsSettings["writer"] | null }, now = new Date()): Promise<void> {
 		if (typeof patch.on === "boolean") this.state.on = patch.on;
+		if (patch.writer === null) delete this.state.writer;
+		else if (patch.writer) this.state.writer = { provider: patch.writer.provider, model: patch.writer.model };
 		if (typeof patch.time === "string") {
 			const at = minutesOf(patch.time);
 			if (at === undefined) throw new Error("Give the time as hours and minutes, such as 07:30.");
@@ -410,7 +414,7 @@ export class News {
 	async digest(now = new Date()): Promise<Digest> {
 		const { items, problems } = await this.headlines(now);
 		if (!items.length) throw new Error(problems.length ? `None of the sources answered: ${problems.join("; ")}.` : "The sources had no news from the last day.");
-		const answer = await this.deps.ask(digestPrompt(items, this.state.language, this.state.stories, now)).catch(() => undefined);
+		const answer = await this.deps.ask(digestPrompt(items, this.state.language, this.state.stories, now), this.state.writer).catch(() => undefined);
 		const stories = answer ? parseStories(answer, items, this.state.stories) : [];
 		return stories.length ? renderDigest(stories, problems, this.state.language, now) : plainDigest(items, problems, this.state.language, now, answer ? "the AI's answer couldn't be read" : "the AI didn't answer");
 	}

@@ -88,3 +88,24 @@ test("API keys saved by RemindMe 3.x fill blank options, and options win", () =>
 	assert.equal(env.CHATGPT_MODEL, "gpt-5.5");
 	assert.deepEqual(legacyKeys(join(tmpdir(), "missing-endpoints.json")), {});
 });
+
+test("a thread or a chore can have a model of its own, from the providers that are set up", () => {
+	const settings = new AiSettings({ AI_PROVIDER: "claude", ANTHROPIC_API_KEY: "a", OPENAI_API_KEY: "o" }, path());
+	const groups = settings.choices();
+	assert.deepEqual(groups.map((group) => group.provider), ["claude", "openai"]);
+	assert.deepEqual(groups[0].models.map((model) => model.id), ["claude-fable-5-1", "claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"]);
+	assert.equal(groups[0].models[3].name, "Claude Haiku 5.5");
+
+	assert.deepEqual(settings.checkChoice({ provider: "claude", model: "claude-haiku-5-5" }), { provider: "claude", model: "claude-haiku-5-5" });
+	assert.equal(settings.checkChoice({ provider: "chatgpt", model: "gpt-6-luna" }), undefined, "not signed in");
+	assert.equal(settings.checkChoice({ provider: "claude", model: "haiku; rm -rf" }), undefined);
+	assert.equal(settings.checkChoice({ provider: "nope", model: "x" }), undefined);
+	assert.equal(settings.checkChoice(null), undefined);
+	assert.equal(settings.choiceName({ provider: "claude", model: "claude-haiku-5-5" }), "Claude Haiku 5.5");
+
+	const haiku = settings.pick({ provider: "claude", model: "claude-haiku-5-5" });
+	assert.equal(haiku.provider?.model, "claude-haiku-5-5");
+	assert.equal(settings.pick({ provider: "claude", model: "claude-haiku-5-5" }).provider, haiku.provider, "built once");
+	assert.equal(settings.pick().provider?.model, "claude-opus-5-5", "no choice: the default");
+	assert.equal(settings.pick({ provider: "chatgpt", model: "gpt-6-luna" }).provider?.model, "claude-opus-5-5", "a provider that isn't set up: the default");
+});

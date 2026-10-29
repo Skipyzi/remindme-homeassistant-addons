@@ -353,7 +353,7 @@ async function fetchFeed(url: string): Promise<string> {
 /* The daily news: the chosen sources' headlines, written up by the AI. */
 export const news = new News({
 	fetchFeed,
-	ask: (prompt) => assistant.quick(prompt),
+	ask: (prompt, writer) => assistant.quick(prompt, undefined, { model: aiSettings.checkChoice(writer) }),
 	send: (digest) => ownerNotify(digest.text, { what: "news", phoneBody: digest.phone }),
 	ownFeeds: () => feeds.list().filter((feed) => feed.enabled).map((feed) => ({ id: feed.id, name: feed.name, url: feed.values.url, news: feedFlag(feed, "news") })),
 	quietUntil: (at) => afterQuietHours(process.env.QUIET_HOURS ?? "22:30-07:00", at),
@@ -650,6 +650,13 @@ app.put("/api/ai", async (request, response) => {
 	} catch (error) {
 		response.status(400).json({ error: error instanceof Error ? error.message : "Invalid choice" });
 	}
+});
+/* The models a thread or the news can be given, and what answers by default. */
+app.get("/api/ai/choices", async (_request, response) => {
+	await aiSettings.refreshAccounts();
+	const provider = aiSettings.providerId();
+	const model = aiSettings.model(provider);
+	response.set("Cache-Control", "no-store").json({ default: model ? { provider, model, name: aiSettings.choiceName({ provider, model }) } : null, groups: aiSettings.choices() });
 });
 app.get("/api/ai/models", async (request, response) => {
 	const id = String(request.query.provider || aiSettings.providerId());
@@ -1388,6 +1395,9 @@ async function threadTurn(request: express.Request, response: express.Response, 
 		if (!response.writableFinished) abort.abort();
 	});
 	const thread = existing || threads.create({ title: titleFrom(prompt), origin: "console" });
+	// A new request can come with its model, so a long job runs on it from the first step.
+	const model = existing ? undefined : aiSettings.checkChoice(request.body?.model);
+	if (model) threads.setModel(thread.id, model);
 	send("thread", { id: thread.id, title: thread.title });
 	const history = threads.history(thread.id);
 	threads.setBusy(thread.id, true);
@@ -1439,6 +1449,13 @@ app.post("/api/threads/:id/stop", (request, response) => {
 /* Archive (out of the inbox, still in History) or snooze (back on top at a time); null or false takes it back. */
 app.patch("/api/threads/:id", (request, response) => {
 	const body = request.body || {};
+	// The model that answers here: one of the set-up providers' models, or null for the one chosen under AI.
+	if (body.model !== undefined) {
+		const model = body.model === null ? undefined : aiSettings.checkChoice(body.model);
+		if (body.model !== null && !model) return response.status(400).json({ error: "That model isn't available. Pick one from the list." });
+		if (request.params.id === FEED_ID) threads.ensure(FEED_ID, "RemindMe");
+		if (!threads.setModel(request.params.id, model)) return response.status(404).json({ error: "That conversation is gone." });
+	}
 	const until = body.snoozedUntil === null ? null : typeof body.snoozedUntil === "string" && !Number.isNaN(Date.parse(body.snoozedUntil)) ? new Date(body.snoozedUntil).toISOString() : undefined;
 	const thread = threads.setState(request.params.id, {
 		...(typeof body.archived === "boolean" ? { archivedAt: body.archived ? new Date().toISOString() : null } : {}),
@@ -1487,7 +1504,11 @@ app.get("/api/news", (_request, response) => {
 });
 app.put("/api/news", async (request, response) => {
 	try {
-		await news.update(request.body || {});
+		const body = request.body || {};
+		// Who writes it: a model of its own (Haiku is plenty), or null for the one chosen under AI.
+		const writer = body.writer === null ? null : body.writer === undefined ? undefined : aiSettings.checkChoice(body.writer);
+		if (body.writer && !writer) throw new Error("That model isn't available. Pick one from the list.");
+		await news.update({ ...body, writer });
 		response.json(news.view());
 	} catch (error) {
 		response.status(400).json({ error: error instanceof Error ? error.message : "Couldn't save that." });
@@ -2007,6 +2028,7 @@ export const assistant = new Assistant({
 	settings: aiSettings,
 	spend,
 	persona: () => persona.get() + skillPrompt(skills.enabled()),
+	modelFor: (id) => aiSettings.checkChoice(threads.get(id)?.model),
 	tools: toolContext,
 	recall: (prompt) => vault.recall(prompt, 5),
 	home: () => homeName,

@@ -13,6 +13,10 @@ Add at least one key in the app's **Configuration** page, then restart the app:
 | Claude | `anthropic_api_key` | From console.anthropic.com, billed per use (separate from a Claude subscription). Uses Claude Opus 5.5 unless you pick another model. Searches the web itself. |
 | OpenAI | `openai_api_key` | From platform.openai.com. Pick a model in the console. Searches the web itself. |
 
+### A model per thread
+
+**Settings → AI** picks the default. Any thread can have its own: **Answers with**, above the reply box, lists the current models of every AI that's set up. A long job can run on Opus while quick questions stay on Haiku. A new request can be given one before it's sent (the picker shows up once you type), so a job runs on it from its first step. The thread keeps its model, job runs included, until you set it back to **Default**. If that AI is later removed, the thread falls back to the default. The daily news has its own **Written by** under **Settings → News**; Haiku writes it well for a fraction of Opus's price.
+
 ### Or sign in with a subscription
 
 Under **AI → Sign-ins** in the console:

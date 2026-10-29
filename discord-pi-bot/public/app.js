@@ -146,6 +146,9 @@ function remindme() {
 			{ id: "documents", label: "Documents", group: "On its own" },
 		],
 		phoneLayout: window.matchMedia("(max-width: 820px)").matches,
+		/* Models a thread, a new request or the news can be given ("provider|model" in the pickers) */
+		modelChoices: { default: null, groups: [] },
+		newModel: "",
 		/* The daily news */
 		news: { on: false, time: "07:30", language: "en", stories: 5, sources: [], catalog: [], own: [] },
 		newsNote: "",
@@ -242,6 +245,7 @@ function remindme() {
 				if (!event.matches && !this.settingsTab) this.settingsTab = "ai";
 			});
 			this.loadInbox();
+			this.loadModelChoices();
 			this.route();
 			window.addEventListener("popstate", () => this.route());
 			// A tapped notification opens its thread by changing the address.
@@ -521,7 +525,7 @@ function remindme() {
 				}
 				messages.push(message);
 			}
-			return { id: FEED, feed: true, title: "RemindMe", createdAt: all[0]?.at || new Date().toISOString(), updatedAt: all.at(-1)?.at || "", messages };
+			return { id: FEED, feed: true, title: "RemindMe", createdAt: all[0]?.at || new Date().toISOString(), updatedAt: all.at(-1)?.at || "", messages, model: data.thread?.model };
 		},
 		async unfoldFeed() {
 			this.feedFold = false;
@@ -532,6 +536,39 @@ function remindme() {
 			try {
 				message.entry = await this.request(`./api/activity/${encodeURIComponent(message.entry.id)}/act/${index}`);
 				await this.loadInbox();
+			} catch (error) {
+				this.error = error.message;
+			}
+		},
+
+		/* ── Picking the model for a thread, a new request or the news ─── */
+
+		async loadModelChoices() {
+			this.modelChoices = await this.getJson("./api/ai/choices", { default: null, groups: [] });
+		},
+		modelValue(choice) {
+			return choice ? `${choice.provider}|${choice.model}` : "";
+		},
+		modelOf(value) {
+			const at = value.indexOf("|");
+			return at > 0 ? { provider: value.slice(0, at), model: value.slice(at + 1) } : null;
+		},
+		modelName(choice) {
+			if (!choice) return this.defaultModelLabel();
+			const group = this.modelChoices.groups.find((entry) => entry.provider === choice.provider);
+			return group?.models.find((model) => model.id === choice.model)?.name || choice.model;
+		},
+		defaultModelLabel() {
+			return this.modelChoices.default ? `Default · ${this.modelChoices.default.name}` : "Default";
+		},
+		async setThreadModel(value) {
+			const thread = this.open;
+			if (!thread) return;
+			const model = this.modelOf(value);
+			try {
+				await this.request(`./api/threads/${encodeURIComponent(thread.id)}`, "PATCH", { model });
+				if (this.open?.id === thread.id) this.open = { ...this.open, model: model || undefined };
+				this.showToast(model ? `${this.modelName(model)} answers here from now on.` : `Back to the default, ${this.modelChoices.default?.name || "the AI under Settings"}.`);
 			} catch (error) {
 				this.error = error.message;
 			}
@@ -966,7 +1003,9 @@ function remindme() {
 			const attachments = this.pictures;
 			this.draft = "";
 			this.pictures = [];
-			await this.stream("./api/threads", { message: text, attachments }, true);
+			const model = this.modelOf(this.newModel);
+			this.newModel = "";
+			await this.stream("./api/threads", { message: text, attachments, ...(model ? { model } : {}) }, true);
 		},
 
 		async reply() {
@@ -1294,7 +1333,7 @@ function remindme() {
 				if (!this.news.on) return { text: "Off" };
 				if (this.news.lastProblem && !/^Not reached/.test(this.news.lastProblem)) return { text: this.news.lastProblem, bad: true };
 				const count = this.news.sources.length;
-				return { text: `Every day at ${this.news.time} · ${count} ${count === 1 ? "source" : "sources"}` };
+				return { text: `Every day at ${this.news.time} · ${count} ${count === 1 ? "source" : "sources"}${this.news.writer ? ` · ${this.modelName(this.news.writer)}` : ""}` };
 			}
 			if (id === "prices") {
 				const broken = this.priceWatches.find((watch) => watch.error && watch.price === undefined);
@@ -1325,6 +1364,7 @@ function remindme() {
 		async loadAi() {
 			this.aiError = "";
 			this.ai = { ...(this.ai || {}), ...(await this.getJson("./api/ai", {})) };
+			this.loadModelChoices();
 			this.aiModel = this.ai.model || "";
 			this.aiEffort = this.ai.effort || "low";
 			await Promise.all([this.loadAiModels(), this.loadSignins()]);

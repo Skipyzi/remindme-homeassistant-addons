@@ -968,6 +968,31 @@ body:has(> .rm-app) {
 }
 
 /* Typing: at the bottom, in reach of a thumb. 16px keeps phones from zooming in. */
+/* Which model answers: a quiet line above the message box */
+.rm-model-pick {
+	flex: none;
+	display: flex;
+	gap: 8px;
+	align-items: center;
+	padding: 8px 16px 0;
+	border-top: 1px solid var(--rule);
+	color: var(--mute);
+	font-size: 12px;
+}
+.rm-model-pick select {
+	min-width: 0;
+	max-width: 100%;
+	padding: 2px 4px;
+	background: #000;
+	border: 0;
+	border-bottom: 1px solid var(--rule);
+	color: #fff;
+	font: inherit;
+	font-size: 12px;
+}
+.rm-model-pick + .rm-compose {
+	border-top: 0;
+}
 .rm-compose {
 	flex: none;
 	display: flex;

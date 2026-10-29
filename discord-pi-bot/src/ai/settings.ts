@@ -1,6 +1,7 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { RUNNER_LABELS, RUNNERS, type RunnerId } from "../agents/runners";
+import { catalogEntries } from "./catalog";
 import { ClaudeProvider, DEFAULT_CLAUDE_MODEL } from "./claude";
 import { OpenAiProvider, type Subscription } from "./openai";
 import type { Effort, Provider, ProviderId } from "./types";
@@ -20,6 +21,12 @@ export const PROVIDERS: Array<{ id: AssistantId; label: string; kind: "api" | "s
 export const CLAUDE_CODE_MODELS = ["sonnet", "opus", "haiku"];
 
 const EFFORTS: Effort[] = ["low", "medium", "high"];
+
+/** A model picked for one thread or one chore, instead of the one chosen under AI. */
+export interface ModelChoice {
+	provider: AssistantId;
+	model: string;
+}
 
 /** Which sign-ins are connected. Refreshed from disk and the CLIs, read synchronously. */
 export interface Accounts {
@@ -229,6 +236,51 @@ export class AiSettings {
 		return this.cheapCached.provider;
 	}
 	private cheapCached?: { key: string; provider: Provider };
+
+	/** The models a thread or a chore can be given: each set-up provider's current ones, and the one picked for it under AI. */
+	choices(): Array<{ provider: AssistantId; label: string; models: Array<{ id: string; name: string }> }> {
+		return PROVIDERS.filter((entry) => this.configured(entry.id))
+			.map((entry) => {
+				const models = catalogEntries(entry.id).map((row) => ({ id: row.id, name: row.name }));
+				const chosen = this.model(entry.id);
+				if (chosen && !models.some((row) => row.id === chosen)) models.unshift({ id: chosen, name: chosen });
+				return { provider: entry.id, label: entry.label, models };
+			})
+			.filter((group) => group.models.length);
+	}
+
+	/** A choice sent by the console, checked: a provider that's set up, and a model name. */
+	checkChoice(value: unknown): ModelChoice | undefined {
+		if (!value || typeof value !== "object") return undefined;
+		const { provider, model } = value as Record<string, unknown>;
+		if (!isAssistant(provider) || !this.configured(provider) || typeof model !== "string" || !/^[\w.:/-]{1,100}$/.test(model)) return undefined;
+		return { provider, model };
+	}
+
+	/** A choice in plain words: "Claude Haiku 5.5", or the provider and model name. */
+	choiceName(choice: ModelChoice): string {
+		return catalogEntries(choice.provider).find((row) => row.id === choice.model)?.name || `${this.label(choice.provider)} ${choice.model}`;
+	}
+
+	/**
+	 * What answers for a thread or a chore with a model of its own: that
+	 * model, or the AI chosen under AI when there's none or its provider
+	 * isn't set up any more.
+	 */
+	pick(choice?: ModelChoice): { provider?: Provider; runner?: Runner; problem: string } {
+		if (choice && choice.model && this.configured(choice.provider)) {
+			if (isRunner(choice.provider)) return { runner: { id: choice.provider, label: this.label(choice.provider), model: choice.model, nativeAuth: choice.provider === "codex" && !this.accounts.chatgpt }, problem: "" };
+			const key = `${choice.provider}:${choice.model}`;
+			let provider = this.picked.get(key);
+			if (!provider) {
+				provider = this.build(choice.provider as ProviderId, choice.model);
+				this.picked.set(key, provider);
+			}
+			return { provider, problem: "" };
+		}
+		return { provider: this.provider(), runner: this.runner(), problem: this.problem() };
+	}
+	private picked = new Map<string, Provider>();
 
 	/** The CLI agent that runs turns now, if one is chosen. */
 	runner(): Runner | undefined {
