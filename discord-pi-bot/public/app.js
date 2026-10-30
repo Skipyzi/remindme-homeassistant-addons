@@ -135,6 +135,7 @@ function remindme() {
 		sections: [
 			{ id: "ai", label: "AI and sign-ins", group: "AI" },
 			{ id: "prompt", label: "Your assistant", group: "AI" },
+			{ id: "rules", label: "What it may do", group: "AI" },
 			{ id: "memory", label: "Memory", group: "AI" },
 			{ id: "skills", label: "Skills", group: "AI" },
 			{ id: "connectors", label: "Connectors", group: "Accounts and devices" },
@@ -155,6 +156,9 @@ function remindme() {
 		toMain: window.matchMedia("(max-width: 820px)").matches,
 		identity: { name: "", look: { coat: 0, accessory: 0 } },
 		identityNote: "",
+		/* What it may do on its own, per kind of action */
+		rules: [],
+		rulesNote: "",
 		/* Place reminders: the people in Home Assistant, and whose whereabouts they follow */
 		location: { people: [], person: null, chosen: null, reminders: 0 },
 		locationNote: "",
@@ -1326,6 +1330,7 @@ function remindme() {
 		async loadSection(tab) {
 			if (tab === "ai") await this.loadAi();
 			if (tab === "prompt") await this.loadPersona();
+			if (tab === "rules") this.rules = await this.getJson("./api/rules", []);
 			if (tab === "skills") this.skills = await this.getJson("./api/skills", []);
 			if (tab === "mcp") this.mcpServers = await this.getJson("./api/mcp", []);
 			if (tab === "tasks") this.tasks = await this.getJson("./api/tasks", []);
@@ -1347,6 +1352,11 @@ function remindme() {
 			const plural = (count, word) => `${count} ${word}${count === 1 ? "" : "s"}`;
 			if (id === "ai") return !this.ai?.ready && this.ai?.problem ? { text: this.ai.problem, bad: true } : { text: [this.ai?.label, this.ai?.model].filter(Boolean).join(" · ") || "Pick who answers" };
 			if (id === "prompt") return { text: [this.assistant.name, this.lookName()].filter(Boolean).join(" · ") };
+			if (id === "rules") {
+				const asks = this.rules.filter((rule) => rule.choice === "ask").length;
+				const off = this.rules.filter((rule) => rule.choice === "never").length;
+				return { text: [`Asks first for ${asks}`, off ? `${off} off` : ""].filter(Boolean).join(" · ") };
+			}
 			if (id === "memory") return { text: `${this.memory.learn ? "Learning" : "Not learning"} · ${plural(this.memory.facts?.length || 0, "fact")}` };
 			if (id === "skills") return { text: this.skills.length ? `${this.skills.filter((skill) => skill.enabled).length} of ${this.skills.length} on` : "None yet" };
 			if (id === "connectors") {
@@ -1733,6 +1743,19 @@ function remindme() {
 			}
 			this.pollPhone();
 		},
+		ruleWord(choice) {
+			return { auto: "Just do it", ask: "Ask me", never: "Never" }[choice] || choice;
+		},
+		async setRule(rule, choice) {
+			if (rule.choice === choice) return;
+			try {
+				this.rules = await this.request(`./api/rules/${encodeURIComponent(rule.id)}`, "PUT", { choice });
+				this.rulesNote = `${rule.label}: ${{ auto: "it does these on its own now", ask: "it asks you first now", never: "off now" }[choice]}.`;
+			} catch (error) {
+				this.rulesNote = error.message;
+			}
+		},
+
 		/* Whose whereabouts place reminders follow */
 		placeState(state) {
 			return { home: "home now", not_home: "away", unknown: "not known", unavailable: "not known" }[state] || `at ${state}`;

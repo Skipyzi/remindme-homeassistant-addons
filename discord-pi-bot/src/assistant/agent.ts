@@ -53,6 +53,8 @@ export interface AssistantDeps {
 	standing?(): string | undefined;
 	/** What RemindMe remembers about the user, for every turn's context. */
 	memory?(): string | undefined;
+	/** The user's rules for what it may do on its own, when they changed any; jobs get them too. */
+	rules?(): string | undefined;
 	/** After a chat turn: look at what the user said for facts worth remembering. */
 	learn?(input: AskInput): void;
 }
@@ -88,7 +90,7 @@ function toolContext(deps: AssistantDeps, input: AskInput): ToolContext {
 /* The turn's own context, what RemindMe remembers about the user, and what every chat should know. */
 function extraFor(deps: AssistantDeps, input: AskInput): string | undefined {
 	const standing = input.channel === "job" ? undefined : deps.standing?.();
-	return [input.extra, deps.memory?.(), standing].filter(Boolean).join("\n\n") || undefined;
+	return [input.extra, deps.memory?.(), deps.rules?.(), standing].filter(Boolean).join("\n\n") || undefined;
 }
 
 export interface AskEvents {

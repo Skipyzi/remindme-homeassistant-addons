@@ -130,6 +130,24 @@ Open **RemindMe** in the sidebar. It is an inbox. On a phone a thread opens over
 
 **Settings → Your assistant** gives it a name (up to 24 characters) and a cat: one of six coats and something to wear, or nothing. The name heads its chat and goes into its instructions, so it answers to it. **How it talks** below holds its standing instructions. Its chat keeps the AI it started with, like every thread; **Start the chat over** moves what was said to History and lets the next answer come from the AI chosen under **AI and sign-ins**. Memory, reminders and jobs aren't touched.
 
+### What it may do
+
+**Settings → What it may do** sets, for each kind of action, whether RemindMe does it on its own, asks you first (it waits for your tap in the inbox, on your phone and on Discord) or never does it:
+
+| Kind | Choices | As it comes |
+|---|---|---|
+| Lights, switches, heating and media | Just do it, Ask me, Never | Just do it |
+| Blinds, shades and valves | Just do it, Ask me, Never | Ask me |
+| Scenes, scripts, vacuums and the rest | Just do it, Ask me, Never | Ask me |
+| Locks, doors, gates and the alarm | Ask me, Never | Ask me |
+| Calendar events | Just do it, Ask me, Never | Ask me |
+| To-do lists | Just do it, Ask me, Never | Just do it |
+| Sending email | Ask me, Never | Ask me |
+| Buying, booking and signing up on websites | Ask me, Never | Ask me |
+| Background jobs | Just do it, Ask me, Never | Just do it |
+
+What opens the house or speaks for you is never done unasked. Background jobs follow the same rules, and RemindMe is told what you changed, so it says so instead of looking for another way. Your own taps in the console aren't affected.
+
 ## The phone app
 
 RemindMe installs on your phone as an app with its own notifications. It joins your tailnet as a device of its own (the `phone_app` option, on by default), so it gets a private HTTPS address that only your Tailscale account can open. No port is opened on your network.

@@ -171,7 +171,7 @@
         <!-- Where it goes: the assistant's chat, or a thread of its own (which can have its own model). -->
         <div class="rm-model-pick rm-to" x-show="draft.trim() || pictures.length || !toMain" x-cloak>
           <span>To</span>
-          <span class="rm-to-pick" role="radiogroup" aria-label="Send to">
+          <span class="rm-seg" role="radiogroup" aria-label="Send to">
             <button type="button" role="radio" :aria-checked="String(toMain)" :class="{ on: toMain }" @click="toMain = true" x-text="assistant.name"></button>
             <button type="button" role="radio" :aria-checked="String(!toMain)" :class="{ on: !toMain }" @click="toMain = false">New thread</button>
           </span>
@@ -799,6 +799,25 @@
               <p class="rm-note" x-text="mainChatLine"></p>
               <div class="rm-actions"><button class="rm-btn" type="button" @click="restartMain()">Start the chat over</button></div>
               <p class="rm-note" role="status" x-show="identityNote" x-text="identityNote"></p>
+            </div>
+
+            <!-- What it may do: per kind of action, on its own, ask first, or never -->
+            <div class="rm-panel" x-show="settingsTab === 'rules'">
+              <h3>What it may do</h3>
+              <p>For each kind of action: do it on its own, ask you first (it waits for your tap in the inbox, on your phone and on Discord), or never. What opens the house or speaks for you can wait for your tap or be off, never done unasked. Jobs follow the same rules.</p>
+              <div>
+                <template x-for="rule in rules" :key="rule.id">
+                  <div class="rm-rule">
+                    <span><b x-text="rule.label"></b><span class="rm-mute" x-text="rule.detail"></span></span>
+                    <span class="rm-seg" role="radiogroup" :aria-label="rule.label">
+                      <template x-for="choice in rule.choices" :key="choice">
+                        <button type="button" role="radio" :aria-checked="String(rule.choice === choice)" :class="{ on: rule.choice === choice }" @click="setRule(rule, choice)" x-text="ruleWord(choice)"></button>
+                      </template>
+                    </span>
+                  </div>
+                </template>
+              </div>
+              <p class="rm-note" role="status" x-show="rulesNote" x-text="rulesNote"></p>
             </div>
 
             <!-- Skills -->

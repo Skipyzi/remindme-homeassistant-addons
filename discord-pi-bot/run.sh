@@ -83,6 +83,7 @@ export NEWS_DATA_PATH=/data/news.json
 export FEEDS_DATA_PATH=/data/feeds.json
 export PLACE_REMINDERS_PATH=/data/place-reminders.json
 export LOCATION_DATA_PATH=/data/location.json
+export RULES_DATA_PATH=/data/rules.json
 export MEDIA_CACHE_PATH=/data/media
 export HA_APP_DATA_PATH=/data/ha-app.json
 export CONNECTORS_DATA_PATH=/data/connectors.json

@@ -78,6 +78,7 @@ import { News } from "./assistant/news";
 import { type Embed, embedText, mapImages } from "./assistant/embeds";
 import { PlaceSearch } from "./assistant/places";
 import { PlaceReminders, placeWhen, type Whereabouts } from "./assistant/placeReminders";
+import { RuleStore } from "./assistant/rules";
 import { MediaProxy } from "./harness/media";
 import { pagePreview } from "./harness/reader";
 import { GEIZHALS_CHECKING, GEIZHALS_SEARCH, PriceWatches, euro, geizhalsBlocked, parseShopPrice, searchResults, type PriceWatch, type SearchResult } from "./assistant/prices";
@@ -308,6 +309,9 @@ async function whereabouts(): Promise<Whereabouts | undefined> {
 			.map((zone) => ({ id: zone.entity_id, name: String(zone.attributes.friendly_name || zone.entity_id.slice(5)), lat: zone.attributes.latitude as number, lon: zone.attributes.longitude as number, radius: number(zone.attributes.radius) ?? 100 })),
 	};
 }
+/* What the assistant may do on its own: just do it, ask first, or never, per kind of action. */
+const rules = new RuleStore();
+
 /* "When I get home": goes out like any reminder that's due, once the move has held for a minute. */
 export const placeReminders = new PlaceReminders({
 	where: whereabouts,
@@ -1331,6 +1335,18 @@ app.delete("/api/reminders/:id", async (_request, response) => {
 	);
 	response.status(deleted ? 204 : 404).end();
 });
+/* What it may do on its own: each kind of action with its choices and what it's set to. */
+app.get("/api/rules", (_request, response) => {
+	response.set("Cache-Control", "no-store").json(rules.view());
+});
+app.put("/api/rules/:id", (request, response) => {
+	try {
+		rules.set(request.params.id, String(request.body?.choice || ""));
+		response.json(rules.view());
+	} catch (error) {
+		response.status(400).json({ error: error instanceof Error ? error.message : "That rule can't be set." });
+	}
+});
 /* Whose whereabouts place reminders follow: the people in Home Assistant, and which one. */
 app.get("/api/location", async (_request, response) => {
 	const states = home ? await home.statesOf(["person"]).catch(() => [] as HassEntity[]) : [];
@@ -2157,6 +2173,7 @@ export function toolContext(): ToolContext {
 			cancel: (id) => (id.startsWith("place_") ? Promise.resolve(placeReminders.cancel(id)) : deleteReminder(id, ownerId)),
 		},
 		placeReminders: { add: (input) => placeReminders.add(input), list: () => placeReminders.list() },
+		rules,
 		vault,
 		webSearch: searchFallback() ? webSearch : undefined,
 		async readPage(url) {
@@ -2257,6 +2274,7 @@ export const assistant = new Assistant({
 	agents: { bridgeUrl: `http://127.0.0.1:${port}/internal/agent-tools`, threads: runnerThreads },
 	activity,
 	memory: () => memory.context(),
+	rules: () => rules.context(),
 	learn: (input) => {
 		void memory
 			.learnFrom(input.prompt, (prompt) => assistant.quick(prompt))
@@ -2907,7 +2925,7 @@ export function createHarnessApp(): Express {
  * runs on the container's clock.
  */
 export async function startHarness(): Promise<void> {
-	await Promise.all([loadConnectors(), threads.load(), phonePush.load(), memory.load(), batteryHides.load(), haApp.load(), loadAppSlug(), prices.load(), news.load(), feeds.load(), placeReminders.load(), loadLocation()]);
+	await Promise.all([loadConnectors(), threads.load(), phonePush.load(), memory.load(), batteryHides.load(), haApp.load(), loadAppSlug(), prices.load(), news.load(), feeds.load(), placeReminders.load(), loadLocation(), rules.load()]);
 	// Feeds added under News in 4.18 become feed connectors.
 	for (const old of await news.takeOldFeeds()) await feeds.add({ url: old.url, name: old.name, news: old.on, alerts: false }).catch((error) => console.warn(`Couldn't move the feed ${old.name}:`, error instanceof Error ? error.message : error));
 	prices.startClock();

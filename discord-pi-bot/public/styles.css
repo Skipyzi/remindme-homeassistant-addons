@@ -998,23 +998,48 @@ body:has(> .rm-app) {
 	flex-wrap: wrap;
 	row-gap: 6px;
 }
-.rm-to-pick {
+/* Segmented choices: the To switch, the rules */
+.rm-seg {
 	display: inline-flex;
 }
-.rm-to-pick button {
+.rm-seg button {
 	padding: 3px 9px;
 	border: 1px solid var(--rule);
 	color: var(--mute);
 	font-size: 12px;
+	white-space: nowrap;
 }
-.rm-to-pick button + button {
+.rm-seg button + button {
 	margin-left: -1px;
 }
 /* The chosen one's white border sits over its neighbour's grey. */
-.rm-to-pick button.on {
+.rm-seg button.on {
 	position: relative;
 	border-color: #fff;
 	color: #fff;
+}
+/* Settings, What it may do: one kind of action per row, its choices beside or under it */
+.rm-rule {
+	display: grid;
+	gap: 8px;
+	padding: 12px 0;
+	border-bottom: 1px solid var(--rule);
+}
+.rm-rule > span:first-child {
+	display: grid;
+	gap: 2px;
+	min-width: 0;
+}
+.rm-rule .rm-seg button {
+	padding: 6px 11px;
+	font-size: 13px;
+}
+@media (min-width: 821px) {
+	.rm-rule {
+		grid-template-columns: minmax(0, 1fr) auto;
+		gap: 16px;
+		align-items: center;
+	}
 }
 .rm-to-model {
 	display: inline-flex;

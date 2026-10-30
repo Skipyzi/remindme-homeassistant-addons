@@ -19,6 +19,7 @@ import type { FeedItem, NewsItem, Region } from "./news";
 import { addEmbed, takeEmbeds, type Embed } from "./embeds";
 import { placeEmbed, type Place } from "./places";
 import { placeWhen, type PlaceEvent, type PlaceReminder } from "./placeReminders";
+import { RULES, deviceRule, turnedOff, type RuleChoice, type RuleId } from "./rules";
 import { BrowserRefused, describe, judge, type WebBrowser } from "../harness/browser";
 import { ReaderError } from "../harness/reader";
 import { eventTimes, listCalendars } from "../connectors/calendar";
@@ -73,6 +74,8 @@ export interface ToolContext {
 	news?: { headlines(): Promise<{ items: NewsItem[]; problems: string[] }> };
 	/** Places from OpenStreetMap, near home. */
 	places?: { find(query: string): Promise<Place[]> };
+	/** What the user lets it do on its own, per kind of action (Settings → What it may do). */
+	rules?: { get(id: RuleId): RuleChoice };
 	/** Reminders for arriving at or leaving a place, from Home Assistant's idea of where the user is. */
 	placeReminders?: {
 		add(input: { message: string; on: PlaceEvent; place: string; lat?: number; lon?: number; everyTime?: boolean }): Promise<{ reminder: PlaceReminder; insideNow?: boolean }>;
@@ -235,6 +238,9 @@ function describeCard(card: EntityCard) {
 
 const quietDomains = new Set(["update", "button", "number", "select", "text", "event", "device_tracker", "zone", "sun", "tts", "stt", "conversation", "image", "camera", "automation"]);
 
+/* Just do it, ask first, or never: the user's rule for a kind of action. */
+const ruleOf = (ctx: ToolContext, id: RuleId): RuleChoice => ctx.rules?.get(id) ?? RULES.find((rule) => rule.id === id)!.default;
+
 function deviceTools(ctx: ToolContext): AssistantTool[] {
 	const home = ctx.home;
 	if (!home) return [];
@@ -315,7 +321,7 @@ function deviceTools(ctx: ToolContext): AssistantTool[] {
 			spec: {
 				name: "control_devices",
 				description:
-					"Send one command to one or more devices. Values: brightness/volume/position/fan speed in percent ('40', '+10'); colour as a name or #rrggbb; colour temperature as warm, neutral, cool, daylight or kelvin; temperature in degrees; hvac mode such as heat or off. Locks, doors, covers and alarms are held for the user to confirm.",
+					"Send one command to one or more devices. Values: brightness/volume/position/fan speed in percent ('40', '+10'); colour as a name or #rrggbb; colour temperature as warm, neutral, cool, daylight or kelvin; temperature in degrees; hvac mode such as heat or off. Locks, doors and alarms, and whatever the user's rules say, are held for the user to confirm; the result says which.",
 				parameters: object(
 					{
 						entity_ids: { type: "array", items: { type: "string" }, minItems: 1, maxItems: 10 },
@@ -341,8 +347,15 @@ function deviceTools(ctx: ToolContext): AssistantTool[] {
 						continue;
 					}
 					try {
+						const kind = deviceRule(card.domain, card.deviceClass);
+						const choice = ruleOf(ctx, kind);
+						if (choice === "never") {
+							problems.push(`${card.name}: ${turnedOff(kind)}`);
+							continue;
+						}
 						const plan = planCommand(card, command, value);
-						if (plan.requiresConfirmation) {
+						// The user's rule decides; whatever opens the house always waits for a tap.
+						if (choice === "ask" || kind === "security") {
 							const label = `${describeCommand(command, value)} ${card.name}`.replace(/^./, (first) => first.toUpperCase());
 							effects.confirms.push(ctx.confirmations.hold({ label, entityId: plan.entityId, destructive: plan.destructive, action: plan, perform: () => home.service(plan) }));
 							waiting.push(card.name);
@@ -410,6 +423,7 @@ function deviceTools(ctx: ToolContext): AssistantTool[] {
 				),
 			},
 			async run(input, effects) {
+				if (ruleOf(ctx, "calendar") === "never") return { content: turnedOff("calendar"), isError: true };
 				const title = text(input, "title", 120);
 				let times;
 				try {
@@ -445,6 +459,11 @@ function deviceTools(ctx: ToolContext): AssistantTool[] {
 					destructive: false,
 				};
 				const label = `Add "${title}" to ${target.name}: ${times.label}`;
+				if (ruleOf(ctx, "calendar") === "auto") {
+					await home.service(action);
+					effects.did.push({ text: `Added "${title}" to ${target.name}: ${times.label}` });
+					return { content: json({ added: label }) };
+				}
 				effects.confirms.push(ctx.confirmations.hold({ label, entityId: action.entityId, action, perform: () => home.service(action) }));
 				return { content: json({ waiting_for_user_to_confirm: label }) };
 			},
@@ -474,11 +493,11 @@ function deviceTools(ctx: ToolContext): AssistantTool[] {
 				return { content: json({ now: stateText(weather), unit: weather.attributes?.temperature_unit, forecast }) };
 			},
 		},
-		...todoTools(home),
+		...todoTools(home, ctx),
 	];
 }
 
-function todoTools(home: HomeApi): AssistantTool[] {
+function todoTools(home: HomeApi, ctx: ToolContext): AssistantTool[] {
 	const resolve = async (name: string): Promise<EntityCard> => {
 		const lists = (await home.cards()).filter((card) => card.domain === "todo");
 		const wanted = name.toLowerCase();
@@ -535,7 +554,15 @@ function todoTools(home: HomeApi): AssistantTool[] {
 				const item = text(input, "item", 200);
 				const due = text(input, "due_date", 10, false);
 				if (due && !/^\d{4}-\d{2}-\d{2}$/.test(due)) throw new InputError("due_date must be YYYY-MM-DD");
-				await home.callService("todo", "add_item", { entity_id: target.entityId, item, ...(due ? { due_date: due } : {}) });
+				const add = () => home.callService("todo", "add_item", { entity_id: target.entityId, item, ...(due ? { due_date: due } : {}) });
+				const todo = ruleOf(ctx, "todo");
+				if (todo === "never") return { content: turnedOff("todo"), isError: true };
+				if (todo === "ask") {
+					const label = `Add "${item}" to ${target.name}`;
+					effects.confirms.push(ctx.confirmations.hold({ label, entityId: target.entityId, perform: add }));
+					return { content: json({ waiting_for_user_to_confirm: label }) };
+				}
+				await add();
 				effects.did.push({ text: `Added "${item}" to ${target.name}` });
 				return { content: `Added "${item}" to ${target.name}.` };
 			},
@@ -549,7 +576,15 @@ function todoTools(home: HomeApi): AssistantTool[] {
 			async run(input, effects) {
 				const target = await resolve(text(input, "list", 80));
 				const item = text(input, "item", 200);
-				await home.callService("todo", "update_item", { entity_id: target.entityId, item, status: "completed" });
+				const complete = () => home.callService("todo", "update_item", { entity_id: target.entityId, item, status: "completed" });
+				const todo = ruleOf(ctx, "todo");
+				if (todo === "never") return { content: turnedOff("todo"), isError: true };
+				if (todo === "ask") {
+					const label = `Tick off "${item}" on ${target.name}`;
+					effects.confirms.push(ctx.confirmations.hold({ label, entityId: target.entityId, perform: complete }));
+					return { content: json({ waiting_for_user_to_confirm: label }) };
+				}
+				await complete();
 				effects.did.push({ text: `Marked "${item}" done on ${target.name}` });
 				return { content: `Marked "${item}" done on ${target.name}.` };
 			},
@@ -757,6 +792,7 @@ function browserTools(ctx: ToolContext): AssistantTool[] {
 					const verdict = judge(item, action === "click" ? "click" : enter ? "enter" : "type");
 					if (verdict === "refuse")
 						return { content: "That's a password, card or bank field. RemindMe browses signed out and never types those: tell the user to do this part themselves, with the link.", isError: true };
+					if (verdict === "hold" && ruleOf(ctx, "web") === "never") return { content: turnedOff("web"), isError: true };
 					if (verdict === "hold") {
 						const kept = browser.keep(key, Date.now() + 15 * 60_000);
 						const host = new URL(kept.url).hostname.replace(/^www\./, "");
@@ -1168,6 +1204,7 @@ function mailTools(ctx: ToolContext): AssistantTool[] {
 				});
 				if (!composed.account.smtp) return { content: `${composed.account.label} has no outgoing server set, so it can't send from here. Save a draft with draft_mail instead.`, isError: true };
 				const label = `Send "${composed.subject}" to ${composed.to}`;
+				if (ruleOf(ctx, "mail") === "never") return { content: turnedOff("mail"), isError: true };
 				effects.confirms.push(ctx.confirmations.hold({ label, entityId: "mail", detail: clip(composed.text, 1_200), perform: () => mail.send(composed) }));
 				return { content: json({ waiting_for_user_to_confirm: label, from: composed.account.label }) };
 			},
@@ -1297,14 +1334,23 @@ function jobTools(ctx: ToolContext): AssistantTool[] {
 			},
 			async run(input, effects) {
 				const turn = ctx.turn;
-				const started = jobs.start({
-					title: text(input, "title", 80),
-					instructions: text(input, "instructions", 4_000),
-					threadId: turn?.threadId,
-					origin: turn?.channel === "discord" ? "discord" : "console",
-					// Used when the job gets a thread of its own (from Discord or the main chat).
-					request: turn?.prompt,
-				});
+				const rule = ruleOf(ctx, "jobs");
+				if (rule === "never") return { content: turnedOff("jobs"), isError: true };
+				const start = () =>
+					jobs.start({
+						title: text(input, "title", 80),
+						instructions: text(input, "instructions", 4_000),
+						threadId: turn?.threadId,
+						origin: turn?.channel === "discord" ? "discord" : "console",
+						// Used when the job gets a thread of its own (from Discord or the main chat).
+						request: turn?.prompt,
+					});
+				if (rule === "ask") {
+					const label = `Start a job: ${text(input, "title", 80)}`;
+					effects.confirms.push(ctx.confirmations.hold({ label, entityId: "job", detail: clip(text(input, "instructions", 4_000), 600), perform: async () => void start() }));
+					return { content: json({ waiting_for_user_to_confirm: label, note: "It starts once the user taps it; say so." }) };
+				}
+				const started = start();
 				effects.did.push({ text: `Started a job: ${started.title}` });
 				return { content: json({ started: true, title: started.title, note: "It runs in the background and reports back. Tell the user so in a sentence." }) };
 			},

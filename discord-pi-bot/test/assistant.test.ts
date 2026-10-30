@@ -449,3 +449,48 @@ test("a tool's card shows under the answer when the answer names it, and nowhere
 	assert.match(toolResult, /\\"card\\":\\"c2\\"/);
 	assert.match(String(provider.requests[0].system), /\[\[c3\]\]/, "the AI is told how to show cards");
 });
+
+test("the user's rules decide what it does on its own, asks first, or leaves alone", async () => {
+	const { RuleStore, deviceRule } = await import("../src/assistant/rules.ts");
+	const rules = new RuleStore(join(mkdtempSync(join(tmpdir(), "rules-")), "rules.json"));
+	await rules.load();
+	assert.equal(rules.get("devices"), "auto");
+	assert.equal(rules.get("security"), "ask");
+	assert.throws(() => rules.set("security", "auto"), /can't be set/, "opening the house is never done unasked");
+	assert.throws(() => rules.set("mail", "auto"), /can't be set/);
+	assert.equal(rules.context(), undefined, "nothing to say while everything is as it came");
+	assert.equal(deviceRule("cover", "garage"), "security");
+	assert.equal(deviceRule("cover", "blind"), "covers");
+	assert.equal(deviceRule("scene"), "other");
+
+	const { home, calls } = fakeHome();
+	const confirmations = new ConfirmationStore();
+	const tools = await buildTools(context(home, { confirmations, rules }), { nativeWebSearch: true });
+	const run = (name: string, input: Record<string, unknown>, out = effects()) => runTool(tools, { id: name, name, input }, out).then((result) => ({ result, out }));
+
+	rules.set("devices", "ask");
+	const asked = await run("control_devices", { entity_ids: ["light.kitchen"], command: "turn_on" });
+	assert.deepEqual(JSON.parse(asked.result.content).waiting_for_user_to_confirm, ["Kitchen counter"]);
+	assert.equal(calls.length, 0, "nothing happened yet");
+	rules.set("devices", "never");
+	const off = await run("control_devices", { entity_ids: ["light.kitchen"], command: "turn_on" });
+	assert.match(JSON.parse(off.result.content).problems[0], /turned off "Lights, switches, heating and media"/);
+	assert.equal(off.result.isError, true);
+	const lock = await run("control_devices", { entity_ids: ["lock.front"], command: "unlock" });
+	assert.ok(JSON.parse(lock.result.content).waiting_for_user_to_confirm, "the front door still waits for a tap");
+
+	rules.set("todo", "ask");
+	const todo = await run("todo_add", { list: "Chores", item: "Descale kettle" });
+	assert.equal(JSON.parse(todo.result.content).waiting_for_user_to_confirm, 'Add "Descale kettle" to Chores');
+	assert.equal(calls.filter((call) => call.path.includes("add_item")).length, 0);
+	await confirmations.take(todo.out.confirms[0].token)!.perform();
+	assert.equal(calls.filter((call) => call.path.includes("add_item")).length, 1, "the tap does it");
+
+	assert.match(rules.context()!, /lights, switches, heating and media: never; to-do lists: asks first/);
+	rules.set("devices", "auto");
+	await rules.flushed();
+	const again = new RuleStore((rules as unknown as { path: string }).path);
+	await again.load();
+	assert.equal(again.get("devices"), "auto", "back to the default isn't stored");
+	assert.equal(again.get("todo"), "ask");
+});
