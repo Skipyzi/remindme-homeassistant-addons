@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { normalizeEntity, type HassEntity } from "../src/harness/entities.ts";
 import {
+	HomeApi,
 	fastPathEligible,
 	parseAmount,
 	planCommand,
@@ -106,4 +107,24 @@ test("states read as words a person would say", () => {
 
 test("weather reads as a condition and a temperature", () => {
 	assert.equal(stateText(entity("weather.home", "clear-night", { temperature: 14, temperature_unit: "°C" })), "clear night, 14°C");
+});
+
+test("dictation goes through Home Assistant's speech-to-text, and a stopped engine is noticed", async () => {
+	const sent: Array<{ url: string; header: string; bytes: number }> = [];
+	let running = true;
+	const fetcher = (async (url: string | URL, init?: RequestInit) => {
+		sent.push({ url: String(url), header: String((init?.headers as Record<string, string>)?.["X-Speech-Content"] || ""), bytes: (init?.body as Uint8Array | undefined)?.length || 0 });
+		if (init?.method !== "POST") return new Response(JSON.stringify({ languages: ["en", "de"] }), { status: 200 });
+		const heard = (init.body as Uint8Array).length > 8_000 ? "Remind me at nine" : "";
+		return new Response(JSON.stringify(running ? { text: heard, result: "success" } : { text: null, result: "error" }), { status: 200 });
+	}) as typeof fetch;
+	const home = new HomeApi("token", "http://ha/api", fetcher);
+	assert.deepEqual(await home.sttLanguages("stt.faster_whisper"), ["en", "de"]);
+	assert.equal(await home.sttAnswers("stt.faster_whisper", "en"), true, "silence comes back as success from a running engine");
+	assert.equal(await home.transcribe("stt.faster_whisper", Buffer.alloc(32_000), "de"), "Remind me at nine");
+	assert.equal(sent.at(-1)!.header, "format=wav; codec=pcm; sample_rate=16000; bit_rate=16; channel=1; language=de");
+	assert.equal(sent.at(-1)!.url, "http://ha/api/stt/stt.faster_whisper");
+	running = false;
+	assert.equal(await home.sttAnswers("stt.faster_whisper", "en"), false, "a stopped Whisper answers error even for silence");
+	await assert.rejects(home.transcribe("stt.faster_whisper", Buffer.alloc(32_000), "en"), /couldn't make out any words/);
 });

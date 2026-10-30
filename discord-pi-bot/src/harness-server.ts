@@ -1340,15 +1340,23 @@ app.delete("/api/reminders/:id", async (_request, response) => {
  * speech-to-text (the Whisper app, say) writes it down, so the voice stays
  * in the house. Without one, the console falls back to the browser's.
  */
+/* Whether each engine answered when last tried: kept ten minutes when it did, two when it didn't. */
+const sttChecked = new Map<string, { ok: boolean; at: number }>();
 async function speechToText(): Promise<{ entity?: string; name?: string; languages: string[]; hint?: string }> {
 	if (!home) return { languages: [] };
-	const engines = await home.statesOf(["stt"]).catch(() => [] as HassEntity[]);
-	const ready = engines.find((engine) => engine.state !== "unavailable");
-	if (!ready) {
-		const name = engines[0] ? String(engines[0].attributes.friendly_name || engines[0].entity_id) : "";
-		return { languages: [], ...(name ? { hint: `Home Assistant's ${name} isn't running. Start its app (Whisper) in Home Assistant to dictate on the Pi.` } : {}) };
+	const engines = (await home.statesOf(["stt"]).catch(() => [] as HassEntity[])).filter((engine) => engine.state !== "unavailable");
+	for (const engine of engines) {
+		const name = String(engine.attributes.friendly_name || engine.entity_id);
+		const languages = await home.sttLanguages(engine.entity_id).catch(() => [] as string[]);
+		let checked = sttChecked.get(engine.entity_id);
+		if (!checked || Date.now() - checked.at > (checked.ok ? 600_000 : 120_000)) {
+			checked = { ok: await home.sttAnswers(engine.entity_id, sttLanguage("en", languages)), at: Date.now() };
+			sttChecked.set(engine.entity_id, checked);
+		}
+		if (checked.ok) return { entity: engine.entity_id, name, languages };
 	}
-	return { entity: ready.entity_id, name: String(ready.attributes.friendly_name || ready.entity_id), languages: await home.sttLanguages(ready.entity_id).catch(() => []) };
+	const name = engines[0] ? String(engines[0].attributes.friendly_name || engines[0].entity_id) : "";
+	return { languages: [], ...(name ? { hint: `Home Assistant's ${name} isn't answering, so its app (Whisper) is probably stopped. Start it in Home Assistant to dictate on the Pi.` } : {}) };
 }
 /** The language to ask for: the one picked, or the closest the engine has ("de-DE" → "de"). */
 function sttLanguage(wanted: string, languages: string[]): string {

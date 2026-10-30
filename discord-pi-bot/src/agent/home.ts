@@ -180,6 +180,25 @@ export class HomeApi {
 		return typeof result.text === "string" ? result.text.trim() : "";
 	}
 
+	/**
+	 * Whether the engine behind a speech-to-text entity is really there: its
+	 * entity stays "unknown" with the Whisper app stopped. A quarter second
+	 * of silence comes back as success (with no words) only from a running one.
+	 */
+	async sttAnswers(entityId: string, language: string): Promise<boolean> {
+		try {
+			const response = await this.fetcher(`${this.baseUrl}/stt/${encodeURIComponent(entityId)}`, {
+				method: "POST",
+				headers: { Authorization: `Bearer ${this.token}`, "Content-Type": "application/octet-stream", "X-Speech-Content": `format=wav; codec=pcm; sample_rate=16000; bit_rate=16; channel=1; language=${language}` },
+				body: new Uint8Array(8_000),
+				signal: AbortSignal.timeout(20_000),
+			});
+			return response.ok && ((await response.json()) as { result?: unknown }).result === "success";
+		} catch {
+			return false;
+		}
+	}
+
 	/** Some domains' states as Home Assistant has them, attributes and all: a person's position, the zones. */
 	async statesOf(domains: string[]): Promise<HassEntity[]> {
 		const states = (await (await this.call("/states")).json()) as HassEntity[];
