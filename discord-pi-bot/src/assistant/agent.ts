@@ -55,6 +55,8 @@ export interface AssistantDeps {
 	memory?(): string | undefined;
 	/** The user's rules for what it may do on its own, when they changed any; jobs get them too. */
 	rules?(): string | undefined;
+	/** Roughly where the user is (home, a zone, or away and how far), from their phone. */
+	whereabouts?(): Promise<string | undefined>;
 	/** After a chat turn: look at what the user said for facts worth remembering. */
 	learn?(input: AskInput): void;
 }
@@ -88,9 +90,10 @@ function toolContext(deps: AssistantDeps, input: AskInput): ToolContext {
 }
 
 /* The turn's own context, what RemindMe remembers about the user, and what every chat should know. */
-function extraFor(deps: AssistantDeps, input: AskInput): string | undefined {
+async function extraFor(deps: AssistantDeps, input: AskInput): Promise<string | undefined> {
 	const standing = input.channel === "job" ? undefined : deps.standing?.();
-	return [input.extra, deps.memory?.(), deps.rules?.(), standing].filter(Boolean).join("\n\n") || undefined;
+	const where = await deps.whereabouts?.().catch(() => undefined);
+	return [input.extra, deps.memory?.(), deps.rules?.(), where, standing].filter(Boolean).join("\n\n") || undefined;
 }
 
 export interface AskEvents {
@@ -236,7 +239,7 @@ export class Assistant {
 				home: this.deps.home?.(),
 				recalled: this.deps.recall?.(input.prompt),
 				openDocument: input.openDocument,
-				extra: extraFor(this.deps, input),
+				extra: await extraFor(this.deps, input),
 				servedBy: `${provider.label}, model ${provider.model}`,
 			}),
 			history: historyForModel(trimHistory(input.history || [])),
@@ -364,7 +367,7 @@ export class Assistant {
 					home: this.deps.home?.(),
 					recalled: this.deps.recall?.(input.prompt),
 					openDocument: input.openDocument,
-					extra: extraFor(this.deps, input),
+					extra: await extraFor(this.deps, input),
 					servedBy: `${runner.label}, model ${runner.model}`,
 				})}`,
 				// A resumed session keeps its own transcript, so the time goes on each new message.

@@ -1,5 +1,5 @@
 name: RemindMe
-version: "4.29.2"
+version: "4.30.0"
 slug: remindme_discord_bot
 description: Your personal assistant in Home Assistant and Discord, on Claude, OpenAI or your ChatGPT and Claude subscriptions
 arch:

@@ -77,7 +77,8 @@ import { WebBrowser } from "./harness/browser";
 import { News } from "./assistant/news";
 import { type Embed, embedText, mapImages } from "./assistant/embeds";
 import { PlaceSearch } from "./assistant/places";
-import { PlaceReminders, placeWhen, type Whereabouts } from "./assistant/placeReminders";
+import { type Fix, UserLocation, whereLine } from "./assistant/location";
+import { PlaceReminders, placeWhen } from "./assistant/placeReminders";
 import { RuleStore } from "./assistant/rules";
 import { MediaProxy } from "./harness/media";
 import { pagePreview } from "./harness/reader";
@@ -294,7 +295,7 @@ function followedPerson(states: HassEntity[]): HassEntity | undefined {
 	const withPhone = tracker && people.find((person) => Array.isArray(person.attributes.device_trackers) && (person.attributes.device_trackers as unknown[]).includes(tracker));
 	return withPhone || (people.length === 1 ? people[0] : undefined);
 }
-async function whereabouts(): Promise<Whereabouts | undefined> {
+async function whereabouts(): Promise<Fix | undefined> {
 	if (!home) return undefined;
 	const states = await home.statesOf(["person", "zone"]);
 	const person = followedPerson(states);
@@ -302,6 +303,8 @@ async function whereabouts(): Promise<Whereabouts | undefined> {
 	const number = (value: unknown) => (typeof value === "number" && Number.isFinite(value) ? value : undefined);
 	return {
 		state: person.state,
+		// The person changes with each report from the phone, so this is when it last said where it is.
+		...(person.last_updated ? { at: person.last_updated } : {}),
 		lat: number(person.attributes.latitude),
 		lon: number(person.attributes.longitude),
 		accuracy: number(person.attributes.gps_accuracy),
@@ -335,6 +338,26 @@ export function setDiscordBot(bot: { who(): string | undefined } | undefined): v
 const rules = new RuleStore();
 
 /* "When I get home": goes out like any reminder that's due, once the move has held for a minute. */
+/*
+ * Where the user is, for the assistant. A stale report can be refreshed: the
+ * Companion app sends its location when told "request_location_update" (a
+ * silent push), through the notify service of the phone the person follows.
+ */
+async function askPhoneForLocation(): Promise<boolean> {
+	if (!home) return false;
+	const person = followedPerson(await home.statesOf(["person"]));
+	const trackers = Array.isArray(person?.attributes.device_trackers) ? (person.attributes.device_trackers as string[]) : [];
+	const phone = haApp.target || trackers.map((tracker) => `mobile_app_${tracker.replace(/^device_tracker\./, "")}`)[0];
+	if (!phone) return false;
+	await home.callService("notify", phone, { message: "request_location_update" });
+	return true;
+}
+export const userLocation = new UserLocation({
+	read: whereabouts,
+	askPhone: askPhoneForLocation,
+	address: (lat, lon) => placeSearch.address(lat, lon),
+});
+
 export const placeReminders = new PlaceReminders({
 	where: whereabouts,
 	fire: async (reminder) => {
@@ -1451,12 +1474,25 @@ app.put("/api/rules/:id", (request, response) => {
 app.get("/api/location", async (_request, response) => {
 	const states = home ? await home.statesOf(["person"]).catch(() => [] as HassEntity[]) : [];
 	const followed = followedPerson(states);
+	const fix = followed ? await whereabouts().catch(() => undefined) : undefined;
 	response.set("Cache-Control", "no-store").json({
 		people: states.map((person) => ({ id: person.entity_id, name: String(person.attributes.friendly_name || person.entity_id), state: person.state })),
 		person: followed?.entity_id || null,
 		chosen: locationPerson || null,
 		reminders: placeReminders.list().length,
+		// What the assistant is told each turn, and when the phone last reported.
+		last: fix ? { line: whereLine(fix)?.replace(/^Where the user is, from their phone in Home Assistant: /, "").replace(/\. For their address.*$/, "") || null, at: fix.at || null } : null,
 	});
+});
+/* Ask the phone for its location now, and say where it puts the user. */
+app.post("/api/location/refresh", async (_request, response) => {
+	try {
+		const here = await userLocation.locate();
+		if (!here) return void response.status(400).json({ error: "No person with a phone is followed. Pick one above." });
+		response.json(here);
+	} catch (error) {
+		response.status(502).json({ error: error instanceof Error ? error.message : "Couldn't ask the phone." });
+	}
 });
 app.put("/api/location", async (request, response) => {
 	const person = request.body?.person;
@@ -2280,7 +2316,8 @@ export function toolContext(): ToolContext {
 			const page = await readablePage(url);
 			return { title: page.title, url: page.finalUrl, text: page.text, ...page.preview };
 		},
-		places: { find: (query) => placeSearch.find(query) },
+		places: { find: (query, around) => placeSearch.find(query, new Date(), around) },
+		location: { locate: () => userLocation.locate() },
 		parcels: parcelTracking()
 			? {
 					async track(number, label) {
@@ -2375,6 +2412,7 @@ export const assistant = new Assistant({
 	activity,
 	memory: () => memory.context(),
 	rules: () => rules.context(),
+	whereabouts: () => userLocation.context(),
 	learn: (input) => {
 		void memory
 			.learnFrom(input.prompt, (prompt) => assistant.quick(prompt))

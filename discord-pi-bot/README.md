@@ -95,6 +95,12 @@ DHL's own Shipment Tracking API can be a connector, so DHL parcels are tracked s
 
 Your postcode is optional; with it, DHL names the towns along the way. Give RemindMe a tracking number ("track 340434161094, it's the keyboard"), or ask it to track the parcel from a shipping email, and you hear when it moves, is out for delivery, waits at a Packstation or arrives. DHL's free level allows 250 checks a day. RemindMe checks each parcel every 45 minutes outside quiet hours (every 15 once it's out for delivery), keeps 50 checks for when you ask, and stops tracking once it's delivered. Hermes, DPD, GLS and UPS still go through TrackingMore (`trackingmore_api_key`).
 
+## Where you are
+
+RemindMe knows where you are from your person in Home Assistant, which follows your phone through the Home Assistant app (location access set to **Always**). Every message tells the assistant only roughly: at home, in one of your zones, or away and about how far from home, with how old that is. Ask "where am I?", "what's near me?" or "is there a pharmacy around here?" and it uses **user_location**: when the phone's last report is more than ten minutes old, it asks the phone for a fresh one (a silent notification the Home Assistant app answers), then looks up the nearest address on OpenStreetMap. **find_place** can search around you instead of around home.
+
+**Settings → Phone app → Where you are** shows what the assistant is told and when the phone last reported, with **Ask the phone now**. If the phone hasn't reported for an hour, it says which settings on the phone to check.
+
 ## Reminders by place
 
 "Remind me when I get home", "when I leave the office", "next time I'm at the pharmacy": RemindMe follows your person in Home Assistant, which knows where your phone is through the Home Assistant app (location access set to **Always**). A place is home, another Home Assistant zone by its name, or a spot it found on the map (within about 200 m). It looks every half minute and acts once a move has held for a minute, so a phone at the edge of a zone doesn't set it off; the reminder then goes out like any other. Said while you're already there, "when I get home" waits for the next time you arrive. Reminders fire once unless you ask for every time; they're listed in History under Coming up, where Cancel removes them.

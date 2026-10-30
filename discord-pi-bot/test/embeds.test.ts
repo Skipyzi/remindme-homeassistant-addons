@@ -64,7 +64,7 @@ test("an OpenStreetMap result as a place and a card: address, hours now, distanc
 	const place = placeFrom(hit, new Date("2026-10-29T14:00:00"), { lat: 51.3555, lon: 12.37 });
 	assert.deepEqual(
 		{ ...place, away: Math.round((place.away || 0) / 100) * 100 },
-		{ name: "Saturn", kind: "electronics", lat: 51.3436, lon: 12.377, address: "Brühl 1, 04109 Leipzig", hours: "Mo-Sa 10:00-20:00", status: { text: "Open now, until 20:00", open: true }, phone: "+49 341 1234 567", website: "https://www.saturn.de/de/store/leipzig-hoefe-am-bruehl", away: 1400 },
+		{ name: "Saturn", kind: "electronics", lat: 51.3436, lon: 12.377, address: "Brühl 1, 04109 Leipzig", hours: "Mo-Sa 10:00-20:00", status: { text: "Open now, until 20:00", open: true }, phone: "+49 341 1234 567", website: "https://www.saturn.de/de/store/leipzig-hoefe-am-bruehl", away: 1400, from: "home" },
 	);
 	const card = placeEmbed(place);
 	assert.equal(card.kind, "place");

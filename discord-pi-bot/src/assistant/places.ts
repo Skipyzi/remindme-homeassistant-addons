@@ -97,8 +97,10 @@ export interface Place {
 	status?: { text: string; open: boolean };
 	phone?: string;
 	website?: string;
-	/** Metres from home, when Home Assistant knows where home is. */
+	/** Metres from home (or from the user, when searched around them), when that's known. */
 	away?: number;
+	/** What `away` is measured from. */
+	from?: "home" | "you";
 }
 
 interface NominatimHit {
@@ -114,7 +116,7 @@ interface NominatimHit {
 }
 
 /** One search result as a place, its hours read for `now`. */
-export function placeFrom(hit: NominatimHit, now = new Date(), home?: { lat: number; lon: number }): Place {
+export function placeFrom(hit: NominatimHit, now = new Date(), home?: { lat: number; lon: number }, from: "home" | "you" = "home"): Place {
 	const address = hit.address || {};
 	const tags = hit.extratags || {};
 	const street = [address.road || address.pedestrian || address.footway, address.house_number].filter(Boolean).join(" ");
@@ -135,17 +137,20 @@ export function placeFrom(hit: NominatimHit, now = new Date(), home?: { lat: num
 		...(status ? { status } : {}),
 		...(phone ? { phone: phone.split(";")[0].trim() } : {}),
 		...(website && /^https?:\/\//i.test(website) ? { website } : {}),
-		...(home ? { away: Math.round(distance(home, { lat, lon })) } : {}),
+		...(home ? { away: Math.round(distance(home, { lat, lon })), from } : {}),
 	};
 }
 
-const away = (metres: number) => (metres < 1000 ? `${Math.round(metres / 10) * 10} m from home` : `${(metres / 1000).toFixed(metres < 10_000 ? 1 : 0)} km from home`);
+const away = (metres: number, from: "home" | "you" = "home") => {
+	const where = from === "you" ? "from you" : "from home";
+	return metres < 1000 ? `${Math.round(metres / 10) * 10} m ${where}` : `${(metres / 1000).toFixed(metres < 10_000 ? 1 : 0)} km ${where}`;
+};
 
 /** A place as a card: the map, whether it's open, the address, and what to tap. */
 export function placeEmbed(place: Place): Embed {
 	const lines = [
 		place.address,
-		place.away !== undefined ? away(place.away) : undefined,
+		place.away !== undefined ? away(place.away, place.from) : undefined,
 		place.hours && !place.status ? `Hours: ${place.hours}` : undefined,
 	].filter((line): line is string => Boolean(line));
 	const links = [
@@ -165,8 +170,9 @@ export class PlaceSearch {
 
 	constructor(private readonly options: { home?(): Promise<{ lat: number; lon: number } | undefined>; fetch?: FetchLike; spacingMs?: number; endpoint?: string } = {}) {}
 
-	async find(query: string, now = new Date()): Promise<Place[]> {
-		const home = await this.options.home?.().catch(() => undefined);
+	/** Places for a query, near home; or near `around` (where the user is) when given. */
+	async find(query: string, now = new Date(), around?: { lat: number; lon: number }): Promise<Place[]> {
+		const home = around || (await this.options.home?.().catch(() => undefined));
 		const url = new URL(this.options.endpoint || "https://nominatim.openstreetmap.org/search");
 		url.searchParams.set("q", query);
 		url.searchParams.set("format", "jsonv2");
@@ -177,18 +183,42 @@ export class PlaceSearch {
 		url.searchParams.set("accept-language", "en");
 		// Near home first (about 30 km around), without leaving the rest out.
 		if (home) url.searchParams.set("viewbox", [home.lon - 0.4, home.lat + 0.25, home.lon + 0.4, home.lat - 0.25].map((value) => value.toFixed(4)).join(","));
+		const hits = await this.get<NominatimHit[]>(url);
+		// Places, not the streets and districts that share a word with them ("Saturnstraße" for Saturn).
+		const places = (Array.isArray(hits) ? hits : []).filter((hit) => !["highway", "boundary", "landuse", "natural", "waterway"].includes(String(hit.category)));
+		return places.map((hit) => placeFrom(hit, now, home, around ? "you" : "home"));
+	}
+
+	/** The address at a spot: "Riebeckstraße 12, Reudnitz-Thonberg, 04317 Leipzig". */
+	async address(lat: number, lon: number): Promise<string | undefined> {
+		const search = new URL(this.options.endpoint || "https://nominatim.openstreetmap.org/search");
+		const url = new URL(search.pathname.replace(/search$/, "reverse"), search);
+		url.searchParams.set("lat", lat.toFixed(6));
+		url.searchParams.set("lon", lon.toFixed(6));
+		url.searchParams.set("format", "jsonv2");
+		url.searchParams.set("zoom", "18");
+		url.searchParams.set("addressdetails", "1");
+		url.searchParams.set("accept-language", "en");
+		const hit = await this.get<NominatimHit>(url);
+		const address = hit?.address || {};
+		const street = [address.road || address.pedestrian || address.footway, address.house_number].filter(Boolean).join(" ");
+		const area = address.suburb || address.neighbourhood || address.quarter;
+		const town = [address.postcode, address.city || address.town || address.village || address.municipality].filter(Boolean).join(" ");
+		const place = hit?.name && hit.name !== address.road ? hit.name : "";
+		return [place, street, area, town].filter(Boolean).join(", ") || hit?.display_name || undefined;
+	}
+
+	/* One request a second, as Nominatim asks. */
+	private get<T>(url: URL): Promise<T> {
 		const run = this.chain.then(async () => {
 			const wait = this.last + (this.options.spacingMs ?? 1_100) - Date.now();
 			if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
 			this.last = Date.now();
 			const response = await (this.options.fetch || fetch)(url, { headers: { "User-Agent": "RemindMe/4 (Home Assistant app; personal assistant)", Accept: "application/json" }, signal: AbortSignal.timeout(15_000) });
 			if (!response.ok) throw new Error(`OpenStreetMap's search answered ${response.status}.`);
-			return (await response.json()) as NominatimHit[];
+			return (await response.json()) as T;
 		});
 		this.chain = run.catch(() => undefined);
-		const hits = await run;
-		// Places, not the streets and districts that share a word with them ("Saturnstraße" for Saturn).
-		const places = (Array.isArray(hits) ? hits : []).filter((hit) => !["highway", "boundary", "landuse", "natural", "waterway"].includes(String(hit.category)));
-		return places.map((hit) => placeFrom(hit, now, home));
+		return run;
 	}
 }

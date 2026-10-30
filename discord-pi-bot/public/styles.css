@@ -38,14 +38,15 @@
 	color-scheme: dark;
 }
 /*
- * iOS 26 blurs and fades the top ~40pt of an installed web app, whatever the
- * status bar style, and no meta tag or CSS turns it off. On an iPhone or iPad
- * home-screen app, the tops of pages start that much lower so no text sits in it.
+ * iOS 26 blurs the top edge of an installed web app, whatever the status bar
+ * style, and no meta tag or CSS turns it off. On the owner's iPhone text was
+ * blurred up to about 25pt below the status bar and sharp from about 30pt, so
+ * on an iPhone or iPad home-screen app the tops of pages start 20px lower.
  */
 @media (display-mode: standalone) {
 	@supports (-webkit-touch-callout: none) {
 		:root {
-			--edge-ramp: 32px;
+			--edge-ramp: 20px;
 		}
 	}
 }

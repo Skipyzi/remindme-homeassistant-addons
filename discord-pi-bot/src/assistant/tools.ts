@@ -17,6 +17,7 @@ import type { Contact } from "../connectors/google";
 import { euro, type PriceOffer, type PriceWatch, type SearchResult } from "./prices";
 import type { FeedItem, NewsItem, Region } from "./news";
 import { addEmbed, takeEmbeds, type Embed } from "./embeds";
+import type { Located } from "./location";
 import { placeEmbed, type Place } from "./places";
 import { placeWhen, type PlaceEvent, type PlaceReminder } from "./placeReminders";
 import { RULES, deviceRule, turnedOff, type RuleChoice, type RuleId } from "./rules";
@@ -72,8 +73,10 @@ export interface ToolContext {
 	/** Price comparisons from Geizhals, and price watches that tell the user about drops. */
 	/** The last day's headlines from the news sources chosen under Settings → News. */
 	news?: { headlines(): Promise<{ items: NewsItem[]; problems: string[] }> };
-	/** Places from OpenStreetMap, near home. */
-	places?: { find(query: string): Promise<Place[]> };
+	/** Places from OpenStreetMap, near home, or near the user when `around` is where they are. */
+	places?: { find(query: string, around?: { lat: number; lon: number }): Promise<Place[]> };
+	/** Where the user is, from their phone in Home Assistant; asks the phone when the last report is old. */
+	location?: { locate(): Promise<Located | undefined> };
 	/** What the user lets it do on its own, per kind of action (Settings → What it may do). */
 	rules?: { get(id: RuleId): RuleChoice };
 	/** Reminders for arriving at or leaving a place, from Home Assistant's idea of where the user is. */
@@ -876,6 +879,45 @@ function articleCard(item: FeedItem, source: string): Embed {
 	};
 }
 
+/* A phone's report, said for the model: "Fri 30 Oct, 01:09". */
+const reportedAt = (iso: string) => {
+	const at = new Date(iso);
+	return `${at.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" }).replace(/,/g, "")}, ${at.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}`;
+};
+
+function locationTools(ctx: ToolContext): AssistantTool[] {
+	const location = ctx.location;
+	if (!location) return [];
+	return [
+		{
+			spec: {
+				name: "user_location",
+				description:
+					"Where the user is right now, from their phone (Home Assistant's Companion app): home, one of their zones, or away with the nearest address, how far from home, and when the phone said so. When that's more than ten minutes old it asks the phone for a fresh report first, which takes a few seconds. Use it for \"where am I\", how far something is from them, or before find_place with near_user. Say how old the report is when it isn't fresh.",
+				parameters: object({}),
+			},
+			async run() {
+				const here = await location.locate();
+				if (!here) return { content: "Home Assistant doesn't know where the user is: no person with a phone is set up (Settings → Phone app → Where you are).", isError: true };
+				if (here.where === "unknown") return { content: json({ where: "unknown", note: "Home Assistant has no location for the user's phone right now. The Companion app may have location off, or the phone is offline." }) };
+				return {
+					content: json({
+						where: here.where,
+						...(here.address ? { near: here.address } : {}),
+						...(here.metresFromHome !== undefined ? { metres_from_home: here.metresFromHome } : {}),
+						...(here.accuracy !== undefined ? { accurate_to_metres: here.accuracy } : {}),
+						...(here.lat !== undefined ? { lat: here.lat, lon: here.lon } : {}),
+						...(here.at ? { reported: reportedAt(here.at) } : {}),
+						fresh: here.fresh,
+						...(here.askedPhone === "no answer" ? { note: "The phone was asked for a fresh location but didn't answer in time; this is its last report." } : {}),
+						...(here.askedPhone === "not possible" ? { note: "There's no phone to ask for a fresh location; this is the last report." } : {}),
+					}),
+				};
+			},
+		},
+	];
+}
+
 function placeTools(ctx: ToolContext): AssistantTool[] {
 	const places = ctx.places;
 	if (!places) return [];
@@ -884,11 +926,23 @@ function placeTools(ctx: ToolContext): AssistantTool[] {
 			spec: {
 				name: "find_place",
 				description:
-					"Find a shop, pharmacy, restaurant, station or other place on OpenStreetMap, near home unless the query names a town: its address, opening hours and whether it's open now, distance from home, phone and website. Search by the kind of place and the area (\"pharmacy near Leipzig Hauptbahnhof\", \"Rewe Leipzig Gohlis\", \"Apotheke am Markt Leipzig\"): a chain's name alone can miss. Show the one that matters as a card, with its map and Directions.",
-				parameters: object({ query: { type: "string", description: "The kind of place and where, such as: pharmacy Leipzig Gohlis." } }, ["query"]),
+					"Find a shop, pharmacy, restaurant, station or other place on OpenStreetMap, near home unless the query names a town (or near_user is set): its address, opening hours and whether it's open now, distance, phone and website. Search by the kind of place and the area (\"pharmacy near Leipzig Hauptbahnhof\", \"Rewe Leipzig Gohlis\", \"Apotheke am Markt Leipzig\"): a chain's name alone can miss. Show the one that matters as a card, with its map and Directions.",
+				parameters: object(
+					{
+						query: { type: "string", description: "The kind of place and where, such as: pharmacy Leipzig Gohlis. With near_user, just the kind: pharmacy." },
+						...(ctx.location ? { near_user: { type: "boolean", description: "Search around where the user is now (from their phone) instead of around home: for \"near me\" or \"around here\"." } } : {}),
+					},
+					["query"],
+				),
 			},
 			async run(input, effects) {
-				const found = await places.find(text(input, "query", 200));
+				let around: { lat: number; lon: number } | undefined;
+				if (input.near_user === true && ctx.location) {
+					const here = await ctx.location.locate().catch(() => undefined);
+					if (here?.lat !== undefined && here.lon !== undefined) around = { lat: here.lat, lon: here.lon };
+					else return { content: "Home Assistant doesn't know where the user is right now, so search near home or ask them where they are.", isError: true };
+				}
+				const found = await places.find(text(input, "query", 200), around);
 				if (!found.length) return { content: "OpenStreetMap has nothing for that. Try the place's name and town." };
 				return {
 					content: json({
@@ -899,7 +953,7 @@ function placeTools(ctx: ToolContext): AssistantTool[] {
 							...(place.address ? { address: place.address } : {}),
 							...(place.status ? { now: place.status.text } : {}),
 							...(place.hours ? { hours: place.hours } : {}),
-							...(place.away !== undefined ? { metres_from_home: place.away } : {}),
+							...(place.away !== undefined ? { [place.from === "you" ? "metres_from_user" : "metres_from_home"]: place.away } : {}),
 							...(place.phone ? { phone: place.phone } : {}),
 							...(place.website ? { website: place.website } : {}),
 						})),
@@ -1410,6 +1464,7 @@ export async function buildTools(ctx: ToolContext, options: { nativeWebSearch: b
 		...newsTools(ctx),
 		...feedTools(ctx),
 		...placeTools(ctx),
+		...locationTools(ctx),
 		...parcelTools(ctx),
 		...documentTools(ctx),
 		...mailTools(ctx),

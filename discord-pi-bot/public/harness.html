@@ -606,7 +606,7 @@
               </label>
 
               <h3>Where you are</h3>
-              <p>For reminders like "when I get home" or "when I leave the office". Home Assistant's person for you says where your phone is: at home, in one of its zones, or anywhere on the map. Its app needs location access set to Always.</p>
+              <p>So it knows where you are when you ask, finds places near you, and can remind you "when I get home" or "when I leave the office". Home Assistant's person for you says where your phone is: at home, in one of its zones, or anywhere on the map. Each message tells the assistant only roughly (home, a zone, or away and how far); for an address it asks your phone, which sends a fresh location when the last one is old.</p>
               <label class="rm-field">Follow
                 <select @change="chooseLocation($event.target.value)" :disabled="!location.people.length">
                   <template x-for="person in location.people" :key="person.id">
@@ -615,6 +615,13 @@
                 </select>
               </label>
               <p class="rm-note" x-show="!location.people.length">Home Assistant has no person yet. Add one under Settings → People there, with your phone as its tracker.</p>
+              <div class="rm-item" x-show="location.last" x-cloak>
+                <div class="rm-item-head">
+                  <span><span x-text="location.last?.line ? location.last.line.charAt(0).toUpperCase() + location.last.line.slice(1) : 'Home Assistant has no location for your phone right now.'"></span></span>
+                  <button class="rm-link" type="button" :disabled="locationBusy" @click="refreshLocation()" x-text="locationBusy ? 'Asking…' : 'Ask the phone now'"></button>
+                </div>
+                <p class="rm-note" x-show="locationStale">Your phone hasn't reported for a while. In the Home Assistant app on it: Settings → Companion app → Location, turn on the location updates; in the iPhone's Settings → Home Assistant, allow Location "Always" with Precise Location, and Background App Refresh. Low Power Mode pauses it.</p>
+              </div>
               <p class="rm-note" role="status" x-show="locationNote" x-text="locationNote"></p>
             </div>
 

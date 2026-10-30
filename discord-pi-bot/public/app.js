@@ -180,8 +180,9 @@ function remindme() {
 		rules: [],
 		rulesNote: "",
 		/* Place reminders: the people in Home Assistant, and whose whereabouts they follow */
-		location: { people: [], person: null, chosen: null, reminders: 0 },
+		location: { people: [], person: null, chosen: null, reminders: 0, last: null },
 		locationNote: "",
+		locationBusy: false,
 		/* The daily news */
 		news: { on: false, time: "07:30", language: "en", stories: 5, sources: [], catalog: [], own: [] },
 		newsNote: "",
@@ -1811,6 +1812,31 @@ function remindme() {
 		/* Whose whereabouts place reminders follow */
 		placeState(state) {
 			return { home: "home now", not_home: "away", unknown: "not known", unavailable: "not known" }[state] || `at ${state}`;
+		},
+		/* An hour without a report from the phone: worth checking its settings. */
+		get locationStale() {
+			const at = this.location.last?.at;
+			return !at || Date.now() - Date.parse(at) > 3_600_000;
+		},
+		async refreshLocation() {
+			this.locationBusy = true;
+			this.locationNote = "Asking your phone. This takes up to 20 seconds.";
+			try {
+				const here = await this.request("./api/location/refresh");
+				this.locationNote =
+					here.askedPhone === "answered"
+						? `Your phone answered${here.address ? `: near ${here.address}` : ""}.`
+						: here.askedPhone === "no answer"
+							? "Your phone didn't answer in time. Check its location settings below."
+							: here.fresh
+								? `Its last report is recent${here.address ? `: near ${here.address}` : ""}.`
+								: "There's no phone to ask. Pick your phone under Phone app → Notifications, or check Home Assistant's person.";
+				await this.loadSection("phone");
+			} catch (error) {
+				this.locationNote = error.message;
+			} finally {
+				this.locationBusy = false;
+			}
 		},
 		async chooseLocation(person) {
 			try {
