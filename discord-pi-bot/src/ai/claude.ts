@@ -8,6 +8,7 @@ import {
 	type ToolCall,
 	type ToolOutcome,
 	type TurnRequest,
+	type Usage,
 } from "./types";
 
 export const DEFAULT_CLAUDE_MODEL = "claude-opus-5-5";
@@ -120,7 +121,7 @@ class ClaudeSession implements Session {
 	}
 
 	async next(events: StreamEvents): Promise<Step> {
-		const usage = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 };
+		const usage: Usage = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 };
 		let message: Message;
 		// A long server-side web search can pause the turn; sending it back resumes it.
 		for (let pauses = 0; ; pauses++) {
@@ -129,6 +130,8 @@ class ClaudeSession implements Session {
 			usage.outputTokens += message.usage.output_tokens;
 			usage.cacheReadTokens += message.usage.cache_read_input_tokens || 0;
 			usage.cacheWriteTokens += message.usage.cache_creation_input_tokens || 0;
+			const searches = message.usage.server_tool_use?.web_search_requests || 0;
+			if (searches) usage.webSearches = (usage.webSearches || 0) + searches;
 			for (const block of message.content)
 				if (block.type === "server_tool_use" && block.name === "web_search")
 					events.searched?.(String((block.input as { query?: unknown })?.query || ""));

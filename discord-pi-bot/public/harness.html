@@ -415,7 +415,7 @@
       </div>
 
       <!-- Settings -->
-      <div class="rm-sheet" x-show="settingsOpen" x-cloak @keydown.escape.window="settingsOpen = false" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+      <div class="rm-sheet" x-show="settingsOpen" x-cloak @keydown.escape.window="pop ? closePop() : (settingsOpen = false)" role="dialog" aria-modal="true" aria-labelledby="settings-title">
         <div class="rm-sheet-in">
           <div class="rm-sheet-top" :class="{ 'in-section': settingsTab && phoneLayout }">
             <button class="rm-settings-back" type="button" x-show="settingsTab" @click="settingsTab = null">‹ Settings</button>
@@ -425,9 +425,14 @@
           <div class="rm-settings" :class="{ 'in-section': settingsTab }">
             <!-- Every section with what it's set to; on a phone, the list you tap into. -->
             <nav class="rm-sections" aria-label="Settings sections">
-              <template x-for="problem in settingsProblems" :key="problem.id">
-                <button class="rm-attn" type="button" @click="showSection(problem.id)"><b x-text="problem.status.text"></b><span x-text="`Fix it under ${problem.label}`"></span></button>
-              </template>
+              <div class="rm-needs" x-show="settingsProblems.length" x-cloak>
+                <template x-for="problem in settingsProblems" :key="problem.key">
+                  <div class="rm-r">
+                    <button class="rm-r-main" type="button" @click="showSection(problem.section)"><span class="rm-lamp bad"></span><span class="rm-r-t"><b x-text="problem.name"></b><small x-text="problem.text"></small></span></button>
+                    <button class="rm-pill" type="button" @click="showSection(problem.section)">Fix</button>
+                  </div>
+                </template>
+              </div>
               <template x-for="group in settingsGroups" :key="group.name">
                 <div class="rm-sections-group">
                   <h3 x-text="group.name"></h3>
@@ -435,6 +440,7 @@
                     <button type="button" :aria-pressed="String(settingsTab === section.id)" @click="showSection(section.id)">
                       <b x-text="section.label"></b>
                       <small :class="{ bad: sectionStatus(section.id).bad }" x-text="sectionStatus(section.id).text"></small>
+                      <span class="rm-cmeter thin" x-show="section.id === 'credits' && credits" aria-hidden="true"><i :class="{ over: creditPct >= 100 }" :style="`width: ${creditPct}%`"></i><s :style="`left: ${pacePct}%`"></s></span>
                     </button>
                   </template>
                 </div>
@@ -444,7 +450,6 @@
             <!-- AI -->
             <div class="rm-panel" x-show="settingsTab === 'ai'">
               <h3>Who answers</h3>
-              <p>Here and on Discord. API keys go in the RemindMe app's options in Home Assistant; switching between what's set up needs no restart.</p>
               <div class="rm-choices">
                 <template x-for="option in ai?.providers || []" :key="option.id">
                   <button class="rm-choice" type="button" :class="{ on: option.id === ai.provider }" :disabled="!option.configured || aiBusy" @click="chooseAi({ provider: option.id })">
@@ -509,7 +514,7 @@
               </div>
 
               <h3>Sign-ins</h3>
-              <p>Use a subscription instead of an API key. ChatGPT answers like the providers above. Claude and Codex run as agents with RemindMe's tools and nothing else.</p>
+              <details class="rm-how"><summary>A subscription instead of an API key</summary><p class="rm-note">ChatGPT answers like the providers above. Claude and Codex run as agents with RemindMe's tools and nothing else. API keys go in the RemindMe app's options in Home Assistant.</p></details>
               <div class="rm-choices">
                 <template x-for="option in [{ id: 'chatgpt', label: 'ChatGPT subscription' }, { id: 'claude', label: 'Claude subscription' }]" :key="option.id">
                   <div class="rm-choice" :class="{ on: signinStatus[option.id]?.connected }">
@@ -539,10 +544,49 @@
               </template>
             </div>
 
+            <!-- API credits: the month so far against the plan's monthly credits -->
+            <div class="rm-panel" x-show="settingsTab === 'credits'">
+              <template x-if="credits">
+                <div class="rm-stack">
+                  <div class="rm-big"><b x-text="money(credits.used)"></b><span x-text="`of ${money(credits.allowance, 0)}`"></span></div>
+                  <div>
+                    <span class="rm-cmeter" aria-hidden="true"><i :class="{ over: creditPct >= 100 }" :style="`width: ${creditPct}%`"></i><s :style="`left: ${pacePct}%`" :title="`On pace for ${money(credits.pace, 0)}`"></s></span>
+                    <div class="rm-meterline"><span x-text="cycleLine"></span><span x-text="`pace ${money(credits.pace, 0)}`"></span></div>
+                    <p class="rm-note bad" x-show="credits.allowance > 0 && credits.used >= credits.allowance" x-text="`${money(credits.used - credits.allowance)} over. More goes on bought credits if you have any; otherwise Claude stops answering until ${dayMonth(credits.cycle.end)}.`"></p>
+                  </div>
+                  <div>
+                    <div class="rm-bars" role="img" :aria-label="`Spend per day since ${dayMonth(credits.cycle.start)}`">
+                      <template x-for="bar in creditBars" :key="bar.key"><i :class="bar.css" :style="bar.style" :title="bar.title"></i></template>
+                    </div>
+                    <div class="rm-axis"><span x-text="dayMonth(credits.cycle.start)"></span><span class="rm-axis-today" :style="`left: ${((credits.perDay.length - 0.5) / credits.cycle.days) * 100}%`">today</span><span x-text="dayMonth(credits.cycle.end, -1)"></span></div>
+                  </div>
+                  <h3>Where it went</h3>
+                  <div class="rm-rows">
+                    <template x-for="part in credits.parts" :key="part.label">
+                      <div class="rm-r plain"><span class="rm-r-t"><b x-text="part.count ? `${part.label} (${part.count})` : part.label"></b></span><span class="rm-val" x-text="money(part.usd)"></span></div>
+                    </template>
+                    <p class="rm-empty" x-show="!credits.parts.length">Nothing spent yet this month.</p>
+                  </div>
+                  <p class="rm-note" x-text="creditsSourceLine"></p>
+                  <h3>Your plan</h3>
+                  <div class="rm-rows">
+                    <div class="rm-r"><button class="rm-r-main plain" type="button" @click="openPop({ kind: 'plan' })"><span class="rm-r-t"><b>Each month</b></span><span class="rm-val" x-text="money(credits.allowance, 0)"></span></button><span class="rm-chev" aria-hidden="true">›</span></div>
+                    <div class="rm-r"><button class="rm-r-main plain" type="button" @click="openPop({ kind: 'plan' })"><span class="rm-r-t"><b>New credits on the</b></span><span class="rm-val" :class="{ bad: !credits.renewDay }" x-text="credits.renewDay ? ordinal(credits.renewDay) : 'not set'"></span></button><span class="rm-chev" aria-hidden="true">›</span></div>
+                    <div class="rm-r plain"><span class="rm-r-t"><b>Daily cap</b><small>in the app options</small></span><span class="rm-val" x-text="credits.dailyCap ? money(credits.dailyCap, 0) : 'none'"></span></div>
+                    <div class="rm-r" x-show="!credits.anthropic || !credits.anthropic.ok">
+                      <button class="rm-r-main" type="button" @click="openPop({ kind: 'admin-key' })"><span class="rm-lamp" :class="credits.anthropic ? 'bad' : 'off'"></span><span class="rm-r-t"><b>Anthropic's own figure</b><small :class="{ bad: credits.anthropic }" x-text="credits.anthropic ? credits.anthropic.error : 'Needs an Admin key in the app options'"></small></span></button>
+                      <button class="rm-pill" type="button" @click="openPop({ kind: 'admin-key' })">How</button>
+                    </div>
+                  </div>
+                </div>
+              </template>
+              <p class="rm-note" x-show="!credits">Loading…</p>
+            </div>
+
             <!-- Phone app -->
             <div class="rm-panel" x-show="settingsTab === 'phone'">
               <h3>Phone app</h3>
-              <p>RemindMe as an app on your phone, with its own notifications for job questions, reminders and the morning brief. It joins your tailnet as a device of its own, so only your Tailscale account can open it, wherever your phone has Tailscale on.</p>
+              <p>RemindMe on your phone, with its own notifications. Only your Tailscale account can open it.</p>
               <p class="rm-note" x-show="phone.state === 'off'">The phone app is off. Turn on <b>phone_app</b> in the RemindMe app's options in Home Assistant, then restart RemindMe.</p>
               <p class="rm-note" x-show="phone.state === 'starting'">Tailscale is starting inside RemindMe.</p>
               <p class="rm-result bad" x-show="phone.error" x-text="phone.error"></p>
@@ -580,7 +624,8 @@
               </template>
 
               <h3>Through the Home Assistant app</h3>
-              <p>On an iPhone, the Home Assistant app can do what a web app can't: buttons to answer a job, confirm an action or snooze a reminder, a reply field, the thread's cat as a picture, and a running job on the Lock Screen as a Live Activity. While it's on, notifications come only this way, so none arrive twice.</p>
+              <p>Buttons, a reply field and Live Activities. While it's on, notifications come only this way.</p>
+              <details class="rm-how"><summary>How it works</summary><p class="rm-note">On an iPhone, the Home Assistant app can do what a web app can't: buttons to answer a job, confirm an action or snooze a reminder, a reply field, the thread's cat as a picture, and a running job on the Lock Screen as a Live Activity. Notifications then come only this way, so none arrive twice.</p></details>
               <label class="rm-field">Phone
                 <select @change="chooseHaPhone({ target: $event.target.value })" :disabled="!haPhone.phones.length">
                   <option value="" :selected="!haPhone.target">Off: RemindMe's own notifications</option>
@@ -606,7 +651,8 @@
               </label>
 
               <h3>Where you are</h3>
-              <p>So it knows where you are when you ask, finds places near you, and can remind you "when I get home" or "when I leave the office". Home Assistant's person for you says where your phone is: at home, in one of its zones, or anywhere on the map. Each message tells the assistant only roughly (home, a zone, or away and how far); for an address it asks your phone, which sends a fresh location when the last one is old.</p>
+              <p>For places near you and reminders like "when I get home".</p>
+              <details class="rm-how"><summary>How it works</summary><p class="rm-note">Home Assistant's person for you says where your phone is: at home, in one of its zones, or anywhere on the map. Each message tells the assistant only roughly (home, a zone, or away and how far); for an address it asks your phone, which sends a fresh location when the last one is old.</p></details>
               <label class="rm-field">Follow
                 <select @change="chooseLocation($event.target.value)" :disabled="!location.people.length">
                   <template x-for="person in location.people" :key="person.id">
@@ -625,202 +671,71 @@
               <p class="rm-note" role="status" x-show="locationNote" x-text="locationNote"></p>
             </div>
 
-            <!-- Connectors -->
+            <!-- Connectors: a lamp, a name, one line and one action each; the rest in its sheet -->
             <div class="rm-panel" x-show="settingsTab === 'connectors'">
-              <h3>Mail</h3>
-              <p>Outside sources RemindMe reads: your mail, your calendars and feeds. Passwords and sign-ins stay on the Pi and are never shown again.</p>
-              <div>
+              <p class="rm-sub" x-show="connectorCounts.total"><span x-text="`${connectorCounts.working} working`"></span><b x-show="connectorCounts.bad" x-text="` · ${connectorCounts.bad} ${connectorCounts.bad === 1 ? 'needs' : 'need'} you`"></b></p>
+              <h3>Mail <button class="rm-gh-act" type="button" @click="openPop({ kind: 'add-mail' })">+ Add</button></h3>
+              <div class="rm-rows">
                 <template x-for="connector in mailConnectors()" :key="connector.id">
-                  <div class="rm-item">
-                    <div class="rm-item-head">
-                      <span><b x-text="connector.name"></b><br /><span class="rm-mute" x-text="connectorLine(connector)"></span></span>
-                      <label class="rm-toggle"><input type="checkbox" :checked="connector.enabled" @change="updateConnector(connector, { enabled: $event.target.checked })" /><span x-text="connector.enabled ? 'On' : 'Off'"></span></label>
-                      <button class="rm-link" type="button" @click="testConnector(connector)">Test</button>
-                      <template x-if="connector.values.auth === 'google'">
-                        <a class="rm-link" href="./api/oauth/start" target="_blank" rel="noopener" @click="signInGoogle($event, connector.values.address)">Sign in again</a>
-                      </template>
-                      <template x-if="connector.values.auth !== 'google'">
-                        <button class="rm-link" type="button" @click="connector.editing = !connector.editing">Password</button>
-                      </template>
-                      <button class="rm-link" type="button" @click="removeConnector(connector)">Remove</button>
-                    </div>
-                    <p class="rm-note" x-show="connector.probe" x-text="connector.probe"></p>
-                    <form class="rm-ask" x-show="connector.editing" x-cloak @submit.prevent="updateConnector(connector, { secrets: { password: connector.newPassword } })">
-                      <input type="password" x-model="connector.newPassword" autocomplete="new-password" placeholder="New password" aria-label="New password" />
-                      <button class="rm-btn" type="submit" :disabled="!connector.newPassword">Change password</button>
-                    </form>
+                  <div class="rm-r">
+                    <button class="rm-r-main" type="button" @click="openPop({ kind: 'mail', id: connector.id })"><span class="rm-lamp" :class="connectorLamp(connector)"></span><span class="rm-r-t"><b x-text="connector.name"></b><small :class="{ bad: connectorLamp(connector) === 'bad' }" x-text="mailRowLine(connector)"></small></span></button>
+                    <button class="rm-pill" type="button" x-show="connectorLamp(connector) === 'bad'" @click="openPop({ kind: 'mail', id: connector.id })" x-text="connector.values.auth === 'google' ? 'Sign in' : 'New password'"></button>
+                    <span class="rm-chev" x-show="connectorLamp(connector) !== 'bad'" aria-hidden="true">›</span>
                   </div>
                 </template>
-                <p class="rm-note" x-show="!mailConnectors().length">No mail accounts yet. Add one below.</p>
+                <p class="rm-empty" x-show="!mailConnectors().length">No mail yet.</p>
               </div>
 
-              <h3>Calendars</h3>
-              <p>RemindMe reads every calendar in Home Assistant, and adds events, once you confirm, to the one chosen here.</p>
-              <div>
+              <h3>Calendars <span class="rm-gh-note">from Home Assistant</span></h3>
+              <div class="rm-rows">
                 <template x-for="calendar in calendars.list" :key="calendar.entityId">
-                  <div class="rm-item">
-                    <div class="rm-item-head">
-                      <span><b x-text="calendar.name"></b><br /><span class="rm-mute" x-text="calendar.writable ? 'Takes new events' : 'Read only'"></span></span>
-                    </div>
-                  </div>
+                  <div class="rm-r"><div class="rm-r-main"><span class="rm-lamp"></span><span class="rm-r-t"><b x-text="calendar.name"></b><small x-text="calendarLine(calendar)"></small></span></div></div>
                 </template>
-                <p class="rm-note" x-show="!calendars.list.length" x-text="calendars.error || 'Home Assistant has no calendars.'"></p>
-              </div>
-              <label class="rm-field">New events go to
-                <select @change="chooseCalendar($event.target.value)" :disabled="!calendars.list.some((calendar) => calendar.writable)">
-                  <option value="" :selected="!calendars.newEvents">Ask me each time</option>
-                  <template x-for="calendar in calendars.list.filter((entry) => entry.writable)" :key="calendar.entityId">
-                    <option :value="calendar.entityId" :selected="calendar.entityId === calendars.newEvents" x-text="calendar.name"></option>
-                  </template>
-                </select>
-              </label>
-              <p class="rm-note" x-show="calendars.note" x-text="calendars.note"></p>
-              <p class="rm-note">iCloud: in Home Assistant, Settings, Devices &amp; services, add CalDAV with server https://caldav.icloud.com, your Apple ID and an app-specific password from account.apple.com. Events then show in both.</p>
-
-              <h3>Feeds</h3>
-              <p x-text="connectorKind('feed')?.description"></p>
-              <div>
-                <template x-for="feed in feedConnectors()" :key="feed.id">
-                  <div class="rm-item">
-                    <div class="rm-item-head">
-                      <span><b x-text="feed.name"></b><br /><span class="rm-mute" x-text="feedLine(feed)"></span></span>
-                      <label class="rm-toggle"><input type="checkbox" :checked="feed.enabled" @change="updateConnector(feed, { enabled: $event.target.checked })" /><span x-text="feed.enabled ? 'On' : 'Off'"></span></label>
-                      <button class="rm-link" type="button" @click="testConnector(feed)">Test</button>
-                      <button class="rm-link" type="button" @click="removeConnector(feed)">Remove</button>
-                    </div>
-                    <div class="rm-feed-switches" x-show="feed.enabled">
-                      <label class="rm-toggle"><input type="checkbox" :checked="feed.values.news === 'on'" @change="updateConnector(feed, { values: { news: $event.target.checked ? 'on' : 'off' } })" /><span>In the daily news</span></label>
-                      <label class="rm-toggle"><input type="checkbox" :checked="feed.values.alerts === 'on'" @change="updateConnector(feed, { values: { alerts: $event.target.checked ? 'on' : 'off' } })" /><span>Tell me about new posts</span></label>
-                    </div>
-                    <label class="rm-field" x-show="feed.enabled && feed.values.alerts === 'on'">Only posts about (optional, comma-separated)<input :value="feed.values.words || ''" placeholder="Anything" @change="updateConnector(feed, { values: { words: $event.target.value } })" /></label>
-                    <p class="rm-note" x-show="feed.probe" x-text="feed.probe"></p>
-                  </div>
-                </template>
-                <p class="rm-note" x-show="!feedConnectors().length">No feeds yet. Most sites have one: look for an RSS icon, or try the site's address with /feed, /rss or /atom.xml at the end.</p>
-              </div>
-              <form class="rm-ask" @submit.prevent="addFeedConnector()">
-                <input type="url" x-model="newFeedLink" placeholder="Link to an RSS or Atom feed" aria-label="Link to an RSS or Atom feed" />
-                <button class="rm-btn solid" type="submit" :disabled="feedBusy || !newFeedLink.trim()" x-text="feedBusy ? 'Checking' : 'Add feed'"></button>
-              </form>
-              <p class="rm-result" x-show="feedResult" x-cloak :class="{ bad: feedResult && !feedResult.ok }" x-text="feedResult?.text"></p>
-
-              <h3>Parcels</h3>
-              <p x-text="connectorKind('parcel')?.description"></p>
-              <div>
-                <template x-for="service in parcelConnectors()" :key="service.id">
-                  <div class="rm-item">
-                    <div class="rm-item-head">
-                      <span><b x-text="service.name"></b><br /><span class="rm-mute" x-text="dhlLine(service)"></span></span>
-                      <label class="rm-toggle"><input type="checkbox" :checked="service.enabled" @change="updateConnector(service, { enabled: $event.target.checked })" /><span x-text="service.enabled ? 'On' : 'Off'"></span></label>
-                      <button class="rm-link" type="button" @click="testConnector(service)">Test</button>
-                      <button class="rm-link" type="button" @click="service.editing = !service.editing">Key</button>
-                      <button class="rm-link" type="button" @click="removeConnector(service)">Remove</button>
-                    </div>
-                    <p class="rm-note" x-show="service.probe" x-text="service.probe"></p>
-                    <form class="rm-ask" x-show="service.editing" x-cloak @submit.prevent="updateConnector(service, { secrets: { apiKey: service.newPassword } })">
-                      <input type="password" x-model="service.newPassword" autocomplete="off" placeholder="New API key" aria-label="New DHL API key" />
-                      <button class="rm-btn" type="submit" :disabled="!service.newPassword">Change key</button>
-                    </form>
-                    <label class="rm-field">Your postcode (optional: DHL then names the towns along the way)<input inputmode="numeric" maxlength="5" :value="service.values.postcode || ''" placeholder="04109" @change="updateConnector(service, { values: { postcode: $event.target.value } })" /></label>
-                  </div>
-                </template>
-              </div>
-              <div class="rm-stack" x-show="!parcelConnectors().length">
-                <p>Add DHL with a free key of your own. It tracks every DHL parcel, Express and eCommerce shipment straight from DHL.</p>
-                <ol class="rm-steps">
-                  <li>Sign up at <a class="rm-link" href="https://developer.dhl.com/user/register" target="_blank" rel="noopener">developer.dhl.com</a>. It's free.</li>
-                  <li>Under My Apps, tap Create App, name it RemindMe and pick the API "Shipment Tracking - Unified".</li>
-                  <li>Open the app, show its API Key (not the secret) and paste it here.</li>
-                </ol>
-                <div class="rm-two">
-                  <label class="rm-field">DHL API key<input type="password" x-model="newDhl.apiKey" autocomplete="off" /></label>
-                  <label class="rm-field">Your postcode (optional)<input x-model="newDhl.postcode" inputmode="numeric" maxlength="5" placeholder="04109" /></label>
-                </div>
-                <div class="rm-actions"><button class="rm-btn solid" type="button" :disabled="dhlBusy || !newDhl.apiKey.trim()" @click="addDhl()" x-text="dhlBusy ? 'Checking the key' : 'Add DHL'"></button></div>
-              </div>
-              <p class="rm-result" x-show="dhlResult" x-cloak :class="{ bad: dhlResult && !dhlResult.ok }" x-text="dhlResult?.text"></p>
-              <p class="rm-note">DHL allows 250 checks a day for free. RemindMe checks each parcel every 45 minutes outside quiet hours (every 15 once it's out for delivery) and keeps 50 for when you ask. Other carriers (Hermes, DPD, GLS, UPS) still go through a TrackingMore key in the app's options.</p>
-
-              <h3>Add a mail account</h3>
-              <p x-text="connectorKind('mail')?.description"></p>
-              <div class="rm-two">
-                <label class="rm-field">Service
-                  <select x-model="newConnector.preset">
-                    <template x-for="preset in connectorKind('mail')?.presets || []" :key="preset.id"><option :value="preset.id" x-text="preset.label"></option></template>
+                <p class="rm-empty" x-show="!calendars.list.length" x-text="calendars.error || 'Home Assistant has no calendars.'"></p>
+                <label class="rm-r rm-r-field" x-show="calendars.list.some((calendar) => calendar.writable)">
+                  <span>New events go to</span>
+                  <select @change="chooseCalendar($event.target.value)">
+                    <option value="" :selected="!calendars.newEvents">Ask me each time</option>
+                    <template x-for="calendar in calendars.list.filter((entry) => entry.writable)" :key="calendar.entityId">
+                      <option :value="calendar.entityId" :selected="calendar.entityId === calendars.newEvents" x-text="calendar.name"></option>
+                    </template>
                   </select>
                 </label>
-                <template x-if="!googleWay">
-                  <label class="rm-field">Name<input x-model="newConnector.name" :placeholder="presetOf(newConnector.preset)?.label" /></label>
-                </template>
               </div>
-              <div class="rm-choices" x-show="newConnector.preset === 'gmail'">
-                <button class="rm-choice" type="button" :class="{ on: newConnector.how === 'google' }" @click="newConnector.how = 'google'"><span>Sign in with Google</span><small>adds contacts</small><span></span></button>
-                <button class="rm-choice" type="button" :class="{ on: newConnector.how === 'password' }" @click="newConnector.how = 'password'"><span>App password</span><small>quicker to set up</small><span></span></button>
-              </div>
-              <template x-if="googleWay">
-                <div class="rm-stack">
-                  <template x-if="googleApp.set && !googleApp.editing">
-                    <div class="rm-stack">
-                      <div class="rm-actions">
-                        <a class="rm-btn solid rm-btn-link" href="./api/oauth/start" target="_blank" rel="noopener" @click="signInGoogle($event)">Sign in with Google</a>
-                      </div>
-                      <p class="rm-note">Google opens in a new tab and asks what RemindMe may use: tick Gmail, and contacts if RemindMe should look up addresses. Google warns that it hasn't verified the app; it's your own, so tap Advanced, then go on. It sends you back to <span x-text="googleApp.host"></span>, so sign in on a device with Tailscale on.</p>
-                      <p class="rm-note">Your Google app: <span x-text="googleApp.clientId"></span>. <button class="rm-link" type="button" @click="googleApp.editing = true">Change</button></p>
-                    </div>
-                  </template>
-                  <template x-if="!googleApp.set || googleApp.editing">
-                    <div class="rm-stack">
-                      <p class="rm-note" x-show="!googleApp.redirectUri">Signing in with Google needs the phone app's address first, because Google sends you back there. Turn it on under Phone app.</p>
-                      <ol class="rm-steps" x-show="googleApp.redirectUri">
-                        <li>Make a project in <a class="rm-link" href="https://console.cloud.google.com/projectcreate" target="_blank" rel="noopener">Google Cloud</a>, named RemindMe. It's free.</li>
-                        <li>Turn on the <a class="rm-link" href="https://console.cloud.google.com/apis/library/people.googleapis.com" target="_blank" rel="noopener">People API</a>, for contacts.</li>
-                        <li>In <a class="rm-link" href="https://console.cloud.google.com/auth/overview" target="_blank" rel="noopener">Google Auth Platform</a>, tap Get started: name RemindMe, audience External, your email.</li>
-                        <li>Under Audience, tap Publish app. Left in Testing, Google ends the sign-in every 7 days.</li>
-                        <li>Under Branding, add this authorized domain: <code class="rm-copy" x-text="googleApp.domain"></code></li>
-                        <li>Under Clients, create a client: Web application, with this authorized redirect URI: <code class="rm-copy" x-text="googleApp.redirectUri"></code></li>
-                        <li>Paste the client's ID and secret here.</li>
-                      </ol>
-                      <div class="rm-two" x-show="googleApp.redirectUri">
-                        <label class="rm-field">Client ID<input x-model="googleForm.clientId" autocomplete="off" placeholder="…apps.googleusercontent.com" /></label>
-                        <label class="rm-field">Client secret<input type="password" x-model="googleForm.clientSecret" autocomplete="new-password" :placeholder="googleApp.set ? 'Unchanged' : 'GOCSPX-…'" /></label>
-                      </div>
-                      <div class="rm-actions" x-show="googleApp.redirectUri">
-                        <button class="rm-btn solid" type="button" :disabled="!googleForm.clientId.trim()" @click="saveGoogleApp()">Save Google app</button>
-                        <button class="rm-btn ghost" type="button" x-show="googleApp.editing" @click="googleApp.editing = false">Cancel</button>
-                        <button class="rm-btn ghost" type="button" x-show="googleApp.editing" @click="removeGoogleApp()">Remove</button>
-                      </div>
-                    </div>
-                  </template>
-                </div>
-              </template>
-              <div class="rm-two" x-show="!googleWay">
-                <label class="rm-field">Address<input type="email" x-model="newConnector.address" autocomplete="off" placeholder="you@example.com" /></label>
-                <label class="rm-field">Password<input type="password" x-model="newConnector.password" autocomplete="new-password" /></label>
-                <template x-if="newConnector.preset === 'imap'">
-                  <label class="rm-field">IMAP server<input x-model="newConnector.host" placeholder="imap.example.com" /></label>
-                </template>
-                <template x-if="newConnector.preset === 'imap'">
-                  <label class="rm-field">Port<input x-model="newConnector.port" inputmode="numeric" /></label>
-                </template>
-                <template x-if="newConnector.preset === 'imap'">
-                  <label class="rm-field">SMTP server, to send (optional)<input x-model="newConnector.smtpHost" placeholder="smtp.example.com" /></label>
-                </template>
-                <template x-if="newConnector.preset === 'imap'">
-                  <label class="rm-field">SMTP port<input x-model="newConnector.smtpPort" inputmode="numeric" /></label>
-                </template>
-              </div>
-              <p class="rm-note" x-show="!googleWay" x-text="newConnector.preset === 'gmail' ? 'Google Account, Security, App passwords (needs 2-step verification). Not your normal password.' : presetOf(newConnector.preset)?.help"></p>
-              <div class="rm-actions" x-show="!googleWay">
-                <button class="rm-btn solid" type="button" :disabled="connectorBusy || !newConnector.address || !newConnector.password" @click="addConnector()" x-text="connectorBusy ? 'Testing the connection' : 'Test and add'"></button>
-              </div>
-              <p class="rm-result" x-show="connectorResult" x-cloak :class="{ bad: connectorResult && !connectorResult.ok }" x-text="connectorResult?.text"></p>
+              <p class="rm-note" x-show="calendars.note" x-text="calendars.note"></p>
+              <button class="rm-more" type="button" @click="openPop({ kind: 'icloud' })">Add iCloud ›</button>
 
+              <h3>Feeds <button class="rm-gh-act" type="button" @click="openPop({ kind: 'add-feed' })">+ Add</button></h3>
+              <div class="rm-rows">
+                <template x-for="feed in feedConnectors()" :key="feed.id">
+                  <div class="rm-r">
+                    <button class="rm-r-main" type="button" @click="openPop({ kind: 'feed', id: feed.id })"><span class="rm-lamp" :class="connectorLamp(feed)"></span><span class="rm-r-t"><b x-text="feed.name"></b><small :class="{ bad: connectorLamp(feed) === 'bad' }" x-text="feedRowLine(feed)"></small></span></button>
+                    <span class="rm-chev" aria-hidden="true">›</span>
+                  </div>
+                </template>
+                <p class="rm-empty" x-show="!feedConnectors().length">No feeds yet.</p>
+              </div>
+
+              <h3>Parcels</h3>
+              <div class="rm-rows">
+                <template x-for="service in parcelConnectors()" :key="service.id">
+                  <div class="rm-r">
+                    <button class="rm-r-main" type="button" @click="openPop({ kind: 'dhl', id: service.id })"><span class="rm-lamp" :class="connectorLamp(service)"></span><span class="rm-r-t"><b x-text="service.name"></b><small :class="{ bad: connectorLamp(service) === 'bad' }" x-text="dhlRowLine(service)"></small></span></button>
+                    <span class="rm-chev" aria-hidden="true">›</span>
+                  </div>
+                </template>
+                <div class="rm-r" x-show="!parcelConnectors().length">
+                  <button class="rm-r-main" type="button" @click="openPop({ kind: 'add-dhl' })"><span class="rm-lamp off"></span><span class="rm-r-t"><b>DHL</b><small>Not set up · free key, 3 steps</small></span></button>
+                  <button class="rm-pill" type="button" @click="openPop({ kind: 'add-dhl' })">Set up</button>
+                </div>
+              </div>
+              <p class="rm-result" x-show="connectorResult && !pop" x-cloak :class="{ bad: connectorResult && !connectorResult.ok }" x-text="connectorResult?.text"></p>
             </div>
 
             <!-- Memory -->
             <div class="rm-panel" x-show="settingsTab === 'memory'">
               <h3>What RemindMe remembers</h3>
-              <p>Facts it picked up from what you told it, and ones you added. Every answer gets them. It only learns from your own messages, never from emails or web pages, and never keeps passwords or long numbers.</p>
+              <p>It learns only from your own messages, never from mail or web pages, and never keeps passwords.</p>
               <label class="rm-toggle"><input type="checkbox" :checked="memory.learn" @change="setLearning($event.target.checked)" /><span x-text="memory.learn ? 'Learning from what you tell it' : 'Not learning; only what you add'"></span></label>
               <form class="rm-ask" @submit.prevent="addMemory()">
                 <input type="text" x-model="newMemory" maxlength="200" placeholder="Something to remember, such as: My sister Anna lives in Berlin" aria-label="Something to remember" />
@@ -843,8 +758,7 @@
 
             <!-- Your assistant: its name, its cat, how it talks, and its chat -->
             <div class="rm-panel" x-show="settingsTab === 'prompt'">
-              <h3>Your assistant</h3>
-              <p>It's the one you talk to under Chat, with its name and cat at the top. Work that takes a while goes off as a task under Tasks and reports back in the chat.</p>
+              <h3>Its name</h3>
               <form class="rm-ask" @submit.prevent="renameAssistant()">
                 <input type="text" maxlength="24" x-model="identity.name" placeholder="RemindMe" aria-label="Its name" />
                 <button class="rm-btn" type="submit" :disabled="identity.name.trim() === assistant.name">Rename</button>
@@ -866,7 +780,7 @@
               </div>
               <p class="rm-note" x-text="lookName()"></p>
               <h4 class="rm-news-group">How it talks</h4>
-              <p class="rm-note">Its standing instructions. Its tools, the time and the house are always added on top.</p>
+              <p class="rm-note">Its tools, the time and the house are added on top.</p>
               <label class="rm-field">Instructions
                 <textarea rows="7" spellcheck="false" x-model="persona"></textarea>
               </label>
@@ -883,8 +797,8 @@
 
             <!-- What it may do: per kind of action, on its own, ask first, or never -->
             <div class="rm-panel" x-show="settingsTab === 'rules'">
-              <h3>What it may do</h3>
-              <p>For each kind of action: do it on its own, ask you first (it waits for your tap in the inbox, on your phone and on Discord), or never. What opens the house or speaks for you can wait for your tap or be off, never done unasked. Jobs follow the same rules.</p>
+              <h3>On its own, ask first, or never</h3>
+              <p>What opens the house or speaks for you is never done unasked. Tasks follow the same rules.</p>
               <div>
                 <template x-for="rule in rules" :key="rule.id">
                   <div class="rm-rule">
@@ -900,32 +814,42 @@
               <p class="rm-note" role="status" x-show="rulesNote" x-text="rulesNote"></p>
             </div>
 
-            <!-- Skills -->
+            <!-- Skills: yours with a switch, skills.sh underneath -->
             <div class="rm-panel" x-show="settingsTab === 'skills'">
-              <h3>Skills</h3>
-              <p>Extra instructions added to every turn while they're on. Each one costs a little on every message.</p>
-              <div>
+              <h3>Yours <button class="rm-gh-act" type="button" @click="openPop({ kind: 'add-skill' })">+ Write one</button></h3>
+              <div class="rm-rows">
                 <template x-for="skill in skills" :key="skill.id">
-                  <div class="rm-item">
-                    <div class="rm-item-head">
-                      <input class="rm-input" :value="skill.name" aria-label="Skill name" @change="updateSkill(skill, { name: $event.target.value })" />
-                      <label class="rm-toggle"><input type="checkbox" :checked="skill.enabled" @change="updateSkill(skill, { enabled: $event.target.checked })" /><span x-text="skill.enabled ? 'On' : 'Off'"></span></label>
-                      <button class="rm-link" type="button" @click="deleteSkill(skill)">Delete</button>
-                    </div>
-                    <textarea class="rm-input" rows="3" :value="skill.instructions" aria-label="Skill instructions" @change="updateSkill(skill, { instructions: $event.target.value })"></textarea>
+                  <div class="rm-r">
+                    <button class="rm-r-main plain" type="button" @click="openPop({ kind: 'skill', id: skill.id })"><span class="rm-r-t"><b x-text="skill.name"></b><small x-text="skillLine(skill)"></small></span></button>
+                    <button class="rm-switch" type="button" role="switch" :aria-checked="String(skill.enabled)" :aria-label="`${skill.name} on`" @click="updateSkill(skill, { enabled: !skill.enabled })"></button>
                   </div>
                 </template>
-                <p class="rm-note" x-show="!skills.length">No skills yet.</p>
+                <p class="rm-empty" x-show="!skills.length">None yet.</p>
               </div>
-              <div class="rm-item">
-                <label class="rm-field">New skill<input x-model="newSkillName" placeholder="Name, such as Short replies" /></label>
-                <label class="rm-field">What it should always do<textarea rows="2" x-model="newSkillBody"></textarea></label>
-                <div class="rm-actions"><button class="rm-btn solid" type="button" @click="addSkill()">Add skill</button></div>
+              <p class="rm-note bad" x-show="skillError" x-text="skillError"></p>
+
+              <h3>Find on skills.sh</h3>
+              <form class="rm-search" role="search" @submit.prevent="findSkills()">
+                <input type="search" x-model="skillQuery" placeholder="Writing, travel, email…" aria-label="Search skills.sh" enterkeyhint="search" />
+              </form>
+              <div class="rm-chips">
+                <template x-for="word in ['Writing', 'Travel', 'Email', 'Recipes', 'Summaries']" :key="word">
+                  <button class="rm-chip" type="button" :class="{ on: skillQuery.toLowerCase() === word.toLowerCase() }" @click="skillQuery = word; findSkills()" x-text="word"></button>
+                </template>
               </div>
-              <p class="rm-note" x-show="skillError" x-text="skillError"></p>
+              <p class="rm-note" x-show="skillFind.busy">Searching skills.sh…</p>
+              <p class="rm-note bad" x-show="skillFind.error" x-text="skillFind.error"></p>
+              <div class="rm-rows" x-show="skillFind.results">
+                <template x-for="found in skillFind.results || []" :key="found.id">
+                  <div class="rm-r">
+                    <button class="rm-r-main plain" type="button" @click="previewSkill(found)"><span class="rm-r-t"><b x-text="found.name"></b><small class="wrap" x-text="found.description || 'No description'"></small><em x-text="`${found.repo} · ${installs(found.installs)} installs`"></em></span></button>
+                    <button class="rm-pill" type="button" :disabled="skillAdded(found)" @click="previewSkill(found)" x-text="skillAdded(found) ? 'Added' : 'View'"></button>
+                  </div>
+                </template>
+                <p class="rm-empty" x-show="skillFind.results && !skillFind.results.length">Nothing on skills.sh for that.</p>
+              </div>
             </div>
 
-            <!-- MCP -->
             <!-- Discord: whether what RemindMe says first goes there too -->
             <div class="rm-panel" x-show="settingsTab === 'discord'">
               <h3>Discord</h3>
@@ -933,52 +857,57 @@
               <template x-if="discord.bot">
                 <div class="rm-stack">
                   <label class="rm-toggle"><input type="checkbox" :checked="discord.messages" @change="setDiscordMessages($event.target.checked)" /><span x-text="discord.messages ? 'Its messages go to Discord too' : 'Its messages stay off Discord'"></span></label>
-                  <p class="rm-note">That's the morning brief, reminders, heads-ups, the news, price drops, new posts and job updates. With this off they still come to your phone and the RemindMe chat, it still answers when you write to it on Discord, and a reminder set in a Discord channel still rings there.</p>
+                  <p class="rm-note">The brief, reminders, heads-ups, news and task updates. Off, they still reach your phone and the chat, and it still answers on Discord.</p>
                   <p class="rm-note" x-show="!discord.messages && !discord.phones">No phone gets RemindMe's notifications yet, so you'd only see its messages in the console. Turn them on under Phone app.</p>
                 </div>
               </template>
               <p class="rm-note" role="status" x-show="discordNote" x-text="discordNote"></p>
             </div>
 
+            <!-- Connected tools: yours, then Claude's directory by topic -->
             <div class="rm-panel" x-show="settingsTab === 'mcp'">
-              <h3>Connected tools</h3>
-              <p>Tools from MCP servers, offered to the AI next to its own. Many, such as Notion, Linear and Todoist, only need the address and a sign-in. Turn on only what you use: each one costs a little on every message.</p>
-              <div>
+              <h3>Yours</h3>
+              <div class="rm-rows">
                 <template x-for="server in mcpServers" :key="server.id">
-                  <div class="rm-item">
-                    <div class="rm-item-head">
-                      <input class="rm-input" :value="server.name" aria-label="Server name" @change="updateMcp(server, { name: $event.target.value })" />
-                      <label class="rm-toggle"><input type="checkbox" :checked="server.enabled" @change="updateMcp(server, { enabled: $event.target.checked })" /><span x-text="server.enabled ? 'On' : 'Off'"></span></label>
-                      <button class="rm-link" type="button" @click="testMcp(server)">Test</button>
-                      <template x-if="server.wantsSignIn || server.signedIn">
-                        <a class="rm-link" href="./api/oauth/start" target="_blank" rel="noopener" @click="signInMcp($event, server)" x-text="server.signedIn ? 'Sign in again' : 'Sign in'"></a>
-                      </template>
-                      <button class="rm-link" type="button" @click="deleteMcp(server)">Remove</button>
-                    </div>
-                    <input class="rm-input" :value="server.url" aria-label="Server URL" @change="updateMcp(server, { url: $event.target.value })" />
-                    <p class="rm-note" x-show="server.probe || server.signedIn || server.wantsSignIn" x-text="server.probe || (server.wantsSignIn ? 'Wants you to sign in.' : 'Signed in.')"></p>
+                  <div class="rm-r">
+                    <button class="rm-r-main" type="button" @click="openPop({ kind: 'mcp', id: server.id })"><span class="rm-lamp" :class="mcpLamp(server)"></span><span class="rm-r-t"><b x-text="server.name"></b><small :class="{ bad: mcpLamp(server) === 'bad' }" x-text="mcpLine(server)"></small></span></button>
+                    <template x-if="server.wantsSignIn">
+                      <a class="rm-pill" href="./api/oauth/start" target="_blank" rel="noopener" @click="signInMcp($event, server)">Sign in</a>
+                    </template>
+                    <span class="rm-chev" x-show="!server.wantsSignIn" aria-hidden="true">›</span>
                   </div>
                 </template>
-                <p class="rm-note" x-show="!mcpServers.length">No servers yet.</p>
+                <p class="rm-empty" x-show="!mcpServers.length">None yet.</p>
               </div>
-              <div class="rm-item">
-                <p class="rm-note">Ready to add:
-                  <template x-for="pick in mcpPicks" :key="pick.name"><button class="rm-link rm-pick" type="button" @click="newMcpName = pick.name; newMcpUrl = pick.url" x-text="pick.name"></button></template>
-                </p>
-                <div class="rm-two">
-                  <label class="rm-field">Name<input x-model="newMcpName" placeholder="Weather" /></label>
-                  <label class="rm-field">Address<input x-model="newMcpUrl" placeholder="https://host/mcp" /></label>
-                </div>
-                <label class="rm-field">Token, only if the server gave you one instead of a sign-in (optional)<input type="password" x-model="newMcpAuth" autocomplete="off" placeholder="Bearer …" /></label>
-                <div class="rm-actions"><button class="rm-btn solid" type="button" @click="addMcp()">Add server</button></div>
+              <p class="rm-note" role="status" x-show="mcpError" :class="{ bad: mcpErrorBad }" x-text="mcpError"></p>
+
+              <h3>From Claude's directory <span class="rm-gh-note" x-show="directory.total" x-text="directory.total"></span></h3>
+              <form class="rm-search" role="search" @submit.prevent="loadDirectory()">
+                <input type="search" x-model="directory.q" placeholder="Flights, hotels, music…" aria-label="Search Claude's directory" enterkeyhint="search" @input.debounce.400ms="loadDirectory()" />
+              </form>
+              <div class="rm-chips">
+                <template x-for="topic in directory.topics" :key="topic.id">
+                  <button class="rm-chip" type="button" :class="{ on: directory.topic === topic.id }" @click="directory.topic = directory.topic === topic.id ? '' : topic.id; loadDirectory()" x-text="topic.label"></button>
+                </template>
               </div>
-              <p class="rm-note" x-show="mcpError" x-text="mcpError"></p>
+              <p class="rm-note bad" x-show="directory.error" x-text="directory.error"></p>
+              <div class="rm-rows">
+                <template x-for="entry in directory.entries.slice(0, directory.shown)" :key="entry.slug">
+                  <div class="rm-r">
+                    <div class="rm-r-main logo"><span class="rm-logo" aria-hidden="true" x-text="entry.name.replace(/^the\s+/i, '').charAt(0).toUpperCase()"></span><span class="rm-r-t"><b x-text="entry.name"></b><small x-text="entry.what"></small><em x-text="directoryLine(entry)"></em></span></div>
+                    <button class="rm-pill" type="button" :disabled="Boolean(directoryAdded(entry)) || directory.adding === entry.slug" @click="addFromDirectory(entry)" x-text="directoryAdded(entry) ? 'Added' : directory.adding === entry.slug ? 'Checking' : 'Add'"></button>
+                  </div>
+                </template>
+                <p class="rm-empty" x-show="directory.loaded && !directory.entries.length">Nothing in the directory for that.</p>
+              </div>
+              <button class="rm-more" type="button" x-show="directory.entries.length > directory.shown" @click="directory.shown += 12" x-text="`${Math.min(12, directory.entries.length - directory.shown)} more`"></button>
+              <button class="rm-more" type="button" @click="openPop({ kind: 'add-mcp' })">Add one by its address ›</button>
             </div>
 
             <!-- News -->
             <div class="rm-panel" x-show="settingsTab === 'news'">
               <h3>News</h3>
-              <p>A short digest of the day's news from Germany, the EU and the world, from the sources you tick. RemindMe reads their headlines, merges a story that several of them tell, and writes a line or two on each, with a link to every source. It comes to Discord, your phone and the RemindMe thread, never during quiet hours.</p>
+              <p>A short digest from the sources you tick, a line or two a story with links, never in quiet hours.</p>
               <label class="rm-toggle"><input type="checkbox" :checked="news.on" @change="saveNews({ on: $event.target.checked }, $event.target.checked ? `On: the news comes every day at ${news.time}.` : 'Off.')" /><span x-text="news.on ? 'Every day' : 'Off'"></span></label>
               <div class="rm-news-when">
                 <label class="rm-field">At<input type="time" :value="news.time" @change="saveNews({ time: $event.target.value }, `The news comes at ${$event.target.value}.`)" /></label>
@@ -1035,7 +964,7 @@
                   </template>
                 </div>
               </div>
-              <p class="rm-note">The agencies themselves (dpa, Reuters, AP, AFP) sell their wires to newsrooms and publish no feeds; dpa's comes through ZEIT ONLINE's newsticker. Any other source with an RSS feed can be added here, or under Connectors, where it can also tell you about new posts.</p>
+              <details class="rm-how"><summary>Why no dpa, Reuters or AP</summary><p class="rm-note">The agencies sell their wires to newsrooms and publish no feeds; dpa's comes through ZEIT ONLINE's newsticker. Any source with an RSS feed can be added here, or under Connectors, where it can also tell you about new posts.</p></details>
               <form class="rm-ask" @submit.prevent="addNewsFeed()">
                 <input type="url" x-model="newFeed" placeholder="Another source: the link to its RSS feed" aria-label="Link to an RSS feed" />
                 <button class="rm-btn" type="submit" :disabled="newsBusy || !newFeed.trim()">Add</button>
@@ -1048,7 +977,7 @@
             <!-- Price watches -->
             <div class="rm-panel" x-show="settingsTab === 'prices'">
               <h3>Price watches</h3>
-              <p>Products RemindMe checks every few hours, on Geizhals (which compares German and Austrian shops) or on a shop's own page. You hear about it when the price falls under your target or, without one, drops by 5 % or more. Never during quiet hours.</p>
+              <p>Checked every few hours on Geizhals or the shop's page. You hear when it falls under your target, or drops 5 % or more.</p>
               <div>
                 <template x-for="watch in priceWatches" :key="watch.id">
                   <div class="rm-item rm-price">
@@ -1081,7 +1010,6 @@
             <!-- Tasks -->
             <div class="rm-panel" x-show="settingsTab === 'tasks'">
               <h3>Scheduled tasks</h3>
-              <p>Things RemindMe does on its own on a schedule, then messages you the result.</p>
               <div>
                 <template x-for="task in tasks" :key="task.id">
                   <div class="rm-item">
@@ -1106,7 +1034,6 @@
             <!-- Documents -->
             <div class="rm-panel" x-show="settingsTab === 'documents'">
               <h3>Documents</h3>
-              <p>What RemindMe has written for you. Ask it to write or change one in the command line.</p>
               <div class="rm-docs">
                 <template x-for="doc in documents" :key="doc.id">
                   <a :href="`./api/artifacts/${encodeURIComponent(doc.id)}/document`" target="_blank" rel="noopener"><span x-text="doc.title"></span><span x-text="`${doc.kind}, ${formatWhen(doc.updatedAt)}`"></span></a>
@@ -1115,6 +1042,313 @@
               <p class="rm-note" x-show="!documents.length">No documents yet.</p>
             </div>
           </div>
+        </div>
+      </div>
+
+      <!-- A sheet over Settings: one account, tool or skill with all it can do, or a way to add one -->
+      <div class="rm-pop" x-show="pop" x-cloak>
+        <div class="rm-pop-scrim" @click="closePop()"></div>
+        <div class="rm-pop-in" role="dialog" aria-modal="true" aria-labelledby="pop-title">
+          <div class="rm-pop-grab" aria-hidden="true"></div>
+          <div class="rm-pop-head">
+            <h3 id="pop-title" x-text="popTitle"></h3>
+            <button class="rm-x" type="button" @click="closePop()" aria-label="Close">×</button>
+          </div>
+
+          <!-- A mail account -->
+          <template x-if="pop?.kind === 'mail' && popConnector">
+            <div class="rm-pop-body">
+              <p class="rm-pop-line" x-text="`${popConnector.values.address} · ${presetOf(popConnector.preset)?.label || popConnector.preset}${popConnector.values.auth === 'google' ? ', Google sign-in' : ''}`"></p>
+              <p class="rm-note" :class="{ bad: connectorLamp(popConnector) === 'bad' }" x-text="connectorStatus(popConnector)"></p>
+              <div class="rm-r rm-r-switch"><span>Read it</span><button class="rm-switch" type="button" role="switch" :aria-checked="String(popConnector.enabled)" aria-label="Read it" @click="updateConnector(popConnector, { enabled: !popConnector.enabled })"></button></div>
+              <template x-if="popConnector.values.auth !== 'google'">
+                <form class="rm-ask" @submit.prevent="updateConnector(popConnector, { secrets: { password: popConnector.newPassword } })">
+                  <input type="password" x-model="popConnector.newPassword" autocomplete="new-password" placeholder="New password" aria-label="New password" />
+                  <button class="rm-btn" type="submit" :disabled="!popConnector.newPassword">Change</button>
+                </form>
+              </template>
+              <p class="rm-note" role="status" x-show="popConnector.probe" x-text="popConnector.probe"></p>
+              <p class="rm-result" x-show="connectorResult" :class="{ bad: connectorResult && !connectorResult.ok }" x-text="connectorResult?.text"></p>
+              <div class="rm-actions">
+                <template x-if="popConnector.values.auth === 'google'"><a class="rm-btn solid rm-btn-link" href="./api/oauth/start" target="_blank" rel="noopener" @click="signInGoogle($event, popConnector.values.address)">Sign in again</a></template>
+                <button class="rm-btn" type="button" @click="testConnector(popConnector)">Test</button>
+                <button class="rm-btn ghost" type="button" @click="removeConnector(popConnector)">Remove</button>
+              </div>
+            </div>
+          </template>
+
+          <!-- A feed -->
+          <template x-if="pop?.kind === 'feed' && popConnector">
+            <div class="rm-pop-body">
+              <a class="rm-pop-line rm-link" :href="popConnector.values.url" target="_blank" rel="noopener" x-text="feedHost(popConnector.values.url)"></a>
+              <p class="rm-note" :class="{ bad: connectorLamp(popConnector) === 'bad' }" x-text="feedLine(popConnector)"></p>
+              <div class="rm-rows">
+                <div class="rm-r rm-r-switch"><span>Read it</span><button class="rm-switch" type="button" role="switch" :aria-checked="String(popConnector.enabled)" aria-label="Read it" @click="updateConnector(popConnector, { enabled: !popConnector.enabled })"></button></div>
+                <div class="rm-r rm-r-switch" x-show="popConnector.enabled"><span>In the daily news</span><button class="rm-switch" type="button" role="switch" :aria-checked="String(popConnector.values.news === 'on')" aria-label="In the daily news" @click="updateConnector(popConnector, { values: { news: popConnector.values.news === 'on' ? 'off' : 'on' } })"></button></div>
+                <div class="rm-r rm-r-switch" x-show="popConnector.enabled"><span>Tell me about new posts</span><button class="rm-switch" type="button" role="switch" :aria-checked="String(popConnector.values.alerts === 'on')" aria-label="Tell me about new posts" @click="updateConnector(popConnector, { values: { alerts: popConnector.values.alerts === 'on' ? 'off' : 'on' } })"></button></div>
+              </div>
+              <label class="rm-field" x-show="popConnector.enabled && popConnector.values.alerts === 'on'">Only posts about (optional, comma-separated)<input :value="popConnector.values.words || ''" placeholder="Anything" @change="updateConnector(popConnector, { values: { words: $event.target.value } })" /></label>
+              <p class="rm-note" role="status" x-show="popConnector.probe" x-text="popConnector.probe"></p>
+              <div class="rm-actions">
+                <button class="rm-btn" type="button" @click="testConnector(popConnector)">Test</button>
+                <button class="rm-btn ghost" type="button" @click="removeConnector(popConnector)">Remove</button>
+              </div>
+            </div>
+          </template>
+
+          <!-- DHL -->
+          <template x-if="pop?.kind === 'dhl' && popConnector">
+            <div class="rm-pop-body">
+              <p class="rm-note" :class="{ bad: connectorLamp(popConnector) === 'bad' }" x-text="dhlLine(popConnector)"></p>
+              <div class="rm-r rm-r-switch"><span>Track parcels with it</span><button class="rm-switch" type="button" role="switch" :aria-checked="String(popConnector.enabled)" aria-label="Track parcels with it" @click="updateConnector(popConnector, { enabled: !popConnector.enabled })"></button></div>
+              <form class="rm-ask" @submit.prevent="updateConnector(popConnector, { secrets: { apiKey: popConnector.newPassword } })">
+                <input type="password" x-model="popConnector.newPassword" autocomplete="off" placeholder="New API key" aria-label="New DHL API key" />
+                <button class="rm-btn" type="submit" :disabled="!popConnector.newPassword">Change</button>
+              </form>
+              <label class="rm-field">Your postcode (optional: DHL then names the towns along the way)<input inputmode="numeric" maxlength="5" :value="popConnector.values.postcode || ''" placeholder="04109" @change="updateConnector(popConnector, { values: { postcode: $event.target.value } })" /></label>
+              <p class="rm-note" role="status" x-show="popConnector.probe" x-text="popConnector.probe"></p>
+              <p class="rm-note">250 checks a day are free. RemindMe checks each parcel every 45 minutes outside quiet hours (every 15 once it's out for delivery) and keeps 50 for when you ask. Hermes, DPD, GLS and UPS go through a TrackingMore key in the app options.</p>
+              <div class="rm-actions">
+                <button class="rm-btn" type="button" @click="testConnector(popConnector)">Test</button>
+                <button class="rm-btn ghost" type="button" @click="removeConnector(popConnector)">Remove</button>
+              </div>
+            </div>
+          </template>
+
+          <!-- Add a mail account -->
+          <template x-if="pop?.kind === 'add-mail'">
+            <div class="rm-pop-body">
+              <p class="rm-note">RemindMe can search and read it, mention new mail in the brief, save replies in Drafts, and send one once you tap Send. It never deletes, moves or marks mail as read. Passwords stay on the Pi.</p>
+              <div class="rm-two">
+                <label class="rm-field">Service
+                  <select x-model="newConnector.preset">
+                    <template x-for="preset in connectorKind('mail')?.presets || []" :key="preset.id"><option :value="preset.id" x-text="preset.label"></option></template>
+                  </select>
+                </label>
+                <template x-if="!googleWay">
+                  <label class="rm-field">Name<input x-model="newConnector.name" :placeholder="presetOf(newConnector.preset)?.label" /></label>
+                </template>
+              </div>
+              <div class="rm-choices" x-show="newConnector.preset === 'gmail'">
+                <button class="rm-choice" type="button" :class="{ on: newConnector.how === 'google' }" @click="newConnector.how = 'google'"><span>Sign in with Google</span><small>adds contacts</small><span></span></button>
+                <button class="rm-choice" type="button" :class="{ on: newConnector.how === 'password' }" @click="newConnector.how = 'password'"><span>App password</span><small>quicker to set up</small><span></span></button>
+              </div>
+              <template x-if="googleWay">
+                <div class="rm-stack">
+                  <template x-if="googleApp.set && !googleApp.editing">
+                    <div class="rm-stack">
+                      <div class="rm-actions"><a class="rm-btn solid rm-btn-link" href="./api/oauth/start" target="_blank" rel="noopener" @click="signInGoogle($event)">Sign in with Google</a></div>
+                      <p class="rm-note">Google opens in a new tab: tick Gmail, and contacts if RemindMe should look up addresses. It warns that it hasn't verified the app; it's your own, so tap Advanced, then go on. It sends you back to <span x-text="googleApp.host"></span>, so sign in on a device with Tailscale on.</p>
+                      <p class="rm-note">Your Google app: <span x-text="googleApp.clientId"></span>. <button class="rm-link" type="button" @click="googleApp.editing = true">Change</button></p>
+                    </div>
+                  </template>
+                  <template x-if="!googleApp.set || googleApp.editing">
+                    <div class="rm-stack">
+                      <p class="rm-note" x-show="!googleApp.redirectUri">Signing in with Google needs the phone app's address first, because Google sends you back there. Turn it on under Phone app.</p>
+                      <p class="rm-note" x-show="googleApp.redirectUri">Once: your own Google app, so the sign-in is yours alone.</p>
+                      <ol class="rm-steps" x-show="googleApp.redirectUri">
+                        <li>Make a project in <a class="rm-link" href="https://console.cloud.google.com/projectcreate" target="_blank" rel="noopener">Google Cloud</a>, named RemindMe. It's free.</li>
+                        <li>Turn on the <a class="rm-link" href="https://console.cloud.google.com/apis/library/people.googleapis.com" target="_blank" rel="noopener">People API</a>, for contacts.</li>
+                        <li>In <a class="rm-link" href="https://console.cloud.google.com/auth/overview" target="_blank" rel="noopener">Google Auth Platform</a>, tap Get started: name RemindMe, audience External, your email.</li>
+                        <li>Under Audience, tap Publish app. Left in Testing, Google ends the sign-in every 7 days.</li>
+                        <li>Under Branding, add this authorized domain: <code class="rm-copy" x-text="googleApp.domain"></code></li>
+                        <li>Under Clients, create a client: Web application, with this authorized redirect URI: <code class="rm-copy" x-text="googleApp.redirectUri"></code></li>
+                        <li>Paste the client's ID and secret here.</li>
+                      </ol>
+                      <div class="rm-two" x-show="googleApp.redirectUri">
+                        <label class="rm-field">Client ID<input x-model="googleForm.clientId" autocomplete="off" placeholder="…apps.googleusercontent.com" /></label>
+                        <label class="rm-field">Client secret<input type="password" x-model="googleForm.clientSecret" autocomplete="new-password" :placeholder="googleApp.set ? 'Unchanged' : 'GOCSPX-…'" /></label>
+                      </div>
+                      <div class="rm-actions" x-show="googleApp.redirectUri">
+                        <button class="rm-btn solid" type="button" :disabled="!googleForm.clientId.trim()" @click="saveGoogleApp()">Save Google app</button>
+                        <button class="rm-btn ghost" type="button" x-show="googleApp.editing" @click="googleApp.editing = false">Cancel</button>
+                        <button class="rm-btn ghost" type="button" x-show="googleApp.editing" @click="removeGoogleApp()">Remove</button>
+                      </div>
+                    </div>
+                  </template>
+                </div>
+              </template>
+              <div class="rm-two" x-show="!googleWay">
+                <label class="rm-field">Address<input type="email" x-model="newConnector.address" autocomplete="off" placeholder="you@example.com" /></label>
+                <label class="rm-field">Password<input type="password" x-model="newConnector.password" autocomplete="new-password" /></label>
+                <template x-if="newConnector.preset === 'imap'">
+                  <label class="rm-field">IMAP server<input x-model="newConnector.host" placeholder="imap.example.com" /></label>
+                </template>
+                <template x-if="newConnector.preset === 'imap'">
+                  <label class="rm-field">Port<input x-model="newConnector.port" inputmode="numeric" /></label>
+                </template>
+                <template x-if="newConnector.preset === 'imap'">
+                  <label class="rm-field">SMTP server, to send (optional)<input x-model="newConnector.smtpHost" placeholder="smtp.example.com" /></label>
+                </template>
+                <template x-if="newConnector.preset === 'imap'">
+                  <label class="rm-field">SMTP port<input x-model="newConnector.smtpPort" inputmode="numeric" /></label>
+                </template>
+              </div>
+              <p class="rm-note" x-show="!googleWay" x-text="newConnector.preset === 'gmail' ? 'Google Account, Security, App passwords (needs 2-step verification). Not your normal password.' : presetOf(newConnector.preset)?.help"></p>
+              <div class="rm-actions" x-show="!googleWay">
+                <button class="rm-btn solid" type="button" :disabled="connectorBusy || !newConnector.address || !newConnector.password" @click="addConnector()" x-text="connectorBusy ? 'Testing the connection' : 'Test and add'"></button>
+              </div>
+              <p class="rm-result" x-show="connectorResult" :class="{ bad: connectorResult && !connectorResult.ok }" x-text="connectorResult?.text"></p>
+            </div>
+          </template>
+
+          <!-- Add a feed -->
+          <template x-if="pop?.kind === 'add-feed'">
+            <div class="rm-pop-body">
+              <p class="rm-note">A blog, a newsroom, a YouTube channel or a project's releases. RemindMe can put it in the daily news, tell you about new posts, and read it when you ask. Most sites have a feed: try the site's address, or add /feed or /rss.</p>
+              <form class="rm-ask" @submit.prevent="addFeedConnector()">
+                <input type="url" x-model="newFeedLink" placeholder="Link to the site or its feed" aria-label="Link to the site or its RSS feed" />
+                <button class="rm-btn solid" type="submit" :disabled="feedBusy || !newFeedLink.trim()" x-text="feedBusy ? 'Checking' : 'Add'"></button>
+              </form>
+              <p class="rm-result" x-show="feedResult" :class="{ bad: feedResult && !feedResult.ok }" x-text="feedResult?.text"></p>
+            </div>
+          </template>
+
+          <!-- Add DHL -->
+          <template x-if="pop?.kind === 'add-dhl'">
+            <div class="rm-pop-body">
+              <p class="rm-note">Tracks every DHL parcel, Express and eCommerce shipment straight from DHL, with a free key of your own.</p>
+              <ol class="rm-steps">
+                <li>Sign up at <a class="rm-link" href="https://developer.dhl.com/user/register" target="_blank" rel="noopener">developer.dhl.com</a>. It's free.</li>
+                <li>Under My Apps, tap Create App, name it RemindMe and pick the API "Shipment Tracking - Unified".</li>
+                <li>Open the app, show its API Key (not the secret) and paste it here.</li>
+              </ol>
+              <div class="rm-two">
+                <label class="rm-field">DHL API key<input type="password" x-model="newDhl.apiKey" autocomplete="off" /></label>
+                <label class="rm-field">Your postcode (optional)<input x-model="newDhl.postcode" inputmode="numeric" maxlength="5" placeholder="04109" /></label>
+              </div>
+              <div class="rm-actions"><button class="rm-btn solid" type="button" :disabled="dhlBusy || !newDhl.apiKey.trim()" @click="addDhl()" x-text="dhlBusy ? 'Checking the key' : 'Add DHL'"></button></div>
+              <p class="rm-result" x-show="dhlResult" :class="{ bad: dhlResult && !dhlResult.ok }" x-text="dhlResult?.text"></p>
+            </div>
+          </template>
+
+          <!-- iCloud calendars -->
+          <template x-if="pop?.kind === 'icloud'">
+            <div class="rm-pop-body">
+              <p class="rm-note">RemindMe reads every calendar Home Assistant has. iCloud joins them through Home Assistant:</p>
+              <ol class="rm-steps">
+                <li>In Home Assistant: Settings, Devices &amp; services, Add integration, CalDAV.</li>
+                <li>Server <code>https://caldav.icloud.com</code>, your Apple ID, and an app-specific password from <a class="rm-link" href="https://account.apple.com" target="_blank" rel="noopener">account.apple.com</a>.</li>
+                <li>Come back here and pick where new events go.</li>
+              </ol>
+            </div>
+          </template>
+
+          <!-- A connected tool -->
+          <template x-if="pop?.kind === 'mcp' && popServer">
+            <div class="rm-pop-body">
+              <p class="rm-note" :class="{ bad: mcpLamp(popServer) === 'bad' }" x-text="mcpLine(popServer)"></p>
+              <div class="rm-r rm-r-switch"><span>Offer its tools</span><button class="rm-switch" type="button" role="switch" :aria-checked="String(popServer.enabled)" aria-label="Offer its tools" @click="updateMcp(popServer, { enabled: !popServer.enabled })"></button></div>
+              <label class="rm-field">Address<input :value="popServer.url" spellcheck="false" @change="updateMcp(popServer, { url: $event.target.value })" /></label>
+              <label class="rm-field">Token, only if the server gave you one instead of a sign-in<input type="password" autocomplete="off" :placeholder="popServer.hasAuth ? 'Saved' : 'Bearer …'" @change="updateMcp(popServer, { authorization: $event.target.value })" /></label>
+              <p class="rm-note" role="status" x-show="popServer.probe" x-text="popServer.probe"></p>
+              <div class="rm-actions">
+                <template x-if="popServer.wantsSignIn || popServer.signedIn">
+                  <a class="rm-btn solid rm-btn-link" href="./api/oauth/start" target="_blank" rel="noopener" @click="signInMcp($event, popServer)" x-text="popServer.signedIn ? 'Sign in again' : 'Sign in'"></a>
+                </template>
+                <button class="rm-btn" type="button" @click="testMcp(popServer)">Test</button>
+                <button class="rm-btn ghost" type="button" @click="deleteMcp(popServer)">Remove</button>
+              </div>
+              <p class="rm-note">Each tool it offers costs a little on every message while it's on.</p>
+            </div>
+          </template>
+
+          <!-- Add a connected tool by its address -->
+          <template x-if="pop?.kind === 'add-mcp'">
+            <div class="rm-pop-body">
+              <p class="rm-note">Any remote MCP server. Many only need the address and a sign-in.</p>
+              <div class="rm-two">
+                <label class="rm-field">Name<input x-model="newMcpName" placeholder="Weather" /></label>
+                <label class="rm-field">Address<input x-model="newMcpUrl" placeholder="https://host/mcp" spellcheck="false" /></label>
+              </div>
+              <label class="rm-field">Token, only if the server gave you one instead of a sign-in (optional)<input type="password" x-model="newMcpAuth" autocomplete="off" placeholder="Bearer …" /></label>
+              <div class="rm-actions"><button class="rm-btn solid" type="button" @click="addMcp()">Add</button></div>
+              <p class="rm-note" x-show="mcpError" :class="{ bad: mcpErrorBad }" x-text="mcpError"></p>
+            </div>
+          </template>
+
+          <!-- One of your skills -->
+          <template x-if="pop?.kind === 'skill' && popSkill">
+            <div class="rm-pop-body">
+              <div class="rm-r rm-r-switch"><span x-text="popSkill.enabled ? 'On' : 'Off'"></span><button class="rm-switch" type="button" role="switch" :aria-checked="String(popSkill.enabled)" aria-label="On" @click="updateSkill(popSkill, { enabled: !popSkill.enabled })"></button></div>
+              <template x-if="!popSkill.source">
+                <div class="rm-stack">
+                  <label class="rm-field">Name<input :value="popSkill.name" maxlength="80" @change="updateSkill(popSkill, { name: $event.target.value })" /></label>
+                  <label class="rm-field">What it should do<textarea rows="6" :value="popSkill.instructions" @change="updateSkill(popSkill, { instructions: $event.target.value })"></textarea></label>
+                  <p class="rm-note" x-text="skillLine(popSkill)"></p>
+                </div>
+              </template>
+              <template x-if="popSkill.source">
+                <div class="rm-stack">
+                  <p class="rm-note" x-text="popSkill.description"></p>
+                  <div class="rm-skill-tags"><span class="rm-skill-tag" x-text="kb(popSkill.instructions.length)"></span><span class="rm-skill-tag warn" x-show="popSkill.source.scripts">needs scripts</span></div>
+                  <p class="rm-note" x-show="popSkill.source.scripts">It comes with scripts RemindMe can't run, so only its instructions are used.</p>
+                  <a class="rm-link" :href="popSkill.source.url" target="_blank" rel="noopener" x-text="`${popSkill.source.repo} on GitHub`"></a>
+                  <details class="rm-how"><summary>Read it</summary><pre class="rm-quote" x-text="popSkill.instructions"></pre></details>
+                </div>
+              </template>
+              <div class="rm-actions"><button class="rm-btn ghost" type="button" @click="deleteSkill(popSkill)">Remove</button></div>
+            </div>
+          </template>
+
+          <!-- Write a skill -->
+          <template x-if="pop?.kind === 'add-skill'">
+            <div class="rm-pop-body">
+              <label class="rm-field">Name<input x-model="newSkillName" maxlength="80" placeholder="Short replies" /></label>
+              <label class="rm-field">What it should do<textarea rows="5" x-model="newSkillBody" placeholder="Keep answers to two sentences unless I ask for more."></textarea></label>
+              <p class="rm-note">Up to 800 characters ride along with every message; longer ones are read when a request needs them.</p>
+              <div class="rm-actions"><button class="rm-btn solid" type="button" :disabled="!newSkillName.trim() || !newSkillBody.trim()" @click="addSkill()">Add</button></div>
+              <p class="rm-note bad" x-show="skillError" x-text="skillError"></p>
+            </div>
+          </template>
+
+          <!-- A skill from skills.sh, before adding it -->
+          <template x-if="pop?.kind === 'skill-preview'">
+            <div class="rm-pop-body">
+              <p class="rm-note" x-show="skillPreview.busy">Reading it from GitHub…</p>
+              <p class="rm-note bad" x-show="skillPreview.error" x-text="skillPreview.error"></p>
+              <template x-if="skillPreview.data">
+                <div class="rm-stack">
+                  <p class="rm-pop-line" x-text="`${skillPreview.data.repo}${pop.installs ? ` · ${installs(pop.installs)} installs` : ''}`"></p>
+                  <p class="rm-note" x-text="skillPreview.data.description"></p>
+                  <div class="rm-skill-tags"><span class="rm-skill-tag ok" x-show="!skillPreview.data.scripts">instructions only</span><span class="rm-skill-tag warn" x-show="skillPreview.data.scripts">needs scripts</span><span class="rm-skill-tag" x-text="kb(skillPreview.data.size)"></span><span class="rm-skill-tag" x-show="skillPreview.data.license" x-text="skillPreview.data.license"></span></div>
+                  <p class="rm-note" x-show="skillPreview.data.scripts">It tells the AI to run scripts RemindMe can't run, so it may only half work.</p>
+                  <pre class="rm-quote" x-text="skillPreview.data.text"></pre>
+                  <p class="rm-note" x-text="skillPreview.data.size > 800 ? 'RemindMe reads it only when a request fits it.' : 'Short enough to ride along with every message.'"></p>
+                  <div class="rm-actions">
+                    <a class="rm-btn rm-btn-link" :href="skillPreview.data.url" target="_blank" rel="noopener">On GitHub</a>
+                    <button class="rm-btn solid" type="button" :disabled="skillPreview.adding || skillAdded(skillPreview.data)" @click="importSkill()" x-text="skillAdded(skillPreview.data) ? 'Added' : skillPreview.adding ? 'Adding' : 'Add'"></button>
+                  </div>
+                </div>
+              </template>
+            </div>
+          </template>
+
+          <!-- The plan's monthly credits -->
+          <template x-if="pop?.kind === 'plan'">
+            <form class="rm-pop-body" @submit.prevent="saveCreditPlan()">
+              <div class="rm-two">
+                <label class="rm-field">Credits each month ($)<input type="number" min="0" step="1" x-model="planForm.allowance" inputmode="decimal" /></label>
+                <label class="rm-field">New credits on day<input type="number" min="1" max="31" step="1" x-model="planForm.renewDay" inputmode="numeric" placeholder="1 to 31" /></label>
+              </div>
+              <p class="rm-note">Max 20x gives $200 a month, Max 5x $100. They arrive on your plan's billing day: the Claude Console shows when they expire under Settings, Billing.</p>
+              <div class="rm-actions"><button class="rm-btn solid" type="submit">Save</button></div>
+              <p class="rm-note bad" x-show="planForm.error" x-text="planForm.error"></p>
+            </form>
+          </template>
+
+          <!-- The Admin key -->
+          <template x-if="pop?.kind === 'admin-key'">
+            <div class="rm-pop-body">
+              <p class="rm-note">With an Admin key RemindMe reads Anthropic's own costs for the month: every app and key on your credits, web searches included. It only reads them.</p>
+              <ol class="rm-steps">
+                <li>In the <a class="rm-link" href="https://platform.claude.com/settings/organization" target="_blank" rel="noopener">Claude Console</a>, open Settings, Organization. If it says Admin keys aren't available for individual accounts, set up an organization there first.</li>
+                <li>Under Admin keys, create one named RemindMe.</li>
+                <li>In Home Assistant: Settings, Apps, RemindMe, Configuration. Paste it into Claude Admin key, save, and restart RemindMe.</li>
+              </ol>
+              <p class="rm-note bad" x-show="credits?.anthropic && !credits.anthropic.ok" x-text="credits?.anthropic?.error"></p>
+            </div>
+          </template>
         </div>
       </div>
 

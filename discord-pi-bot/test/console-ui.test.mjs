@@ -30,10 +30,19 @@ test("the old dev-harness pieces are gone from the page", () => {
 });
 
 test("settings keep every section, including the 3.1 sign-in console", () => {
-	for (const section of ["AI and sign-ins", "Your assistant", "What it may do", "Memory", "Skills", "Connectors", "Phone app", "Discord", "Connected tools", "News", "Price watches", "Scheduled tasks", "Documents"])
+	for (const section of ["AI and sign-ins", "API credits", "Your assistant", "What it may do", "Memory", "Skills", "Connectors", "Phone app", "Discord", "Connected tools", "News", "Price watches", "Scheduled tasks", "Documents"])
 		assert.match(app, new RegExp(`label: "${section}", group: `), section);
 	assert.match(html, /id="account-terminal"/);
 	assert.match(html, /components\/account-console\.js/);
+});
+
+test("settings rows keep every action in the sheet they open", () => {
+	// Connectors, tools and skills are one line each; their switches, tests, sign-ins and Remove live in the sheet.
+	for (const kind of ["mail", "feed", "dhl", "add-mail", "add-feed", "add-dhl", "icloud", "mcp", "add-mcp", "skill", "add-skill", "skill-preview", "plan", "admin-key"])
+		assert.match(html, new RegExp(`pop\\?\\.kind === '${kind}'`), kind);
+	for (const action of ["testConnector(popConnector)", "removeConnector(popConnector)", "signInGoogle($event, popConnector.values.address)", "testMcp(popServer)", "deleteMcp(popServer)", "signInMcp($event, popServer)", "deleteSkill(popSkill)", "importSkill()", "saveCreditPlan()", "addFromDirectory(entry)", "findSkills()"])
+		assert.ok(html.includes(action), action);
+	assert.doesNotMatch(html, /class="rm-flag(s)?[ "][^>]*>(instructions only|needs scripts)/, "skill tags aren't the capitalised confirm flag");
 });
 
 test("answers render through the DOM-building markdown renderer, never as HTML", () => {

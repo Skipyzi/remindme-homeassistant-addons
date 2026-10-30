@@ -17,7 +17,9 @@ import {
 	type EntityAction,
 } from "./harness/entityActions";
 import { ConversationStore } from "./harness/conversations";
-import { SkillStore, skillPrompt } from "./harness/skills";
+import { SkillStore, readWhenNeeded, skillPrompt } from "./harness/skills";
+import { SkillsSh, sourceOf } from "./harness/skills-sh";
+import { McpDirectory, TOPICS } from "./harness/mcp-directory";
 import { PersonaStore, defaultPersona } from "./harness/persona";
 import { VaultStore, type VaultNote } from "./harness/vault";
 import {
@@ -58,6 +60,7 @@ import { validateAttachments } from "./harness/attachments";
 import { HomeApi } from "./agent/home";
 import { AiSettings, PROVIDERS, type ModelChoice } from "./ai/settings";
 import { SpendLedger } from "./ai/spend";
+import { AnthropicCosts, CreditSettings, creditsView } from "./ai/credits";
 import { withLegacyKeys } from "./ai/legacyEndpoints";
 import type { Effort, ImageInput, ProviderId } from "./ai/types";
 import { Assistant, type AskEvents, type AskResult } from "./assistant/agent";
@@ -222,6 +225,10 @@ export const aiSettings = new AiSettings(withLegacyKeys(process.env), process.en
 void aiSettings.load();
 export const spend = new SpendLedger();
 void spend.load();
+/* The monthly API credits: the plan's allowance and renewal day, and Anthropic's own figures with an Admin key. */
+const credits = new CreditSettings();
+void credits.load();
+const anthropicCosts = new AnthropicCosts(() => process.env.ANTHROPIC_ADMIN_KEY || "");
 export const home = supervisorToken ? new HomeApi(supervisorToken, homeAssistantUrl) : undefined;
 /* This app's slug, for links into its panel in Home Assistant (/app/<slug>/…). */
 let appSlug = process.env.APP_SLUG || "";
@@ -247,6 +254,9 @@ function catImage(seed: string, state: "asking" | "working" | "done" | "stopped"
 const conversations = new ConversationStore();
 void conversations.load();
 const skills = new SkillStore();
+/* skills.sh, to find skills; Claude's directory, to find connected tools. */
+const skillsSh = new SkillsSh();
+const mcpDirectory = new McpDirectory();
 void skills.load();
 const artifacts = new ArtifactStore();
 void artifacts.load();
@@ -687,11 +697,44 @@ app.delete("/api/mcp/:id", async (request, response) => {
 });
 /* Handshake and list tools, so a server can be checked before it is trusted
  * with a turn. */
+app.get("/api/mcp/directory", async (request, response) => {
+	try {
+		const found = await mcpDirectory.find({ query: String(request.query.q || ""), topic: String(request.query.topic || "") || undefined });
+		response.json({ ...found, topics: TOPICS.map(({ id, label }) => ({ id, label })) });
+	} catch (error) {
+		response.status(502).json({ error: error instanceof Error ? error.message : "Claude's directory didn't answer" });
+	}
+});
+/* Add a server from Claude's directory: one without a sign-in is checked at once and left out if it won't answer RemindMe. */
+app.post("/api/mcp/directory", async (request, response) => {
+	try {
+		const entry = await mcpDirectory.get(String(request.body?.slug || ""));
+		if (!entry) throw new Error("That isn't in Claude's directory any more.");
+		if (mcpServers.list().some((server) => server.url === entry.url)) throw new Error(`${entry.name} is added already.`);
+		const created = await mcpServers.create({ name: entry.name, url: entry.url, enabled: true, from: { slug: entry.slug, can: entry.can, open: entry.open }, wantsSignIn: !entry.open });
+		if (entry.open) {
+			try {
+				const session = await withMcpAuth(created, (signedIn) => connectMcp(signedIn));
+				await mcpServers.markChecked(created.id, { tools: session.tools.length });
+			} catch (error) {
+				if (!mcpServers.get(created.id)?.wantsSignIn) {
+					await mcpServers.delete(created.id);
+					throw new Error(`${entry.name} didn't let RemindMe in: ${error instanceof Error ? error.message : error}. It may only work inside Claude's own apps.`);
+				}
+			}
+		}
+		activity.add({ kind: "did", channel: "console", text: `Connected ${entry.name} from Claude's directory`, receipts: [{ text: `Connected ${entry.name} (${new URL(entry.url).host})` }] });
+		response.status(201).json(publicMcp(mcpServers.get(created.id) || created));
+	} catch (error) {
+		response.status(400).json({ error: error instanceof Error ? error.message : "Couldn't add it" });
+	}
+});
 app.post("/api/mcp/:id/test", async (request, response) => {
 	const server = mcpServers.get(request.params.id);
 	if (!server) return response.status(404).json({ error: "Not found" });
 	try {
 		const session = await withMcpAuth(server, (signedIn) => connectMcp(signedIn));
+		await mcpServers.markChecked(server.id, { tools: session.tools.length });
 		response.json({
 			ok: true,
 			serverName: session.serverName,
@@ -701,6 +744,7 @@ app.post("/api/mcp/:id/test", async (request, response) => {
 			})),
 		});
 	} catch (error) {
+		if (!mcpServers.get(server.id)?.wantsSignIn) await mcpServers.markChecked(server.id, { error: error instanceof Error ? error.message : "Could not reach server" });
 		// Answered, not thrown: the console shows Sign in when the server wants one.
 		response.json({
 			ok: false,
@@ -796,6 +840,17 @@ app.get("/api/ai", async (_request, response) => {
 		budget: aiSettings.dailyBudget(),
 	});
 });
+app.get("/api/credits", async (_request, response) => {
+	response.set("Cache-Control", "no-store").json(await creditsView({ plan: credits.get(), spend, anthropic: anthropicCosts, dailyCap: aiSettings.dailyBudget() }));
+});
+app.put("/api/credits", async (request, response) => {
+	try {
+		await credits.set({ allowance: request.body?.allowance, renewDay: request.body?.renewDay });
+		response.json(await creditsView({ plan: credits.get(), spend, anthropic: anthropicCosts, dailyCap: aiSettings.dailyBudget() }));
+	} catch (error) {
+		response.status(400).json({ error: error instanceof Error ? error.message : "Not saved" });
+	}
+});
 app.put("/api/ai", async (request, response) => {
 	try {
 		await aiSettings.choose(request.body || {});
@@ -867,7 +922,35 @@ app.get("/api/skills", (_request, response) => {
 	response.json(skills.list());
 });
 app.post("/api/skills", async (request, response) => {
-	response.status(201).json(await skills.create(request.body || {}));
+	// Imports go through /api/skills/import, which reads the skill itself.
+	const { source: _source, ...values } = request.body || {};
+	response.status(201).json(await skills.create(values));
+});
+app.get("/api/skills/find", async (request, response) => {
+	try {
+		response.json({ results: await skillsSh.search(String(request.query.q || "")) });
+	} catch (error) {
+		response.status(502).json({ error: error instanceof Error ? error.message : "skills.sh didn't answer" });
+	}
+});
+app.get("/api/skills/preview", async (request, response) => {
+	try {
+		response.json(await skillsSh.preview(String(request.query.id || "")));
+	} catch (error) {
+		response.status(400).json({ error: error instanceof Error ? error.message : "Couldn't read that skill" });
+	}
+});
+app.post("/api/skills/import", async (request, response) => {
+	try {
+		const preview = await skillsSh.preview(String(request.body?.id || ""));
+		if (skills.list().some((skill) => skill.source?.id === preview.id)) throw new Error("That skill is added already.");
+		const installs = Number(request.body?.installs) || undefined;
+		const created = await skills.create({ name: preview.name, description: preview.description, instructions: preview.text, source: sourceOf(preview, installs), enabled: true });
+		activity.add({ kind: "did", channel: "console", text: `Added the skill ${created.name} from skills.sh`, receipts: [{ text: `Added the skill ${created.name} from skills.sh (${preview.repo})` }] });
+		response.status(201).json(created);
+	} catch (error) {
+		response.status(400).json({ error: error instanceof Error ? error.message : "Couldn't add that skill" });
+	}
 });
 app.patch("/api/skills/:id", async (request, response) => {
 	const updated = await skills.update(request.params.id, request.body || {});
@@ -2309,6 +2392,13 @@ export function toolContext(): ToolContext {
 			cancel: (id) => (id.startsWith("place_") ? Promise.resolve(placeReminders.cancel(id)) : deleteReminder(id, ownerId)),
 		},
 		placeReminders: { add: (input) => placeReminders.add(input), list: () => placeReminders.list() },
+		skills: {
+			names: () => skills.enabled().filter(readWhenNeeded).map((skill) => skill.name),
+			read: (name) => {
+				const skill = skills.find(name);
+				return skill ? { name: skill.name, instructions: skill.instructions } : undefined;
+			},
+		},
 		rules,
 		vault,
 		webSearch: searchFallback() ? webSearch : undefined,

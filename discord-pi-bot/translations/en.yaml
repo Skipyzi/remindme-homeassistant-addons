@@ -14,6 +14,9 @@ configuration:
   anthropic_api_key:
     name: Claude API key
     description: From console.anthropic.com. Billed per use, separate from a Claude subscription.
+  anthropic_admin_key:
+    name: Claude Admin key
+    description: Optional. An Admin API key (sk-ant-admin…) from the Claude Console's organization settings. RemindMe only reads the month's costs with it, to show them against your monthly API credits.
   openai_api_key:
     name: OpenAI API key
     description: From platform.openai.com.

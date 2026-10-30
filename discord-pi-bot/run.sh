@@ -22,6 +22,8 @@ export AI_PROVIDER="$(get_option ai_provider)"
 export AI_MODEL="$(get_option ai_model)"
 export AI_EFFORT="$(get_option ai_effort)"
 export ANTHROPIC_API_KEY="$(get_option anthropic_api_key)"
+# Read-only use: the month's costs from Anthropic, for Settings → API credits.
+export ANTHROPIC_ADMIN_KEY="$(get_option anthropic_admin_key)"
 export OPENAI_API_KEY="$(get_option openai_api_key)"
 export DAILY_AI_BUDGET="$(get_option daily_ai_budget)"
 

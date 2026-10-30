@@ -64,6 +64,8 @@ export interface Usage {
 	outputTokens: number;
 	cacheReadTokens: number;
 	cacheWriteTokens: number;
+	/** Claude's own web searches, billed per search on top of the tokens. */
+	webSearches?: number;
 }
 
 export function emptyUsage(): Usage {
@@ -76,6 +78,7 @@ export function addUsage(total: Usage, more: Usage): Usage {
 		outputTokens: total.outputTokens + more.outputTokens,
 		cacheReadTokens: total.cacheReadTokens + more.cacheReadTokens,
 		cacheWriteTokens: total.cacheWriteTokens + more.cacheWriteTokens,
+		...(total.webSearches || more.webSearches ? { webSearches: (total.webSearches || 0) + (more.webSearches || 0) } : {}),
 	};
 }
 

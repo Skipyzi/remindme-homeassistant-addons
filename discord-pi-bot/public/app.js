@@ -143,6 +143,7 @@ function remindme() {
 		/* Settings: grouped, each with a line on what it's set to; on a phone a list you tap into. */
 		sections: [
 			{ id: "ai", label: "AI and sign-ins", group: "AI" },
+			{ id: "credits", label: "API credits", group: "AI" },
 			{ id: "prompt", label: "Your assistant", group: "AI" },
 			{ id: "rules", label: "What it may do", group: "AI" },
 			{ id: "memory", label: "Memory", group: "AI" },
@@ -221,12 +222,17 @@ function remindme() {
 		newMcpUrl: "",
 		newMcpAuth: "",
 		mcpError: "",
-		/* Connected tools that only need their address and a sign-in. */
-		mcpPicks: [
-			{ name: "Notion", url: "https://mcp.notion.com/mcp" },
-			{ name: "Linear", url: "https://mcp.linear.app/mcp" },
-			{ name: "Todoist", url: "https://ai.todoist.net/mcp" },
-		],
+		mcpErrorBad: false,
+		/* Claude's connector directory, searched by words or a topic */
+		directory: { q: "", topic: "", entries: [], topics: [], total: 0, open: 0, error: "", loaded: false, adding: "", shown: 12 },
+		/* skills.sh: a search, and the skill being looked at before adding it */
+		skillQuery: "",
+		skillFind: { busy: false, error: "", results: null },
+		skillPreview: { busy: false, error: "", data: null, adding: false },
+		/* The month's API credits, and the sheet over Settings (an account, a tool, a skill, or adding one) */
+		credits: null,
+		planForm: { allowance: "", renewDay: "", error: "" },
+		pop: null,
 		tasks: [],
 		newTaskWhat: "",
 		newTaskWhen: "",
@@ -1289,8 +1295,9 @@ function remindme() {
 			if (tab === "prompt") await this.loadPersona();
 			if (tab === "rules") this.rules = await this.getJson("./api/rules", []);
 			if (tab === "discord") this.discord = await this.getJson("./api/discord", this.discord);
+			if (tab === "credits") this.credits = await this.getJson("./api/credits", this.credits);
 			if (tab === "skills") this.skills = await this.getJson("./api/skills", []);
-			if (tab === "mcp") this.mcpServers = await this.getJson("./api/mcp", []);
+			if (tab === "mcp") await Promise.all([this.getJson("./api/mcp", []).then((servers) => (this.mcpServers = servers)), this.directory.loaded ? null : this.loadDirectory()]);
 			if (tab === "tasks") this.tasks = await this.getJson("./api/tasks", []);
 			if (tab === "prices") this.priceWatches = await this.getJson("./api/prices", []);
 			if (tab === "news") this.news = await this.getJson("./api/news", this.news);
@@ -1309,6 +1316,7 @@ function remindme() {
 		sectionStatus(id) {
 			const plural = (count, word) => `${count} ${word}${count === 1 ? "" : "s"}`;
 			if (id === "ai") return !this.ai?.ready && this.ai?.problem ? { text: this.ai.problem, bad: true } : { text: [this.ai?.label, this.ai?.model].filter(Boolean).join(" · ") || "Pick who answers" };
+			if (id === "credits") return this.credits ? { text: `${this.money(this.credits.used)} of ${this.money(this.credits.allowance, 0)}`, bad: this.credits.allowance > 0 && this.credits.used >= this.credits.allowance } : { text: "" };
 			if (id === "prompt") return { text: [this.assistant.name, this.lookName()].filter(Boolean).join(" · ") };
 			if (id === "discord") return { text: !this.discord.bot ? "Not set up" : this.discord.messages ? "Its messages go there too" : "Only answers when you write" };
 			if (id === "rules") {
@@ -1319,11 +1327,9 @@ function remindme() {
 			if (id === "memory") return { text: `${this.memory.learn ? "Learning" : "Not learning"} · ${plural(this.memory.facts?.length || 0, "fact")}` };
 			if (id === "skills") return { text: this.skills.length ? `${this.skills.filter((skill) => skill.enabled).length} of ${this.skills.length} on` : "None yet" };
 			if (id === "connectors") {
-				const failed = this.connectors.find((connector) => connector.enabled && connector.status && !connector.status.ok);
-				if (failed) return { text: `${failed.name}'s last check failed`, bad: true };
-				const feeds = this.feedConnectors().length;
-				const parts = [this.mailConnectors().map((connector) => connector.name).join(", "), this.parcelConnectors().map((connector) => connector.name).join(", "), feeds ? plural(feeds, "feed") : ""].filter(Boolean);
-				return { text: parts.length ? parts.join(" · ") : "Nothing connected yet" };
+				const counts = this.connectorCounts;
+				if (!counts.total) return { text: "Nothing connected yet" };
+				return { text: counts.bad ? `${counts.working} working · ${counts.bad} ${counts.bad === 1 ? "needs" : "need"} you` : `${counts.working} working`, bad: counts.bad > 0 };
 			}
 			if (id === "phone") {
 				const name = this.haPhone.phones.find((phone) => phone.id === this.haPhone.target)?.name;
@@ -1359,9 +1365,18 @@ function remindme() {
 			if (id === "documents") return { text: this.documents.length ? plural(this.documents.length, "document") : "None yet" };
 			return { text: "" };
 		},
-		/* What needs fixing, on top of the list. */
+		/* What needs fixing, on top of the list: each account or tool by name, with what's wrong. */
 		get settingsProblems() {
-			return this.sections.map((section) => ({ ...section, status: this.sectionStatus(section.id) })).filter((section) => section.status.bad);
+			const problems = [];
+			if (this.credits?.allowance && this.credits.used >= this.credits.allowance) problems.push({ key: "credits", section: "credits", name: "API credits", text: `${this.money(this.credits.used)} of ${this.money(this.credits.allowance, 0)} used` });
+			for (const connector of this.connectors) if (this.connectorLamp(connector) === "bad") problems.push({ key: `c-${connector.id}`, section: "connectors", name: connector.name, text: connector.status.error });
+			for (const server of this.mcpServers) if (this.mcpLamp(server) === "bad") problems.push({ key: `m-${server.id}`, section: "mcp", name: server.name, text: this.mcpLine(server) });
+			for (const section of this.sections) {
+				if (["credits", "connectors", "mcp"].includes(section.id)) continue;
+				const status = this.sectionStatus(section.id);
+				if (status.bad) problems.push({ key: section.id, section: section.id, name: section.label, text: status.text });
+			}
+			return problems;
 		},
 
 		async getJson(url, fallback) {
@@ -1469,7 +1484,7 @@ function remindme() {
 			if (!spend) return "";
 			const budget = this.ai.budget ? ` of the $${this.ai.budget.toFixed(2)} daily budget` : "";
 			const tokens = `${Math.round((spend.inputTokens + spend.outputTokens) / 1000)}k tokens`;
-			return `Today: $${spend.usd.toFixed(2)}${budget}, ${tokens}${spend.unpriced ? " (some on a model without a known price)" : ""}. Subscriptions aren't counted.`;
+			return `Today: $${spend.usd.toFixed(2)}${budget}, ${tokens}${spend.unpriced ? " (some on a model without a known price)" : ""}. The month is under API credits.`;
 		},
 		aiSearchLine() {
 			const search = this.ai?.webSearch;
@@ -1617,6 +1632,7 @@ function remindme() {
 				this.newSkillName = "";
 				this.newSkillBody = "";
 				this.skillError = "";
+				this.closePop();
 			} catch (error) {
 				this.skillError = `Not saved: ${error.message}`;
 			}
@@ -1629,9 +1645,64 @@ function remindme() {
 			}
 		},
 		async deleteSkill(skill) {
-			if (!window.confirm(`Delete the skill "${skill.name}"?`)) return;
+			if (!window.confirm(`Remove the skill "${skill.name}"?`)) return;
 			await fetch(`./api/skills/${encodeURIComponent(skill.id)}`, { method: "DELETE" });
 			this.skills = this.skills.filter((entry) => entry.id !== skill.id);
+			if (this.pop?.id === skill.id) this.closePop();
+		},
+		/* Short skills ride along with every message; longer ones are read when a request fits. */
+		skillLine(skill) {
+			const size = skill.instructions.length;
+			const when = size > 800 ? "read when needed" : "always applies";
+			if (skill.source) return `${skill.source.repo} · ${this.kb(size)} · ${when}${skill.source.scripts ? " · needs scripts" : ""}`;
+			return `Yours · ${when}`;
+		},
+		kb(chars) {
+			return chars < 1000 ? `${chars} characters` : `${Math.round(chars / 1000)} KB`;
+		},
+		installs(count) {
+			return count >= 1000 ? `${(count / 1000).toFixed(count >= 10_000 ? 0 : 1)}k` : String(count || 0);
+		},
+		skillAdded(found) {
+			return this.skills.some((skill) => skill.source?.id === found.id);
+		},
+		async fetchJson(url) {
+			const response = await fetch(url, { cache: "no-store" });
+			const data = await response.json().catch(() => ({}));
+			if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+			return data;
+		},
+		async findSkills() {
+			const query = this.skillQuery.trim();
+			if (query.length < 2) return;
+			this.skillFind = { busy: true, error: "", results: this.skillFind.results };
+			try {
+				this.skillFind = { busy: false, error: "", results: (await this.fetchJson(`./api/skills/find?${new URLSearchParams({ q: query })}`)).results };
+			} catch (error) {
+				this.skillFind = { busy: false, error: `skills.sh didn't answer: ${error.message}`, results: null };
+			}
+		},
+		async previewSkill(found) {
+			this.skillPreview = { busy: true, error: "", data: null, adding: false };
+			this.openPop({ kind: "skill-preview", name: found.name, skillId: found.id, installs: found.installs });
+			try {
+				const data = await this.fetchJson(`./api/skills/preview?${new URLSearchParams({ id: found.id })}`);
+				if (this.pop?.skillId === found.id) this.skillPreview = { busy: false, error: "", data, adding: false };
+			} catch (error) {
+				if (this.pop?.skillId === found.id) this.skillPreview = { busy: false, error: error.message, data: null, adding: false };
+			}
+		},
+		async importSkill() {
+			const preview = this.skillPreview;
+			if (!preview.data) return;
+			preview.adding = true;
+			try {
+				this.skills.unshift(await this.request("./api/skills/import", "POST", { id: preview.data.id, installs: this.pop?.installs }));
+			} catch (error) {
+				preview.error = error.message;
+			} finally {
+				preview.adding = false;
+			}
 		},
 
 		/* Connected tools (MCP) */
@@ -1650,6 +1721,7 @@ function remindme() {
 				this.mcpError = "";
 				// Check it at once, so a server that wants a sign-in offers one.
 				await this.testMcp(this.mcpServers[0]);
+				this.closePop();
 			} catch (error) {
 				this.mcpError = `Not added: ${error.message}`;
 			}
@@ -1666,6 +1738,7 @@ function remindme() {
 			try {
 				const data = await this.request(`./api/mcp/${encodeURIComponent(server.id)}/test`);
 				server.wantsSignIn = Boolean(data.wantsSignIn);
+				server.checked = data.ok ? { at: new Date().toISOString(), tools: data.tools.length } : data.wantsSignIn ? server.checked : { at: new Date().toISOString(), error: data.error };
 				server.probe = data.ok ? `Connected to ${data.serverName || server.name}: ${data.tools.map((tool) => tool.name).join(", ") || "no tools"}` : data.wantsSignIn ? `${server.name} wants you to sign in: tap Sign in.` : `Failed: ${data.error}`;
 			} catch (error) {
 				server.probe = `Failed: ${error.message}`;
@@ -1675,6 +1748,49 @@ function remindme() {
 			if (!window.confirm(`Remove "${server.name}"?`)) return;
 			await fetch(`./api/mcp/${encodeURIComponent(server.id)}`, { method: "DELETE" });
 			this.mcpServers = this.mcpServers.filter((entry) => entry.id !== server.id);
+			if (this.pop?.id === server.id) this.closePop();
+		},
+		mcpLamp(server) {
+			if (server.wantsSignIn || server.checked?.error) return "bad";
+			return server.enabled ? "on" : "off";
+		},
+		mcpLine(server) {
+			if (server.wantsSignIn) return "Wants you to sign in";
+			if (server.checked?.error) return `Didn't answer: ${server.checked.error}`;
+			if (!server.enabled) return "Off";
+			const how = server.signedIn ? "Signed in" : server.hasAuth ? "With a token" : server.from?.open ? "No sign-in" : "";
+			const tools = server.checked?.tools !== undefined ? `${server.checked.tools} ${server.checked.tools === 1 ? "tool" : "tools"}` : "";
+			const can = server.from?.can === "write" ? "reads and writes" : server.from?.can === "read" ? "reads" : "";
+			return [how, tools, can].filter(Boolean).join(" · ") || this.feedHost(server.url);
+		},
+		directoryLine(entry) {
+			return [entry.open ? "no sign-in" : "sign-in", entry.can === "write" ? "reads and writes" : entry.can === "read" ? "reads" : ""].filter(Boolean).join(" · ");
+		},
+		directoryAdded(entry) {
+			return this.mcpServers.find((server) => server.url === entry.url || server.from?.slug === entry.slug);
+		},
+		async loadDirectory() {
+			const query = new URLSearchParams({ q: this.directory.q.trim(), topic: this.directory.topic });
+			try {
+				const data = await this.fetchJson(`./api/mcp/directory?${query}`);
+				Object.assign(this.directory, { entries: data.entries, topics: data.topics, total: data.total, open: data.open, error: "", loaded: true, shown: 12 });
+			} catch (error) {
+				Object.assign(this.directory, { error: `Claude's directory didn't load: ${error.message}`, loaded: true });
+			}
+		},
+		async addFromDirectory(entry) {
+			this.directory.adding = entry.slug;
+			try {
+				const server = await this.request("./api/mcp/directory", "POST", { slug: entry.slug });
+				this.mcpServers.unshift(server);
+				this.mcpErrorBad = false;
+				this.mcpError = server.wantsSignIn ? `${entry.name} added. Tap Sign in next to it.` : `${entry.name} added${server.checked?.tools !== undefined ? ` with ${server.checked.tools} ${server.checked.tools === 1 ? "tool" : "tools"}` : ""}.`;
+			} catch (error) {
+				this.mcpErrorBad = true;
+				this.mcpError = error.message;
+			} finally {
+				this.directory.adding = "";
+			}
 		},
 
 		/* Phone app */
@@ -2102,6 +2218,11 @@ function remindme() {
 				}
 			});
 		},
+		connectorStatus(connector) {
+			if (!connector.enabled) return "Off: RemindMe doesn't read it.";
+			if (!connector.status) return "Not checked yet.";
+			return connector.status.ok ? `Last check ${this.formatWhen(connector.status.at)} worked.` : `Last check ${this.formatWhen(connector.status.at)} failed: ${connector.status.error}`;
+		},
 		connectorLine(connector) {
 			const service = this.presetOf(connector.preset)?.label || connector.preset;
 			const status = connector.status
@@ -2157,7 +2278,128 @@ function remindme() {
 			const question = { feed: `Remove the feed ${connector.name}?`, parcel: `Remove ${connector.name}? Parcels tracked through it stop being checked.` }[connector.kind] || `Remove ${connector.name}? RemindMe stops reading it; nothing in the mailbox changes.`;
 			if (!window.confirm(question)) return;
 			await fetch(`./api/connectors/${encodeURIComponent(connector.id)}`, { method: "DELETE" });
+			if (this.pop?.id === connector.id) this.closePop();
 			await this.loadConnectors();
+		},
+		/* A lamp per account: lit when it works, red when it needs the owner, hollow when off. */
+		connectorLamp(connector) {
+			if (!connector.enabled) return "off";
+			return connector.status && !connector.status.ok ? "bad" : "on";
+		},
+		ago(iso) {
+			if (!iso) return "";
+			const at = new Date(iso);
+			const minutes = Math.round((Date.now() - at.getTime()) / 60_000);
+			if (minutes < 1) return "just now";
+			if (minutes < 60) return `${minutes} min ago`;
+			return at.toDateString() === new Date().toDateString() ? `at ${this.timeOf(at)}` : this.formatWhen(iso);
+		},
+		mailRowLine(connector) {
+			if (!connector.enabled) return "Off";
+			if (connector.status && !connector.status.ok) return `${connector.status.error} · ${this.timeOf(new Date(connector.status.at))}`;
+			const how = connector.values.auth === "google" ? "Google sign-in" : "Password";
+			return connector.status ? `${how} · checked ${this.ago(connector.status.at)}` : `${how} · not checked yet`;
+		},
+		feedRowLine(feed) {
+			if (!feed.enabled) return "Off";
+			if (feed.status && !feed.status.ok) return `Last read failed: ${feed.status.error}`;
+			const parts = [feed.values.news === "on" ? "In the news" : "", feed.values.alerts === "on" ? "Tells you about new posts" : ""].filter(Boolean);
+			return parts.length ? parts.join(" · ") : "Read when you ask";
+		},
+		dhlRowLine(service) {
+			if (!service.enabled) return "Off";
+			const status = service.status;
+			if (status && !status.ok) return `Last check failed: ${status.error}`;
+			return status ? `${status.calls} of ${status.limit} checks today` : "Not used yet";
+		},
+		calendarLine(calendar) {
+			if (calendar.entityId === this.calendars.newEvents) return "New events go here";
+			return calendar.writable ? "Takes new events" : "Read only";
+		},
+		get connectorCounts() {
+			const lamps = this.connectors.map((connector) => this.connectorLamp(connector));
+			const bad = lamps.filter((lamp) => lamp === "bad").length;
+			return { total: lamps.length + this.calendars.list.length, bad, working: lamps.filter((lamp) => lamp === "on").length + this.calendars.list.length };
+		},
+
+		/* The sheet over Settings */
+		openPop(pop) {
+			this.connectorResult = null;
+			this.feedResult = null;
+			this.dhlResult = null;
+			this.skillError = "";
+			if (pop.kind === "add-mcp") this.mcpError = "";
+			if (pop.kind === "plan") this.planForm = { allowance: String(this.credits?.allowance ?? 200), renewDay: this.credits?.renewDay ? String(this.credits.renewDay) : "", error: "" };
+			this.pop = pop;
+		},
+		closePop() {
+			this.pop = null;
+		},
+		get popConnector() {
+			return this.pop?.id ? this.connectors.find((connector) => connector.id === this.pop.id) : undefined;
+		},
+		get popServer() {
+			return this.pop?.id ? this.mcpServers.find((server) => server.id === this.pop.id) : undefined;
+		},
+		get popSkill() {
+			return this.pop?.id ? this.skills.find((skill) => skill.id === this.pop.id) : undefined;
+		},
+		get popTitle() {
+			const pop = this.pop;
+			if (!pop) return "";
+			const named = { mail: this.popConnector, feed: this.popConnector, dhl: this.popConnector, mcp: this.popServer, skill: this.popSkill }[pop.kind]?.name;
+			return named || pop.name || { "add-mail": "Add mail", "add-feed": "Add a feed", "add-dhl": "Set up DHL", icloud: "Add iCloud", "add-mcp": "Add a tool by its address", "add-skill": "Write a skill", plan: "Your plan", "admin-key": "Anthropic's own figure" }[pop.kind] || "";
+		},
+
+		/* API credits */
+		money(usd, digits = 2) {
+			return `$${Number(usd || 0).toLocaleString("en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits })}`;
+		},
+		dayMonth(date, shift = 0) {
+			const [year, month, day] = String(date).split("-").map(Number);
+			return new Date(year, month - 1, day + shift).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+		},
+		ordinal(day) {
+			const suffix = day % 10 === 1 && day !== 11 ? "st" : day % 10 === 2 && day !== 12 ? "nd" : day % 10 === 3 && day !== 13 ? "rd" : "th";
+			return `${day}${suffix}`;
+		},
+		get creditPct() {
+			const credits = this.credits;
+			return credits?.allowance ? Math.min(100, (credits.used / credits.allowance) * 100) : 0;
+		},
+		get pacePct() {
+			const credits = this.credits;
+			return credits?.allowance ? Math.min(100, (credits.pace / credits.allowance) * 100) : 0;
+		},
+		get cycleLine() {
+			const cycle = this.credits?.cycle;
+			if (!cycle) return "";
+			return `${cycle.daysLeft} ${cycle.daysLeft === 1 ? "day" : "days"} left · new on ${this.dayMonth(cycle.end)}`;
+		},
+		/* A bar per day of the credit month: spent days white, today lamp yellow, the rest as stubs. */
+		get creditBars() {
+			const credits = this.credits;
+			if (!credits) return [];
+			const top = Math.max(0.01, ...credits.perDay.map((day) => day.usd));
+			return Array.from({ length: credits.cycle.days }, (_, index) => {
+				const day = credits.perDay[index];
+				if (!day) return { key: index, css: "later", style: "", title: "" };
+				return { key: index, css: index === credits.perDay.length - 1 ? "today" : "", style: `height: ${Math.max(4, (day.usd / top) * 100)}%`, title: `${this.dayMonth(day.date)}: ${this.money(day.usd)}` };
+			});
+		},
+		get creditsSourceLine() {
+			const credits = this.credits;
+			if (!credits) return "";
+			if (credits.source === "anthropic") return `From Anthropic, ${this.ago(credits.anthropic.fetchedAt) || "just now"}. RemindMe's own share: ${this.money(credits.estimate.usd)}.`;
+			return `RemindMe's own count at list prices${credits.estimate.since ? `, since ${this.dayMonth(credits.estimate.since)}` : ""}. Other apps on the same credits aren't in it.`;
+		},
+		async saveCreditPlan() {
+			try {
+				this.credits = await this.request("./api/credits", "PUT", { allowance: Number(this.planForm.allowance), renewDay: this.planForm.renewDay === "" || this.planForm.renewDay === null ? null : Number(this.planForm.renewDay) });
+				this.closePop();
+			} catch (error) {
+				this.planForm.error = error.message;
+			}
 		},
 
 		/* Scheduled tasks */

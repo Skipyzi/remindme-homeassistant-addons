@@ -25,6 +25,10 @@ export interface McpServer {
 	oauth?: McpSignIn;
 	/** It answered 401 last time: the console offers Sign in. */
 	wantsSignIn?: boolean;
+	/** The last time it was reached: how many tools it offered, or what went wrong. */
+	checked?: { at: string; tools?: number; error?: string };
+	/** Added from Claude's directory: its entry, and what it may do there. */
+	from?: { slug: string; can: "read" | "write" | ""; open: boolean };
 	enabled: boolean;
 	createdAt: string;
 	updatedAt: string;
@@ -115,6 +119,8 @@ export class McpServerStore {
 			authorization: values.authorization
 				? String(values.authorization).slice(0, 500)
 				: undefined,
+			...(values.from?.slug ? { from: { slug: String(values.from.slug).slice(0, 80), can: values.from.can === "write" || values.from.can === "read" ? values.from.can : "", open: Boolean(values.from.open) } } : {}),
+			...(values.wantsSignIn ? { wantsSignIn: true } : {}),
 			enabled: values.enabled !== false,
 			createdAt: now,
 			updatedAt: now,
@@ -152,6 +158,14 @@ export class McpServerStore {
 		server.oauth = oauth;
 		server.wantsSignIn = !oauth?.accessToken;
 		server.updatedAt = new Date().toISOString();
+		await this.persist();
+	}
+
+	/** What a connection found: its tools, or why it failed. */
+	async markChecked(id: string, result: { tools?: number; error?: string }): Promise<void> {
+		const server = this.get(id);
+		if (!server) return;
+		server.checked = { at: new Date().toISOString(), ...(result.error ? { error: result.error.slice(0, 200) } : { tools: result.tools || 0 }) };
 		await this.persist();
 	}
 
