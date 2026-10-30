@@ -65,10 +65,21 @@
 		{ base: "#2b2b2e", marks: "", ink: "#d8f5a2", outline: true },
 	];
 
+	/*
+	 * Which coat and accessory a seed gets: picked from a thread's id, or
+	 * chosen for the assistant ("look:2-4"; accessory 6 is none).
+	 */
+	function parts(seed) {
+		const chosen = /^look:([0-5])-([0-6])$/.exec(String(seed));
+		if (chosen) return { coat: Number(chosen[1]), accessory: Number(chosen[2]) };
+		const h = hash(seed);
+		return { coat: h % COATS.length, accessory: (h >>> 5) % ACCESSORY_KEYS.length };
+	}
+
 	/** One cat as SVG markup, the same every time for the same id and state. */
 	function draw(seed, state = "done") {
-		const h = hash(seed);
-		const coat = state === "stopped" ? { base: "#8a8a8f", marks: "" } : COATS[h % COATS.length];
+		const pick = parts(seed);
+		const coat = state === "stopped" ? { base: "#8a8a8f", marks: "" } : COATS[pick.coat];
 		const c = coat.base;
 		const ink = coat.ink || INK;
 		const outline = coat.outline ? ' stroke="#6b6b70" stroke-width="0.9"' : "";
@@ -76,7 +87,7 @@
 		const body = `<path d="M9 38 Q7 28 13 25 L27 25 Q33 28 31 38 Z" fill="${c}"${outline}/>`;
 		const paws = `<ellipse cx="15.5" cy="38" rx="3.2" ry="1.9" fill="${c}"${outline}/><ellipse cx="24.5" cy="38" rx="3.2" ry="1.9" fill="${c}"${outline}/>`;
 		const head = ears(20, 7.5, coat.ears || c, coat.outline ? "#8a8a90" : NOSE) + `<ellipse cx="20" cy="17.5" rx="13" ry="11" fill="${c}"${outline}/>`;
-		const accessory = ACCESSORIES[ACCESSORY_KEYS[(h >>> 5) % ACCESSORY_KEYS.length]]();
+		const accessory = pick.accessory < ACCESSORY_KEYS.length ? ACCESSORIES[ACCESSORY_KEYS[pick.accessory]]() : "";
 		const raisedPaw = state === "asking" ? `<ellipse cx="32.5" cy="25" rx="2.6" ry="3.4" fill="${c}"${outline}/>` + ASK : "";
 		return `<svg xmlns="${NS}" viewBox="0 -6 41 46" aria-hidden="true" focusable="false">${tail}${body}${paws}${head}${coat.marks}${face(20, 17.5, state, ink, 0.95)}${accessory}${raisedPaw}</svg>`;
 	}
@@ -92,5 +103,9 @@
 		element.dataset.state = state;
 	}
 
-	window.RemindMeCats = { draw, render };
+	/** What the assistant's cat can wear and be, for the picker. */
+	const COAT_NAMES = ["Ginger tabby", "Tuxedo", "Calico", "Siamese", "Grey", "Black"];
+	const ACCESSORY_NAMES = ["Bow", "Beret", "Glasses", "Headphones", "Party hat", "Scarf", "Nothing"];
+
+	window.RemindMeCats = { draw, render, parts, coats: COAT_NAMES, accessories: ACCESSORY_NAMES };
 })();

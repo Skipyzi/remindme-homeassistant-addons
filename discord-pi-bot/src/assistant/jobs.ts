@@ -3,7 +3,7 @@ import type { PriorTurn } from "../ai/types";
 import type { AskInput, AskResult } from "./agent";
 import type { Confirmation } from "./confirmations";
 import type { Thread, ThreadStore } from "./threads";
-import { titleFrom } from "./threads";
+import { titleFrom, MAIN_THREAD } from "./threads";
 
 /** What a running job may do besides the ordinary tools. */
 export interface JobTools {
@@ -80,12 +80,13 @@ export class JobRunner {
 
 	/**
 	 * Hand work to a job. From a console thread, that thread becomes the job;
-	 * from anywhere else, the job gets a thread of its own.
+	 * from the assistant's main chat or anywhere else, the job gets a thread
+	 * of its own, starting with the request.
 	 */
 	start(input: { title: string; instructions: string; threadId?: string; origin: Thread["origin"]; request?: string }): Thread {
 		const { threads } = this.deps;
 		const title = titleFrom(input.title);
-		let thread = input.threadId ? threads.makeJob(input.threadId, title, input.instructions) : undefined;
+		let thread = input.threadId && input.threadId !== MAIN_THREAD ? threads.makeJob(input.threadId, title, input.instructions) : undefined;
 		if (!thread) {
 			thread = threads.create({ title, origin: input.origin, job: { status: "queued", instructions: input.instructions, runs: 0 } });
 			if (input.request) threads.append(thread.id, { role: "user", text: input.request });

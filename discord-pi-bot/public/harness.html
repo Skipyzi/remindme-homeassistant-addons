@@ -99,15 +99,15 @@
             </template>
           </section>
 
-          <!-- RemindMe's own thread, pinned: what it sent and did on its own, with buttons, and your replies. -->
-          <section class="rm-sec rm-pin" x-show="feedRow" x-cloak aria-label="RemindMe">
+          <!-- The assistant's chat, pinned: your main conversation, plus what it sent and did on its own, with buttons. -->
+          <section class="rm-sec rm-pin" x-show="feedRow" x-cloak :aria-label="assistant.name">
             <div class="rm-swipe" x-init="swipeable($el, 'feed', 'remindme')">
               <div class="rm-swipe-under right"><template x-for="act in swipeActions('feed', 'remindme').left" :key="act"><button class="rm-swipe-act" :class="act" type="button" @click.stop="rowAct('feed', 'remindme', act)" x-text="actLabel(act)"></button></template></div>
               <div class="rm-swipe-under left"><template x-for="act in swipeActions('feed', 'remindme').right" :key="act"><button class="rm-swipe-act" :class="act" type="button" @click.stop="rowAct('feed', 'remindme', act)" x-text="actLabel(act)"></button></template></div>
               <div class="rm-swipe-face">
                 <button class="rm-entry" type="button" :class="{ on: open?.id === 'remindme' }" @click="openThread('remindme')">
                   <span class="rm-mark" aria-hidden="true"><span class="rm-cat" x-effect="drawCat($el, 'remindme', feedRow?.fresh ? 'asking' : 'done')"></span></span>
-                  <span class="rm-entry-what"><b>RemindMe<em class="rm-new" x-show="feedRow?.fresh" x-text="`${feedRow?.fresh} new`"></em></b><span x-text="feedRow?.line"></span><i class="rm-entry-model" x-show="feedRow?.model" x-text="feedRow?.model"></i></span>
+                  <span class="rm-entry-what"><b><bdi x-text="assistant.name"></bdi><em class="rm-new" x-show="feedRow?.fresh" x-text="`${feedRow?.fresh} new`"></em></b><span x-text="feedRow?.line"></span><i class="rm-entry-model" x-show="feedRow?.model" x-text="feedRow?.model"></i></span>
                   <time x-text="feedRow?.time"></time>
                 </button>
               </div>
@@ -168,7 +168,14 @@
             <button type="button" @click="pictures.splice(index, 1)" :title="`Remove ${picture.name}`" x-text="`${picture.name} ✕`"></button>
           </template>
         </div>
-        <label class="rm-model-pick" x-show="(draft.trim() || newModel) && modelChoices.groups.length" x-cloak>Answers with
+        <!-- Where it goes: the assistant's chat, or a thread of its own (which can have its own model). -->
+        <div class="rm-model-pick rm-to" x-show="draft.trim() || pictures.length || !toMain" x-cloak>
+          <span>To</span>
+          <span class="rm-to-pick" role="radiogroup" aria-label="Send to">
+            <button type="button" role="radio" :aria-checked="String(toMain)" :class="{ on: toMain }" @click="toMain = true" x-text="assistant.name"></button>
+            <button type="button" role="radio" :aria-checked="String(!toMain)" :class="{ on: !toMain }" @click="toMain = false">New thread</button>
+          </span>
+          <label class="rm-to-model" x-show="!toMain && modelChoices.groups.length">on
               <select aria-label="Model for this request" x-model="newModel">
                 <option value="" x-text="defaultModelLabel()"></option>
                 <template x-for="group in modelChoices.groups" :key="group.provider">
@@ -179,10 +186,11 @@
                   </optgroup>
                 </template>
               </select>
-        </label>
+          </label>
+        </div>
         <form class="rm-compose" @submit.prevent="send()">
           <label class="rm-plus" title="Add a picture"><input type="file" accept="image/jpeg,image/png,image/webp" multiple hidden @change="attach($event)" />+</label>
-          <input type="text" x-model="draft" x-ref="ask" placeholder="Ask, or hand something off" aria-label="Ask, or hand something off" autocomplete="off" enterkeyhint="send" />
+          <input type="text" x-model="draft" x-ref="ask" :placeholder="toMain ? `Message ${assistant.name}` : 'Start a new thread'" :aria-label="toMain ? `Message ${assistant.name}` : 'Start a new thread'" autocomplete="off" enterkeyhint="send" />
           <button class="rm-btn solid" type="submit" :disabled="sending || (!draft.trim() && !pictures.length)">Send</button>
         </form>
       </section>
@@ -194,7 +202,7 @@
             <header class="rm-bar">
               <button class="rm-back" type="button" @click="closeThread()">‹ Inbox</button>
               <span class="rm-cat rm-cat-head" x-show="!open.readOnly" x-effect="open.readOnly || drawCat($el, open.id, catState(open))"></span>
-              <h1><span x-text="open.title"></span><small x-text="threadLine(open)"></small></h1>
+              <h1><span x-text="open.feed ? assistant.name : open.title"></span><small x-text="threadLine(open)"></small></h1>
               <button class="rm-barlink" type="button" x-show="isRunning(open) || open.job?.status === 'waiting'" @click="stopJob(open)" x-text="open.job?.status === 'waiting' ? 'Stop watching' : 'Stop'"></button>
               <button class="rm-barlink" type="button" x-show="open.archivedAt" @click="unarchive(open)">Unarchive</button>
               <button class="rm-barlink" type="button" x-show="!open.readOnly && !open.feed && !isRunning(open) && open.job?.status !== 'waiting'" @click="deleteThread(open)">Delete</button>
@@ -257,7 +265,7 @@
                   <button class="rm-btn" :class="{ solid: index === 0 }" type="button" @click="answerJob(open, option)" x-text="option"></button>
                 </template>
               </div>
-              <p class="rm-empty" x-show="open.feed && !open.messages.length">Nothing yet. The morning brief, nudges, reminders and what RemindMe does on its own show up here, and you can answer them.</p>
+              <p class="rm-empty" x-show="open.feed && !open.messages.length" x-text="`Nothing yet. Ask ${assistant.name} anything here. The morning brief, reminders and what it does on its own show up here too, and you can answer them.`"></p>
             </div>
             <label class="rm-model-pick" x-show="!open.readOnly && modelChoices.groups.length">Answers with
               <select aria-label="Model for this thread" @change="setThreadModel($event.target.value)">
@@ -272,7 +280,7 @@
               </select>
             </label>
             <form class="rm-compose" x-show="!open.readOnly" @submit.prevent="reply()">
-              <input type="text" x-model="replyDraft" x-ref="reply" :placeholder="open.feed ? 'Reply to RemindMe, such as: done, or remind me at 9' : open.job ? 'Reply to this job' : 'Reply'" aria-label="Reply" autocomplete="off" enterkeyhint="send" />
+              <input type="text" x-model="replyDraft" x-ref="reply" :placeholder="open.feed ? `Message ${assistant.name}` : open.job ? 'Reply to this job' : 'Reply'" aria-label="Reply" autocomplete="off" enterkeyhint="send" />
               <button class="rm-btn solid" type="submit" :disabled="sending || !replyDraft.trim()">Send</button>
             </form>
           </div>
@@ -741,10 +749,32 @@
               <div class="rm-actions" x-show="memory.facts.length"><button class="rm-btn" type="button" @click="forgetAll()">Forget everything</button></div>
             </div>
 
-            <!-- Persona -->
+            <!-- Your assistant: its name, its cat, how it talks, and its chat -->
             <div class="rm-panel" x-show="settingsTab === 'prompt'">
-              <h3>How it talks</h3>
-              <p>RemindMe's standing instructions. Its tools, the time and the house are always added on top.</p>
+              <h3>Your assistant</h3>
+              <p>Its chat sits at the top of the inbox, under its name and cat. On a phone, what you type under the inbox goes there unless you pick New thread; on a wide screen the chat is open beside the inbox.</p>
+              <form class="rm-ask" @submit.prevent="renameAssistant()">
+                <input type="text" maxlength="24" x-model="identity.name" placeholder="RemindMe" aria-label="Its name" />
+                <button class="rm-btn" type="submit" :disabled="identity.name.trim() === assistant.name">Rename</button>
+              </form>
+              <h4 class="rm-news-group">Its cat</h4>
+              <div class="rm-looks" role="radiogroup" aria-label="Coat">
+                <template x-for="(name, index) in catCoats" :key="name">
+                  <button type="button" role="radio" :aria-checked="String(identity.look.coat === index)" :class="{ on: identity.look.coat === index }" :title="name" :aria-label="name" @click="pickLook({ coat: index })">
+                    <span class="rm-cat" x-effect="drawCat($el, lookSeed({ coat: index }), 'done')"></span>
+                  </button>
+                </template>
+              </div>
+              <div class="rm-looks" role="radiogroup" aria-label="Wears">
+                <template x-for="(name, index) in catAccessories" :key="name">
+                  <button type="button" role="radio" :aria-checked="String(identity.look.accessory === index)" :class="{ on: identity.look.accessory === index }" :title="name" :aria-label="name" @click="pickLook({ accessory: index })">
+                    <span class="rm-cat" x-effect="drawCat($el, lookSeed({ accessory: index }), 'done')"></span>
+                  </button>
+                </template>
+              </div>
+              <p class="rm-note" x-text="lookName()"></p>
+              <h4 class="rm-news-group">How it talks</h4>
+              <p class="rm-note">Its standing instructions. Its tools, the time and the house are always added on top.</p>
               <label class="rm-field">Instructions
                 <textarea rows="7" spellcheck="false" x-model="persona"></textarea>
               </label>
@@ -753,6 +783,10 @@
                 <button class="rm-btn solid" type="button" @click="savePersona()">Save</button>
                 <button class="rm-btn" type="button" @click="resetPersona()">Back to the default</button>
               </div>
+              <h4 class="rm-news-group">Its chat</h4>
+              <p class="rm-note" x-text="mainChatLine"></p>
+              <div class="rm-actions"><button class="rm-btn" type="button" @click="restartMain()">Start the chat over</button></div>
+              <p class="rm-note" role="status" x-show="identityNote" x-text="identityNote"></p>
             </div>
 
             <!-- Skills -->

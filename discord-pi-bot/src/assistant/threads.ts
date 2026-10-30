@@ -73,6 +73,9 @@ export interface ThreadSummary extends Omit<Thread, "messages"> {
 	count: number;
 }
 
+/** The assistant's own chat: its main conversation with the user, and what it sent and did on its own. */
+export const MAIN_THREAD = "remindme";
+
 const MAX_THREADS = 200;
 const MAX_MESSAGES = 300;
 const MAX_TEXT = 12_000;
@@ -126,6 +129,40 @@ export class ThreadStore {
 		const thread: Thread = { id, title, origin: "console", createdAt: now.toISOString(), updatedAt: now.toISOString(), messages: [] };
 		this.threads.push(thread);
 		this.trim();
+		this.save();
+		return thread;
+	}
+
+	/**
+	 * Start a chat over: what was said moves to an archived thread of its
+	 * own (in History), and the chat goes on empty, on the default AI.
+	 */
+	restart(id: string, archiveTitle: string, now = new Date()): Thread | undefined {
+		const thread = this.get(id);
+		if (!thread?.messages.length) return undefined;
+		const archived: Thread = {
+			id: randomUUID().slice(0, 12),
+			title: archiveTitle,
+			origin: thread.origin,
+			createdAt: thread.messages[0].at,
+			updatedAt: thread.updatedAt,
+			archivedAt: now.toISOString(),
+			messages: thread.messages,
+			...(thread.model ? { model: thread.model } : {}),
+		};
+		this.threads.push(archived);
+		thread.messages = [];
+		delete thread.model;
+		thread.updatedAt = now.toISOString();
+		this.trim();
+		this.save();
+		return archived;
+	}
+
+	rename(id: string, title: string): Thread | undefined {
+		const thread = this.get(id);
+		if (!thread || !title.trim()) return undefined;
+		thread.title = title.trim();
 		this.save();
 		return thread;
 	}

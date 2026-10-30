@@ -993,6 +993,54 @@ body:has(> .rm-app) {
 .rm-model-pick + .rm-compose {
 	border-top: 0;
 }
+/* Under the inbox: to the assistant's chat, or a new thread (and on which model) */
+.rm-to {
+	flex-wrap: wrap;
+	row-gap: 6px;
+}
+.rm-to-pick {
+	display: inline-flex;
+}
+.rm-to-pick button {
+	padding: 3px 9px;
+	border: 1px solid var(--rule);
+	color: var(--mute);
+	font-size: 12px;
+}
+.rm-to-pick button + button {
+	margin-left: -1px;
+}
+/* The chosen one's white border sits over its neighbour's grey. */
+.rm-to-pick button.on {
+	position: relative;
+	border-color: #fff;
+	color: #fff;
+}
+.rm-to-model {
+	display: inline-flex;
+	gap: 6px;
+	align-items: center;
+	min-width: 0;
+}
+/* Settings, Your assistant: its cat's coat and what it wears */
+.rm-looks {
+	display: grid;
+	grid-template-columns: repeat(7, minmax(0, 56px));
+	gap: 6px;
+}
+.rm-looks button {
+	display: grid;
+	place-items: center;
+	aspect-ratio: 1;
+	border: 1px solid var(--rule);
+}
+.rm-looks button.on {
+	border-color: #fff;
+}
+.rm-looks .rm-cat {
+	width: 72%;
+	height: 72%;
+}
 .rm-compose {
 	flex: none;
 	display: flex;

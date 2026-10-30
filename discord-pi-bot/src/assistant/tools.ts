@@ -1261,7 +1261,8 @@ function jobTools(ctx: ToolContext): AssistantTool[] {
 					instructions: text(input, "instructions", 4_000),
 					threadId: turn?.threadId,
 					origin: turn?.channel === "discord" ? "discord" : "console",
-					request: turn?.threadId ? undefined : turn?.prompt,
+					// Used when the job gets a thread of its own (from Discord or the main chat).
+					request: turn?.prompt,
 				});
 				effects.did.push({ text: `Started a job: ${started.title}` });
 				return { content: json({ started: true, title: started.title, note: "It runs in the background and reports back. Tell the user so in a sentence." }) };

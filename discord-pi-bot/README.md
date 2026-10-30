@@ -113,12 +113,16 @@ Open **RemindMe** in the sidebar. It is an inbox. On a phone a thread opens over
 
 - **Needs you:** actions waiting for your tap (locks, doors, scenes, calendar events), questions from jobs with their answers as buttons, and batteries running out. A battery's **Remind me Saturday** hides it until then; **Got it** hides it until it's charged or changed.
 - **Working on:** background jobs with how far along they are, and your scheduled tasks.
-- **RemindMe:** its own thread, pinned on top with what's new: the morning brief, nudges, reminders, heads-ups and what it changed on its own, by day, with their buttons (a battery's Remind me Saturday, a reminder's In 1 hour). Reply there in context, such as "done" or "remind me at 9". Notifications about these open it.
+- **Your assistant's chat:** pinned on top under its name and cat (RemindMe until you name it). It's your main conversation, and it also holds the morning brief, nudges, reminders, heads-ups and what it changed on its own, by day, with their buttons (a battery's Remind me Saturday, a reminder's In 1 hour), so "done" or "remind me at 9" work in context. Work it hands to a background job gets a thread of its own. Notifications about these open it. On a wide screen it's open beside the inbox.
 - **Today, Yesterday, Earlier:** every conversation and job. Swipe a row left to snooze it (later today, tomorrow morning, the weekend, next week) or archive it, right to delete it, with Undo; with a mouse, the same show on hover. Archived conversations are under History.
 - **Cats:** every conversation and job has its own cat (a ginger tabby, tuxedo, calico, siamese, grey or black cat, with a bow tie, beret, glasses, headphones, party hat or scarf). It shows how things stand: busy while a job works, a paw raised when it needs you, content when done, grey and dizzy when it stopped.
-- **The box at the bottom:** ask, or hand something off. Every request opens a thread of its own; reply in it to carry on. Pictures work with Claude, OpenAI and ChatGPT.
+- **The box at the bottom:** ask, or hand something off. On a phone it writes to your assistant's chat; pick **New thread** above it for a separate conversation, which can have its own model. On a wide screen it starts new threads, since the chat is open beside it. Pictures work with Claude, OpenAI and ChatGPT.
 - **History:** the full timeline: what's coming up, then everything RemindMe answered, changed, sent and failed at, with changed lamps in their own colour.
-- **Settings:** grouped into AI (who answers and the model, how it talks, memory, skills), accounts and devices (mail and calendars, the phone app, connected tools) and what it does on its own (scheduled tasks, documents). Each section shows what it's set to, and anything broken is listed on top. On a phone, Settings is a list you tap into; on a computer, the list stays on the left.
+- **Settings:** grouped into AI (who answers and the model, your assistant, memory, skills), accounts and devices (mail and calendars, the phone app, connected tools) and what it does on its own (scheduled tasks, documents). Each section shows what it's set to, and anything broken is listed on top. On a phone, Settings is a list you tap into; on a computer, the list stays on the left.
+
+### Your assistant
+
+**Settings → Your assistant** gives it a name (up to 24 characters) and a cat: one of six coats and something to wear, or nothing. The name heads its chat and goes into its instructions, so it answers to it. **How it talks** below holds its standing instructions. Its chat keeps the AI it started with, like every thread; **Start the chat over** moves what was said to History and lets the next answer come from the AI chosen under **AI and sign-ins**. Memory, reminders and jobs aren't touched.
 
 ## The phone app
 

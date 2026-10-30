@@ -187,7 +187,8 @@ test("start_job hands work off with the turn's thread; job tools exist only insi
 	const effects = newEffects();
 	const result = await runTool(tools, { id: "1", name: "start_job", input: { title: "Flights to Budapest", instructions: "Cheapest, March" } }, effects);
 	assert.equal(JSON.parse(result.content).started, true);
-	assert.deepEqual(started[0], { title: "Flights to Budapest", instructions: "Cheapest, March", threadId: "t9", origin: "console", request: undefined });
+	// The request goes along; it's used only when the job gets a thread of its own (from the main chat).
+	assert.deepEqual(started[0], { title: "Flights to Budapest", instructions: "Cheapest, March", threadId: "t9", origin: "console", request: "find flights" });
 	assert.deepEqual(effects.did, [{ text: "Started a job: Flights to Budapest" }]);
 	assert.equal((await runTool(tools, { id: "2", name: "reply_to_job", input: { id: "nope", answer: "Friday" } }, newEffects())).isError, true);
 

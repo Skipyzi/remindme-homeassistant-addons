@@ -134,7 +134,7 @@ function remindme() {
 		/* Settings: grouped, each with a line on what it's set to; on a phone a list you tap into. */
 		sections: [
 			{ id: "ai", label: "AI and sign-ins", group: "AI" },
-			{ id: "prompt", label: "How it talks", group: "AI" },
+			{ id: "prompt", label: "Your assistant", group: "AI" },
 			{ id: "memory", label: "Memory", group: "AI" },
 			{ id: "skills", label: "Skills", group: "AI" },
 			{ id: "connectors", label: "Connectors", group: "Accounts and devices" },
@@ -149,6 +149,12 @@ function remindme() {
 		/* Models a thread, a new request or the news can be given ("provider|model" in the pickers) */
 		modelChoices: { default: null, groups: [] },
 		newModel: "",
+		/* The assistant: its name and cat, and whether the box under the inbox writes to its chat or starts a thread */
+		assistant: { name: "RemindMe", cat: "remindme" },
+		// On a phone the box writes to its chat; on a wide screen that chat is open beside it, so the box starts threads.
+		toMain: window.matchMedia("(max-width: 820px)").matches,
+		identity: { name: "", look: { coat: 0, accessory: 0 } },
+		identityNote: "",
 		/* The daily news */
 		news: { on: false, time: "07:30", language: "en", stories: 5, sources: [], catalog: [], own: [] },
 		newsNote: "",
@@ -245,6 +251,7 @@ function remindme() {
 			window.addEventListener("resize", fit);
 			window.matchMedia("(max-width: 820px)").addEventListener("change", (event) => {
 				this.phoneLayout = event.matches;
+				if (!this.draft.trim()) this.toMain = event.matches;
 				if (!event.matches && !this.settingsTab) this.settingsTab = "ai";
 			});
 			this.loadInbox();
@@ -279,6 +286,7 @@ function remindme() {
 				if (!response.ok) throw new Error(`HTTP ${response.status}`);
 				const data = await response.json();
 				this.ai = { ...(this.ai || {}), ...data.ai };
+				if (data.assistant) this.assistant = data.assistant;
 				this.waiting = data.waiting || [];
 				// A battery just dealt with keeps its card a moment longer, to show what happened.
 				const settled = this.batteries.filter((item) => item.done);
@@ -374,7 +382,8 @@ function remindme() {
 			const thread = this.threads.find((item) => item.id === FEED);
 			const entryAt = entry ? Date.parse(entry.at) : 0;
 			const threadAt = thread?.count ? Date.parse(thread.updatedAt) : 0;
-			if (!entryAt && !threadAt) return null;
+			// The assistant's chat is always there, even before anything was said.
+			if (!entryAt && !threadAt) return { line: "Your chat. Ask anything, or hand something off.", time: "", fresh: 0, model: thread?.model ? this.modelName(thread.model) : "" };
 			const at = new Date(Math.max(entryAt, threadAt));
 			return {
 				line: entryAt >= threadAt ? firstLine(entry.text) : firstLine(thread.last),
@@ -405,7 +414,8 @@ function remindme() {
 			return "done";
 		},
 		drawCat(element, seed, state) {
-			window.RemindMeCats?.render(element, seed, state);
+			// The assistant's chat has the cat chosen for it.
+			window.RemindMeCats?.render(element, seed === FEED ? this.assistant.cat : seed, state);
 		},
 		get lastAssistantId() {
 			return [...(this.open?.messages || [])].reverse().find((message) => message.role === "assistant")?.id;
@@ -459,6 +469,8 @@ function remindme() {
 		route() {
 			const match = location.hash.match(/^#t\/([\w-]+)$/);
 			if (match) this.showThread(match[1]);
+			// On a wide screen the assistant's chat is open beside the inbox.
+			else if (!this.phoneLayout) this.showThread(FEED);
 			else this.open = null;
 		},
 
@@ -531,7 +543,7 @@ function remindme() {
 				}
 				messages.push(message);
 			}
-			return { id: FEED, feed: true, title: "RemindMe", createdAt: all[0]?.at || new Date().toISOString(), updatedAt: all.at(-1)?.at || "", messages, model: data.thread?.model };
+			return { id: FEED, feed: true, title: this.assistant.name, createdAt: all[0]?.at || new Date().toISOString(), updatedAt: all.at(-1)?.at || "", messages, model: data.thread?.model };
 		},
 		async unfoldFeed() {
 			this.feedFold = false;
@@ -963,7 +975,7 @@ function remindme() {
 
 		threadLine(thread) {
 			if (thread.readOnly) return thread.meta;
-			if (thread.feed) return "What it sent and did on its own";
+			if (thread.feed) return "Your chat, and what it did on its own";
 			if (thread.archivedAt) return `Archived · started ${this.formatWhen(thread.createdAt)}`;
 			const job = thread.job;
 			if (!job) return `Started ${this.formatWhen(thread.createdAt)}`;
@@ -1020,8 +1032,20 @@ function remindme() {
 			const attachments = this.pictures;
 			this.draft = "";
 			this.pictures = [];
+			// To the assistant's chat, which opens to show the answer; or a thread of its own.
+			if (this.toMain) {
+				if (this.open?.id !== FEED) {
+					history.pushState({ thread: FEED }, "", `#t/${FEED}`);
+					await this.showFeed();
+				}
+				const at = new Date().toISOString();
+				this.open.messages = [...this.open.messages, { id: `local-${Date.now()}`, role: "user", at, text: text || "(picture)" }];
+				await this.stream(`./api/threads/${FEED}/messages`, { message: text, attachments }, false);
+				return;
+			}
 			const model = this.modelOf(this.newModel);
 			this.newModel = "";
+			this.toMain = this.phoneLayout;
 			await this.stream("./api/threads", { message: text, attachments, ...(model ? { model } : {}) }, true);
 		},
 
@@ -1319,7 +1343,7 @@ function remindme() {
 		sectionStatus(id) {
 			const plural = (count, word) => `${count} ${word}${count === 1 ? "" : "s"}`;
 			if (id === "ai") return !this.ai?.ready && this.ai?.problem ? { text: this.ai.problem, bad: true } : { text: [this.ai?.label, this.ai?.model].filter(Boolean).join(" · ") || "Pick who answers" };
-			if (id === "prompt") return { text: firstLine(this.persona) || "The built-in personality" };
+			if (id === "prompt") return { text: [this.assistant.name, this.lookName()].filter(Boolean).join(" · ") };
 			if (id === "memory") return { text: `${this.memory.learn ? "Learning" : "Not learning"} · ${plural(this.memory.facts?.length || 0, "fact")}` };
 			if (id === "skills") return { text: this.skills.length ? `${this.skills.filter((skill) => skill.enabled).length} of ${this.skills.length} on` : "None yet" };
 			if (id === "connectors") {
@@ -1528,11 +1552,69 @@ function remindme() {
 			}
 		},
 
-		/* How it talks */
+		/* Your assistant: its name, its cat, how it talks, and its chat */
 		async loadPersona() {
 			const data = await this.getJson("./api/persona", {});
 			this.persona = data.prompt || "";
 			this.personaStatus = "";
+			this.identityFrom(data);
+		},
+		identityFrom(data) {
+			if (!data?.name) return;
+			const look = data.look || window.RemindMeCats?.parts(data.cat || FEED) || { coat: 0, accessory: 0 };
+			this.identity = { name: data.name, look: { coat: look.coat, accessory: look.accessory } };
+			this.assistant = { name: data.name, cat: data.cat || FEED };
+		},
+		/* The cat with one part changed, to show as a choice. */
+		lookSeed(change) {
+			const look = { ...this.identity.look, ...change };
+			return `look:${look.coat}-${look.accessory}`;
+		},
+		get catCoats() {
+			return window.RemindMeCats?.coats || [];
+		},
+		get catAccessories() {
+			return window.RemindMeCats?.accessories || [];
+		},
+		get mainChatLine() {
+			const model = this.threads.find((thread) => thread.id === FEED)?.model;
+			const on = model ? `It answers with ${this.modelName(model)}` : "It answers with the AI chosen under AI and sign-ins";
+			return `${on}. In the chat you can switch to that AI's other models; for another AI, start the chat over. What was said moves to History, and memory, reminders and jobs stay as they are.`;
+		},
+		lookName() {
+			const cats = window.RemindMeCats;
+			if (!cats) return "";
+			const { coat, accessory } = this.identity.look;
+			return accessory === cats.accessories.length - 1 ? cats.coats[coat] : `${cats.coats[coat]} with ${cats.accessories[accessory].toLowerCase()}`;
+		},
+		async saveIdentity(change, note) {
+			try {
+				this.identityFrom(await this.request("./api/persona", "PUT", change));
+				this.persona = (await this.getJson("./api/persona", {})).prompt || this.persona;
+				this.identityNote = note || "";
+				if (this.open?.feed) this.open = { ...this.open, title: this.assistant.name };
+			} catch (error) {
+				this.identityNote = `Not saved: ${error.message}`;
+			}
+		},
+		async renameAssistant() {
+			const name = this.identity.name.trim();
+			await this.saveIdentity({ name }, name ? `It's ${name} now.` : "Back to RemindMe.");
+		},
+		async pickLook(change) {
+			this.identity.look = { ...this.identity.look, ...change };
+			await this.saveIdentity({ look: this.identity.look }, "");
+		},
+		async restartMain() {
+			if (!window.confirm(`Start your chat with ${this.assistant.name} over? What was said moves to History, and the next answer comes from the AI chosen under AI and sign-ins.`)) return;
+			try {
+				await this.request(`./api/threads/${FEED}/restart`);
+				this.identityNote = "Started over. The old chat is in History.";
+				await this.loadInbox();
+				if (this.open?.feed) await this.showFeed(true);
+			} catch (error) {
+				this.identityNote = error.message;
+			}
 		},
 		async savePersona() {
 			this.personaStatus = "Saving";

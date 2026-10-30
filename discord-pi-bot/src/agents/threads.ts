@@ -27,12 +27,23 @@ export class RunnerThreads {
 		return this.threads[conversation]?.[runner];
 	}
 
+	/** A conversation that starts over: its next turn opens fresh sessions. */
+	forget(conversation: string): void {
+		if (!this.threads[conversation]) return;
+		delete this.threads[conversation];
+		this.write();
+	}
+
 	set(conversation: string, runner: RunnerId, id: string): void {
 		this.threads[conversation] = { ...this.threads[conversation], [runner]: id, at: Date.now() };
 		const keys = Object.keys(this.threads);
 		if (keys.length > MAX_CONVERSATIONS)
 			for (const key of keys.sort((a, b) => (this.threads[a].at || 0) - (this.threads[b].at || 0)).slice(0, keys.length - MAX_CONVERSATIONS))
 				delete this.threads[key];
+		this.write();
+	}
+
+	private write(): void {
 		try {
 			mkdirSync(dirname(this.path), { recursive: true, mode: 0o700 });
 			writeFileSync(`${this.path}.tmp`, JSON.stringify(this.threads), { mode: 0o600 });
