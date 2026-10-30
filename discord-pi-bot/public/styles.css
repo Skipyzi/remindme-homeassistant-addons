@@ -532,26 +532,30 @@ a {
 }
 .rm-sections-group h3 {
 	margin: 18px 0 4px;
-	color: var(--dim);
-	font-size: 12px;
-	font-weight: 400;
+	color: var(--mute);
+	font-size: 13px;
+	font-weight: 500;
 }
 .rm-sections-group > button {
 	display: grid;
-	gap: 2px;
-	width: 100%;
-	padding: 9px 0;
-	color: var(--mute);
-	text-align: left;
+	gap: 1px;
+	width: calc(100% + 24px);
+	margin: 0 -12px;
+	padding: 9px 12px;
 	border-top: 1px solid var(--rule);
+	color: #fff;
+	text-align: left;
+}
+.rm-sections-group > button:first-of-type {
+	border-top-color: transparent;
 }
 .rm-sections-group > button b {
-	font-weight: 400;
+	font-weight: 500;
 }
 .rm-sections-group > button small {
 	overflow: hidden;
-	color: var(--dim);
-	font-size: 12px;
+	color: var(--mute);
+	font-size: 13px;
 	text-overflow: ellipsis;
 	white-space: nowrap;
 }
@@ -559,10 +563,13 @@ a {
 	color: #ff6b5e;
 }
 .rm-sections-group > button[aria-pressed="true"] {
-	color: #fff;
+	border-color: transparent;
+	border-radius: 14px;
+	background: var(--glass);
+	box-shadow: inset 0 0 0 1px var(--glass-edge), inset 0 1px 0 var(--glass-shine);
 }
-.rm-sections-group > button[aria-pressed="true"] b {
-	font-weight: 600;
+.rm-sections-group > button[aria-pressed="true"] + button {
+	border-top-color: transparent;
 }
 .rm-sections-group > button .rm-cmeter {
 	margin: 4px 0 2px;
@@ -632,14 +639,16 @@ a {
 }
 .rm-choice::before {
 	content: "";
-	width: 10px;
-	height: 10px;
-	border: 1px solid var(--dim);
+	width: 8px;
+	height: 8px;
+	border: 1.5px solid #4a4a4f;
+	border-radius: 50%;
 	align-self: center;
 }
 .rm-choice.on::before {
-	background: #fff;
-	border-color: #fff;
+	border-color: var(--lamp);
+	background: var(--lamp);
+	box-shadow: 0 0 8px rgba(255, 210, 63, 0.7);
 }
 .rm-choice.on {
 	font-weight: 600;
@@ -686,14 +695,16 @@ a {
 }
 .rm-models-pick {
 	flex: none;
-	width: 10px;
-	height: 10px;
-	margin-top: 5px;
-	border: 1px solid var(--dim);
+	width: 8px;
+	height: 8px;
+	margin-top: 7px;
+	border: 1.5px solid #4a4a4f;
+	border-radius: 50%;
 }
 .rm-models tr.on .rm-models-pick {
-	background: #fff;
-	border-color: #fff;
+	border-color: var(--lamp);
+	background: var(--lamp);
+	box-shadow: 0 0 8px rgba(255, 210, 63, 0.7);
 }
 .rm-models tr.on b,
 .rm-models tr[role="button"]:hover b {
@@ -792,12 +803,14 @@ a {
 	color: #fff;
 }
 .rm-result {
-	padding: 10px 12px;
-	border: 1px solid #fff;
+	padding: 10px 14px;
+	border: 1px solid var(--glass-edge);
+	border-radius: 14px;
+	background: var(--glass);
 }
 .rm-result.bad {
-	border-style: dashed;
-	color: var(--mute);
+	border-color: rgba(255, 107, 94, 0.45);
+	color: #ff9b91;
 }
 .rm-item {
 	display: grid;
@@ -1308,29 +1321,31 @@ body:has(> .rm-app) {
 /* Segmented choices: the rules */
 .rm-seg {
 	display: inline-flex;
+	justify-self: start;
+	gap: 2px;
+	padding: 3px;
+	border: 1px solid var(--glass-edge);
+	border-radius: 18px;
+	background: var(--glass);
 }
 .rm-seg button {
-	padding: 3px 9px;
-	border: 1px solid var(--rule);
+	padding: 4px 11px;
+	border-radius: 14px;
 	color: var(--mute);
-	font-size: 12px;
+	font-size: 13px;
 	white-space: nowrap;
 }
-.rm-seg button + button {
-	margin-left: -1px;
-}
-/* The chosen one's white border sits over its neighbour's grey. */
 .rm-seg button.on {
-	position: relative;
-	border-color: #fff;
-	color: #fff;
+	background: #fff;
+	color: #000;
+	font-weight: 600;
 }
 /* Settings, What it may do: one kind of action per row, its choices beside or under it */
 .rm-rule {
 	display: grid;
 	gap: 8px;
-	padding: 12px 0;
-	border-bottom: 1px solid var(--rule);
+	padding: 10px 0;
+	border-top: 1px solid var(--rule);
 }
 .rm-rule > span:first-child {
 	display: grid;
@@ -1338,8 +1353,7 @@ body:has(> .rm-app) {
 	min-width: 0;
 }
 .rm-rule .rm-seg button {
-	padding: 6px 11px;
-	font-size: 13px;
+	padding: 5px 11px;
 }
 @media (min-width: 821px) {
 	.rm-rule {
@@ -1359,9 +1373,12 @@ body:has(> .rm-app) {
 	place-items: center;
 	aspect-ratio: 1;
 	border: 1px solid var(--rule);
+	border-radius: 14px;
 }
 .rm-looks button.on {
-	border-color: #fff;
+	border-color: var(--glass-edge);
+	background: var(--glass);
+	box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.35);
 }
 .rm-looks .rm-cat {
 	width: 72%;
@@ -2406,16 +2423,23 @@ a.rm-made-item[href]:hover b {
 		padding-top: 0;
 	}
 	/* One line a section: its name, what it's set to on the right, and › */
-	.rm-sections-group > button {
+	.rm-sections-group > button,
+	.rm-sections-group > button[aria-pressed="true"] {
 		grid-template-columns: max-content minmax(0, 1fr) 12px;
 		column-gap: 12px;
 		align-items: center;
+		width: 100%;
+		margin: 0;
 		padding: 12px 0;
+		border-radius: 0;
+		background: none;
+		box-shadow: none;
 		border-top: 0;
 		border-bottom: 1px solid var(--rule);
 	}
 	.rm-sections-group > button:first-of-type {
 		border-top: 1px solid var(--rule);
+		border-top-color: var(--rule);
 	}
 	.rm-sections-group > button b {
 		color: #fff;
@@ -2709,23 +2733,23 @@ a.rm-made-item[href]:hover b {
 	font-size: 15px;
 	font-weight: 650;
 }
-.rm-skill-tags {
+.rm-ltags {
 	display: flex;
 	flex-wrap: wrap;
 	gap: 6px;
 }
-.rm-skill-tag {
+.rm-ltag {
 	padding: 0 6px;
 	border: 1px solid #2e2e33;
 	border-radius: 6px;
 	color: var(--mute);
 	font: 11px/18px var(--mono);
 }
-.rm-skill-tag.ok {
+.rm-ltag.ok {
 	border-color: rgba(255, 210, 63, 0.35);
 	color: var(--lamp);
 }
-.rm-skill-tag.warn {
+.rm-ltag.warn {
 	border-color: #4a3f2c;
 	color: #c9a66b;
 }
@@ -2938,4 +2962,106 @@ a.rm-made-item[href]:hover b {
 	.rm-pop-grab {
 		display: none;
 	}
+}
+
+/* 4.33: every Settings section in the same rows; buttons, fields and choices on glass */
+.rm-sheet .rm-btn,
+.rm-pop .rm-btn {
+	height: 38px;
+	padding: 0 16px;
+	border: 1px solid var(--glass-edge);
+	border-radius: 19px;
+	background: var(--glass);
+	color: #fff;
+	font-weight: 500;
+}
+.rm-sheet .rm-btn.solid,
+.rm-pop .rm-btn.solid {
+	border-color: #fff;
+	background: #fff;
+	color: #000;
+	font-weight: 600;
+}
+.rm-sheet .rm-btn.ghost,
+.rm-pop .rm-btn.ghost {
+	border-color: transparent;
+	background: none;
+	color: var(--mute);
+}
+.rm-sheet .rm-btn[disabled],
+.rm-pop .rm-btn[disabled] {
+	opacity: 0.45;
+}
+.rm-sheet .rm-ask input:not([type="file"]),
+.rm-pop .rm-ask input:not([type="file"]) {
+	height: 44px;
+	border: 1px solid var(--glass-edge);
+	background: var(--glass);
+}
+.rm-sheet .rm-ask input:focus,
+.rm-pop .rm-ask input:focus {
+	border-color: rgba(255, 255, 255, 0.5);
+}
+.rm-sheet .rm-ask .rm-btn,
+.rm-pop .rm-ask .rm-btn {
+	height: 44px;
+	border-radius: 22px;
+}
+.rm-pop .rm-field input,
+.rm-pop .rm-field textarea,
+.rm-pop .rm-field select {
+	border-color: rgba(255, 255, 255, 0.12);
+	border-radius: 12px;
+	background: rgba(0, 0, 0, 0.35);
+}
+.rm-lamp.none {
+	visibility: hidden;
+}
+.rm-r-main[disabled] {
+	opacity: 1;
+	color: var(--dim);
+}
+.rm-r-main[disabled] .rm-r-t small {
+	color: var(--dim);
+}
+a.rm-r-main {
+	text-decoration: none;
+}
+.rm-r-t b.wrap {
+	white-space: normal;
+	overflow-wrap: anywhere;
+}
+.rm-mono {
+	font-family: var(--mono);
+	font-size: 13px;
+}
+.rm-r-field input[type="time"] {
+	justify-self: end;
+	padding: 7px 10px;
+	border: 1px solid var(--rule);
+	border-radius: 10px;
+	background: #000;
+	color: #fff;
+}
+.rm-r-field .rm-seg {
+	justify-self: end;
+}
+.rm-price-mini {
+	width: 72px;
+	margin: 0;
+}
+.rm-card {
+	display: grid;
+	gap: 12px;
+	padding: 14px 16px;
+	border: 1px solid var(--glass-edge);
+	border-radius: 20px;
+	background: var(--glass);
+}
+.rm-models .rm-ltag {
+	margin-left: 8px;
+	vertical-align: 1px;
+}
+.rm-panel .rm-stack {
+	gap: 14px;
 }

@@ -852,6 +852,7 @@ function remindme() {
 				this.newPrice = { what: "", target: "" };
 				this.priceNote = `Watching ${watch.name}: ${euro(watch.price)}${watch.shop ? ` at ${watch.shop}` : ""} now.`;
 				await this.loadSection("prices");
+				if (this.pop?.kind === "add-price") this.pop = null;
 			} catch (error) {
 				this.priceNote = `Not added: ${error.message}`;
 			} finally {
@@ -877,6 +878,7 @@ function remindme() {
 		async removePriceWatch(watch) {
 			await fetch(`./api/prices/${encodeURIComponent(watch.id)}`, { method: "DELETE" });
 			this.priceNote = `Stopped watching ${watch.name}.`;
+			if (this.pop?.id === watch.id) this.pop = null;
 			await this.loadSection("prices");
 		},
 
@@ -1491,18 +1493,17 @@ function remindme() {
 				this.aiBusy = false;
 			}
 		},
-		aiSpendLine() {
-			const spend = this.ai?.spend;
-			if (!spend) return "";
-			const budget = this.ai.budget ? ` of the $${this.ai.budget.toFixed(2)} daily budget` : "";
-			const tokens = `${Math.round((spend.inputTokens + spend.outputTokens) / 1000)}k tokens`;
-			return `Today: $${spend.usd.toFixed(2)}${budget}, ${tokens}${spend.unpriced ? " (some on a model without a known price)" : ""}. The month is under API credits.`;
-		},
 		aiSearchLine() {
 			const search = this.ai?.webSearch;
-			if (search === "provider") return "Web search: built into this provider.";
-			if (search === "searxng") return "Web search: through SearXNG or Exa.";
-			return "Web search: off. Add a SearXNG address or an Exa key in the app options to search with the Claude Code and Codex agents.";
+			if (search === "provider") return "Built into this provider";
+			if (search === "searxng") return "Through SearXNG or Exa";
+			return "Off. Add a SearXNG address or an Exa key in the app options to search with the Claude Code and Codex agents.";
+		},
+		/* Today's use under AI: tokens here, money under API credits. */
+		aiTodayLine() {
+			const spend = this.ai?.spend;
+			if (!spend) return "";
+			return `${Math.round((spend.inputTokens + spend.outputTokens) / 1000)}k tokens${spend.unpriced ? ", some on a model without a known price" : ""} · the month is under API credits`;
 		},
 		async loadSignins() {
 			const status = {};
@@ -1840,9 +1841,9 @@ function remindme() {
 			const count = this.phone.devices?.length || 0;
 			const devices = count ? `${count} device${count === 1 ? " gets" : "s get"} notifications.` : "No device gets notifications yet.";
 			if (this.pushOn) return `This device gets them. ${devices}`;
-			if (this.pushPossible) return `${devices} Turn them on for this device below.`;
-			if (this.inPhoneApp && /iPhone|iPad/.test(navigator.userAgent)) return `${devices} On an iPhone they work once RemindMe is on the home screen: open it from there and come back to this page.`;
-			return `${devices} Turn them on in the phone app itself: open the address above on your phone, install it, and come back to this page there.`;
+			if (this.pushPossible) return devices;
+			if (this.inPhoneApp && /iPhone|iPad/.test(navigator.userAgent)) return `${devices} On an iPhone, open RemindMe from the home screen to turn them on.`;
+			return `${devices} Turn them on in the phone app itself, on your phone.`;
 		},
 		async loadPhone() {
 			const [phone, ha, location] = await Promise.all([this.getJson("./api/phone", { state: "error", error: "RemindMe didn't answer." }), this.getJson("./api/phone/ha", null), this.getJson("./api/location", null)]);
@@ -1872,10 +1873,17 @@ function remindme() {
 		},
 		get dictationLine() {
 			const tools = window.RemindMeDictation;
-			if (this.dictation.entity && tools?.canRecord()) return `The microphone button by the text box records you, and ${this.dictation.name} in Home Assistant writes it down on the Pi. The words land in the box for you to read before sending.`;
-			if (this.dictation.entity) return `${this.dictation.name} in Home Assistant can write down what you say, but this page can't use the microphone: open RemindMe over its https address (the phone app) instead.`;
-			const browser = tools?.browserCan ? " Until then, the microphone button uses this browser's own speech recognition, which sends your voice to Apple or Google." : "";
+			if (this.dictation.entity && tools?.canRecord()) return "Writes down what you say on the Pi, into the text box for you to check.";
+			if (this.dictation.entity) return "Can write down what you say, but only over the https address (the phone app).";
+			const browser = tools?.browserCan ? " Until then the microphone uses this browser's speech recognition, which sends your voice to Apple or Google." : "";
 			return `${this.dictation.hint || "For dictation on the Pi, add the Whisper app and its Wyoming integration in Home Assistant."}${browser}`;
+		},
+		/* The phone app before it's connected: why, in a line. */
+		get phoneStateLine() {
+			if (this.phone.error) return this.phone.error;
+			if (this.phone.state === "off") return "Turn on phone_app in the app options, then restart RemindMe.";
+			if (this.phone.state === "needs_login") return "Connect it to Tailscale once, with the account your phone uses.";
+			return "Tailscale is starting inside RemindMe.";
 		},
 		chooseDictationLanguage(language) {
 			this.dictationLang = language;
@@ -2364,6 +2372,8 @@ function remindme() {
 			this.feedResult = null;
 			this.dhlResult = null;
 			this.skillError = "";
+			this.priceNote = "";
+			this.taskError = "";
 			if (pop.kind === "add-mcp") this.mcpError = "";
 			if (pop.kind === "plan") this.planForm = { allowance: String(this.credits?.allowance ?? 200), renewDay: this.credits?.renewDay ? String(this.credits.renewDay) : "", error: "" };
 			this.pop = pop;
@@ -2377,14 +2387,20 @@ function remindme() {
 		get popServer() {
 			return this.pop?.id ? this.mcpServers.find((server) => server.id === this.pop.id) : undefined;
 		},
+		get popWatch() {
+			return this.pop?.id ? this.priceWatches.find((watch) => watch.id === this.pop.id) : undefined;
+		},
+		get popTask() {
+			return this.pop?.id ? this.tasks.find((task) => task.id === this.pop.id) : undefined;
+		},
 		get popSkill() {
 			return this.pop?.id ? this.skills.find((skill) => skill.id === this.pop.id) : undefined;
 		},
 		get popTitle() {
 			const pop = this.pop;
 			if (!pop) return "";
-			const named = { mail: this.popConnector, feed: this.popConnector, dhl: this.popConnector, mcp: this.popServer, skill: this.popSkill }[pop.kind]?.name;
-			return named || pop.name || { "add-mail": "Add mail", "add-feed": "Add a feed", "add-dhl": "Set up DHL", icloud: "Add iCloud", "add-mcp": "Add a tool by its address", "add-skill": "Write a skill", plan: "Your plan", "admin-key": "Anthropic's own figure" }[pop.kind] || "";
+			const named = { mail: this.popConnector, feed: this.popConnector, dhl: this.popConnector, mcp: this.popServer, skill: this.popSkill, price: this.popWatch, task: this.popTask }[pop.kind]?.name;
+			return named || pop.name || { "add-mail": "Add mail", "add-feed": "Add a feed", "add-dhl": "Set up DHL", icloud: "Add iCloud", "add-mcp": "Add a tool by its address", "add-skill": "Write a skill", "add-price": "Watch a price", "add-task": "Add a scheduled task", plan: "Your plan", "admin-key": "Anthropic's own figure" }[pop.kind] || "";
 		},
 
 		/* API credits */
@@ -2449,6 +2465,7 @@ function remindme() {
 				this.newTaskWhat = "";
 				this.newTaskWhen = "";
 				this.taskError = "";
+				if (this.pop?.kind === "add-task") this.pop = null;
 				await this.loadLedger();
 			} catch (error) {
 				this.taskError = error.message;
@@ -2463,6 +2480,7 @@ function remindme() {
 			if (!window.confirm(`Delete "${task.name}"?`)) return;
 			await fetch(`./api/tasks/${encodeURIComponent(task.id)}`, { method: "DELETE" });
 			this.tasks = this.tasks.filter((entry) => entry.id !== task.id);
+			if (this.pop?.id === task.id) this.pop = null;
 			await this.loadLedger();
 		},
 	};

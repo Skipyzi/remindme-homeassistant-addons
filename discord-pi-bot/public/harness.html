@@ -451,18 +451,20 @@
               </template>
             </nav>
 
-            <!-- AI -->
+            <!-- AI: who answers, with which model and how hard it thinks; sign-ins for subscriptions -->
             <div class="rm-panel" x-show="settingsTab === 'ai'">
               <h3>Who answers</h3>
-              <div class="rm-choices">
+              <div class="rm-rows">
                 <template x-for="option in ai?.providers || []" :key="option.id">
-                  <button class="rm-choice" type="button" :class="{ on: option.id === ai.provider }" :disabled="!option.configured || aiBusy" @click="chooseAi({ provider: option.id })">
-                    <span x-text="option.label"></span>
-                    <small x-text="option.configured ? option.model || 'pick a model' : option.kind === 'api' ? 'no key in the app options' : 'not signed in'"></small>
-                    <span></span>
-                  </button>
+                  <div class="rm-r">
+                    <button class="rm-r-main" type="button" :disabled="!option.configured || aiBusy" @click="chooseAi({ provider: option.id })">
+                      <span class="rm-lamp" :class="option.id === ai.provider ? '' : option.configured ? 'off' : 'none'"></span>
+                      <span class="rm-r-t"><b x-text="option.label"></b><small x-text="option.id === ai.provider ? `Answers now · ${option.model || 'pick a model'}` : option.configured ? option.model || 'Ready' : option.kind === 'api' ? 'No key in the app options' : 'Not signed in'"></small></span>
+                    </button>
+                  </div>
                 </template>
               </div>
+
               <h3>Model</h3>
               <p class="rm-note bad" role="alert" x-show="aiError" x-cloak x-text="aiError"></p>
               <table class="rm-models" x-show="modelTable.featured.length">
@@ -478,7 +480,7 @@
                 <tbody>
                   <template x-for="model in modelTable.featured" :key="model.id">
                     <tr role="button" tabindex="0" :class="{ on: model.id === aiModel }" :aria-pressed="String(model.id === aiModel)" @click="pickModel(model.id)" @keydown.enter="pickModel(model.id)">
-                      <td><div class="rm-models-name"><span class="rm-models-pick"></span><span><b x-text="model.name"></b><span class="rm-tag" x-show="model.recommended">Recommended</span><small x-text="model.what"></small></span></div></td>
+                      <td><div class="rm-models-name"><span class="rm-models-pick"></span><span><b x-text="model.name"></b><span class="rm-ltag ok" x-show="model.recommended">recommended</span><small x-text="model.what"></small></span></div></td>
                       <td class="rm-wide"><span class="rm-meter" :aria-label="`Smarts ${model.smarts} of 4`"><template x-for="n in 4" :key="n"><i :class="{ on: n <= model.smarts }"></i></template></span></td>
                       <td class="rm-wide"><span class="rm-meter" :aria-label="`Speed ${model.speed} of 4`"><template x-for="n in 4" :key="n"><i :class="{ on: n <= model.speed }"></i></template></span></td>
                       <td class="rm-num" x-show="modelTable.billing !== 'unknown'"><span x-text="modelTable.billing === 'plan' ? planWord(model.plan) : centsOf(model.perAnswerUsd)"></span><small class="rm-perday-short" x-show="model.perDay !== undefined" x-text="`~${model.perDay?.toLocaleString('en-GB')} a day`"></small></td>
@@ -487,10 +489,10 @@
                   </template>
                 </tbody>
               </table>
-              <button class="rm-link rm-models-more" type="button" x-show="modelTable.featured.length && modelTable.others.length" @click="modelsOpen = !modelsOpen" x-text="modelsOpen ? 'Hide older and other models' : `Older and other models (${modelTable.others.length})`"></button>
-              <div class="rm-choices" x-show="modelTable.others.length && (modelsOpen || !modelTable.featured.length)">
+              <button class="rm-more" type="button" x-show="modelTable.featured.length && modelTable.others.length" @click="modelsOpen = !modelsOpen" x-text="modelsOpen ? 'Hide older and other models' : `Older and other models (${modelTable.others.length}) ›`"></button>
+              <div class="rm-rows" x-show="modelTable.others.length && (modelsOpen || !modelTable.featured.length)">
                 <template x-for="id in modelTable.others" :key="id">
-                  <button class="rm-choice" type="button" :class="{ on: id === aiModel }" :disabled="aiBusy" @click="pickModel(id)"><span x-text="id"></span><small></small><span></span></button>
+                  <div class="rm-r plain"><button class="rm-r-main" type="button" :disabled="aiBusy" @click="pickModel(id)"><span class="rm-lamp" :class="id === aiModel ? '' : 'off'"></span><span class="rm-r-t"><b class="rm-mono" x-text="id"></b></span></button></div>
                 </template>
               </div>
               <form class="rm-ask" x-show="modelsOpen || !modelTable.featured.length" @submit.prevent="pickModel(customModel)">
@@ -498,19 +500,23 @@
                 <button class="rm-btn" type="submit" :disabled="aiBusy || !customModel.trim()">Use</button>
               </form>
               <p class="rm-note" x-text="modelNote"></p>
-              <div class="rm-two">
-                <label class="rm-field">How hard it thinks
-                  <select x-model="aiEffort" :disabled="aiBusy" @change="chooseAi({ effort: aiEffort })">
-                    <option value="low">Low: quick and cheap</option>
-                    <option value="medium">Medium</option>
-                    <option value="high">High: slower, costs more</option>
-                  </select>
-                </label>
+
+              <div class="rm-rows">
+                <div class="rm-r rm-r-field">
+                  <span>How hard it thinks</span>
+                  <span class="rm-seg" role="radiogroup" aria-label="How hard it thinks">
+                    <template x-for="level in [{ id: 'low', label: 'Low' }, { id: 'medium', label: 'Medium' }, { id: 'high', label: 'High' }]" :key="level.id">
+                      <button type="button" role="radio" :aria-checked="String(aiEffort === level.id)" :class="{ on: aiEffort === level.id }" :disabled="aiBusy" @click="aiEffort = level.id; chooseAi({ effort: level.id })" x-text="level.label"></button>
+                    </template>
+                  </span>
+                </div>
+                <div class="rm-r" x-show="ai?.spend">
+                  <button class="rm-r-main plain" type="button" @click="showSection('credits')"><span class="rm-r-t"><b>Today</b><small x-text="aiTodayLine()"></small></span><span class="rm-val" x-text="ai?.budget ? `${money(ai?.spend?.usd)} of ${money(ai.budget)}` : money(ai?.spend?.usd)"></span></button>
+                  <span class="rm-chev" aria-hidden="true">›</span>
+                </div>
+                <div class="rm-r plain"><span class="rm-r-t"><b>Web search</b><small class="wrap" x-text="aiSearchLine()"></small></span></div>
               </div>
               <p class="rm-note" x-show="ai?.problem" x-text="ai?.problem"></p>
-              <p class="rm-note" x-show="aiError" x-text="aiError"></p>
-              <p class="rm-note" x-text="aiSpendLine()"></p>
-              <p class="rm-note" x-text="aiSearchLine()"></p>
               <p class="rm-result" x-show="aiTest" x-cloak :class="{ bad: aiTest && !aiTest.ok }" x-text="aiTest?.ok ? aiTest.reply : aiTest?.error"></p>
               <div class="rm-actions">
                 <button class="rm-btn solid" type="button" :disabled="aiBusy || !ai?.ready" @click="testAi()" x-text="aiBusy ? 'Working' : 'Test'"></button>
@@ -518,23 +524,20 @@
               </div>
 
               <h3>Sign-ins</h3>
-              <details class="rm-how"><summary>A subscription instead of an API key</summary><p class="rm-note">ChatGPT answers like the providers above. Claude and Codex run as agents with RemindMe's tools and nothing else. API keys go in the RemindMe app's options in Home Assistant.</p></details>
-              <div class="rm-choices">
+              <div class="rm-rows">
                 <template x-for="option in [{ id: 'chatgpt', label: 'ChatGPT subscription' }, { id: 'claude', label: 'Claude subscription' }]" :key="option.id">
-                  <div class="rm-choice" :class="{ on: signinStatus[option.id]?.connected }">
-                    <span x-text="option.label"></span>
-                    <small x-text="signinStatus[option.id]?.connected ? signinStatus[option.id].email || 'signed in' : 'not signed in'"></small>
-                    <button class="rm-link" type="button" :disabled="aiBusy" @click="signinStatus[option.id]?.connected ? signOut(option.id) : signIn(option.id)" x-text="signinStatus[option.id]?.connected ? 'Sign out' : 'Sign in'"></button>
+                  <div class="rm-r">
+                    <div class="rm-r-main"><span class="rm-lamp" :class="signinStatus[option.id]?.connected ? '' : 'off'"></span><span class="rm-r-t"><b x-text="option.label"></b><small x-text="signinStatus[option.id]?.connected ? signinStatus[option.id].email || 'Signed in' : 'Not signed in'"></small></span></div>
+                    <button class="rm-pill" type="button" :disabled="aiBusy" @click="signinStatus[option.id]?.connected ? signOut(option.id) : signIn(option.id)" x-text="signinStatus[option.id]?.connected ? 'Sign out' : 'Sign in'"></button>
                   </div>
                 </template>
-                <div class="rm-choice">
-                  <span>Codex account</span>
-                  <small>its own sign-in, in a console</small>
-                  <button class="rm-link" type="button" @click="window.RemindMeAccountConsole.open($data, 'codex')">Open</button>
+                <div class="rm-r">
+                  <div class="rm-r-main"><span class="rm-lamp none"></span><span class="rm-r-t"><b>Codex account</b><small>Its own sign-in, in a console</small></span></div>
+                  <button class="rm-pill" type="button" @click="window.RemindMeAccountConsole.open($data, 'codex')">Open</button>
                 </div>
               </div>
               <template x-if="signin">
-                <div class="rm-panel" style="grid-column: auto">
+                <div class="rm-card">
                   <p class="rm-note" x-text="signin.instructions"></p>
                   <a class="rm-link" :href="signin.url" target="_blank" rel="noreferrer noopener">Open the sign-in page</a>
                   <label class="rm-field">Paste the code or the final page's address here
@@ -546,6 +549,7 @@
                   </div>
                 </div>
               </template>
+              <details class="rm-how"><summary>A subscription instead of an API key</summary><p class="rm-note">ChatGPT answers like the providers above. Claude and Codex run as agents with RemindMe's tools and nothing else. API keys go in the RemindMe app's options in Home Assistant.</p></details>
             </div>
 
             <!-- API credits: the month so far against the plan's monthly credits -->
@@ -587,92 +591,86 @@
               <p class="rm-note" x-show="!credits">Loading…</p>
             </div>
 
-            <!-- Phone app -->
+            <!-- Phone app: the address, notifications, dictation and where you are -->
             <div class="rm-panel" x-show="settingsTab === 'phone'">
-              <h3>Phone app</h3>
-              <p>RemindMe on your phone, with its own notifications. Only your Tailscale account can open it.</p>
-              <p class="rm-note" x-show="phone.state === 'off'">The phone app is off. Turn on <b>phone_app</b> in the RemindMe app's options in Home Assistant, then restart RemindMe.</p>
-              <p class="rm-note" x-show="phone.state === 'starting'">Tailscale is starting inside RemindMe.</p>
-              <p class="rm-result bad" x-show="phone.error" x-text="phone.error"></p>
-              <template x-if="phone.state === 'needs_login'">
-                <div class="rm-stack">
-                  <p>Connect RemindMe to Tailscale once, signed in with the account your phone uses.</p>
-                  <div class="rm-actions">
-                    <button class="rm-btn solid" type="button" :disabled="phoneBusy" @click="connectPhone()" x-text="phoneBusy ? 'Starting' : 'Connect to Tailscale'"></button>
-                    <a class="rm-btn" x-show="phone.authUrl" :href="phone.authUrl" target="_blank" rel="noreferrer noopener" style="display: inline-grid; place-items: center; text-decoration: none">Open the sign-in link</a>
-                  </div>
-                  <p class="rm-note" x-show="phone.authUrl">After signing in, come back here. This page updates by itself.</p>
+              <h3>Address</h3>
+              <div class="rm-rows">
+                <div class="rm-r" x-show="phone.state === 'running'">
+                  <div class="rm-r-main"><span class="rm-lamp"></span><span class="rm-r-t"><b x-text="phone.url"></b><small x-text="`Only ${phone.owner || 'your Tailscale account'} can open it`"></small></span></div>
+                  <button class="rm-pill" type="button" @click="copyPhoneUrl()" x-text="phoneCopied ? 'Copied' : 'Copy'"></button>
                 </div>
-              </template>
-              <template x-if="phone.state === 'running'">
-                <div class="rm-stack">
-                  <div class="rm-item">
-                    <div class="rm-item-head">
-                      <span><b x-text="phone.url"></b><br /><span class="rm-mute" x-text="`Connected as ${phone.owner || 'your account'}. Only that account can open it.`"></span></span>
-                      <button class="rm-link" type="button" @click="copyPhoneUrl()" x-text="phoneCopied ? 'Copied' : 'Copy'"></button>
-                    </div>
-                  </div>
-                  <p class="rm-result bad" x-show="phone.enableHttpsUrl">HTTPS isn't on for your tailnet yet. <a class="rm-link" :href="phone.enableHttpsUrl" target="_blank" rel="noreferrer noopener">Turn it on</a>, then open this page again.</p>
-                  <h3>Install it</h3>
-                  <p><b>iPhone:</b> open the address in Safari, tap Share, then Add to Home Screen, and open RemindMe from there.<br /><b>Android:</b> open it in Chrome, then the menu, Install app.</p>
-                  <h3>Notifications</h3>
-                  <p x-show="haPhone.target" class="rm-note">They come through the Home Assistant app now (below), so these stay quiet.</p>
-                  <p x-text="pushLine" x-show="!haPhone.target"></p>
-                  <div class="rm-actions" x-show="!haPhone.target">
-                    <button class="rm-btn solid" type="button" x-show="pushPossible && !pushOn" :disabled="phoneBusy" @click="enablePush()">Turn on notifications here</button>
-                    <button class="rm-btn" type="button" x-show="phone.devices?.length" :disabled="phoneBusy" @click="testPush()">Send a test</button>
-                    <button class="rm-btn" type="button" x-show="pushOn" :disabled="phoneBusy" @click="disablePush()">Turn off here</button>
-                  </div>
-                  <p class="rm-note" role="status" x-show="phoneNote" x-text="phoneNote"></p>
+                <div class="rm-r" x-show="phone.state !== 'running'">
+                  <div class="rm-r-main"><span class="rm-lamp" :class="phone.error ? 'bad' : 'off'"></span><span class="rm-r-t"><b>Not connected</b><small class="wrap" :class="{ bad: phone.error }" x-text="phoneStateLine"></small></span></div>
+                  <button class="rm-pill" type="button" x-show="phone.state === 'needs_login'" :disabled="phoneBusy" @click="connectPhone()" x-text="phoneBusy ? 'Starting' : 'Connect'"></button>
                 </div>
-              </template>
+              </div>
+              <div class="rm-actions" x-show="phone.state === 'needs_login' && phone.authUrl"><a class="rm-btn solid rm-btn-link" :href="phone.authUrl" target="_blank" rel="noreferrer noopener">Open the sign-in link</a></div>
+              <p class="rm-note" x-show="phone.state === 'needs_login' && phone.authUrl">After signing in, come back here. This page updates by itself.</p>
+              <p class="rm-result bad" x-show="phone.enableHttpsUrl">HTTPS isn't on for your tailnet yet. <a class="rm-link" :href="phone.enableHttpsUrl" target="_blank" rel="noreferrer noopener">Turn it on</a>, then open this page again.</p>
+              <details class="rm-how" x-show="phone.state === 'running'"><summary>How to install it</summary><p class="rm-note"><b>iPhone:</b> open the address in Safari, tap Share, then Add to Home Screen, and open RemindMe from there.<br /><b>Android:</b> open it in Chrome, then the menu, Install app.</p></details>
 
-              <h3>Through the Home Assistant app</h3>
-              <p>Buttons, a reply field and Live Activities. While it's on, notifications come only this way.</p>
-              <details class="rm-how"><summary>How it works</summary><p class="rm-note">On an iPhone, the Home Assistant app can do what a web app can't: buttons to answer a job, confirm an action or snooze a reminder, a reply field, the thread's cat as a picture, and a running job on the Lock Screen as a Live Activity. Notifications then come only this way, so none arrive twice.</p></details>
-              <label class="rm-field">Phone
-                <select @change="chooseHaPhone({ target: $event.target.value })" :disabled="!haPhone.phones.length">
-                  <option value="" :selected="!haPhone.target">Off: RemindMe's own notifications</option>
-                  <template x-for="option in haPhone.phones" :key="option.id">
-                    <option :value="option.id" :selected="option.id === haPhone.target" x-text="option.name"></option>
-                  </template>
-                </select>
-              </label>
-              <label class="rm-toggle" x-show="haPhone.target"><input type="checkbox" :checked="haPhone.liveActivities" @change="chooseHaPhone({ liveActivities: $event.target.checked })" /><span x-text="haPhone.liveActivities ? 'Live Activities for running jobs' : 'No Live Activities'"></span></label>
-              <div class="rm-actions" x-show="haPhone.target"><button class="rm-btn" type="button" :disabled="phoneBusy" @click="testHaPhone()">Send a test with buttons</button></div>
-              <p class="rm-note" x-show="haPhone.target && !haPhone.pictures">Cats in notifications need the phone app connected above and the web_browser option on.</p>
-              <p class="rm-note" x-show="!haPhone.phones.length">Home Assistant knows no phone with its app yet. Install the Home Assistant app on your phone and sign in to this Home Assistant.</p>
+              <h3>Notifications</h3>
+              <div class="rm-rows">
+                <div class="rm-r rm-r-switch" x-show="phone.state === 'running' && !haPhone.target">
+                  <span class="rm-r-t"><b>On this device</b><small class="wrap" x-text="pushLine"></small></span>
+                  <button class="rm-switch" type="button" role="switch" :aria-checked="String(pushOn)" aria-label="Notifications on this device" :disabled="phoneBusy || (!pushOn && !pushPossible)" @click="pushOn ? disablePush() : enablePush()"></button>
+                </div>
+                <label class="rm-r rm-r-field">
+                  <span>Through the Home Assistant app</span>
+                  <select @change="chooseHaPhone({ target: $event.target.value })" :disabled="!haPhone.phones.length">
+                    <option value="" :selected="!haPhone.target">Off</option>
+                    <template x-for="option in haPhone.phones" :key="option.id">
+                      <option :value="option.id" :selected="option.id === haPhone.target" x-text="option.name"></option>
+                    </template>
+                  </select>
+                </label>
+                <div class="rm-r rm-r-switch" x-show="haPhone.target">
+                  <span class="rm-r-t"><b>Live Activities</b><small>Running tasks on the Lock Screen</small></span>
+                  <button class="rm-switch" type="button" role="switch" :aria-checked="String(Boolean(haPhone.liveActivities))" aria-label="Live Activities" @click="chooseHaPhone({ liveActivities: !haPhone.liveActivities })"></button>
+                </div>
+              </div>
+              <div class="rm-actions">
+                <button class="rm-btn" type="button" x-show="!haPhone.target && phone.devices?.length" :disabled="phoneBusy" @click="testPush()">Send a test</button>
+                <button class="rm-btn" type="button" x-show="haPhone.target" :disabled="phoneBusy" @click="testHaPhone()">Send a test with buttons</button>
+              </div>
+              <p class="rm-note" x-show="haPhone.target && !haPhone.pictures">Cats in notifications need the phone app connected and the web_browser option on.</p>
+              <p class="rm-note" x-show="!haPhone.phones.length">Home Assistant knows no phone with its app yet. Install the Home Assistant app on your phone and sign in.</p>
+              <p class="rm-note" role="status" x-show="phoneNote" x-text="phoneNote"></p>
               <p class="rm-note" role="status" x-show="haNote" x-text="haNote"></p>
+              <details class="rm-how"><summary>Why the Home Assistant app</summary><p class="rm-note">On an iPhone it can do what a web app can't: buttons to answer a task, confirm an action or snooze a reminder, a reply field, the cat as a picture, and a running task on the Lock Screen as a Live Activity. While it's on, notifications come only this way, so none arrive twice.</p></details>
 
               <h3>Dictation</h3>
-              <p x-text="dictationLine"></p>
-              <label class="rm-field" x-show="dictation.entity && dictation.languages.length">Language
-                <select @change="chooseDictationLanguage($event.target.value)">
-                  <template x-for="language in dictation.languages" :key="language">
-                    <option :value="language" :selected="language === dictationPicked" x-text="language"></option>
-                  </template>
-                </select>
-              </label>
+              <div class="rm-rows">
+                <div class="rm-r plain"><span class="rm-r-t"><b x-text="dictation.entity ? dictation.name : 'The browser'"></b><small class="wrap" x-text="dictationLine"></small></span></div>
+                <label class="rm-r rm-r-field" x-show="dictation.entity && dictation.languages.length">
+                  <span>Language</span>
+                  <select @change="chooseDictationLanguage($event.target.value)">
+                    <template x-for="language in dictation.languages" :key="language">
+                      <option :value="language" :selected="language === dictationPicked" x-text="language"></option>
+                    </template>
+                  </select>
+                </label>
+              </div>
 
               <h3>Where you are</h3>
-              <p>For places near you and reminders like "when I get home".</p>
-              <details class="rm-how"><summary>How it works</summary><p class="rm-note">Home Assistant's person for you says where your phone is: at home, in one of its zones, or anywhere on the map. Each message tells the assistant only roughly (home, a zone, or away and how far); for an address it asks your phone, which sends a fresh location when the last one is old.</p></details>
-              <label class="rm-field">Follow
-                <select @change="chooseLocation($event.target.value)" :disabled="!location.people.length">
-                  <template x-for="person in location.people" :key="person.id">
-                    <option :value="person.id" :selected="person.id === location.person" x-text="`${person.name} (${placeState(person.state)})`"></option>
-                  </template>
-                </select>
-              </label>
-              <p class="rm-note" x-show="!location.people.length">Home Assistant has no person yet. Add one under Settings → People there, with your phone as its tracker.</p>
-              <div class="rm-item" x-show="location.last" x-cloak>
-                <div class="rm-item-head">
-                  <span><span x-text="location.last?.line ? location.last.line.charAt(0).toUpperCase() + location.last.line.slice(1) : 'Home Assistant has no location for your phone right now.'"></span></span>
-                  <button class="rm-link" type="button" :disabled="locationBusy" @click="refreshLocation()" x-text="locationBusy ? 'Asking…' : 'Ask the phone now'"></button>
+              <div class="rm-rows">
+                <label class="rm-r rm-r-field">
+                  <span>Follow</span>
+                  <select @change="chooseLocation($event.target.value)" :disabled="!location.people.length">
+                    <template x-for="person in location.people" :key="person.id">
+                      <option :value="person.id" :selected="person.id === location.person" x-text="`${person.name} (${placeState(person.state)})`"></option>
+                    </template>
+                  </select>
+                </label>
+                <div class="rm-r" x-show="location.last" x-cloak>
+                  <div class="rm-r-main"><span class="rm-lamp" :class="locationStale ? 'bad' : ''"></span><span class="rm-r-t"><b x-text="location.last?.line ? location.last.line.charAt(0).toUpperCase() + location.last.line.slice(1) : 'No location for your phone right now'"></b><small :class="{ bad: locationStale }" x-text="locationStale ? 'Your phone hasn\'t reported for a while' : 'From your phone'"></small></span></div>
+                  <button class="rm-pill" type="button" :disabled="locationBusy" @click="refreshLocation()" x-text="locationBusy ? 'Asking' : 'Ask now'"></button>
                 </div>
-                <p class="rm-note" x-show="locationStale">Your phone hasn't reported for a while. In the Home Assistant app on it: Settings → Companion app → Location, turn on the location updates; in the iPhone's Settings → Home Assistant, allow Location "Always" with Precise Location, and Background App Refresh. Low Power Mode pauses it.</p>
               </div>
+              <p class="rm-note" x-show="!location.people.length">Home Assistant has no person yet. Add one under Settings, People there, with your phone as its tracker.</p>
+              <p class="rm-note" x-show="locationStale">In the Home Assistant app: Settings, Companion app, Location, turn on the location updates. In the iPhone's Settings, Home Assistant: Location "Always" with Precise Location, and Background App Refresh. Low Power Mode pauses it.</p>
               <p class="rm-note" role="status" x-show="locationNote" x-text="locationNote"></p>
+              <details class="rm-how"><summary>How it works</summary><p class="rm-note">For places near you and reminders like "when I get home". Home Assistant's person for you says where your phone is: at home, in one of its zones, or anywhere on the map. Each message tells the assistant only roughly (home, a zone, or away and how far); for an address it asks your phone, which sends a fresh location when the last one is old.</p></details>
             </div>
 
             <!-- Connectors: a lamp, a name, one line and one action each; the rest in its sheet -->
@@ -736,28 +734,31 @@
               <p class="rm-result" x-show="connectorResult && !pop" x-cloak :class="{ bad: connectorResult && !connectorResult.ok }" x-text="connectorResult?.text"></p>
             </div>
 
-            <!-- Memory -->
+            <!-- Memory: whether it learns, and each fact with Forget -->
             <div class="rm-panel" x-show="settingsTab === 'memory'">
-              <h3>What RemindMe remembers</h3>
-              <p>It learns only from your own messages, never from mail or web pages, and never keeps passwords.</p>
-              <label class="rm-toggle"><input type="checkbox" :checked="memory.learn" @change="setLearning($event.target.checked)" /><span x-text="memory.learn ? 'Learning from what you tell it' : 'Not learning; only what you add'"></span></label>
+              <div class="rm-rows">
+                <div class="rm-r rm-r-switch">
+                  <span class="rm-r-t"><b>Learn from what you tell it</b><small class="wrap" x-text="memory.learn ? 'Only from your own messages, never mail or web pages' : 'Off: it keeps only what you add'"></small></span>
+                  <button class="rm-switch" type="button" role="switch" :aria-checked="String(Boolean(memory.learn))" aria-label="Learn from what you tell it" @click="setLearning(!memory.learn)"></button>
+                </div>
+              </div>
               <form class="rm-ask" @submit.prevent="addMemory()">
-                <input type="text" x-model="newMemory" maxlength="200" placeholder="Something to remember, such as: My sister Anna lives in Berlin" aria-label="Something to remember" />
+                <input type="text" x-model="newMemory" maxlength="200" placeholder="My sister Anna lives in Berlin" aria-label="Something to remember" />
                 <button class="rm-btn solid" type="submit" :disabled="!newMemory.trim()">Add</button>
               </form>
               <p class="rm-note" role="status" x-show="memoryNote" x-text="memoryNote"></p>
-              <div>
+              <h3>What it remembers <span class="rm-gh-note" x-show="memory.facts.length" x-text="memory.facts.length"></span></h3>
+              <div class="rm-rows">
                 <template x-for="fact in memory.facts" :key="fact.id">
-                  <div class="rm-item">
-                    <div class="rm-item-head">
-                      <span><span x-text="fact.text"></span><br /><span class="rm-mute" x-text="`${fact.source === 'you' ? 'Added by you' : 'Learned'}, ${formatWhen(fact.at)}`"></span></span>
-                      <button class="rm-link" type="button" @click="forgetFact(fact)">Forget</button>
-                    </div>
+                  <div class="rm-r">
+                    <div class="rm-r-main plain"><span class="rm-r-t"><b class="wrap" x-text="fact.text"></b><small x-text="`${fact.source === 'you' ? 'Added by you' : 'Learned'}, ${formatWhen(fact.at)}`"></small></span></div>
+                    <button class="rm-pill" type="button" @click="forgetFact(fact)">Forget</button>
                   </div>
                 </template>
-                <p class="rm-note" x-show="!memory.facts.length">Nothing yet. Tell RemindMe about yourself, or add something above.</p>
+                <p class="rm-empty" x-show="!memory.facts.length">Nothing yet. Tell RemindMe about yourself, or add something above.</p>
               </div>
-              <div class="rm-actions" x-show="memory.facts.length"><button class="rm-btn" type="button" @click="forgetAll()">Forget everything</button></div>
+              <div class="rm-actions" x-show="memory.facts.length"><button class="rm-btn ghost" type="button" @click="forgetAll()">Forget everything</button></div>
+              <p class="rm-note">It never keeps passwords or long numbers.</p>
             </div>
 
             <!-- Your assistant: its name, its cat, how it talks, and its chat -->
@@ -767,7 +768,7 @@
                 <input type="text" maxlength="24" x-model="identity.name" placeholder="RemindMe" aria-label="Its name" />
                 <button class="rm-btn" type="submit" :disabled="identity.name.trim() === assistant.name">Rename</button>
               </form>
-              <h4 class="rm-news-group">Its cat</h4>
+              <h3>Its cat <span class="rm-gh-note" x-text="lookName()"></span></h3>
               <div class="rm-looks" role="radiogroup" aria-label="Coat">
                 <template x-for="(name, index) in catCoats" :key="name">
                   <button type="button" role="radio" :aria-checked="String(identity.look.coat === index)" :class="{ on: identity.look.coat === index }" :title="name" :aria-label="name" @click="pickLook({ coat: index })">
@@ -782,10 +783,8 @@
                   </button>
                 </template>
               </div>
-              <p class="rm-note" x-text="lookName()"></p>
-              <h4 class="rm-news-group">How it talks</h4>
-              <p class="rm-note">Its tools, the time and the house are added on top.</p>
-              <label class="rm-field">Instructions
+              <h3>How it talks</h3>
+              <label class="rm-field">Its standing instructions; its tools, the time and the house are added on top
                 <textarea rows="7" spellcheck="false" x-model="persona"></textarea>
               </label>
               <p class="rm-note" x-show="personaStatus" x-text="personaStatus"></p>
@@ -793,7 +792,7 @@
                 <button class="rm-btn solid" type="button" @click="savePersona()">Save</button>
                 <button class="rm-btn" type="button" @click="resetPersona()">Back to the default</button>
               </div>
-              <h4 class="rm-news-group">Its chat</h4>
+              <h3>Its chat</h3>
               <p class="rm-note" x-text="mainChatLine"></p>
               <div class="rm-actions"><button class="rm-btn" type="button" @click="restartMain()">Start the chat over</button></div>
               <p class="rm-note" role="status" x-show="identityNote" x-text="identityNote"></p>
@@ -801,12 +800,11 @@
 
             <!-- What it may do: per kind of action, on its own, ask first, or never -->
             <div class="rm-panel" x-show="settingsTab === 'rules'">
-              <h3>On its own, ask first, or never</h3>
-              <p>What opens the house or speaks for you is never done unasked. Tasks follow the same rules.</p>
-              <div>
+              <p class="rm-note">What opens the house or speaks for you is never done unasked. Tasks follow the same rules.</p>
+              <div class="rm-rows">
                 <template x-for="rule in rules" :key="rule.id">
                   <div class="rm-rule">
-                    <span><b x-text="rule.label"></b><span class="rm-mute" x-text="rule.detail"></span></span>
+                    <span class="rm-r-t"><b x-text="rule.label"></b><small class="wrap" x-text="rule.detail"></small></span>
                     <span class="rm-seg" role="radiogroup" :aria-label="rule.label">
                       <template x-for="choice in rule.choices" :key="choice">
                         <button type="button" role="radio" :aria-checked="String(rule.choice === choice)" :class="{ on: rule.choice === choice }" @click="setRule(rule, choice)" x-text="ruleWord(choice)"></button>
@@ -856,15 +854,17 @@
 
             <!-- Discord: whether what RemindMe says first goes there too -->
             <div class="rm-panel" x-show="settingsTab === 'discord'">
-              <h3>Discord</h3>
-              <p x-text="discord.bot ? `Connected as ${discord.bot}. Write to it in a direct message and it answers, with the same tools as here.` : 'No Discord bot is set up. Add a bot token in the RemindMe app\'s options in Home Assistant to chat with it on Discord.'"></p>
-              <template x-if="discord.bot">
-                <div class="rm-stack">
-                  <label class="rm-toggle"><input type="checkbox" :checked="discord.messages" @change="setDiscordMessages($event.target.checked)" /><span x-text="discord.messages ? 'Its messages go to Discord too' : 'Its messages stay off Discord'"></span></label>
-                  <p class="rm-note">The brief, reminders, heads-ups, news and task updates. Off, they still reach your phone and the chat, and it still answers on Discord.</p>
-                  <p class="rm-note" x-show="!discord.messages && !discord.phones">No phone gets RemindMe's notifications yet, so you'd only see its messages in the console. Turn them on under Phone app.</p>
+              <div class="rm-rows">
+                <div class="rm-r">
+                  <div class="rm-r-main"><span class="rm-lamp" :class="discord.bot ? '' : 'off'"></span><span class="rm-r-t"><b x-text="discord.bot || 'No bot set up'"></b><small x-text="discord.bot ? 'Answers your direct messages, with the same tools as here' : 'Add a bot token in the RemindMe app\'s options'"></small></span></div>
                 </div>
-              </template>
+                <div class="rm-r rm-r-switch" x-show="discord.bot">
+                  <span class="rm-r-t"><b>Its messages go there too</b><small class="wrap">The brief, reminders, heads-ups, news and task updates</small></span>
+                  <button class="rm-switch" type="button" role="switch" :aria-checked="String(Boolean(discord.messages))" aria-label="Its messages go to Discord too" @click="setDiscordMessages(!discord.messages)"></button>
+                </div>
+              </div>
+              <p class="rm-note" x-show="discord.bot && !discord.messages">Off, they still reach your phone and the chat, it still answers on Discord, and a reminder set in a Discord channel still rings there.</p>
+              <p class="rm-note bad" x-show="discord.bot && !discord.messages && !discord.phones">No phone gets RemindMe's notifications yet, so you'd only see its messages in the console. Turn them on under Phone app.</p>
               <p class="rm-note" role="status" x-show="discordNote" x-text="discordNote"></p>
             </div>
 
@@ -908,142 +908,118 @@
               <button class="rm-more" type="button" @click="openPop({ kind: 'add-mcp' })">Add one by its address ›</button>
             </div>
 
-            <!-- News -->
+            <!-- News: when, how, and which sources -->
             <div class="rm-panel" x-show="settingsTab === 'news'">
-              <h3>News</h3>
-              <p>A short digest from the sources you tick, a line or two a story with links, never in quiet hours.</p>
-              <label class="rm-toggle"><input type="checkbox" :checked="news.on" @change="saveNews({ on: $event.target.checked }, $event.target.checked ? `On: the news comes every day at ${news.time}.` : 'Off.')" /><span x-text="news.on ? 'Every day' : 'Off'"></span></label>
-              <div class="rm-news-when">
-                <label class="rm-field">At<input type="time" :value="news.time" @change="saveNews({ time: $event.target.value }, `The news comes at ${$event.target.value}.`)" /></label>
-                <label class="rm-field">Written in
+              <div class="rm-rows">
+                <div class="rm-r rm-r-switch">
+                  <span class="rm-r-t"><b>The daily news</b><small x-text="news.on ? `Every day at ${news.time}, never in quiet hours` : 'Off'"></small></span>
+                  <button class="rm-switch" type="button" role="switch" :aria-checked="String(Boolean(news.on))" aria-label="The daily news" @click="saveNews({ on: !news.on }, !news.on ? `On: the news comes every day at ${news.time}.` : 'Off.')"></button>
+                </div>
+                <label class="rm-r rm-r-field"><span>At</span><input type="time" :value="news.time" @change="saveNews({ time: $event.target.value }, `The news comes at ${$event.target.value}.`)" /></label>
+                <label class="rm-r rm-r-field">
+                  <span>Written in</span>
                   <select @change="saveNews({ language: $event.target.value })">
                     <option value="en" :selected="news.language === 'en'">English</option>
                     <option value="de" :selected="news.language === 'de'">Deutsch</option>
                   </select>
                 </label>
-                <label class="rm-field">Written by
-              <select @change="saveNews({ writer: modelOf($event.target.value) }, `Written by ${modelName(modelOf($event.target.value))} from now on.`)">
-                <option value="" x-text="defaultModelLabel()"></option>
-                <template x-for="group in modelChoices.groups" :key="group.provider">
-                  <optgroup :label="group.label">
-                    <template x-for="model in group.models" :key="model.id">
-                      <option :value="`${group.provider}|${model.id}`" x-text="model.name" :selected="modelValue(news.writer) === `${group.provider}|${model.id}`"></option>
+                <label class="rm-r rm-r-field">
+                  <span>Written by</span>
+                  <select @change="saveNews({ writer: modelOf($event.target.value) }, `Written by ${modelName(modelOf($event.target.value))} from now on.`)">
+                    <option value="" x-text="defaultModelLabel()"></option>
+                    <template x-for="group in modelChoices.groups" :key="group.provider">
+                      <optgroup :label="group.label">
+                        <template x-for="model in group.models" :key="model.id">
+                          <option :value="`${group.provider}|${model.id}`" x-text="model.name" :selected="modelValue(news.writer) === `${group.provider}|${model.id}`"></option>
+                        </template>
+                      </optgroup>
                     </template>
-                  </optgroup>
-                </template>
-              </select>
+                  </select>
                 </label>
-                <label class="rm-field">Stories per section
+                <label class="rm-r rm-r-field">
+                  <span>Stories per section</span>
                   <select @change="saveNews({ stories: Number($event.target.value) })">
                     <option value="3" :selected="news.stories === 3">3</option>
                     <option value="5" :selected="news.stories === 5">5</option>
                   </select>
                 </label>
               </div>
+              <div class="rm-actions"><button class="rm-btn solid" type="button" :disabled="newsBusy" @click="sendNewsNow()" x-text="newsBusy ? 'Writing it' : 'Send today’s news now'"></button></div>
+              <p class="rm-note" role="status" x-show="newsNote" x-text="newsNote"></p>
+              <p class="rm-note" :class="{ bad: news.lastProblem && !/^Not reached/.test(news.lastProblem) }" x-show="news.lastDigestAt" x-text="`Last sent ${formatWhen(news.lastDigestAt)}.${news.lastProblem ? ` ${news.lastProblem}.` : ''}`"></p>
               <template x-for="group in newsGroups()" :key="group.label">
-                <div>
-                  <h4 class="rm-news-group" x-text="group.label"></h4>
-                  <div class="rm-news-sources">
+                <div class="rm-stack">
+                  <h3><span x-text="group.label"></span><span class="rm-gh-note" x-text="`${group.sources.filter((source) => news.sources.includes(source.id)).length} of ${group.sources.length}`"></span></h3>
+                  <div class="rm-rows">
                     <template x-for="source in group.sources" :key="source.id">
-                      <div class="rm-news-source">
-                        <label>
-                          <input type="checkbox" :checked="news.sources.includes(source.id)" @change="toggleNewsSource(source.id, $event.target.checked)" />
-                          <span><span x-text="source.name"></span><small x-text="sourceLine(source)"></small></span>
-                        </label>
+                      <div class="rm-r rm-r-switch">
+                        <span class="rm-r-t"><b x-text="source.name"></b><small x-text="sourceLine(source)"></small></span>
+                        <button class="rm-switch" type="button" role="switch" :aria-checked="String(news.sources.includes(source.id))" :aria-label="source.name" @click="toggleNewsSource(source.id, !news.sources.includes(source.id))"></button>
                       </div>
                     </template>
                   </div>
                 </div>
               </template>
-              <div x-show="news.own.length">
-                <h4 class="rm-news-group">Your feeds</h4>
-                <div class="rm-news-sources">
+              <div class="rm-stack" x-show="news.own.length">
+                <h3>Your feeds</h3>
+                <div class="rm-rows">
                   <template x-for="feed in news.own" :key="feed.id">
-                    <div class="rm-news-source">
-                      <label>
-                        <input type="checkbox" :checked="feed.news" @change="toggleOwnFeed(feed, $event.target.checked)" />
-                        <span><span x-text="feed.name"></span><small x-text="feedHost(feed.url)"></small></span>
-                      </label>
+                    <div class="rm-r rm-r-switch">
+                      <span class="rm-r-t"><b x-text="feed.name"></b><small x-text="feedHost(feed.url)"></small></span>
+                      <button class="rm-switch" type="button" role="switch" :aria-checked="String(Boolean(feed.news))" :aria-label="feed.name" @click="toggleOwnFeed(feed, !feed.news)"></button>
                     </div>
                   </template>
                 </div>
               </div>
-              <details class="rm-how"><summary>Why no dpa, Reuters or AP</summary><p class="rm-note">The agencies sell their wires to newsrooms and publish no feeds; dpa's comes through ZEIT ONLINE's newsticker. Any source with an RSS feed can be added here, or under Connectors, where it can also tell you about new posts.</p></details>
               <form class="rm-ask" @submit.prevent="addNewsFeed()">
-                <input type="url" x-model="newFeed" placeholder="Another source: the link to its RSS feed" aria-label="Link to an RSS feed" />
+                <input type="url" x-model="newFeed" placeholder="Another source: its RSS feed" aria-label="Link to an RSS feed" />
                 <button class="rm-btn" type="submit" :disabled="newsBusy || !newFeed.trim()">Add</button>
               </form>
-              <div class="rm-actions"><button class="rm-btn solid" type="button" :disabled="newsBusy" @click="sendNewsNow()" x-text="newsBusy ? 'Writing it' : 'Send today’s news now'"></button></div>
-              <p class="rm-note" role="status" x-show="newsNote" x-text="newsNote"></p>
-              <p class="rm-note" x-show="news.lastDigestAt" x-text="`Last sent ${formatWhen(news.lastDigestAt)}.${news.lastProblem ? ` ${news.lastProblem}.` : ''}`"></p>
+              <details class="rm-how"><summary>Why no dpa, Reuters or AP</summary><p class="rm-note">The agencies sell their wires to newsrooms and publish no feeds; dpa's comes through ZEIT ONLINE's newsticker. Any source with an RSS feed can be added here, or under Connectors, where it can also tell you about new posts.</p></details>
             </div>
 
-            <!-- Price watches -->
+            <!-- Price watches: a row each with its price line; the rest in its sheet -->
             <div class="rm-panel" x-show="settingsTab === 'prices'">
-              <h3>Price watches</h3>
-              <p>Checked every few hours on Geizhals or the shop's page. You hear when it falls under your target, or drops 5 % or more.</p>
-              <div>
+              <h3>Watching <button class="rm-gh-act" type="button" @click="openPop({ kind: 'add-price' })">+ Watch</button></h3>
+              <div class="rm-rows">
                 <template x-for="watch in priceWatches" :key="watch.id">
-                  <div class="rm-item rm-price">
-                    <b x-text="watch.name"></b>
-                    <span class="rm-mute" x-text="priceLine(watch)"></span>
-                    <span class="rm-price-problem" x-show="watch.error && watch.price !== undefined" x-text="`Last check failed: ${watch.error}`"></span>
-                    <span class="rm-price-line" x-show="(watch.history || []).length > 1" x-effect="drawPriceLine($el, watch.history)"></span>
-                    <div class="rm-price-foot">
-                      <label class="rm-field rm-price-target">Tell me under (€)<input inputmode="decimal" :value="targetText(watch.target)" placeholder="Any 5 % drop" @change="setPriceTarget(watch, $event.target.value)" /></label>
-                      <span class="rm-price-actions">
-                        <a class="rm-link" :href="watch.url" target="_blank" rel="noopener">Open</a>
-                        <button class="rm-link" type="button" @click="checkPriceWatch(watch)">Check now</button>
-                        <button class="rm-link" type="button" @click="removePriceWatch(watch)">Stop</button>
-                      </span>
-                    </div>
+                  <div class="rm-r">
+                    <button class="rm-r-main" type="button" @click="openPop({ kind: 'price', id: watch.id })"><span class="rm-lamp" :class="watch.error && watch.price === undefined ? 'bad' : ''"></span><span class="rm-r-t"><b x-text="watch.name"></b><small :class="{ bad: watch.error && watch.price === undefined }" x-text="watch.error && watch.price === undefined ? watch.error : priceLine(watch)"></small></span></button>
+                    <span class="rm-price-line rm-price-mini" x-show="(watch.history || []).length > 1" x-effect="drawPriceLine($el, watch.history)"></span>
                   </div>
                 </template>
-                <p class="rm-note" x-show="!priceWatches.length">Nothing watched yet. Add a product below, or ask RemindMe: "watch the Sony WH-1000XM5 and tell me under 180 €".</p>
+                <p class="rm-empty" x-show="!priceWatches.length">Nothing watched yet. Tap + Watch, or ask RemindMe: "watch the Sony WH-1000XM5 and tell me under 180 €".</p>
               </div>
-              <div class="rm-item">
-                <div class="rm-two">
-                  <label class="rm-field">Product, or a link to it<input x-model="newPrice.what" placeholder="Sony WH-1000XM5" autocomplete="off" /></label>
-                  <label class="rm-field">Tell me when it's under (€, optional)<input x-model="newPrice.target" inputmode="decimal" placeholder="180" /></label>
-                </div>
-                <div class="rm-actions"><button class="rm-btn solid" type="button" :disabled="priceBusy || !newPrice.what.trim()" @click="addPriceWatch()" x-text="priceBusy ? 'Looking it up' : 'Watch it'"></button></div>
-              </div>
-              <p class="rm-note" role="status" x-show="priceNote" x-text="priceNote"></p>
+              <p class="rm-note">Checked every few hours on Geizhals or the shop's page. You hear when it falls under your target, or drops 5 % or more.</p>
+              <p class="rm-note" role="status" x-show="priceNote && !pop" x-text="priceNote"></p>
             </div>
 
-            <!-- Tasks -->
+            <!-- Scheduled tasks -->
             <div class="rm-panel" x-show="settingsTab === 'tasks'">
-              <h3>Scheduled tasks</h3>
-              <div>
+              <h3>On a schedule <button class="rm-gh-act" type="button" @click="openPop({ kind: 'add-task' })">+ Add</button></h3>
+              <div class="rm-rows">
                 <template x-for="task in tasks" :key="task.id">
-                  <div class="rm-item">
-                    <div class="rm-item-head">
-                      <span><b x-text="task.name"></b><br /><span class="rm-mute" x-text="`${task.scheduleText}. Next: ${formatWhen(task.nextRun)}`"></span></span>
-                      <button class="rm-link" type="button" @click="runTask(task)">Run now</button>
-                      <button class="rm-link" type="button" @click="deleteTask(task)">Delete</button>
-                    </div>
-                    <p class="rm-note" x-show="task.lastSummary" x-text="`Last time: ${task.lastSummary}`"></p>
+                  <div class="rm-r">
+                    <button class="rm-r-main" type="button" @click="openPop({ kind: 'task', id: task.id })"><span class="rm-lamp"></span><span class="rm-r-t"><b x-text="task.name"></b><small x-text="`${task.scheduleText} · next ${formatWhen(task.nextRun)}`"></small></span></button>
+                    <span class="rm-chev" aria-hidden="true">›</span>
                   </div>
                 </template>
-                <p class="rm-note" x-show="!tasks.length">No scheduled tasks yet.</p>
+                <p class="rm-empty" x-show="!tasks.length">Nothing yet. Tap + Add, or ask RemindMe: "every Monday at 9, tell me what's coming up this week".</p>
               </div>
-              <div class="rm-item">
-                <label class="rm-field">What to do<input x-model="newTaskWhat" placeholder="Check the parcels and tell me what's arriving" /></label>
-                <label class="rm-field">When<input x-model="newTaskWhen" placeholder="daily at 8, every 6 hours, mondays at 9" /></label>
-                <div class="rm-actions"><button class="rm-btn solid" type="button" @click="addTask()">Add task</button></div>
-              </div>
-              <p class="rm-note" x-show="taskError" x-text="taskError"></p>
+              <p class="rm-note" x-show="taskError && !pop" x-text="taskError"></p>
             </div>
 
             <!-- Documents -->
             <div class="rm-panel" x-show="settingsTab === 'documents'">
-              <h3>Documents</h3>
-              <div class="rm-docs">
+              <div class="rm-rows">
                 <template x-for="doc in documents" :key="doc.id">
-                  <a :href="`./api/artifacts/${encodeURIComponent(doc.id)}/document`" target="_blank" rel="noopener"><span x-text="doc.title"></span><span x-text="`${doc.kind}, ${formatWhen(doc.updatedAt)}`"></span></a>
+                  <div class="rm-r">
+                    <a class="rm-r-main plain" :href="`./api/artifacts/${encodeURIComponent(doc.id)}/document`" target="_blank" rel="noopener"><span class="rm-r-t"><b x-text="doc.title"></b><small x-text="`${doc.kind}, ${formatWhen(doc.updatedAt)}`"></small></span></a>
+                    <span class="rm-chev" aria-hidden="true">›</span>
+                  </div>
                 </template>
+                <p class="rm-empty" x-show="!documents.length">Nothing yet. Ask RemindMe to write something for you.</p>
               </div>
-              <p class="rm-note" x-show="!documents.length">No documents yet.</p>
             </div>
           </div>
         </div>
@@ -1285,7 +1261,7 @@
               <template x-if="popSkill.source">
                 <div class="rm-stack">
                   <p class="rm-note" x-text="popSkill.description"></p>
-                  <div class="rm-skill-tags"><span class="rm-skill-tag" x-text="kb(popSkill.instructions.length)"></span><span class="rm-skill-tag warn" x-show="popSkill.source.scripts">needs scripts</span></div>
+                  <div class="rm-ltags"><span class="rm-ltag" x-text="kb(popSkill.instructions.length)"></span><span class="rm-ltag warn" x-show="popSkill.source.scripts">needs scripts</span></div>
                   <p class="rm-note" x-show="popSkill.source.scripts">It comes with scripts RemindMe can't run, so only its instructions are used.</p>
                   <a class="rm-link" :href="popSkill.source.url" target="_blank" rel="noopener" x-text="`${popSkill.source.repo} on GitHub`"></a>
                   <details class="rm-how"><summary>Read it</summary><pre class="rm-quote" x-text="popSkill.instructions"></pre></details>
@@ -1315,7 +1291,7 @@
                 <div class="rm-stack">
                   <p class="rm-pop-line" x-text="`${skillPreview.data.repo}${pop.installs ? ` · ${installs(pop.installs)} installs` : ''}`"></p>
                   <p class="rm-note" x-text="skillPreview.data.description"></p>
-                  <div class="rm-skill-tags"><span class="rm-skill-tag ok" x-show="!skillPreview.data.scripts">instructions only</span><span class="rm-skill-tag warn" x-show="skillPreview.data.scripts">needs scripts</span><span class="rm-skill-tag" x-text="kb(skillPreview.data.size)"></span><span class="rm-skill-tag" x-show="skillPreview.data.license" x-text="skillPreview.data.license"></span></div>
+                  <div class="rm-ltags"><span class="rm-ltag ok" x-show="!skillPreview.data.scripts">instructions only</span><span class="rm-ltag warn" x-show="skillPreview.data.scripts">needs scripts</span><span class="rm-ltag" x-text="kb(skillPreview.data.size)"></span><span class="rm-ltag" x-show="skillPreview.data.license" x-text="skillPreview.data.license"></span></div>
                   <p class="rm-note" x-show="skillPreview.data.scripts">It tells the AI to run scripts RemindMe can't run, so it may only half work.</p>
                   <pre class="rm-quote" x-text="skillPreview.data.text"></pre>
                   <p class="rm-note" x-text="skillPreview.data.size > 800 ? 'RemindMe reads it only when a request fits it.' : 'Short enough to ride along with every message.'"></p>
@@ -1325,6 +1301,57 @@
                   </div>
                 </div>
               </template>
+            </div>
+          </template>
+
+          <!-- A price watch -->
+          <template x-if="pop?.kind === 'price' && popWatch">
+            <div class="rm-pop-body">
+              <p class="rm-note" x-text="priceLine(popWatch)"></p>
+              <p class="rm-note bad" x-show="popWatch.error" x-text="`Last check failed: ${popWatch.error}`"></p>
+              <span class="rm-price-line" x-show="(popWatch.history || []).length > 1" x-effect="drawPriceLine($el, popWatch.history)"></span>
+              <label class="rm-field">Tell me when it's under (€)<input inputmode="decimal" :value="targetText(popWatch.target)" placeholder="Any 5 % drop" @change="setPriceTarget(popWatch, $event.target.value)" /></label>
+              <p class="rm-note" role="status" x-show="priceNote" x-text="priceNote"></p>
+              <div class="rm-actions">
+                <a class="rm-btn rm-btn-link" :href="popWatch.url" target="_blank" rel="noopener">Open</a>
+                <button class="rm-btn" type="button" @click="checkPriceWatch(popWatch)">Check now</button>
+                <button class="rm-btn ghost" type="button" @click="removePriceWatch(popWatch)">Stop watching</button>
+              </div>
+            </div>
+          </template>
+
+          <!-- Watch a price -->
+          <template x-if="pop?.kind === 'add-price'">
+            <div class="rm-pop-body">
+              <label class="rm-field">Product, or a link to it<input x-model="newPrice.what" placeholder="Sony WH-1000XM5" autocomplete="off" /></label>
+              <label class="rm-field">Tell me when it's under (€, optional)<input x-model="newPrice.target" inputmode="decimal" placeholder="180" /></label>
+              <p class="rm-note">On Geizhals, which compares German and Austrian shops, or on the shop's own page for a link.</p>
+              <div class="rm-actions"><button class="rm-btn solid" type="button" :disabled="priceBusy || !newPrice.what.trim()" @click="addPriceWatch()" x-text="priceBusy ? 'Looking it up' : 'Watch it'"></button></div>
+              <p class="rm-note" role="status" x-show="priceNote" x-text="priceNote"></p>
+            </div>
+          </template>
+
+          <!-- A scheduled task -->
+          <template x-if="pop?.kind === 'task' && popTask">
+            <div class="rm-pop-body">
+              <p class="rm-note" x-text="`${popTask.scheduleText}. Next: ${formatWhen(popTask.nextRun)}`"></p>
+              <p class="rm-note" x-show="popTask.lastSummary" x-text="`Last time: ${popTask.lastSummary}`"></p>
+              <p class="rm-note" role="status" x-show="taskError" x-text="taskError"></p>
+              <div class="rm-actions">
+                <button class="rm-btn" type="button" @click="runTask(popTask)">Run now</button>
+                <button class="rm-btn ghost" type="button" @click="deleteTask(popTask)">Delete</button>
+              </div>
+            </div>
+          </template>
+
+          <!-- Add a scheduled task -->
+          <template x-if="pop?.kind === 'add-task'">
+            <div class="rm-pop-body">
+              <label class="rm-field">What to do<input x-model="newTaskWhat" placeholder="Check the parcels and tell me what's arriving" /></label>
+              <label class="rm-field">When<input x-model="newTaskWhen" placeholder="daily at 8, every 6 hours, mondays at 9" /></label>
+              <p class="rm-note">RemindMe does it on its own, then messages you the result.</p>
+              <div class="rm-actions"><button class="rm-btn solid" type="button" @click="addTask()">Add</button></div>
+              <p class="rm-note bad" x-show="taskError" x-text="taskError"></p>
             </div>
           </template>
 

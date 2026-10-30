@@ -38,11 +38,22 @@ test("settings keep every section, including the 3.1 sign-in console", () => {
 
 test("settings rows keep every action in the sheet they open", () => {
 	// Connectors, tools and skills are one line each; their switches, tests, sign-ins and Remove live in the sheet.
-	for (const kind of ["mail", "feed", "dhl", "add-mail", "add-feed", "add-dhl", "icloud", "mcp", "add-mcp", "skill", "add-skill", "skill-preview", "plan", "admin-key"])
+	for (const kind of ["mail", "feed", "dhl", "add-mail", "add-feed", "add-dhl", "icloud", "mcp", "add-mcp", "skill", "add-skill", "skill-preview", "price", "add-price", "task", "add-task", "plan", "admin-key"])
 		assert.match(html, new RegExp(`pop\\?\\.kind === '${kind}'`), kind);
-	for (const action of ["testConnector(popConnector)", "removeConnector(popConnector)", "signInGoogle($event, popConnector.values.address)", "testMcp(popServer)", "deleteMcp(popServer)", "signInMcp($event, popServer)", "deleteSkill(popSkill)", "importSkill()", "saveCreditPlan()", "addFromDirectory(entry)", "findSkills()"])
+	for (const action of ["checkPriceWatch(popWatch)", "removePriceWatch(popWatch)", "setPriceTarget(popWatch", "runTask(popTask)", "deleteTask(popTask)", "addPriceWatch()", "addTask()", "testConnector(popConnector)", "removeConnector(popConnector)", "signInGoogle($event, popConnector.values.address)", "testMcp(popServer)", "deleteMcp(popServer)", "signInMcp($event, popServer)", "deleteSkill(popSkill)", "importSkill()", "saveCreditPlan()", "addFromDirectory(entry)", "findSkills()"])
 		assert.ok(html.includes(action), action);
 	assert.doesNotMatch(html, /class="rm-flag(s)?[ "][^>]*>(instructions only|needs scripts)/, "skill tags aren't the capitalised confirm flag");
+});
+
+test("every settings section uses switches, not the old checkboxes", () => {
+	const start = html.indexOf('aria-labelledby="settings-title"');
+	const end = html.indexOf("<!-- The CLI agents' sign-in console");
+	const settings = html.slice(start, end);
+	assert.ok(start > 0 && end > start);
+	assert.doesNotMatch(settings, /type="checkbox"/, "switches, not checkboxes");
+	assert.doesNotMatch(settings, /class="rm-tag"/, "no capitalised tags");
+	for (const toggle of ["setLearning(!memory.learn)", "setDiscordMessages(!discord.messages)", "saveNews({ on: !news.on }", "toggleNewsSource(source.id, !news.sources.includes(source.id))", "toggleOwnFeed(feed, !feed.news)", "pushOn ? disablePush() : enablePush()", "chooseHaPhone({ liveActivities: !haPhone.liveActivities })"])
+		assert.ok(settings.includes(toggle), toggle);
 });
 
 test("answers render through the DOM-building markdown renderer, never as HTML", () => {
