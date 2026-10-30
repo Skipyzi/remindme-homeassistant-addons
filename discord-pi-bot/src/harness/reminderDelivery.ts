@@ -12,7 +12,8 @@ export interface ReminderDeliveryStatus {
 export interface DeliveryAdapters {
 	homeAssistant: (reminder: Reminder) => Promise<void>;
 	mobile?: (reminder: Reminder) => Promise<void>;
-	discord: (reminder: Reminder) => Promise<void>;
+	/** Absent without a Discord bot, or when the owner turned Discord messages off. */
+	discord?: (reminder: Reminder) => Promise<void>;
 	/** Absent when no phone has the app's notifications on. */
 	phone?: (reminder: Reminder) => Promise<void>;
 }
@@ -67,7 +68,7 @@ export async function deliverReminder(
 			? () => adapters.mobile?.(reminder) as Promise<void>
 			: undefined,
 	);
-	await attempt("discord", () => adapters.discord(reminder));
+	await attempt("discord", adapters.discord ? () => adapters.discord!(reminder) : undefined);
 	await attempt("phone", adapters.phone ? () => adapters.phone!(reminder) : undefined);
 	return next;
 }

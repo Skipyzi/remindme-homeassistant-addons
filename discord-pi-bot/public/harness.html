@@ -859,6 +859,20 @@
             </div>
 
             <!-- MCP -->
+            <!-- Discord: whether what RemindMe says first goes there too -->
+            <div class="rm-panel" x-show="settingsTab === 'discord'">
+              <h3>Discord</h3>
+              <p x-text="discord.bot ? `Connected as ${discord.bot}. Write to it in a direct message and it answers, with the same tools as here.` : 'No Discord bot is set up. Add a bot token in the RemindMe app\'s options in Home Assistant to chat with it on Discord.'"></p>
+              <template x-if="discord.bot">
+                <div class="rm-stack">
+                  <label class="rm-toggle"><input type="checkbox" :checked="discord.messages" @change="setDiscordMessages($event.target.checked)" /><span x-text="discord.messages ? 'Its messages go to Discord too' : 'Its messages stay off Discord'"></span></label>
+                  <p class="rm-note">That's the morning brief, reminders, heads-ups, the news, price drops, new posts and job updates. With this off they still come to your phone and the RemindMe chat, it still answers when you write to it on Discord, and a reminder set in a Discord channel still rings there.</p>
+                  <p class="rm-note" x-show="!discord.messages && !discord.phones">No phone gets RemindMe's notifications yet, so you'd only see its messages in the console. Turn them on under Phone app.</p>
+                </div>
+              </template>
+              <p class="rm-note" role="status" x-show="discordNote" x-text="discordNote"></p>
+            </div>
+
             <div class="rm-panel" x-show="settingsTab === 'mcp'">
               <h3>Connected tools</h3>
               <p>Tools from MCP servers, offered to the AI next to its own. Many, such as Notion, Linear and Todoist, only need the address and a sign-in. Turn on only what you use: each one costs a little on every message.</p>

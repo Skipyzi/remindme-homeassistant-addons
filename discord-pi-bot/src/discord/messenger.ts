@@ -1,5 +1,6 @@
 import { EmbedBuilder, type Client } from "discord.js";
 import { config } from "../config";
+import type { Reminder } from "../utils/reminderManager";
 import { splitMessage, type DiscordChats } from "./chats";
 
 /**
@@ -12,6 +13,42 @@ export class OwnerMessenger {
 		private readonly ownerId: string,
 		private readonly chats: DiscordChats,
 	) {}
+
+	/** "RemindMe#6955", once logged in. */
+	who(): string | undefined {
+		return this.client.user?.tag;
+	}
+
+	/**
+	 * A reminder that's due. One made in a channel answers there and
+	 * mentions whoever set it; a private one (from the console or the AI)
+	 * comes as a DM card to its owner.
+	 */
+	async reminder(reminder: Reminder): Promise<void> {
+		if (!this.client.isReady()) throw new Error("Discord isn't connected yet");
+		if (reminder.channelId) {
+			const channel = await this.client.channels.fetch(reminder.channelId);
+			if (!channel?.isSendable()) throw new Error("Discord reminder channel unavailable");
+			await channel.send(`⏰ <@${reminder.userId}>, reminder: **${reminder.message}**`);
+			return;
+		}
+		if (!reminder.userId) throw new Error("Reminder has no Discord recipient");
+		try {
+			const user = await this.client.users.fetch(reminder.userId);
+			await user.send({ embeds: [new EmbedBuilder().setColor(config.reminderColor).setDescription(`⏰ **${reminder.message}**`)] });
+		} catch (error) {
+			/*
+			 * 50007 = "Cannot send messages to this user": they share no server
+			 * with the bot or have DMs closed. Nothing here fixes that, so treat
+			 * it as done rather than retrying the DM every minute for ever.
+			 */
+			if (error && typeof error === "object" && "code" in error && (error as { code?: number }).code === 50007) {
+				console.warn(`Cannot DM reminder to ${reminder.userId}; they must share a server with the bot and allow DMs.`);
+				return;
+			}
+			throw error;
+		}
+	}
 
 	/*
 	 * As a card: Discord draws it on a solid panel, so it stays readable over

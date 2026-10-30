@@ -37,7 +37,7 @@ The agents (Claude and Codex) run each turn themselves with RemindMe's tools and
 
 ## On Discord
 
-Set `discord_token` and `owner_id`. Then:
+Discord is optional. Without it, the brief, reminders and nudges come to the phone app and the RemindMe chat in the console. Set `discord_token` and `owner_id` to add it. Then:
 
 - **DM the bot** to talk to the assistant. It remembers the chat for six hours of quiet; say `new` to start over. Mentioning the bot in a server works too. It answers only the owner.
 - **Pictures** you send are looked at with Claude or OpenAI.
@@ -46,9 +46,11 @@ Set `discord_token` and `owner_id`. Then:
 
 The bot must share a server with you, and your DMs must be open to it.
 
+**Settings → Discord** says who the bot is logged in as, and whether RemindMe's own messages (below) go to your DMs too. Turned off, they come only to your phone and the RemindMe chat; it still answers when you write to it on Discord, and a reminder set in a Discord channel still rings there.
+
 ## Messages it sends first
 
-All to your DMs, and part of that chat, so you can reply to them:
+To the phone app, the RemindMe chat in the console, and your Discord DMs unless you turned that off (there they're part of the chat, so you can reply to them):
 
 - **Morning brief** at `morning_brief_time` (default 07:00): today's shift and appointments, bins tonight, the weather, reminders, parcels, and anything wrong in the house. The facts are gathered in code and the AI writes them up; without the AI you get a plain list. The console's **AI** panel can send today's brief on demand.
 - **Bins:** on the morning before a collection, "Put the paper bin out" goes on your chores list (`chores_list`, default `todo.chores`), due that day. At `bin_reminder_time` (default 19:00) you get a message too, unless you've ticked the chore off. German bin names get an English label: paper (Blaue Tonne), packaging (Gelbe Tonne), organic, residual waste.

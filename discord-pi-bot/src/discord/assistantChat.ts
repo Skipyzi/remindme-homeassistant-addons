@@ -1,4 +1,3 @@
-import type { PhoneNotice } from "../phone/ha-app";
 import {
 	ActionRowBuilder,
 	ButtonBuilder,
@@ -23,8 +22,6 @@ export interface ChatDeps {
 	home?: HomeApi;
 	ownerId: string;
 	activity?: ActivityLog;
-	/** The phone app's notifications, for reminders. */
-	phone?: { devices(): number; send(message: PhoneNotice): Promise<number> };
 }
 
 const IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);

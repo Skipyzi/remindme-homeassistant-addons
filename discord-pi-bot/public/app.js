@@ -142,6 +142,7 @@ function remindme() {
 			{ id: "skills", label: "Skills", group: "AI" },
 			{ id: "connectors", label: "Connectors", group: "Accounts and devices" },
 			{ id: "phone", label: "Phone app", group: "Accounts and devices" },
+			{ id: "discord", label: "Discord", group: "Accounts and devices" },
 			{ id: "mcp", label: "Connected tools", group: "Accounts and devices" },
 			{ id: "news", label: "News", group: "On its own" },
 			{ id: "prices", label: "Price watches", group: "On its own" },
@@ -168,6 +169,9 @@ function remindme() {
 			}
 		})(),
 		listening: null,
+		/* Discord: the bot, and whether RemindMe's messages go there too */
+		discord: { bot: null, messages: true, phones: 0 },
+		discordNote: "",
 		/* What it may do on its own, per kind of action */
 		rules: [],
 		rulesNote: "",
@@ -1344,6 +1348,7 @@ function remindme() {
 			if (tab === "ai") await this.loadAi();
 			if (tab === "prompt") await this.loadPersona();
 			if (tab === "rules") this.rules = await this.getJson("./api/rules", []);
+			if (tab === "discord") this.discord = await this.getJson("./api/discord", this.discord);
 			if (tab === "skills") this.skills = await this.getJson("./api/skills", []);
 			if (tab === "mcp") this.mcpServers = await this.getJson("./api/mcp", []);
 			if (tab === "tasks") this.tasks = await this.getJson("./api/tasks", []);
@@ -1365,6 +1370,7 @@ function remindme() {
 			const plural = (count, word) => `${count} ${word}${count === 1 ? "" : "s"}`;
 			if (id === "ai") return !this.ai?.ready && this.ai?.problem ? { text: this.ai.problem, bad: true } : { text: [this.ai?.label, this.ai?.model].filter(Boolean).join(" · ") || "Pick who answers" };
 			if (id === "prompt") return { text: [this.assistant.name, this.lookName()].filter(Boolean).join(" · ") };
+			if (id === "discord") return { text: !this.discord.bot ? "Not set up" : this.discord.messages ? "Its messages go there too" : "Only answers when you write" };
 			if (id === "rules") {
 				const asks = this.rules.filter((rule) => rule.choice === "ask").length;
 				const off = this.rules.filter((rule) => rule.choice === "never").length;
@@ -1840,6 +1846,15 @@ function remindme() {
 			}
 		},
 
+		async setDiscordMessages(on) {
+			try {
+				await this.request("./api/discord", "PUT", { messages: on });
+				this.discord = { ...this.discord, messages: on };
+				this.discordNote = on ? "Its messages go to Discord again." : "Done. Its messages come to your phone and the RemindMe chat, not Discord.";
+			} catch (error) {
+				this.discordNote = error.message;
+			}
+		},
 		ruleWord(choice) {
 			return { auto: "Just do it", ask: "Ask me", never: "Never" }[choice] || choice;
 		},

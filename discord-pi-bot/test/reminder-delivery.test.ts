@@ -87,3 +87,10 @@ test("a failed Discord delivery is reported as failed so it retries", async () =
 	});
 	assert.equal(status.discord, "failed");
 });
+
+test("without Discord (no bot, or its messages turned off) the others still go out", async () => {
+	const status = await deliverReminder(reminder(), OWNER, { homeAssistant: async () => {}, phone: async () => {} });
+	assert.equal(status.discord, "skipped");
+	assert.equal(status.homeAssistant, "delivered");
+	assert.equal(status.phone, "delivered");
+});

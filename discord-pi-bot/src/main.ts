@@ -11,6 +11,7 @@ import { Triage, houseConcerns, newMail, soonEvents, stuckJobs, type Candidate }
 import { wasteEvents } from "./assistant/proactive";
 import { setAiReadiness } from "./presence";
 import { listReminders } from "./utils/reminderManager";
+import { startReminders } from "./reminderSender";
 import {
 	activity,
 	aiSettings,
@@ -18,6 +19,7 @@ import {
 	batteryButtons,
 	batteryNeeds,
 	confirmations,
+	discordMessages,
 	home,
 	jobs,
 	mailboxes,
@@ -27,6 +29,7 @@ import {
 	setBriefSender,
 	setOwnerNotifier,
 	setJobNotifier,
+	setDiscordBot,
 	setPlannedSends,
 	startHarness,
 	threads,
@@ -45,17 +48,23 @@ async function main() {
 	const chats = new DiscordChats();
 	await chats.load();
 	const ownerId = process.env.OWNER_ID || "";
-	const messenger = startBot({ assistant, chats, confirmations, home, ownerId, activity, phone: phoneApp });
+	const messenger = startBot({ assistant, chats, confirmations, home, ownerId, activity });
+	setDiscordBot(messenger);
+	// Discord is one way out, wanted or not (Settings → Discord); the clock runs without it.
+	const toDiscord = () => (messenger && discordMessages.on() ? messenger : undefined);
+	startReminders({ ownerId, activity, phone: phoneApp, discord: messenger ? (reminder) => messenger.reminder(reminder) : undefined, discordWanted: discordMessages.on });
 
-	// What RemindMe says first goes to Discord and to every phone with the app.
+	// What RemindMe says first goes to every phone with the app, the RemindMe chat, and Discord when wanted.
 	const notify = async (text: string, what: "brief" | "bins" | "battery" | "mail" | "heads_up" | "price" | "news" | "feed", extra?: { battery?: string; buttons?: PhoneButton[]; actions?: EntryAction[]; phoneTitle?: string; phoneBody?: string; embeds?: Embed[] }) => {
 		const title = what === "brief" ? `☀️ ${new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" })}` : undefined;
+		const discord = toDiscord();
 		const [onDiscord, phones] = await Promise.all([
-			messenger ? messenger.send(text, { title }) : Promise.resolve(false),
+			discord ? discord.send(text, { title }) : Promise.resolve(false),
 			// A tap opens RemindMe's own thread, where this message is, with its buttons.
 			phoneApp.send({ title: extra?.phoneTitle || (what === "brief" ? "Morning brief" : what === "price" ? "Price drop" : what === "news" ? "News" : "RemindMe"), body: extra?.phoneBody || text, url: "./#t/remindme", tag: what === "price" ? `price-${Date.now()}` : what, ...(extra?.buttons ? { buttons: extra.buttons } : extra?.battery ? { buttons: batteryButtons(extra.battery) } : {}) }),
 		]);
-		const sent = onDiscord || phones > 0;
+		// With Discord off, the RemindMe chat in the console is where it's delivered.
+		const sent = onDiscord || phones > 0 || !discord;
 		const actions = extra?.actions
 			? extra.actions
 			: extra?.battery
@@ -65,7 +74,7 @@ async function main() {
 				]
 			: undefined;
 		const channel = what === "brief" ? "brief" : what === "news" ? "news" : "nudge";
-		activity.add(sent ? { kind: "sent", channel, text, ...(actions ? { actions } : {}), ...(extra?.embeds ? { embeds: extra.embeds } : {}) } : { kind: "failed", channel, text: `Couldn't send this on Discord: ${text}` });
+		activity.add(sent ? { kind: "sent", channel, text, ...(actions ? { actions } : {}), ...(extra?.embeds ? { embeds: extra.embeds } : {}) } : { kind: "failed", channel, text: `Couldn't send this to Discord or a phone: ${text}` });
 		return sent;
 	};
 	// Always on: it does nothing until a mail connector is added in the console.
@@ -122,15 +131,18 @@ async function main() {
 	// Price drops, the daily news and new posts go where the other nudges go: Discord, the phone and the RemindMe thread.
 	setOwnerNotifier((text, extra) => notify(text, extra?.what || "price", extra));
 	// A job's question or result comes as a DM card titled with the job; reply there or in the console.
+	// The phone gets it on its own (with the job's cat and buttons); Discord only when wanted.
 	setJobNotifier(async (thread, text) => {
-		const sent = messenger ? await messenger.send(`${text}\n\n_Reply here or in the RemindMe console._`, { title: thread.title }) : false;
+		const discord = toDiscord();
+		if (!discord) return;
+		const sent = await discord.send(`${text}\n\n_Reply here or in the RemindMe console._`, { title: thread.title });
 		activity.add(sent ? { kind: "sent", channel: "job", text: `${thread.title}: ${text}` } : { kind: "failed", channel: "job", text: `Couldn't send this on Discord: ${thread.title}: ${text}` });
 	});
-	if (messenger) {
-		proactive.start();
-		setBriefSender(() => proactive.sendBrief());
-		setPlannedSends(async () => [...(await proactive.upcoming()), ...news.upcoming()].sort((a, b) => a.at.getTime() - b.at.getTime()));
-	} else console.log("No Discord bot: the morning brief and nudges are off.");
+	// The brief and nudges run with or without Discord: the phone and the RemindMe chat get them.
+	proactive.start();
+	setBriefSender(() => proactive.sendBrief());
+	setPlannedSends(async () => [...(await proactive.upcoming()), ...news.upcoming()].sort((a, b) => a.at.getTime() - b.at.getTime()));
+	if (!messenger) console.log("No Discord bot: the brief, reminders and nudges go to the phone and the RemindMe chat.");
 }
 
 main().catch((error: Error) => {

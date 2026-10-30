@@ -309,6 +309,27 @@ async function whereabouts(): Promise<Whereabouts | undefined> {
 			.map((zone) => ({ id: zone.entity_id, name: String(zone.attributes.friendly_name || zone.entity_id.slice(5)), lat: zone.attributes.latitude as number, lon: zone.attributes.longitude as number, radius: number(zone.attributes.radius) ?? 100 })),
 	};
 }
+/*
+ * Whether what RemindMe says first (the brief, reminders, nudges, news,
+ * alerts, job updates) also goes to Discord. Chatting with it there works
+ * either way: it answers when written to.
+ */
+const discordPath = process.env.DISCORD_SETTINGS_PATH || "./data/discord.json";
+let discordMessagesOn = true;
+async function loadDiscordSettings(): Promise<void> {
+	try {
+		discordMessagesOn = JSON.parse(await readFile(discordPath, "utf8"))?.messages !== false;
+	} catch {
+		discordMessagesOn = true;
+	}
+}
+export const discordMessages = { on: () => discordMessagesOn };
+/* The bot, once main has started it: who it's logged in as, for Settings. */
+let discordBot: { who(): string | undefined } | undefined;
+export function setDiscordBot(bot: { who(): string | undefined } | undefined): void {
+	discordBot = bot;
+}
+
 /* What the assistant may do on its own: just do it, ask first, or never, per kind of action. */
 const rules = new RuleStore();
 
@@ -1378,6 +1399,23 @@ app.post("/api/dictation", express.raw({ type: "application/octet-stream", limit
 	} catch (error) {
 		response.status(502).json({ error: error instanceof Error ? error.message : "Dictation failed." });
 	}
+});
+
+/* Discord: whether the bot is set up and who it is, and whether RemindMe's messages go there too. */
+app.get("/api/discord", (_request, response) => {
+	response.set("Cache-Control", "no-store").json({
+		bot: discordBot ? discordBot.who() || "connecting" : null,
+		messages: discordMessagesOn,
+		// What else would tell the user: phones with the app's notifications, or the Home Assistant app.
+		phones: phoneApp.devices(),
+	});
+});
+app.put("/api/discord", async (request, response) => {
+	if (typeof request.body?.messages !== "boolean") return void response.status(400).json({ error: "Say whether messages go to Discord." });
+	discordMessagesOn = request.body.messages;
+	await mkdir(dirname(discordPath), { recursive: true });
+	await writeFile(discordPath, JSON.stringify({ messages: discordMessagesOn }));
+	response.json({ messages: discordMessagesOn });
 });
 
 /* What it may do on its own: each kind of action with its choices and what it's set to. */
@@ -2970,7 +3008,7 @@ export function createHarnessApp(): Express {
  * runs on the container's clock.
  */
 export async function startHarness(): Promise<void> {
-	await Promise.all([loadConnectors(), threads.load(), phonePush.load(), memory.load(), batteryHides.load(), haApp.load(), loadAppSlug(), prices.load(), news.load(), feeds.load(), placeReminders.load(), loadLocation(), rules.load()]);
+	await Promise.all([loadConnectors(), threads.load(), phonePush.load(), memory.load(), batteryHides.load(), haApp.load(), loadAppSlug(), prices.load(), news.load(), feeds.load(), placeReminders.load(), loadLocation(), rules.load(), loadDiscordSettings()]);
 	// Feeds added under News in 4.18 become feed connectors.
 	for (const old of await news.takeOldFeeds()) await feeds.add({ url: old.url, name: old.name, news: old.on, alerts: false }).catch((error) => console.warn(`Couldn't move the feed ${old.name}:`, error instanceof Error ? error.message : error));
 	prices.startClock();
