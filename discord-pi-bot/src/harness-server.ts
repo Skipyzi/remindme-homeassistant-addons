@@ -1035,9 +1035,20 @@ app.post("/api/artifacts", async (request, response) => {
 	});
 	response.status(201).json({ ...artifact, content: undefined });
 });
+/** A document's first words for the Made tab: no markup, styles or scripts, and not its title again. */
+export function artifactSnippet(title: string, content: string): string {
+	const text = content
+		.replace(/<(style|script|head)\b[\s\S]*?<\/\1>/gi, " ")
+		.replace(/<[^>]+>/g, " ")
+		.replace(/&nbsp;/g, " ")
+		.replace(/[#*_`>|]+|^-+|\s-{2,}/gm, " ")
+		.replace(/\s+/g, " ")
+		.trim();
+	const untitled = title && text.toLowerCase().startsWith(title.toLowerCase()) ? text.slice(title.length).trim() : text;
+	return untitled.slice(0, 180);
+}
 app.get("/api/artifacts", (_request, response) => {
-	// With the first words, for the Made tab.
-	response.json(artifacts.list().map((item) => ({ ...item, snippet: (artifacts.get(item.id)?.content || "").replace(/<[^>]+>/g, " ").replace(/[#*_`>|-]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 180) })));
+	response.json(artifacts.list().map((item) => ({ ...item, snippet: artifactSnippet(item.title, artifacts.get(item.id)?.content || "") })));
 });
 app.get("/api/artifacts/:id", (request, response) => {
 	const artifact = artifacts.get(request.params.id);

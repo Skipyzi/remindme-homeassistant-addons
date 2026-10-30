@@ -10,7 +10,10 @@ test("vault routes read and write the notes on disk", async (context) => {
 	const directory = await mkdtemp(join(tmpdir(), "vault-routes-"));
 	process.env.VAULT_DATA_PATH = directory;
 
-	const { createHarnessApp } = await import("../src/harness-server.ts");
+	const { createHarnessApp, artifactSnippet } = await import("../src/harness-server.ts");
+	// The Made tab's preview of a document: words only, without the title again.
+	assert.equal(artifactSnippet("Snake Game", "<html><head><style>:root { --bg: #111827; }</style></head><body><h1>Snake Game</h1><p>Use the arrow keys.</p><script>let x = 1;</script></body></html>"), "Use the arrow keys.");
+	assert.equal(artifactSnippet("Feature requests", "# Feature requests\n\n1. A **named** chat\n- Dark mode"), "1. A named chat Dark mode");
 	const app = createHarnessApp();
 	const server = app.listen(0);
 	await new Promise<void>((resolve) => server.once("listening", resolve));

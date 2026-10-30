@@ -1648,9 +1648,12 @@ body:has(> .rm-app) {
 	overflow-wrap: anywhere;
 }
 .rm-lines small {
-	display: block;
+	display: -webkit-box;
+	overflow: hidden;
 	color: var(--mute);
 	font-size: 14px;
+	-webkit-line-clamp: 2;
+	-webkit-box-orient: vertical;
 }
 .rm-line-mark {
 	align-self: center;
