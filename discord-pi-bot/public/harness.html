@@ -251,6 +251,10 @@
               </button>
             </header>
             <div class="rm-scroll rm-messages" x-ref="messages">
+              <p class="rm-problem" x-show="open.feed && oldHomeCopy && !oldCopyHidden" x-cloak>
+                <span>This copy of RemindMe was added to the Home Screen before 28 October, so iOS blurs its top and RemindMe keeps a strip up there empty. To get rid of it: remove RemindMe from the Home Screen, open it in Safari, and tap Share → Add to Home Screen.</span>
+                <button class="rm-link" type="button" @click="hideOldCopyNote()">Got it</button>
+              </p>
               <p class="rm-problem" x-show="open.feed && ai && !ai.ready" x-cloak>
                 <span x-text="ai?.problem"></span>
                 <button class="rm-btn solid" type="button" @click="openSettings('ai')">Set up the AI</button>

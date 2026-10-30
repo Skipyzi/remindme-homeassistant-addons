@@ -1567,6 +1567,13 @@ app.get("/api/location", async (_request, response) => {
 		last: fix ? { line: whereLine(fix)?.replace(/^Where the user is, from their phone in Home Assistant: /, "").replace(/\. For their address.*$/, "") || null, at: fix.at || null } : null,
 	});
 });
+/* Which kind of home-screen copy opened: with the safe area at the top above 0 it's one from before 28 Oct 2026. */
+app.post("/api/client", (request, response) => {
+	const number = (value: unknown) => (typeof value === "number" && Number.isFinite(value) ? Math.round(value) : undefined);
+	const top = number(request.body?.safeTop);
+	if (top !== undefined) console.log(`Home-screen app opened: safe area at the top ${top}px (${top > 0 ? "an old copy, drawn under the status bar" : "a copy with the opaque status bar"}), window ${number(request.body?.width)}×${number(request.body?.height)}.`);
+	response.status(204).end();
+});
 /* Ask the phone for its location now, and say where it puts the user. */
 app.post("/api/location/refresh", async (_request, response) => {
 	try {

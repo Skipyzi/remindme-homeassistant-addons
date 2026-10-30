@@ -38,15 +38,17 @@
 	color-scheme: dark;
 }
 /*
- * iOS 26 blurs the top edge of an installed web app, whatever the status bar
- * style, and no meta tag or CSS turns it off. On the owner's iPhone text was
- * blurred up to about 25pt below the status bar and sharp from about 30pt, so
- * on an iPhone or iPad home-screen app the tops of pages start 20px lower.
+ * iOS 26 blurs the top edge of a home-screen web app that draws under the
+ * status bar, which every copy added before 28 Oct 2026 does (it kept the old
+ * translucent status bar setting). On the owner's iPhone text was blurred up
+ * to about 25pt below the status bar, so such a copy keeps 20px clear. A copy
+ * added since has an opaque status bar, nothing under it (the safe area at
+ * the top is 0), and needs no room kept: min() makes the room 0 there.
  */
 @media (display-mode: standalone) {
 	@supports (-webkit-touch-callout: none) {
 		:root {
-			--edge-ramp: 20px;
+			--edge-ramp: min(20px, calc(env(safe-area-inset-top, 0px) * 100));
 		}
 	}
 }
@@ -1122,7 +1124,7 @@ body:has(> .rm-app) {
 	@supports (-webkit-touch-callout: none) {
 		.rm-bar {
 			min-height: 0;
-			padding-top: calc(env(safe-area-inset-top) + var(--edge-ramp) + 4px);
+			padding-top: calc(env(safe-area-inset-top) + max(10px, var(--edge-ramp) + 4px));
 			padding-bottom: 8px;
 		}
 		.rm-bar h1 {
@@ -1149,7 +1151,7 @@ body:has(> .rm-app) {
 			border-radius: 17px;
 		}
 		.rm-title {
-			padding-top: calc(10px + env(safe-area-inset-top) + var(--edge-ramp));
+			padding-top: calc(env(safe-area-inset-top) + max(18px, var(--edge-ramp) + 10px));
 		}
 	}
 }

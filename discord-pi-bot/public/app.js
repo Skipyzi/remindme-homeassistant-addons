@@ -277,6 +277,15 @@ function remindme() {
 		notes: [],
 		/* What a change did, with a moment to take it back */
 		toast: null,
+		/* A home-screen copy from before 28 Oct 2026, which iOS blurs at the top */
+		oldHomeCopy: false,
+		oldCopyHidden: (() => {
+			try {
+				return localStorage.getItem("rm-old-copy-hidden") === "1";
+			} catch {
+				return false;
+			}
+		})(),
 		/* Inside Home Assistant's app panel on a phone: its header is hidden, so ☰ stands in. */
 		haNarrow: false,
 		haLinked: "",
@@ -291,6 +300,7 @@ function remindme() {
 			});
 			this.loadInbox();
 			this.loadModelChoices();
+			this.checkHomeScreenCopy();
 			this.loadDictation();
 			this.route();
 			window.addEventListener("popstate", () => this.route());
@@ -345,6 +355,8 @@ function remindme() {
 				this.loaded = true;
 				this.error = "";
 				this.showBadge();
+				// Loaded while RemindMe was restarting: the chat's model line comes back once it answers.
+				if (!this.modelChoices.groups.length) this.loadModelChoices();
 			} catch (error) {
 				this.error = `RemindMe isn't answering (${error.message || error}). It may be restarting.`;
 			} finally {
@@ -1794,6 +1806,30 @@ function remindme() {
 		},
 
 		/* Phone app */
+		/*
+		 * A home-screen copy added before 28 Oct 2026 draws under the status bar
+		 * (its safe area at the top isn't 0), so iOS blurs its top and RemindMe
+		 * keeps a strip clear: say how to get a copy without that. RemindMe's log
+		 * notes which kind of copy opened, to tell the two apart.
+		 */
+		checkHomeScreenCopy() {
+			if (!window.matchMedia("(display-mode: standalone)").matches) return;
+			const probe = document.createElement("div");
+			probe.style.cssText = "position:fixed;top:0;left:0;width:1px;height:env(safe-area-inset-top, 0px);visibility:hidden;pointer-events:none";
+			document.body.append(probe);
+			const top = Math.round(probe.getBoundingClientRect().height);
+			probe.remove();
+			this.oldHomeCopy = top > 0;
+			fetch("./api/client", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ safeTop: top, width: window.innerWidth, height: window.innerHeight }) }).catch(() => {});
+		},
+		hideOldCopyNote() {
+			this.oldCopyHidden = true;
+			try {
+				localStorage.setItem("rm-old-copy-hidden", "1");
+			} catch {
+				/* private browsing: it shows again next time */
+			}
+		},
 		get inPhoneApp() {
 			return window.isSecureContext && !location.pathname.includes("/hassio_ingress/");
 		},

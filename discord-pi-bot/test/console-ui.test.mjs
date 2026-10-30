@@ -114,7 +114,10 @@ test("a task the chat starts shows as its card in the chat, and its news comes b
 
 test("on an iPhone home-screen app, no text sits in iOS 26's blurred top edge", () => {
 	const css = readFileSync("public/styles.css", "utf8");
-	assert.match(css, /@media \(display-mode: standalone\) \{\s*@supports \(-webkit-touch-callout: none\) \{\s*:root \{\s*--edge-ramp: \d+px;/);
+	// Only a copy that draws under the status bar (safe area at the top above 0) keeps the strip clear.
+	assert.match(css, /@media \(display-mode: standalone\) \{\s*@supports \(-webkit-touch-callout: none\) \{\s*:root \{\s*--edge-ramp: min\(\d+px, calc\(env\(safe-area-inset-top, 0px\) \* 100\)\);/);
+	assert.match(app, /checkHomeScreenCopy\(\)/);
+	assert.match(html, /oldHomeCopy && !oldCopyHidden/);
 	for (const top of [".rm-bar", ".rm-title", ".rm-sheet-in"]) assert.match(css, new RegExp(`\\${top} \\{[^}]*env\\(safe-area-inset-top\\) \\+ var\\(--edge-ramp\\)`), top);
 });
 
