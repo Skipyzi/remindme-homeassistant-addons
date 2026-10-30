@@ -5,7 +5,7 @@
  * notifications; tapping one opens the thread it is about.
  */
 const CACHE = "remindme-shell";
-const SHELL = ["./", "./styles.css", "./app.js", "./components/richtext.js", "./components/highlight.js", "./vendor/alpine.min.js", "./fonts/geist-mono.woff2", "./manifest.webmanifest", "./icons/icon-192.png"];
+const SHELL = ["./", "./styles.css", "./app.js", "./components/richtext.js", "./components/highlight.js", "./vendor/alpine.min.js", "./fonts/geist-sans.woff2", "./fonts/geist-mono.woff2", "./manifest.webmanifest", "./icons/icon-192.png"];
 
 self.addEventListener("install", (event) => {
 	event.waitUntil(

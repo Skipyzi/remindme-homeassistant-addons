@@ -5,18 +5,21 @@ import test from "node:test";
 const html = readFileSync("public/harness.html", "utf8");
 const app = readFileSync("public/app.js", "utf8");
 
-test("the console is an inbox: needs you, working on, threads, and the ledger as History", () => {
-	assert.match(html, /class="rm-inbox"/);
+test("the console is laid out like Duet: one chat, Tasks and Made in tabs, and the ledger as History", () => {
+	assert.match(html, /class="rm-tabbar"/);
+	for (const tab of ["chat", "tasks", "made"]) assert.match(html, new RegExp(`@click="goTab\\('${tab}'\\)"`), tab);
 	assert.match(html, /aria-label="Needs you"/);
 	assert.match(html, /aria-label="Working on"/);
+	assert.match(html, /aria-label="Coming up"/);
 	assert.match(html, /class="rm-compose"/);
 	assert.match(html, /class="rm-thread"/);
+	assert.doesNotMatch(html, /New thread/, "there is one chat; work that takes a while becomes a task");
 	assert.match(html, /id="history-title"/);
 	assert.match(html, /class="rm-ledger"/);
 	assert.match(html, /class="rm-now"/);
 	for (const tab of ["Everything", "Coming up", "What it did", "Messages"]) assert.match(app, new RegExp(`label: "${tab}"`));
 	assert.match(app, /fetch\("\.\/api\/inbox"/);
-	assert.match(app, /"\.\/api\/threads"/);
+	assert.match(app, /\.\/api\/threads\/\$\{FEED\}\/messages/);
 	assert.match(app, /"\.\/api\/ledger"/);
 	assert.doesNotMatch(app, /"\.\/api\/chat"/, "the single console chat is gone; every request is a thread");
 });
@@ -91,4 +94,11 @@ test("only Claude Code and Codex remain as agents", () => {
 	assert.doesNotMatch(readFileSync("public/components/account-console.js", "utf8"), /agents\/pi|opencode/);
 	const pkg = JSON.parse(readFileSync("package.json", "utf8"));
 	assert.ok(!pkg.dependencies["opencode-ai"] && !pkg.dependencies["@earendil-works/pi-coding-agent"]);
+});
+
+test("a task the chat starts shows as its card in the chat, and its news comes back there", () => {
+	assert.match(html, /x-for="job in message\.jobs \|\| \[\]"/);
+	assert.match(html, /class="rm-task"/);
+	assert.match(app, /receipt\.job/);
+	assert.match(app, /entry\.threadId/);
 });

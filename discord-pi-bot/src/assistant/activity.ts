@@ -16,6 +16,8 @@ export type ActivityChannel = "console" | "discord" | "task" | "brief" | "nudge"
 export interface Receipt {
 	text: string;
 	color?: string;
+	/** A background job this started: its thread, so the chat can show the job's card. */
+	job?: string;
 }
 
 /** A button under one of RemindMe's own messages, in its thread: what it does, and on what. */
@@ -43,6 +45,8 @@ export interface ActivityEntry {
 	acted?: string;
 	/** Cards under it in the RemindMe thread, such as the news digest's stories. */
 	embeds?: Embed[];
+	/** For a job's news (its result, or a question): the job's thread. */
+	threadId?: string;
 }
 
 const MAX_ENTRIES = 1_000;

@@ -15,9 +15,7 @@ Add at least one key in the app's **Configuration** page, then restart the app:
 
 ### A model per thread
 
-**Settings → AI** picks the default. Any thread can have its own: **Answers with**, above the reply box, lists the current models of every AI that's set up. A long job can run on Opus while quick questions stay on Haiku. A new request can be given one before it's sent (the picker shows up once you type), so a job runs on it from its first step.
-
-A thread keeps the AI that first answered it, job runs included, and the inbox shows it under each thread. Once answered, **Answers with** only offers that AI's other models (Haiku to Opus is fine, Claude to ChatGPT isn't): start a new thread for another AI. Changing the default under **Settings → AI** only affects new threads. If a thread's AI is later removed, it falls back to the default. The daily news has its own **Written by** under **Settings → News**; Haiku writes it well for a fraction of Opus's price.
+**Settings → AI** picks the default. The chat keeps the AI that first answered it, and shows its model under the assistant's name: tap it for that AI's other models (Haiku to Opus is fine, Claude to ChatGPT isn't). For another AI, start the chat over under **Settings → Your assistant**. A background task keeps the AI it started on, and its page says which. Changing the default only affects what starts after. If an AI is later removed, its chat or task falls back to the default. The daily news has its own **Written by** under **Settings → News**; Haiku writes it well for a fraction of Opus's price.
 
 Every earlier message reaches the AI with the time it was sent, and every earlier answer with what its tools did then (reminders set, documents written, actions waiting for a tap). So "in 90 minutes" from last night stays last night's 90 minutes, and a reminder it set an hour ago isn't second-guessed.
 
@@ -117,25 +115,23 @@ It only sees and changes devices through these tools. Each turn sends your recen
 
 ## The console
 
-Open **RemindMe** in the sidebar. It is an inbox. On a phone a thread opens over the inbox; on a wide screen they sit side by side.
+Open **RemindMe** in the sidebar, or the phone app. It's laid out like Claude Duet: one chat, and the tasks it runs in the background. Three tabs float at the bottom of a phone and run down the side of a wide screen. It's true black throughout, for OLED screens, with glass for what floats over the page.
 
-- **Needs you:** actions waiting for your tap (locks, doors, scenes, calendar events), questions from jobs with their answers as buttons, and batteries running out. A battery's **Remind me Saturday** hides it until then; **Got it** hides it until it's charged or changed.
-- **Working on:** background jobs with how far along they are, and your scheduled tasks.
-- **Your assistant's chat:** pinned on top under its name and cat (RemindMe until you name it). It's your main conversation, and it also holds the morning brief, nudges, reminders, heads-ups and what it changed on its own, by day, with their buttons (a battery's Remind me Saturday, a reminder's In 1 hour), so "done" or "remind me at 9" work in context. Work it hands to a background job gets a thread of its own. Notifications about these open it. On a wide screen it's open beside the inbox.
-- **Today, Yesterday, Earlier:** every conversation and job. Swipe a row left to snooze it (later today, tomorrow morning, the weekend, next week) or archive it, right to delete it, with Undo; with a mouse, the same show on hover. Archived conversations are under History.
+- **Chat:** your one conversation with your assistant, under its name, cat and model (RemindMe until you name it). It also holds the morning brief, nudges, reminders, heads-ups and what it changed on its own, by day, with their buttons (a battery's Remind me Saturday, a reminder's In 1 hour), so "done" or "remind me at 9" work in context. Work that takes a while goes off as a task: its card shows in the chat and keeps up while it works, and the task posts back here when it's done or needs you, with its options as buttons. The box at the bottom takes text, pictures (with Claude, OpenAI and ChatGPT) and dictation.
+- **Tasks:** what needs you (actions waiting for your tap, a task's question, batteries running out), what's working, what it's watching (a parcel, a price), what's coming up (reminders, by place first, scheduled tasks and what it will send) and what's done. A battery's **Remind me Saturday** hides it until then; **Got it** hides it until it's charged or changed. A task opens on a page of its own with its steps: reply there, **Stop** it or delete it. The tab's badge counts what needs you. Notifications about a task open its page.
+- **Made:** the documents it wrote and what it remembers, newest first.
+- **History:** the full timeline, from Tasks: what's coming up, then everything RemindMe answered, changed, sent and failed at, with changed lamps in their own colour. Conversations from before there was one chat are at the bottom.
 - **Cats:** every conversation and job has its own cat (a ginger tabby, tuxedo, calico, siamese, grey or black cat, with a bow tie, beret, glasses, headphones, party hat or scarf). It shows how things stand: busy while a job works, a paw raised when it needs you, content when done, grey and dizzy when it stopped.
-- **Dictation:** the microphone by each text box. Tap it, speak (up to a minute), tap it again: the words land in the box for you to read before sending. With Home Assistant's speech-to-text running (the Whisper app with its Wyoming integration), it's written down on the Pi and your voice stays at home; pick its language under **Settings → Phone app → Dictation**. Without it, the browser's own speech recognition is used where there is one (Safari, Chrome), which sends your voice to Apple or Google. The microphone needs the https address, so it works in the phone app, not over plain http.
-- **The box at the bottom:** ask, or hand something off. On a phone it writes to your assistant's chat; pick **New thread** above it for a separate conversation, which can have its own model. On a wide screen it starts new threads, since the chat is open beside it. Pictures work with Claude, OpenAI and ChatGPT.
-- **History:** the full timeline: what's coming up, then everything RemindMe answered, changed, sent and failed at, with changed lamps in their own colour.
-- **Settings:** grouped into AI (who answers and the model, your assistant, memory, skills), accounts and devices (mail and calendars, the phone app, connected tools) and what it does on its own (scheduled tasks, documents). Each section shows what it's set to, and anything broken is listed on top. On a phone, Settings is a list you tap into; on a computer, the list stays on the left.
+- **Dictation:** the microphone in the text box. Tap it, speak (up to a minute), tap it again: the words land in the box for you to read before sending. With Home Assistant's speech-to-text running (the Whisper app with its Wyoming integration), it's written down on the Pi and your voice stays at home; pick its language under **Settings → Phone app → Dictation**. Without it, the browser's own speech recognition is used where there is one (Safari, Chrome), which sends your voice to Apple or Google. The microphone needs the https address, so it works in the phone app, not over plain http.
+- **Settings:** the gear by the chat's name. Grouped into AI (who answers and the model, your assistant, memory, skills), accounts and devices (mail and calendars, the phone app, connected tools) and what it does on its own (scheduled tasks, documents). Each section shows what it's set to, and anything broken is listed on top. On a phone, Settings is a list you tap into; on a computer, the list stays on the left.
 
 ### Your assistant
 
-**Settings → Your assistant** gives it a name (up to 24 characters) and a cat: one of six coats and something to wear, or nothing. The name heads its chat and goes into its instructions, so it answers to it. **How it talks** below holds its standing instructions. Its chat keeps the AI it started with, like every thread; **Start the chat over** moves what was said to History and lets the next answer come from the AI chosen under **AI and sign-ins**. Memory, reminders and jobs aren't touched.
+**Settings → Your assistant** gives it a name (up to 24 characters) and a cat: one of six coats and something to wear, or nothing. The name heads its chat and goes into its instructions, so it answers to it. **How it talks** below holds its standing instructions. Its chat keeps the AI it started with; **Start the chat over** moves what was said to History and lets the next answer come from the AI chosen under **AI and sign-ins**. Memory, reminders and jobs aren't touched.
 
 ### What it may do
 
-**Settings → What it may do** sets, for each kind of action, whether RemindMe does it on its own, asks you first (it waits for your tap in the inbox, on your phone and on Discord) or never does it:
+**Settings → What it may do** sets, for each kind of action, whether RemindMe does it on its own, asks you first (it waits for your tap in the chat, under Tasks, on your phone and on Discord) or never does it:
 
 | Kind | Choices | As it comes |
 |---|---|---|
@@ -172,14 +168,14 @@ On an iPhone, a web app's notifications are text only. The Home Assistant app on
 
 While it's on, the web app's own notifications stay quiet, so nothing arrives twice. Taps come back as Home Assistant's `mobile_app_notification_action` event; each button works once.
 
-## Background jobs
+## Background tasks
 
-Work that takes many steps, such as comparing flights across sites, going through a week of receipts, or researching a purchase, goes to a job instead of a single answer. You ask as usual, here or on Discord; the AI decides to hand it off. The job:
+Work that takes many steps, such as comparing flights across sites, going through a week of receipts, or researching a purchase, goes to a task instead of a single answer. You ask as usual, in the chat or on Discord; the AI decides to hand it off. The task:
 
 - runs in the background, one at a time, on the AI chosen under **AI**, and survives a restart;
 - writes down each step in its thread, with progress when it knows it;
-- asks you when only you can decide, with options to tap in the inbox or to answer on Discord;
-- finishes with a result, sent to you on Discord as well;
+- asks you when only you can decide, with options to tap in the chat or under Tasks, or to answer on Discord;
+- finishes with a result in the chat, on your phone, and on Discord unless you turned that off;
 - stops after six runs of up to ten tool steps each to check in, so it can't run up the bill. Reply "carry on" to continue, or **Stop** it any time;
 - for keep-me-updated requests (a parcel, a reply), watches instead: it looks once, then sleeps until the time it set or until an email arrives whose sender or subject has its words (the carrier, an order number). It tells you only what changed, never looks during quiet hours, and stops after a week. A sleeping watch costs nothing; **Stop watching** ends it.
 
@@ -216,7 +212,7 @@ Ask it to watch a price ("tell me when the XM5 is under 180 €"), or add one un
 - A name is looked up on Geizhals, preferring a product that's on sale now; RemindMe says which one it found, so you can correct it. Geizhals' product pages carry every offer's price, so these checks need no AI at all.
 - A link to any shop's product page also works: the browser reads the page and the cheapest model (Claude Haiku or GPT Luna) picks out the price. A link whose price can't be read isn't kept.
 - It checks every six hours, never during quiet hours, and keeps a short price history with the lowest price seen.
-- You hear about it on your phone and in the inbox when the price falls under your target or, without a target, drops by 5 % or more since it last told you. The notice has **Open** and **Stop watching**; the same price again isn't news.
+- You hear about it on your phone and in the chat when the price falls under your target or, without a target, drops by 5 % or more since it last told you. The notice has **Open** and **Stop watching**; the same price again isn't news.
 
 Searching Geizhals needs the web browser (`web_browser`).
 
@@ -236,7 +232,7 @@ RemindMe remembers things about you: what it picked up from what you told it ("m
 
 ## Data
 
-Everything lives in `/data`: reminders, chats, the inbox's threads and jobs (`threads.json`), what it remembers about you (`memory.json`), which heads-ups were sent (`triage.json`), batteries you dealt with (`batteries.json`), price watches (`prices.json`), the news settings (`news.json`), which feed posts were seen (`feeds.json`; the feeds themselves are connectors), pictures and map tiles for cards (`media/`), the phone app's notification keys and devices (`push.json`) and Tailscale's state (`tailscale/`), the AI choice (`ai.json`), today's spend (`spend.json`), Discord chat history (`discord-chats.json`) and which nudges were sent (`proactive.json`). Notes stay in `/share/vault`, shared with the Vault editor app.
+Everything lives in `/data`: reminders, chats, the chat and the tasks (`threads.json`), what it remembers about you (`memory.json`), which heads-ups were sent (`triage.json`), batteries you dealt with (`batteries.json`), price watches (`prices.json`), the news settings (`news.json`), which feed posts were seen (`feeds.json`; the feeds themselves are connectors), pictures and map tiles for cards (`media/`), the phone app's notification keys and devices (`push.json`) and Tailscale's state (`tailscale/`), the AI choice (`ai.json`), today's spend (`spend.json`), Discord chat history (`discord-chats.json`) and which nudges were sent (`proactive.json`). Notes stay in `/share/vault`, shared with the Vault editor app.
 
 ## Upgrading from 3.x
 

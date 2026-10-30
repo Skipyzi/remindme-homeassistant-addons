@@ -8,12 +8,14 @@ Pi that may have no outbound access.
 
 | File | Family | Used for |
 | --- | --- | --- |
-| `geist-mono.woff2` | Geist Mono (variable weight 100–900) | everything: the console matches the Swiss Black Home Assistant theme |
+| `geist-sans.woff2` | Geist (variable weight 100–900) | text: a friendlier face for the Swiss Black look |
+| `geist-mono.woff2` | Geist Mono (variable weight 100–900) | times, model names and code |
 
-Declared via `@font-face` at the top of `styles.css`, with a system monospace
-fallback so the layout holds if the file is ever missing.
+Declared via `@font-face` at the top of `styles.css`, with system fallbacks
+so the layout holds if a file is ever missing.
 
 ## Licence
 
-Geist Mono is by Vercel, under the SIL Open Font License 1.1
-(https://github.com/vercel/geist-font).
+Geist and Geist Mono are by Vercel, under the SIL Open Font License 1.1
+(https://github.com/vercel/geist-font). `geist-sans.woff2` is
+`Geist-Variable.woff2` from the `geist` npm package, 1.8.2.

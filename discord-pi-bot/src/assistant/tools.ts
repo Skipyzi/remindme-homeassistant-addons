@@ -1351,7 +1351,7 @@ function jobTools(ctx: ToolContext): AssistantTool[] {
 					return { content: json({ waiting_for_user_to_confirm: label, note: "It starts once the user taps it; say so." }) };
 				}
 				const started = start();
-				effects.did.push({ text: `Started a job: ${started.title}` });
+				effects.did.push({ text: `Started a job: ${started.title}`, job: started.id });
 				return { content: json({ started: true, title: started.title, note: "It runs in the background and reports back. Tell the user so in a sentence." }) };
 			},
 		},

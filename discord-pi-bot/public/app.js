@@ -1,8 +1,9 @@
 /*
- * The RemindMe console: an inbox. What needs you comes first, then the jobs
- * and scheduled tasks running, then every conversation and everything
- * RemindMe sent or did, newest first. Each request is a thread of its own;
- * a job lives in the thread that started it. The old timeline is History.
+ * The RemindMe console, laid out like Duet: one chat with the assistant,
+ * the tasks it runs in the background (what needs you, what's running,
+ * what's coming up, what's done), and what it made. Work that takes a while
+ * goes off as a task with a page of its own and reports back in the chat.
+ * The old timeline is History.
  */
 
 const KIND_LABELS = {
@@ -29,12 +30,12 @@ const storedNumber = (key) => {
 
 const CHANNEL_NOTES = {
 	discord: "On Discord",
-	brief: "Morning brief, on Discord",
+	brief: "Morning brief",
 	news: "Daily news",
-	nudge: "On Discord",
-	reminder: "Reminder, on Discord and your phone",
+	nudge: "Heads-up",
+	reminder: "Reminder",
 	task: "Scheduled task",
-	job: "From a job",
+	job: "From a task",
 };
 
 const TOOL_WORDS = {
@@ -66,6 +67,8 @@ const TOOL_WORDS = {
 };
 
 const JOB_WORDS = { queued: "Waiting its turn", working: "Working", waiting: "Watching", needs_you: "Needs you", done: "Done", stopped: "Stopped" };
+/* The tabs; the chat is home. */
+const TABS = ["chat", "tasks", "made"];
 /* The first word of a held action, when it is a plain verb, names its button. */
 const VERBS = new Set(["Unlock", "Lock", "Open", "Close", "Add", "Run", "Arm", "Disarm", "Send"]);
 
@@ -99,7 +102,11 @@ function firstLine(text) {
 
 function remindme() {
 	return {
-		/* The inbox */
+		/* Which tab shows: the chat, the tasks, or what it made */
+		tab: "chat",
+		/* Where a task's page was opened from, for its back button */
+		openedFrom: "tasks",
+		/* What the inbox call brings: the AI's state, what waits, the threads and jobs */
 		splash: true,
 		ai: null,
 		waiting: [],
@@ -150,13 +157,10 @@ function remindme() {
 			{ id: "documents", label: "Documents", group: "On its own" },
 		],
 		phoneLayout: window.matchMedia("(max-width: 820px)").matches,
-		/* Models a thread, a new request or the news can be given ("provider|model" in the pickers) */
+		/* Models the chat, a task or the news can be given ("provider|model" in the pickers) */
 		modelChoices: { default: null, groups: [] },
-		newModel: "",
-		/* The assistant: its name and cat, and whether the box under the inbox writes to its chat or starts a thread */
+		/* The assistant: its name and cat */
 		assistant: { name: "RemindMe", cat: "remindme" },
-		// On a phone the box writes to its chat; on a wide screen that chat is open beside it, so the box starts threads.
-		toMain: window.matchMedia("(max-width: 820px)").matches,
 		identity: { name: "", look: { coat: 0, accessory: 0 } },
 		identityNote: "",
 		/* Dictation: Home Assistant's speech-to-text on the Pi, or the browser's own */
@@ -260,9 +264,11 @@ function remindme() {
 		feedSeen: storedNumber("rm-feed-seen"),
 		feedFold: true,
 		feedTop: "",
-		/* Swiping rows: what waits for a snooze time, what's hidden until the server agrees, and the undo toast. */
-		snoozeFor: null,
-		hiddenRows: [],
+		/* Made: what it wrote and what it remembers */
+		madeFilter: "all",
+		madeLoaded: false,
+		notes: [],
+		/* What a change did, with a moment to take it back */
 		toast: null,
 		/* Inside Home Assistant's app panel on a phone: its header is hidden, so ☰ stands in. */
 		haNarrow: false,
@@ -274,7 +280,6 @@ function remindme() {
 			window.addEventListener("resize", fit);
 			window.matchMedia("(max-width: 820px)").addEventListener("change", (event) => {
 				this.phoneLayout = event.matches;
-				if (!this.draft.trim()) this.toMain = event.matches;
 				if (!event.matches && !this.settingsTab) this.settingsTab = "ai";
 			});
 			this.loadInbox();
@@ -295,6 +300,14 @@ function remindme() {
 			setInterval(() => {
 				if (this.open && !this.open.readOnly && !this.streaming && !document.hidden && this.isRunning(this.open)) this.refreshThread();
 			}, 3_000);
+			// While a task runs, its card in the chat and on Tasks keeps up, and its news arrives in the chat.
+			setInterval(() => {
+				if (!this.sending && !document.hidden && this.running.length && !this.isRunning(this.open)) this.loadInbox();
+			}, 6_000);
+			// What's coming up moves with the clock.
+			setInterval(() => {
+				if (this.tab === "tasks" && !document.hidden) this.loadUpcoming();
+			}, 60_000);
 			document.addEventListener("visibilitychange", () => {
 				if (document.hidden) return;
 				this.loadInbox();
@@ -349,83 +362,112 @@ function remindme() {
 			return this.threads.filter((thread) => thread.job?.status === "needs_you" && thread.job.question);
 		},
 
-		get working() {
-			const now = this.now.getTime();
-			return this.threads.filter((thread) => thread.job && ["queued", "working", "waiting"].includes(thread.job.status) && !this.hiddenRows.includes(thread.id) && !(thread.snoozedUntil && Date.parse(thread.snoozedUntil) > now));
+		/* Jobs: running now (or waiting their turn), watching for a change, and done. */
+		get running() {
+			return this.threads.filter((thread) => ["queued", "working"].includes(thread.job?.status));
+		},
+		get watching() {
+			const jobs = this.threads
+				.filter((thread) => thread.job?.status === "waiting")
+				.map((thread) => ({ key: `t-${thread.id}`, thread: thread.id, title: thread.title, line: this.taskNote(thread) || (thread.job.wakeAt ? `Looks again ${this.formatWhen(thread.job.wakeAt)}` : "Watching") }));
+			const prices = this.priceWatches.map((watch) => ({ key: `p-${watch.id}`, title: watch.name, line: this.priceLine(watch) }));
+			return [...jobs, ...prices];
+		},
+		get doneTasks() {
+			return this.threads
+				.filter((thread) => ["done", "stopped"].includes(thread.job?.status) && !thread.archivedAt)
+				.sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)))
+				.slice(0, 12);
+		},
+		/* Reminders, by place first, then the next week's reminders, scheduled tasks and what it will send. */
+		get comingUp() {
+			const items = this.upcoming
+				.filter((item) => item.kind === "reminder" || item.kind === "will send")
+				.map((item, index) => ({ key: `u-${index}-${item.at}`, at: new Date(item.at), place: Boolean(item.place), text: item.text, note: item.kind === "will send" ? "It sends this" : "" }));
+			for (const task of this.scheduled) if (task.nextRun) items.push({ key: `s-${task.id}`, at: new Date(task.nextRun), place: false, text: task.name, note: `Scheduled, ${task.schedule}` });
+			return items
+				.sort((a, b) => (a.place === b.place ? a.at - b.at : a.place ? -1 : 1))
+				.slice(0, 8)
+				.map((item) => ({ ...item, time: this.shortWhen(item.at.toISOString(), true) }));
 		},
 
 		get needsCount() {
 			return this.waiting.length + this.asking.length + this.batteries.length;
 		},
-
-		get inboxLine() {
-			const day = this.now.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
+		get tasksLine() {
 			const needs = this.needsCount;
-			return `${day} · ${needs ? `${needs} need${needs === 1 ? "s" : ""} you` : "nothing needs you"}`;
+			const parts = [needs ? `${needs} need${needs === 1 ? "s" : ""} you` : "Nothing needs you", this.running.length ? `${this.running.length} working` : ""];
+			return parts.filter(Boolean).join(", ");
+		},
+		get tasksEmpty() {
+			return !this.needsCount && !this.running.length && !this.watching.length && !this.comingUp.length && !this.doneTasks.length;
 		},
 
-		threadItem(thread) {
-			const job = thread.job;
-			// A snoozed thread that's due comes back on top.
-			const back = thread.snoozedUntil && Date.parse(thread.snoozedUntil) > Date.parse(thread.updatedAt) ? thread.snoozedUntil : thread.updatedAt;
-			const item = { key: `t-${thread.id}`, threadId: thread.id, openId: thread.id, at: new Date(back), title: thread.title, line: firstLine(thread.last), model: thread.model ? this.modelName(thread.model) : "", mark: "›", bad: false, cat: this.catState(thread) };
-			if (job?.status === "done") item.mark = "✓";
-			if (job?.status === "stopped") Object.assign(item, { mark: "✕", bad: Boolean(job.error), line: job.error || job.note || item.line });
-			return item;
-		},
-
-		get groups() {
-			const busy = new Set([...this.asking, ...this.working].map((thread) => thread.id));
-			const now = this.now.getTime();
-			const shown = (thread) => !busy.has(thread.id) && thread.id !== FEED && !thread.archivedAt && !this.hiddenRows.includes(thread.id) && !(thread.snoozedUntil && Date.parse(thread.snoozedUntil) > now);
-			const items = this.threads.filter(shown).map((thread) => this.threadItem(thread)).sort((a, b) => b.at - a.at);
-			const today = dayKey(this.now);
-			const yesterday = dayKey(new Date(this.now.getTime() - 86_400_000));
-			const groups = [
-				{ id: "today", label: "Today", items: [] },
-				{ id: "yesterday", label: "Yesterday", items: [] },
-				{ id: "earlier", label: "Earlier", items: [] },
-			];
-			for (const item of items) {
-				const key = dayKey(item.at);
-				const group = key === today ? groups[0] : key === yesterday ? groups[1] : groups[2];
-				item.time = group === groups[2] ? item.at.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" }) : this.timeOf(item.at);
-				group.items.push(item);
-			}
-			groups[2].items = groups[2].items.slice(0, 40);
-			return groups.filter((group) => group.items.length);
-		},
-
-		get isEmpty() {
-			return !this.needsCount && !this.working.length && !this.scheduled.length && !this.groups.length && !this.feedRow;
-		},
-
-		/* The pinned RemindMe row: its latest message, and how many came since it was last opened here. */
+		/* The chat's tab: how many of the assistant's own messages came since it was last open. */
 		get feedRow() {
-			const entry = this.activity[0];
-			const thread = this.threads.find((item) => item.id === FEED);
-			const entryAt = entry ? Date.parse(entry.at) : 0;
-			const threadAt = thread?.count ? Date.parse(thread.updatedAt) : 0;
-			// The assistant's chat is always there, even before anything was said.
-			if (!entryAt && !threadAt) return { line: "Your chat. Ask anything, or hand something off.", time: "", fresh: 0, model: thread?.model ? this.modelName(thread.model) : "" };
-			const at = new Date(Math.max(entryAt, threadAt));
-			return {
-				line: entryAt >= threadAt ? firstLine(entry.text) : firstLine(thread.last),
-				model: thread?.model ? this.modelName(thread.model) : "",
-				time: dayKey(at) === dayKey(this.now) ? this.timeOf(at) : at.toLocaleDateString("en-GB", { weekday: "short" }),
-				fresh: this.activity.filter((item) => Date.parse(item.at) > this.feedSeen).length,
-			};
+			return { fresh: this.activity.filter((item) => Date.parse(item.at) > this.feedSeen).length };
 		},
 
-		get archived() {
-			return this.threads.filter((thread) => thread.archivedAt && thread.id !== FEED);
+		/* Chats from before there was one main chat, and archived ones: in History. */
+		get otherChats() {
+			return this.threads.filter((thread) => !thread.job && thread.id !== FEED).sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)));
 		},
 
-		jobLine(thread) {
-			const job = thread.job;
-			if (!job) return thread.last;
-			const progress = job.progress ? `${job.progress.done} of ${job.progress.total}` : "";
-			return [JOB_WORDS[job.status], progress, job.note].filter(Boolean).join(" · ");
+		get appClass() {
+			return `on-${this.tab}${this.open && !this.open.feed ? " task-open" : ""}`;
+		},
+		get backLabel() {
+			return this.openedFrom === "chat" ? `‹ ${this.assistant.name}` : this.openedFrom === "history" ? "‹ Back" : "‹ Tasks";
+		},
+		get micTarget() {
+			return this.open?.feed ? "draft" : "reply";
+		},
+
+		/* A task as a card: its thread from the inbox, how it's doing, and its latest line. */
+		taskOf(id) {
+			return this.threads.find((thread) => thread.id === id);
+		},
+		taskClass(thread) {
+			const status = thread?.job?.status;
+			return { working: status === "queued" || status === "working", asking: status === "needs_you", watching: status === "waiting", done: status === "done", stopped: status === "stopped", gone: !thread };
+		},
+		taskState(thread) {
+			if (!thread) return "Deleted";
+			if (!thread.job) return "Chat";
+			const progress = thread.job.progress ? `, ${thread.job.progress.done} of ${thread.job.progress.total}` : "";
+			return `${JOB_WORDS[thread.job.status] || thread.job.status}${progress}`;
+		},
+		taskNote(thread) {
+			const job = thread?.job;
+			if (!job) return "";
+			if (job.status === "needs_you") return job.question?.text || "";
+			if (job.status === "stopped") return job.error || job.note || "";
+			if (job.status === "done") return firstLine(job.result) || job.note || "";
+			return job.note || "";
+		},
+		taskMeta(thread) {
+			return [thread.model ? this.modelName(thread.model) : "", `since ${this.timeOf(new Date(thread.createdAt))}`].filter(Boolean).join(", ");
+		},
+		doneLine(thread) {
+			return this.taskNote(thread) || JOB_WORDS[thread.job?.status] || "";
+		},
+		/* "Today 10:45", "Yesterday", "Wed 28 Oct": when something was made or saved. */
+		dateWhen(iso) {
+			if (!iso) return "";
+			const date = new Date(iso);
+			const diff = Math.round((new Date(dayKey(date)) - new Date(dayKey(this.now))) / 86_400_000);
+			if (diff === 0) return `today ${this.timeOf(date)}`;
+			if (diff === -1) return "yesterday";
+			return date.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" }).replace(",", "");
+		},
+		/* "10:45" today, "Tomorrow 07:30", "Sat 09:00"; past days without the time unless asked. */
+		shortWhen(iso, withTime = false) {
+			if (!iso) return "";
+			const date = new Date(iso);
+			const diff = Math.round((new Date(dayKey(date)) - new Date(dayKey(this.now))) / 86_400_000);
+			if (diff === 0) return this.timeOf(date);
+			const day = diff === 1 ? "Tomorrow" : diff === -1 ? "Yesterday" : date.toLocaleDateString("en-GB", { weekday: "short" });
+			return withTime || diff > 0 ? `${day} ${this.timeOf(date)}` : day;
 		},
 
 		/* Each thread's cat (components/cats.js), in the mood its job is in. */
@@ -488,19 +530,53 @@ function remindme() {
 			window.parent.postMessage({ type: "home-assistant/toggle-menu" }, "*");
 		},
 
-		/* ── A thread ────────────────────────────────────────────────── */
+		/* ── Tabs, and a task's page ─────────────────────────────────── */
 
+		/*
+		 * The address says what shows: nothing (or #t/remindme) is the chat,
+		 * #tasks and #made the other tabs, #t/<id> a task's page under Tasks.
+		 * A notification opens its task by changing the address.
+		 */
 		route() {
-			const match = location.hash.match(/^#t\/([\w-]+)$/);
-			if (match) this.showThread(match[1]);
-			// On a wide screen the assistant's chat is open beside the inbox.
-			else if (!this.phoneLayout) this.showThread(FEED);
-			else this.open = null;
+			const hash = location.hash;
+			const thread = hash.match(/^#t\/([\w-]+)$/)?.[1];
+			if (thread && thread !== FEED) {
+				this.tab = "tasks";
+				this.showThread(thread);
+				this.loadTab("tasks");
+				return;
+			}
+			const tab = TABS.find((name) => hash === `#${name}`) || "chat";
+			this.tab = tab;
+			if (tab === "chat") {
+				if (!this.open?.feed) this.open = null;
+				this.showFeed();
+			} else {
+				this.open = null;
+				this.loadTab(tab);
+			}
+		},
+		goTab(tab) {
+			const onPage = this.tab === "tasks" && this.open && !this.open.feed;
+			if (tab === this.tab && !onPage) {
+				document.querySelector(tab === "chat" ? ".rm-messages" : `.rm-${tab} .rm-scroll`)?.scrollTo({ top: tab === "chat" ? 1e9 : 0, behavior: "smooth" });
+				return;
+			}
+			history.replaceState(null, "", tab === "chat" ? location.pathname + location.search : `#${tab}`);
+			this.open = tab === "chat" ? this.open : null;
+			this.route();
+		},
+		async loadTab(tab) {
+			if (tab === "tasks") await Promise.all([this.loadUpcoming(), this.loadSection("prices")]);
+			if (tab === "made") await this.loadMade();
 		},
 
 		openThread(id) {
+			if (id === FEED) return this.goTab("chat");
 			if (this.open?.id === id) return;
+			this.openedFrom = this.historyOpen ? "history" : this.tab;
 			history.pushState({ thread: id }, "", `#t/${id}`);
+			this.tab = "tasks";
 			this.showThread(id);
 		},
 
@@ -538,19 +614,36 @@ function remindme() {
 			if (!quiet) this.scrollMessages();
 		},
 		feedView(data) {
-			const notes = (data.entries || []).map((entry) => ({
-				id: `e-${entry.id}`,
-				role: "assistant",
-				at: entry.at,
-				// The news shows as its stories card; its text stays for Discord and the phone.
-				text: entry.receipts?.length ? "" : entry.embeds?.some((embed) => embed.kind === "stories") ? `**${firstLine(entry.text)}**` : entry.text,
-				receipts: entry.receipts,
-				embeds: entry.embeds,
-				entry,
-				bad: entry.kind === "failed",
-				meta: `${this.timeOf(new Date(entry.at))}${CHANNEL_NOTES[entry.channel] ? ` · ${CHANNEL_NOTES[entry.channel]}` : ""}`,
-			}));
-			const said = (data.thread?.messages || []).filter((message) => message.role !== "step");
+			// A task's news shows above its card; only its newest one offers the answers.
+			const latest = new Map();
+			for (const entry of data.entries || []) if (entry.threadId && (!latest.has(entry.threadId) || entry.at > latest.get(entry.threadId).at)) latest.set(entry.threadId, entry);
+			const notes = (data.entries || []).map((entry) => {
+				const task = entry.threadId ? this.taskOf(entry.threadId) : undefined;
+				const title = task?.title || "";
+				// A task's news comes from the task: its title and cat on top, its options as buttons rather than a list.
+				const said = entry.threadId ? (title && entry.text.startsWith(`${title}: `) ? entry.text.slice(title.length + 2) : entry.text).replace(/(\n• [^\n]*)+\s*$/, "") : entry.text;
+				return {
+					id: `e-${entry.id}`,
+					role: "assistant",
+					at: entry.at,
+					// The news shows as its stories card; its text stays for Discord and the phone.
+					text: entry.receipts?.length ? "" : entry.embeds?.some((embed) => embed.kind === "stories") ? `**${firstLine(entry.text)}**` : said,
+					receipts: entry.receipts,
+					embeds: entry.embeds,
+					entry,
+					from: entry.threadId ? { id: entry.threadId, title: title || "A task", latest: latest.get(entry.threadId) === entry } : undefined,
+					bad: entry.kind === "failed",
+					meta: `${this.timeOf(new Date(entry.at))}${CHANNEL_NOTES[entry.channel] ? ` · ${CHANNEL_NOTES[entry.channel]}` : ""}`,
+				};
+			});
+			// A task an answer started shows as its card, not as a receipt line.
+			const said = (data.thread?.messages || [])
+				.filter((message) => message.role !== "step")
+				.map((message) =>
+					message.receipts?.some((receipt) => receipt.job)
+						? { ...message, receipts: message.receipts.filter((receipt) => !receipt.job), jobs: message.receipts.filter((receipt) => receipt.job).map((receipt) => ({ id: receipt.job, title: receipt.text.replace(/^Started a job: /, "") })) }
+						: message,
+				);
 			const all = [...notes, ...said].sort((a, b) => a.at.localeCompare(b.at));
 			const today = dayKey(this.now);
 			const yesterday = dayKey(new Date(this.now.getTime() - 86_400_000));
@@ -567,7 +660,7 @@ function remindme() {
 				}
 				messages.push(message);
 			}
-			return { id: FEED, feed: true, title: this.assistant.name, createdAt: all[0]?.at || new Date().toISOString(), updatedAt: all.at(-1)?.at || "", messages, model: data.thread?.model };
+			return { id: FEED, feed: true, title: this.assistant.name, createdAt: all[0]?.at || new Date().toISOString(), updatedAt: all.at(-1)?.at || "", messages, model: data.thread?.model, answered: said.some((message) => message.role === "assistant") };
 		},
 		async unfoldFeed() {
 			this.feedFold = false;
@@ -602,7 +695,7 @@ function remindme() {
 		},
 		/* Once a chat has an answer it keeps its AI: only that provider's models are offered. */
 		threadLocked(thread) {
-			return Boolean(thread?.model && thread.messages?.some((message) => message.role === "assistant"));
+			return Boolean(thread?.model && (thread.feed ? thread.answered : thread.messages?.some((message) => message.role === "assistant")));
 		},
 		threadModelGroups(thread) {
 			const groups = this.modelChoices.groups;
@@ -768,122 +861,8 @@ function remindme() {
 			await this.loadSection("prices");
 		},
 
-		/* ── Swiping rows: left to snooze or archive, right to delete ── */
+		/* ── What a change did, and taking it back ───────────────────── */
 
-		/* What a row swipes to: a conversation, a running job or watch, or RemindMe's own thread. */
-		swipeActions(kind, id) {
-			if (kind === "feed") return { left: this.feedRow?.fresh ? ["read"] : [], right: [], full: { left: "read" } };
-			if (kind === "job") return { left: ["snooze", "stop"], right: ["delete"], full: { left: "snooze" } };
-			return { left: ["snooze", "archive"], right: ["delete"], full: { left: "archive", right: "delete" } };
-		},
-		actLabel(act) {
-			return { snooze: "Snooze", archive: "Archive", delete: "Delete", stop: "Stop", read: "Mark read" }[act];
-		},
-		swipeable(element, kind, id) {
-			const face = element.querySelector(".rm-swipe-face");
-			const width = (side) => [...element.querySelectorAll(`.rm-swipe-under.${side} .rm-swipe-act`)].reduce((sum, button) => sum + button.offsetWidth, 0);
-			let start, base = 0, dx = 0, decided = false, sliding = false, acts;
-			const begin = (x, y) => {
-				start = { x, y };
-				acts = this.swipeActions(kind, id);
-				base = element.dataset.state === "left" ? -width("right") : element.dataset.state === "right" ? width("left") : 0;
-				dx = 0;
-				decided = sliding = false;
-			};
-			/* True while the row slides: a sideways drag. Up and down is scrolling and lets go. */
-			const move = (x, y) => {
-				if (!start) return false;
-				const mx = x - start.x;
-				const my = y - start.y;
-				if (!decided) {
-					if (Math.abs(mx) < 8 && Math.abs(my) < 8) return false;
-					decided = true;
-					if (Math.abs(my) > Math.abs(mx)) {
-						start = undefined;
-						return false;
-					}
-					sliding = true;
-					face.style.transition = "none";
-				}
-				dx = mx;
-				// Only towards a side that has actions.
-				const x2 = Math.max(acts.left.length ? -Infinity : 0, Math.min(acts.right.length ? Infinity : 0, base + dx));
-				face.style.transform = `translateX(${x2}px)`;
-				element.dataset.dir = x2 < 0 ? "left" : x2 > 0 ? "right" : "";
-				return true;
-			};
-			const end = () => {
-				if (!start) return;
-				start = undefined;
-				face.style.transition = "";
-				if (!sliding) return;
-				element.dataset.moved = "1";
-				const x = Math.max(acts.left.length ? -Infinity : 0, Math.min(acts.right.length ? Infinity : 0, base + dx));
-				const full = element.offsetWidth * 0.6;
-				this.closeSwipes(element);
-				if (x < -full && acts.full.left) return void this.rowAct(kind, id, acts.full.left);
-				if (x > full && acts.full.right) return void this.rowAct(kind, id, acts.full.right);
-				if (x < -40) Object.assign(element.dataset, { state: "left", dir: "left" }), (face.style.transform = `translateX(-${width("right")}px)`);
-				else if (x > 40) Object.assign(element.dataset, { state: "right", dir: "right" }), (face.style.transform = `translateX(${width("left")}px)`);
-				else this.closeSwipes();
-			};
-			/*
-			 * Touch has its own events: on an iPhone the list would otherwise take
-			 * a sideways drag for itself, whatever touch-action says. Once a drag
-			 * is clearly sideways, the list is told not to scroll.
-			 */
-			face.addEventListener("touchstart", (event) => event.touches.length === 1 && begin(event.touches[0].clientX, event.touches[0].clientY), { passive: true });
-			face.addEventListener(
-				"touchmove",
-				(event) => {
-					if (event.touches.length === 1 && move(event.touches[0].clientX, event.touches[0].clientY) && event.cancelable) event.preventDefault();
-				},
-				{ passive: false },
-			);
-			face.addEventListener("touchend", end);
-			face.addEventListener("touchcancel", end);
-			// A mouse or pen drags with pointer events.
-			face.addEventListener("pointerdown", (event) => {
-				if (event.pointerType !== "touch" && event.button === 0) begin(event.clientX, event.clientY);
-			});
-			face.addEventListener("pointermove", (event) => {
-				if (event.pointerType === "touch" || !move(event.clientX, event.clientY)) return;
-				if (!face.hasPointerCapture(event.pointerId)) face.setPointerCapture(event.pointerId);
-			});
-			face.addEventListener("pointerup", (event) => event.pointerType !== "touch" && end());
-			face.addEventListener("pointercancel", (event) => event.pointerType !== "touch" && end());
-			// A swipe isn't a tap.
-			face.addEventListener(
-				"click",
-				(event) => {
-					if (!element.dataset.moved) return;
-					event.preventDefault();
-					event.stopPropagation();
-					delete element.dataset.moved;
-				},
-				true,
-			);
-		},
-		closeSwipes(except) {
-			for (const element of document.querySelectorAll(".rm-swipe[data-state], .rm-swipe[data-dir]")) {
-				if (element === except) continue;
-				element.querySelector(".rm-swipe-face").style.transform = "";
-				delete element.dataset.state;
-				delete element.dataset.dir;
-			}
-		},
-		get snoozeChoices() {
-			const now = new Date(this.now);
-			const at = (days, hour) => {
-				const date = new Date(now);
-				date.setDate(date.getDate() + days);
-				date.setHours(hour, 0, 0, 0);
-				return date;
-			};
-			const label = (date) => `${date.toLocaleDateString("en-GB", { weekday: "short" })} ${this.timeOf(date)}`;
-			const later = now.getHours() < 17 ? { title: "Later today", at: at(0, 18) } : { title: "In 3 hours", at: new Date(now.getTime() + 3 * 3_600_000) };
-			return [later, { title: "Tomorrow morning", at: at(1, 8) }, { title: "This weekend", at: at((6 - now.getDay() + 7) % 7 || 7, 9) }, { title: "Next week", at: at((1 - now.getDay() + 7) % 7 || 7, 8) }].map((choice) => ({ ...choice, when: label(choice.at) }));
-		},
 		showToast(text, undo) {
 			clearTimeout(this.toastTimer);
 			// Kept off the reactive object: Alpine calls a function an expression hands it.
@@ -898,86 +877,19 @@ function remindme() {
 			await undo?.();
 			await this.loadInbox();
 		},
-		unhide(id) {
-			this.hiddenRows = this.hiddenRows.filter((hidden) => hidden !== id);
-		},
-		async rowAct(kind, id, what) {
-			this.closeSwipes();
-			if (what === "read") {
-				this.feedSeen = Date.now();
-				try {
-					localStorage.setItem("rm-feed-seen", String(this.feedSeen));
-				} catch {
-					/* private browsing */
-				}
-				return;
-			}
-			const title = this.threads.find((thread) => thread.id === id)?.title || "this";
-			const name = title.length > 32 ? `${title.slice(0, 32)}…` : title;
-			if (what === "snooze") {
-				this.snoozeFor = { threadId: id, title };
-				return;
-			}
-			if (what === "stop") {
-				try {
-					await this.request(`./api/threads/${encodeURIComponent(id)}/stop`);
-					this.showToast(`Stopped “${name}”. Reply in it to start it again.`);
-				} catch (error) {
-					this.error = error.message;
-				}
-				return this.loadInbox();
-			}
-			this.hiddenRows = [...this.hiddenRows, id];
-			if (this.open?.id === id) this.closeThread();
-			if (what === "archive") {
-				try {
-					await this.request(`./api/threads/${encodeURIComponent(id)}`, "PATCH", { archived: true });
-					this.showToast(`Archived “${name}”.`, async () => {
-						await this.request(`./api/threads/${encodeURIComponent(id)}`, "PATCH", { archived: false });
-						this.unhide(id);
-					});
-				} catch (error) {
-					this.unhide(id);
-					this.error = error.message;
-				}
-				return this.loadInbox();
-			}
-			// Deleting waits out the undo: only then is it gone for good (a running job stops then too).
-			const timer = setTimeout(async () => {
-				await fetch(`./api/threads/${encodeURIComponent(id)}`, { method: "DELETE" }).catch(() => {});
-				this.unhide(id);
-				await this.loadInbox();
-			}, 5_500);
-			this.showToast(`Deleted “${name}”.`, () => {
-				clearTimeout(timer);
-				this.unhide(id);
-			});
-		},
-		async chooseSnooze(choice) {
-			const item = this.snoozeFor;
-			this.snoozeFor = null;
-			if (!item) return;
-			const id = item.threadId;
-			try {
-				await this.request(`./api/threads/${encodeURIComponent(id)}`, "PATCH", { snoozedUntil: choice.at.toISOString() });
-				if (this.open?.id === id) this.closeThread();
-				this.showToast(`Snoozed until ${choice.when}.`, () => this.request(`./api/threads/${encodeURIComponent(id)}`, "PATCH", { snoozedUntil: null }));
-			} catch (error) {
-				this.error = error.message;
-			}
-			await this.loadInbox();
-		},
 		async unarchive(thread) {
 			await this.request(`./api/threads/${encodeURIComponent(thread.id)}`, "PATCH", { archived: false }).catch((error) => (this.error = error.message));
 			if (this.open?.id === thread.id) this.open = { ...this.open, archivedAt: undefined };
 			await this.loadInbox();
 		},
 
+		/* Back from a task's page: to where it was opened from. */
 		closeThread() {
 			if (history.state?.thread) history.back();
 			else {
-				if (location.hash) history.replaceState(null, "", location.pathname + location.search);
+				history.replaceState(null, "", this.openedFrom === "chat" ? location.pathname + location.search : "#tasks");
 				this.open = null;
+				this.route();
 			}
 		},
 
@@ -1000,11 +912,10 @@ function remindme() {
 		threadLine(thread) {
 			if (thread.readOnly) return thread.meta;
 			if (thread.feed) return "Your chat, and what it did on its own";
-			if (thread.archivedAt) return `Archived · started ${this.formatWhen(thread.createdAt)}`;
-			const job = thread.job;
-			if (!job) return `Started ${this.formatWhen(thread.createdAt)}`;
-			const progress = job.progress ? ` · ${job.progress.done} of ${job.progress.total}` : "";
-			return `Job · ${JOB_WORDS[job.status] || job.status}${progress} · started ${this.formatWhen(thread.createdAt)}`;
+			const model = thread.model ? `${this.modelName(thread.model)}, ` : "";
+			if (thread.archivedAt) return `Archived, started ${this.formatWhen(thread.createdAt)}`;
+			if (!thread.job) return `${model}started ${this.formatWhen(thread.createdAt)}`;
+			return `${this.taskState(thread)}. ${model}started ${this.formatWhen(thread.createdAt)}`;
 		},
 
 		isRunning(thread) {
@@ -1049,28 +960,16 @@ function remindme() {
 			event.target.value = "";
 		},
 
-		/* A new request from the inbox: it opens a thread of its own. */
+		/* A message in the chat, with its pictures. Work that takes a while comes back as a task's card. */
 		async send() {
 			const text = this.draft.trim();
-			if ((!text && !this.pictures.length) || this.sending) return;
+			if ((!text && !this.pictures.length) || this.sending || !this.open?.feed) return;
 			const attachments = this.pictures;
 			this.draft = "";
 			this.pictures = [];
-			// To the assistant's chat, which opens to show the answer; or a thread of its own.
-			if (this.toMain) {
-				if (this.open?.id !== FEED) {
-					history.pushState({ thread: FEED }, "", `#t/${FEED}`);
-					await this.showFeed();
-				}
-				const at = new Date().toISOString();
-				this.open.messages = [...this.open.messages, { id: `local-${Date.now()}`, role: "user", at, text: text || "(picture)" }];
-				await this.stream(`./api/threads/${FEED}/messages`, { message: text, attachments }, false);
-				return;
-			}
-			const model = this.modelOf(this.newModel);
-			this.newModel = "";
-			this.toMain = this.phoneLayout;
-			await this.stream("./api/threads", { message: text, attachments, ...(model ? { model } : {}) }, true);
+			const at = new Date().toISOString();
+			this.open.messages = [...this.open.messages, { id: `local-${Date.now()}`, role: "user", at, text: text || "(picture)" }];
+			await this.stream(`./api/threads/${FEED}/messages`, { message: text, attachments }, false);
 		},
 
 		async reply() {
@@ -1157,7 +1056,8 @@ function remindme() {
 				this.streaming = null;
 				if (threadId && (!this.open || this.open.id === threadId)) await this.showThread(threadId);
 				await this.loadInbox();
-				if (fresh) this.$nextTick(() => this.$refs.ask?.focus());
+				// A task the answer started has its card now; draw the chat again with it.
+				if (this.open?.feed) await this.showFeed(true);
 			}
 		},
 
@@ -1224,9 +1124,48 @@ function remindme() {
 
 		/* ── History: the ledger ─────────────────────────────────────── */
 
-		async openHistory() {
+		async openHistory(filter) {
+			if (filter) this.filter = filter;
 			this.historyOpen = true;
 			await this.loadHistory();
+		},
+		/* ── Made: what it wrote, and what it remembers ─────────────── */
+
+		async loadMade() {
+			const [documents, notes, memory] = await Promise.all([this.getJson("./api/artifacts", []), this.getJson("./api/vault?tag=memory", []), this.getJson("./api/memory", { learn: true, facts: [] })]);
+			this.documents = documents.sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)));
+			this.notes = notes;
+			this.memory = memory;
+			this.madeLoaded = true;
+		},
+		get madeChips() {
+			return [
+				{ id: "all", label: "All" },
+				{ id: "doc", label: "Documents" },
+				{ id: "note", label: "Remembered" },
+			];
+		},
+		get madeItems() {
+			const kinds = { html: "Page", svg: "Picture", markdown: "Document", code: "Code", glsl: "Shader", wgsl: "Shader", three: "3D scene", lua: "Script" };
+			const items = [
+				...this.documents.map((doc) => ({ key: `d-${doc.id}`, kind: "doc", at: doc.updatedAt, title: doc.title, text: doc.snippet || "", when: `${kinds[doc.kind] || "Document"}, ${this.dateWhen(doc.updatedAt)}`, href: `./api/artifacts/${encodeURIComponent(doc.id)}/document` })),
+				...this.notes.map((note) => ({ key: `n-${note.path}`, kind: "note", at: note.updatedAt, title: note.title, text: note.snippet || "", when: `Saved ${this.dateWhen(note.updatedAt)}` })),
+				...(this.memory.facts || []).map((fact) => ({ key: `f-${fact.id}`, kind: "note", at: fact.at, title: fact.text, text: "", when: `${fact.source === "you" ? "Added by you" : "Learned"} ${this.dateWhen(fact.at)}` })),
+			];
+			return items.filter((item) => this.madeFilter === "all" || item.kind === this.madeFilter).sort((a, b) => String(b.at || "").localeCompare(String(a.at || "")));
+		},
+		get madeEmpty() {
+			if (this.madeFilter === "doc") return `No documents yet. Ask ${this.assistant.name} to write one, such as a packing list or a comparison.`;
+			if (this.madeFilter === "note") return `Nothing remembered yet. Tell ${this.assistant.name} "remember that…", or add something under Settings, Memory.`;
+			return `Nothing yet. What ${this.assistant.name} writes for you and what it remembers shows up here.`;
+		},
+
+		/* What's coming up, for the Tasks tab: the same list History has. */
+		async loadUpcoming() {
+			const data = await this.getJson("./api/ledger", null);
+			if (!data) return;
+			this.upcoming = data.upcoming || [];
+			this.entries = data.entries || [];
 		},
 
 		async loadHistory() {

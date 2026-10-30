@@ -189,7 +189,8 @@ test("start_job hands work off with the turn's thread; job tools exist only insi
 	assert.equal(JSON.parse(result.content).started, true);
 	// The request goes along; it's used only when the job gets a thread of its own (from the main chat).
 	assert.deepEqual(started[0], { title: "Flights to Budapest", instructions: "Cheapest, March", threadId: "t9", origin: "console", request: "find flights" });
-	assert.deepEqual(effects.did, [{ text: "Started a job: Flights to Budapest" }]);
+	// The receipt names the job's thread, so the chat shows the job's card.
+	assert.deepEqual(effects.did, [{ text: "Started a job: Flights to Budapest", job: "j1" }]);
 	assert.equal((await runTool(tools, { id: "2", name: "reply_to_job", input: { id: "nope", answer: "Friday" } }, newEffects())).isError, true);
 
 	const fromDiscord = await buildTools({ ...base, jobs: jobs as ToolContext["jobs"], turn: { channel: "discord", prompt: "sort my receipts" } }, { nativeWebSearch: true });

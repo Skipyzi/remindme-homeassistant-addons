@@ -131,12 +131,12 @@ async function main() {
 	// Price drops, the daily news and new posts go where the other nudges go: Discord, the phone and the RemindMe thread.
 	setOwnerNotifier((text, extra) => notify(text, extra?.what || "price", extra));
 	// A job's question or result comes as a DM card titled with the job; reply there or in the console.
-	// The phone gets it on its own (with the job's cat and buttons); Discord only when wanted.
+	// The main chat and the phone get it on their own (with the job's cat and buttons); Discord only when wanted.
 	setJobNotifier(async (thread, text) => {
 		const discord = toDiscord();
 		if (!discord) return;
 		const sent = await discord.send(`${text}\n\n_Reply here or in the RemindMe console._`, { title: thread.title });
-		activity.add(sent ? { kind: "sent", channel: "job", text: `${thread.title}: ${text}` } : { kind: "failed", channel: "job", text: `Couldn't send this on Discord: ${thread.title}: ${text}` });
+		if (!sent) activity.add({ kind: "failed", channel: "job", text: `Couldn't send this on Discord: ${thread.title}: ${text}` });
 	});
 	// The brief and nudges run with or without Discord: the phone and the RemindMe chat get them.
 	proactive.start();
