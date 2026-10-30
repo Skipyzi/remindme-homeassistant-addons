@@ -59,3 +59,29 @@ test("a phone that doesn't answer leaves the last report, said as old", async ()
 	const none = await new UserLocation({ read: async () => undefined }).locate();
 	assert.equal(none, undefined);
 });
+
+test("find_place searches a kind of place around the user when asked for near me", async () => {
+	const { buildTools, newEffects, runTool } = await import("../src/assistant/tools.ts");
+	const { ConfirmationStore } = await import("../src/assistant/confirmations.ts");
+	const asked: Array<{ kind: string; around?: { lat: number; lon: number }; speciality?: string }> = [];
+	const place = { name: "Praxis für Kieferorthopädie", lat: 51.3375, lon: 12.3672, address: "Beethovenstraße 8, 04107 Leipzig", away: 935, from: "you" as const, speciality: "orthodontics" };
+	const tools = await buildTools(
+		{
+			confirmations: new ConfirmationStore(),
+			reminders: { add: async () => ({ id: "r" }), list: async () => [], cancel: async () => false },
+			places: {
+				find: async () => [],
+				nearby: async (kind, options) => (asked.push({ kind, ...options }), { places: [place], km: 1.5, from: options.around ? ("you" as const) : ("home" as const) }),
+			},
+			location: { locate: async () => ({ where: "away", lat: 51.3397, lon: 12.3731, fresh: true }) },
+		},
+		{ nativeWebSearch: true },
+	);
+	const result = await runTool(tools, { id: "1", name: "find_place", input: { kind: "orthodontist", near_user: true } }, newEffects());
+	const data = JSON.parse(result.content);
+	assert.deepEqual(asked[0], { kind: "orthodontist", around: { lat: 51.3397, lon: 12.3731 }, speciality: undefined });
+	assert.equal(data.searched, "Searched within 1.5 km of the user, closest first.");
+	assert.equal(data.places[0].metres_from_user, 935);
+	assert.equal(data.places[0].speciality, "orthodontics");
+	assert.ok(tools.find((tool) => tool.spec.name === "user_location"), "where the user is can be looked up");
+});

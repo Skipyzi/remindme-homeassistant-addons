@@ -101,7 +101,75 @@ export interface Place {
 	away?: number;
 	/** What `away` is measured from. */
 	from?: "home" | "you";
+	/** A doctor's or dentist's speciality, as OpenStreetMap has it ("orthodontics"). */
+	speciality?: string;
 }
+
+/*
+ * Kinds of place a nearby search knows: the words Nominatim maps to
+ * OpenStreetMap's tags, and the tags a result must have.
+ */
+interface Kind {
+	phrase: string;
+	tags: Array<[string, string]>;
+	speciality?: string;
+}
+export const KINDS: Record<string, Kind> = {
+	doctor: { phrase: "doctors", tags: [["amenity", "doctors"], ["healthcare", "doctor"]] },
+	dentist: { phrase: "dentist", tags: [["amenity", "dentist"], ["healthcare", "dentist"]] },
+	orthodontist: { phrase: "dentist", tags: [["amenity", "dentist"], ["healthcare", "dentist"]], speciality: "orthodontics" },
+	pharmacy: { phrase: "pharmacy", tags: [["amenity", "pharmacy"], ["healthcare", "pharmacy"]] },
+	hospital: { phrase: "hospital", tags: [["amenity", "hospital"], ["healthcare", "hospital"]] },
+	vet: { phrase: "veterinary", tags: [["amenity", "veterinary"]] },
+	physiotherapist: { phrase: "physiotherapist", tags: [["healthcare", "physiotherapist"]] },
+	supermarket: { phrase: "supermarket", tags: [["shop", "supermarket"]] },
+	bakery: { phrase: "bakery", tags: [["shop", "bakery"]] },
+	drugstore: { phrase: "chemist", tags: [["shop", "chemist"]] },
+	cafe: { phrase: "cafe", tags: [["amenity", "cafe"]] },
+	restaurant: { phrase: "restaurant", tags: [["amenity", "restaurant"]] },
+	atm: { phrase: "atm", tags: [["amenity", "atm"]] },
+	bank: { phrase: "bank", tags: [["amenity", "bank"]] },
+	fuel: { phrase: "fuel", tags: [["amenity", "fuel"]] },
+	charging_station: { phrase: "charging station", tags: [["amenity", "charging_station"]] },
+	post_office: { phrase: "post office", tags: [["amenity", "post_office"]] },
+	hairdresser: { phrase: "hairdresser", tags: [["shop", "hairdresser"]] },
+};
+
+/*
+ * Specialities, as the model may ask for them (`ask`), as OpenStreetMap and
+ * German practice names write them (`match`), and the name words to search
+ * for, since many practices only say it in their name ("Kieferorthopädie …").
+ */
+const SPECIALITIES: Record<string, { ask: RegExp; match: RegExp; words: string[] }> = {
+	orthodontics: { ask: /orthodont|kieferorthop|braces/i, match: /orthodont|kieferorthop/i, words: ["Kieferorthopädie", "Kieferorthopäde"] },
+	paediatrics: { ask: /paediatr|pediatr|child|kid|kinder/i, match: /paediatr|pediatr|kinderarzt|kinderärzt|kinder- und jugend/i, words: ["Kinderarzt", "Kinderärztin"] },
+	general: { ask: /general|family|\bgp\b|hausarzt|allgemein/i, match: /general|allgemeinmed|hausarzt|hausärzt/i, words: ["Hausarzt", "Allgemeinmedizin"] },
+	dermatology: { ask: /dermat|skin|haut/i, match: /dermatolog|hautarzt|hautärzt/i, words: ["Hautarzt", "Dermatologie"] },
+	gynaecology: { ask: /gyn|women|frauen/i, match: /gyn|frauenarzt|frauenärzt/i, words: ["Frauenarzt", "Gynäkologie"] },
+	ophthalmology: { ask: /ophthalm|\beye|augen/i, match: /ophthalm|augenarzt|augenärzt|augenheilk/i, words: ["Augenarzt", "Augenheilkunde"] },
+	orthopaedics: { ask: /^(?!.*(dont|kiefer)).*orthop/i, match: /(?<!kiefer)orthop(ae|ä|e)d/i, words: ["Orthopäde", "Orthopädie"] },
+	otolaryngology: { ask: /otolaryng|\bent\b|\bear|throat|\bhno\b/i, match: /otolaryng|\bhno\b|hals-nasen/i, words: ["HNO"] },
+	internal: { ask: /internal|internist|innere/i, match: /internal|innere med|internist/i, words: ["Internist", "Innere Medizin"] },
+	psychiatry: { ask: /psychiat/i, match: /psychiat/i, words: ["Psychiatrie"] },
+	psychotherapy: { ask: /psychotherap|therapist/i, match: /psychotherap/i, words: ["Psychotherapie"] },
+	neurology: { ask: /neurolog/i, match: /neurolog/i, words: ["Neurologie"] },
+	cardiology: { ask: /cardio|kardio|heart/i, match: /cardiolog|kardiolog/i, words: ["Kardiologie"] },
+	urology: { ask: /urolog/i, match: /urolog/i, words: ["Urologie"] },
+	radiology: { ask: /radiolog|x-ray|mrt|mri/i, match: /radiolog/i, words: ["Radiologie"] },
+	oral_surgery: { ask: /oral|kieferchirurg|wisdom/i, match: /oral|mund-|kieferchirurg/i, words: ["Kieferchirurgie", "Oralchirurgie"] },
+};
+
+/** The speciality a request means, as one of ours, or the request's own words when we don't know it. */
+export function specialityOf(asked: string | undefined): { key?: string; match: RegExp; words: string[] } | undefined {
+	const text = (asked || "").trim();
+	if (!text) return undefined;
+	for (const [key, entry] of Object.entries(SPECIALITIES)) if (entry.ask.test(text) || key === text.toLowerCase()) return { key, match: entry.match, words: entry.words };
+	const escaped = text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+	return { match: new RegExp(escaped, "i"), words: [text] };
+}
+
+/* Search boxes, smallest first: kilometres from the middle to the edge. */
+const RINGS_KM = [1.5, 4, 10, 25];
 
 interface NominatimHit {
 	lat: string;
@@ -187,6 +255,64 @@ export class PlaceSearch {
 		// Places, not the streets and districts that share a word with them ("Saturnstraße" for Saturn).
 		const places = (Array.isArray(hits) ? hits : []).filter((hit) => !["highway", "boundary", "landuse", "natural", "waterway"].includes(String(hit.category)));
 		return places.map((hit) => placeFrom(hit, now, home, around ? "you" : "home"));
+	}
+
+	/**
+	 * Places of a kind around the user (or home), closest first. Nominatim
+	 * searches the kind's phrase, and a speciality's name words, inside a box
+	 * that grows until a few turn up; results outside the circle are dropped.
+	 */
+	async nearby(kind: string, options: { around?: { lat: number; lon: number }; speciality?: string; now?: Date; limit?: number } = {}): Promise<{ places: Place[]; km: number; from: "home" | "you" } | undefined> {
+		const entry = KINDS[kind];
+		if (!entry) throw new Error(`I can't search for "${kind}" nearby. Kinds: ${Object.keys(KINDS).join(", ")}.`);
+		const center = options.around || (await this.options.home?.().catch(() => undefined));
+		if (!center) return undefined;
+		const from = options.around ? "you" : "home";
+		const speciality = specialityOf(options.speciality || entry.speciality);
+		const queries = [entry.phrase, ...(speciality?.words || [])];
+		const wanted = (hit: NominatimHit) => {
+			const tags = hit.extratags || {};
+			const isKind = entry.tags.some(([key, value]) => (hit.category === key && hit.type === value) || tags[key] === value);
+			const text = `${tags["healthcare:speciality"] || ""} ${hit.name || ""} ${tags.description || ""}`;
+			if (!speciality) return isKind;
+			// A practice found by its name ("Kieferorthopädie Lindenau") counts even when it's tagged as something near enough.
+			return speciality.match.test(text) && (isKind || ["amenity", "healthcare", "office"].includes(String(hit.category)));
+		};
+		const found: Place[] = [];
+		// The same practice can come back from two searches, or as a building and a point inside it.
+		const seen = (place: Place) => found.some((other) => other.name.toLowerCase() === place.name.toLowerCase() && distance(other, place) < 150);
+		let km = RINGS_KM[0];
+		for (km of RINGS_KM) {
+			const dLat = km / 111;
+			const dLon = km / (111 * Math.cos((center.lat * Math.PI) / 180));
+			for (const query of queries) {
+				const url = this.searchUrl(query);
+				url.searchParams.set("limit", "40");
+				url.searchParams.set("bounded", "1");
+				url.searchParams.set("viewbox", [center.lon - dLon, center.lat + dLat, center.lon + dLon, center.lat - dLat].map((value) => value.toFixed(4)).join(","));
+				const hits = await this.get<NominatimHit[]>(url).catch(() => [] as NominatimHit[]);
+				for (const hit of Array.isArray(hits) ? hits : []) {
+					if (!wanted(hit)) continue;
+					const place = placeFrom(hit, options.now || new Date(), center, from);
+					const tagged = hit.extratags?.["healthcare:speciality"];
+					if (place.away !== undefined && place.away <= km * 1000 && !seen(place)) found.push({ ...place, ...(tagged ? { speciality: tagged.replace(/;/g, ", ") } : {}) });
+				}
+			}
+			if (found.length >= 3) break;
+		}
+		const places = found.sort((a, b) => (a.away ?? 0) - (b.away ?? 0)).slice(0, options.limit ?? 5);
+		return { places, km, from };
+	}
+
+	private searchUrl(query: string): URL {
+		const url = new URL(this.options.endpoint || "https://nominatim.openstreetmap.org/search");
+		url.searchParams.set("q", query);
+		url.searchParams.set("format", "jsonv2");
+		url.searchParams.set("addressdetails", "1");
+		url.searchParams.set("extratags", "1");
+		url.searchParams.set("namedetails", "1");
+		url.searchParams.set("accept-language", "en");
+		return url;
 	}
 
 	/** The address at a spot: "Riebeckstraße 12, Reudnitz-Thonberg, 04317 Leipzig". */

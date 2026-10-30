@@ -2316,7 +2316,7 @@ export function toolContext(): ToolContext {
 			const page = await readablePage(url);
 			return { title: page.title, url: page.finalUrl, text: page.text, ...page.preview };
 		},
-		places: { find: (query, around) => placeSearch.find(query, new Date(), around) },
+		places: { find: (query, around) => placeSearch.find(query, new Date(), around), nearby: (kind, options) => placeSearch.nearby(kind, options) },
 		location: { locate: () => userLocation.locate() },
 		parcels: parcelTracking()
 			? {

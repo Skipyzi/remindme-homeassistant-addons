@@ -162,3 +162,33 @@ test("a thread keeps a message's cards, even a message that is only cards", asyn
 	store.append(thread.id, { role: "assistant", text: "", embeds: [article] });
 	assert.deepEqual(store.get(thread.id)?.messages.map((message) => message.embeds?.[0]?.kind), ["offers", "article"]);
 });
+
+test("nearby: a kind of place around the user, closest first, widening only until a few turn up", async () => {
+	const asked: URL[] = [];
+	const at = (lat: number, lon: number, name: string, extra: Record<string, unknown> = {}) => ({ lat: String(lat), lon: String(lon), name, category: "amenity", type: "dentist", address: { road: "Beethovenstraße", house_number: "8", postcode: "04107", city: "Leipzig" }, extratags: {}, ...extra });
+	const search = new PlaceSearch({
+		spacingMs: 0,
+		fetch: async (input) => {
+			const url = new URL(String(input));
+			asked.push(url);
+			const wide = Number(url.searchParams.get("viewbox")!.split(",")[2]) - 12.37 > 0.05;
+			const hits =
+				url.searchParams.get("q") === "dentist"
+					? [at(51.341, 12.372, "Zahnarztpraxis Mitte"), ...(wide ? [at(51.36, 12.40, "Zahnärzte Nord", { extratags: { "healthcare:speciality": "dentist;orthodontics" } })] : [])]
+					: wide
+						? [at(51.3605, 12.4, "Zahnärzte Nord", { extratags: { "healthcare:speciality": "dentist;orthodontics" } }), at(51.33, 12.35, "Kieferorthopädie Lindenau", { category: "healthcare", type: "dentist" }), at(51.31, 12.36, "Kieferorthopädie Süd")]
+						: [at(51.42, 12.37, "Kieferorthopädie Outside The Circle")];
+			return new Response(JSON.stringify(hits), { headers: { "Content-Type": "application/json" } });
+		},
+	});
+	const near = (await search.nearby("orthodontist", { around: { lat: 51.34, lon: 12.37 } }))!;
+	assert.equal(near.from, "you");
+	assert.equal(near.km, 4, "1.5 km had none, 4 km had three");
+	assert.deepEqual(near.places.map((place) => place.name), ["Kieferorthopädie Lindenau", "Zahnärzte Nord", "Kieferorthopädie Süd"]);
+	assert.ok(near.places.every((place, index, all) => index === 0 || (all[index - 1].away ?? 0) <= (place.away ?? 0)), "closest first");
+	assert.equal(near.places[1].speciality, "dentist, orthodontics");
+	assert.ok(!near.places.some((place) => /General|Mitte|Outside/.test(place.name)), "plain dentists and places outside the circle are left out");
+	assert.equal(asked[0].searchParams.get("bounded"), "1");
+	assert.deepEqual([...new Set(asked.map((url) => url.searchParams.get("q")))], ["dentist", "Kieferorthopädie", "Kieferorthopäde"]);
+	await assert.rejects(search.nearby("spaceport", { around: { lat: 51.34, lon: 12.37 } }), /can't search for "spaceport"/);
+});

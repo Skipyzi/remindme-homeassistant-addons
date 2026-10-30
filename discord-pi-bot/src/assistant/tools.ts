@@ -18,7 +18,7 @@ import { euro, type PriceOffer, type PriceWatch, type SearchResult } from "./pri
 import type { FeedItem, NewsItem, Region } from "./news";
 import { addEmbed, takeEmbeds, type Embed } from "./embeds";
 import type { Located } from "./location";
-import { placeEmbed, type Place } from "./places";
+import { KINDS, placeEmbed, type Place } from "./places";
 import { placeWhen, type PlaceEvent, type PlaceReminder } from "./placeReminders";
 import { RULES, deviceRule, turnedOff, type RuleChoice, type RuleId } from "./rules";
 import { BrowserRefused, describe, judge, type WebBrowser } from "../harness/browser";
@@ -74,7 +74,11 @@ export interface ToolContext {
 	/** The last day's headlines from the news sources chosen under Settings → News. */
 	news?: { headlines(): Promise<{ items: NewsItem[]; problems: string[] }> };
 	/** Places from OpenStreetMap, near home, or near the user when `around` is where they are. */
-	places?: { find(query: string, around?: { lat: number; lon: number }): Promise<Place[]> };
+	places?: {
+		find(query: string, around?: { lat: number; lon: number }): Promise<Place[]>;
+		/** Places of a kind around the user (or home), closest first, in the smallest circle that has a few. */
+		nearby?(kind: string, options: { around?: { lat: number; lon: number }; speciality?: string }): Promise<{ places: Place[]; km: number; from: "home" | "you" } | undefined>;
+	};
 	/** Where the user is, from their phone in Home Assistant; asks the phone when the last report is old. */
 	location?: { locate(): Promise<Located | undefined> };
 	/** What the user lets it do on its own, per kind of action (Settings → What it may do). */
@@ -925,15 +929,16 @@ function placeTools(ctx: ToolContext): AssistantTool[] {
 		{
 			spec: {
 				name: "find_place",
-				description:
-					"Find a shop, pharmacy, restaurant, station or other place on OpenStreetMap, near home unless the query names a town (or near_user is set): its address, opening hours and whether it's open now, distance, phone and website. Search by the kind of place and the area (\"pharmacy near Leipzig Hauptbahnhof\", \"Rewe Leipzig Gohlis\", \"Apotheke am Markt Leipzig\"): a chain's name alone can miss. Show the one that matters as a card, with its map and Directions.",
-				parameters: object(
-					{
-						query: { type: "string", description: "The kind of place and where, such as: pharmacy Leipzig Gohlis. With near_user, just the kind: pharmacy." },
-						...(ctx.location ? { near_user: { type: "boolean", description: "Search around where the user is now (from their phone) instead of around home: for \"near me\" or \"around here\"." } } : {}),
-					},
-					["query"],
-				),
+				description: `Find places on OpenStreetMap with their address, opening hours and whether they're open now, distance, phone and website. Two ways:
+- A kind of place near the user or home (a doctor, a dentist, an orthodontist, a pharmacy, a supermarket…): pass kind, and speciality for a doctor or dentist; set near_user for "near me" or "around here". It searches the map around them, closest first, widening up to 25 km, so the results really are the nearest.
+- A named place, or a place in a named town ("Rewe Leipzig Gohlis", "Apotheke am Markt Leipzig", "pharmacy near Leipzig Hauptbahnhof"): pass query. A chain's name alone can miss.
+Show the one or two that matter as cards, with their map and Directions. Never offer a far-away place as nearby: if the nearest is far, say so.`,
+				parameters: object({
+					...(places.nearby ? { kind: { type: "string", enum: Object.keys(KINDS), description: "The kind of place, for a search around the user or home." } } : {}),
+					...(places.nearby ? { speciality: { type: "string", description: "For a doctor or dentist: the speciality in plain words, such as paediatrics, eye doctor, dermatology, orthodontics, ENT, general practitioner." } } : {}),
+					query: { type: "string", description: "Instead of kind: the place's name or kind, and where, such as: pharmacy Leipzig Gohlis." },
+					...(ctx.location ? { near_user: { type: "boolean", description: "Search around where the user is now (from their phone) instead of around home: for \"near me\" or \"around here\"." } } : {}),
+				}),
 			},
 			async run(input, effects) {
 				let around: { lat: number; lon: number } | undefined;
@@ -942,10 +947,24 @@ function placeTools(ctx: ToolContext): AssistantTool[] {
 					if (here?.lat !== undefined && here.lon !== undefined) around = { lat: here.lat, lon: here.lon };
 					else return { content: "Home Assistant doesn't know where the user is right now, so search near home or ask them where they are.", isError: true };
 				}
-				const found = await places.find(text(input, "query", 200), around);
+				const kind = text(input, "kind", 40, false);
+				let found: Place[];
+				let searched: string | undefined;
+				if (kind && places.nearby) {
+					const near = await places.nearby(kind, { around, speciality: text(input, "speciality", 80, false) || undefined });
+					if (!near) return { content: "Home Assistant doesn't know where home is, so there's nothing to search around. Pass a query with the town instead.", isError: true };
+					found = near.places;
+					searched = `Searched within ${near.km} km of ${near.from === "you" ? "the user" : "home"}, closest first.`;
+					if (!found.length) return { content: `Nothing of that kind on OpenStreetMap within ${near.km} km of ${near.from === "you" ? "the user" : "home"}. Say so; don't offer something far away.` };
+				} else {
+					const query = text(input, "query", 200, false);
+					if (!query) return { content: "Pass a kind of place or a query.", isError: true };
+					found = await places.find(query, around);
+				}
 				if (!found.length) return { content: "OpenStreetMap has nothing for that. Try the place's name and town." };
 				return {
 					content: json({
+						...(searched ? { searched } : {}),
 						places: found.map((place) => ({
 							card: addEmbed(effects, placeEmbed(place)),
 							name: place.name,
@@ -954,6 +973,7 @@ function placeTools(ctx: ToolContext): AssistantTool[] {
 							...(place.status ? { now: place.status.text } : {}),
 							...(place.hours ? { hours: place.hours } : {}),
 							...(place.away !== undefined ? { [place.from === "you" ? "metres_from_user" : "metres_from_home"]: place.away } : {}),
+							...(place.speciality ? { speciality: place.speciality } : {}),
 							...(place.phone ? { phone: place.phone } : {}),
 							...(place.website ? { website: place.website } : {}),
 						})),
