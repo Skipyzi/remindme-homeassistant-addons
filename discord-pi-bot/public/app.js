@@ -17,6 +17,8 @@ const KIND_LABELS = {
 
 /* RemindMe's own thread: what it sent and did on its own, and the replies to it. */
 const FEED = "remindme";
+/* The recording or recogniser running now; kept out of Alpine's state, which would wrap and call into it. */
+let dictating = null;
 const storedNumber = (key) => {
 	try {
 		return Number(localStorage.getItem(key)) || 0;
@@ -156,6 +158,16 @@ function remindme() {
 		toMain: window.matchMedia("(max-width: 820px)").matches,
 		identity: { name: "", look: { coat: 0, accessory: 0 } },
 		identityNote: "",
+		/* Dictation: Home Assistant's speech-to-text on the Pi, or the browser's own */
+		dictation: { entity: null, name: "", languages: [], hint: "" },
+		dictationLang: (() => {
+			try {
+				return localStorage.getItem("rm-dictation-lang") || navigator.language || "en";
+			} catch {
+				return navigator.language || "en";
+			}
+		})(),
+		listening: null,
 		/* What it may do on its own, per kind of action */
 		rules: [],
 		rulesNote: "",
@@ -263,6 +275,7 @@ function remindme() {
 			});
 			this.loadInbox();
 			this.loadModelChoices();
+			this.loadDictation();
 			this.route();
 			window.addEventListener("popstate", () => this.route());
 			// A tapped notification opens its thread by changing the address.
@@ -1337,7 +1350,7 @@ function remindme() {
 			if (tab === "prices") this.priceWatches = await this.getJson("./api/prices", []);
 			if (tab === "news") this.news = await this.getJson("./api/news", this.news);
 			if (tab === "connectors") await this.loadConnectors();
-			if (tab === "phone") await this.loadPhone();
+			if (tab === "phone") await Promise.all([this.loadPhone(), this.loadDictation()]);
 			if (tab === "memory") this.memory = await this.getJson("./api/memory", { learn: true, facts: [] });
 			if (tab === "documents") this.documents = (await this.getJson("./api/artifacts", [])).sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)));
 		},
@@ -1743,6 +1756,90 @@ function remindme() {
 			}
 			this.pollPhone();
 		},
+		/* ── Dictation ─────────────────────────────────────────────────── */
+
+		async loadDictation() {
+			this.dictation = { entity: null, name: "", languages: [], hint: "", ...(await this.getJson("./api/dictation", {})) };
+		},
+		get canDictate() {
+			const tools = window.RemindMeDictation;
+			return Boolean(tools && ((this.dictation.entity && tools.canRecord()) || tools.browserCan));
+		},
+		/* The language asked for: the one picked here, or the closest the Pi's engine has. */
+		get dictationPicked() {
+			const languages = this.dictation.languages;
+			const wanted = this.dictationLang.toLowerCase();
+			return languages.find((language) => language.toLowerCase() === wanted) || languages.find((language) => language.toLowerCase().split("-")[0] === wanted.split("-")[0]) || languages[0] || this.dictationLang;
+		},
+		get dictationLine() {
+			const tools = window.RemindMeDictation;
+			if (this.dictation.entity && tools?.canRecord()) return `The microphone button by the text box records you, and ${this.dictation.name} in Home Assistant writes it down on the Pi. The words land in the box for you to read before sending.`;
+			if (this.dictation.entity) return `${this.dictation.name} in Home Assistant can write down what you say, but this page can't use the microphone: open RemindMe over its https address (the phone app) instead.`;
+			const browser = tools?.browserCan ? " Until then, the microphone button uses this browser's own speech recognition, which sends your voice to Apple or Google." : "";
+			return `${this.dictation.hint || "For dictation on the Pi, add the Whisper app and its Wyoming integration in Home Assistant."}${browser}`;
+		},
+		chooseDictationLanguage(language) {
+			this.dictationLang = language;
+			try {
+				localStorage.setItem("rm-dictation-lang", language);
+			} catch {
+				/* private browsing: it's asked again next time */
+			}
+		},
+		async toggleDictation(target) {
+			if (this.listening) return this.finishDictation();
+			const tools = window.RemindMeDictation;
+			if (!tools) return;
+			const field = target === "reply" ? "replyDraft" : "draft";
+			const before = this[field].trim();
+			const put = (words) => {
+				this[field] = [before, words].filter(Boolean).join(" ");
+			};
+			const since = Date.now();
+			const tick = setInterval(() => {
+				if (this.listening) this.listening.seconds = Math.round((Date.now() - since) / 1000);
+			}, 500);
+			const done = () => {
+				clearInterval(tick);
+				dictating = null;
+				this.listening = null;
+				this.$nextTick(() => (target === "reply" ? this.$refs.reply : this.$refs.ask)?.focus());
+			};
+			try {
+				if (this.dictation.entity && tools.canRecord()) {
+					const recorder = await tools.record(() => this.finishDictation());
+					dictating = { mode: "pi", recorder, put, done };
+				} else {
+					const session = tools.listen(this.dictationPicked, put);
+					dictating = { mode: "browser", session, put, done };
+					session.done.then(put, (error) => (this.error = error.message)).finally(() => dictating?.session === session && done());
+				}
+				this.listening = { target, seconds: 0, busy: false };
+			} catch (error) {
+				done();
+				this.error = error?.name === "NotAllowedError" ? "The microphone isn't allowed for RemindMe. Allow it in the phone's or browser's settings, then try again." : error?.message || String(error);
+			}
+		},
+		async finishDictation() {
+			const running = dictating;
+			if (!running || this.listening?.busy) return;
+			if (running.mode === "browser") return running.session.stop();
+			this.listening.busy = true;
+			const pcm = running.recorder.stop();
+			try {
+				if (pcm.length < window.RemindMeDictation.RATE * 0.4) throw new Error("That was too short to make out. Tap the microphone, speak, then tap it again.");
+				const response = await fetch(`./api/dictation?language=${encodeURIComponent(this.dictationPicked)}`, { method: "POST", headers: { "Content-Type": "application/octet-stream" }, body: pcm.buffer });
+				const data = await response.json().catch(() => ({}));
+				if (!response.ok) throw new Error(data.error || "Dictation didn't work.");
+				if (data.text) running.put(data.text);
+				else this.showToast("No words came through. Try again a little closer to the phone.");
+			} catch (error) {
+				this.error = error.message;
+			} finally {
+				running.done();
+			}
+		},
+
 		ruleWord(choice) {
 			return { auto: "Just do it", ask: "Ask me", never: "Never" }[choice] || choice;
 		},

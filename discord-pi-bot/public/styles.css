@@ -1105,6 +1105,50 @@ body:has(> .rm-app) {
 	color: #fff;
 	border-color: #fff;
 }
+/* Dictation: the microphone by the text box; while it listens, the seconds so far */
+.rm-mic {
+	flex: none;
+	display: grid;
+	place-items: center;
+	min-width: 44px;
+	height: 44px;
+	padding: 0 6px;
+	border: 1px solid var(--rule);
+	color: var(--mute);
+	font-size: 13px;
+	font-variant-numeric: tabular-nums;
+}
+.rm-mic:hover:not(:disabled) {
+	color: #fff;
+	border-color: #fff;
+}
+.rm-mic svg {
+	display: block;
+}
+.rm-mic.on,
+.rm-mic.on:hover {
+	border-color: #ff5a5f;
+	color: #fff;
+	animation: rm-listen 1.4s ease-in-out infinite;
+}
+.rm-mic.on > span:last-child::before {
+	content: "●";
+	margin-right: 4px;
+	color: #ff5a5f;
+}
+.rm-mic:disabled:not(.on) {
+	opacity: 0.35;
+}
+@keyframes rm-listen {
+	50% {
+		box-shadow: 0 0 0 4px rgba(255, 90, 95, 0.25);
+	}
+}
+@media (prefers-reduced-motion: reduce) {
+	.rm-mic.on {
+		animation: none;
+	}
+}
 .rm-inbox .rm-pictures {
 	flex: none;
 	margin: 0;

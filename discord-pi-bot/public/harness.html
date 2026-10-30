@@ -34,6 +34,7 @@
     <script defer src="./components/account-console.js"></script>
     <script defer src="./vendor/xterm.js"></script>
     <script defer src="./components/cats.js"></script>
+    <script defer src="./components/dictation.js"></script>
     <script defer src="./app.js"></script>
     <script defer src="./vendor/alpine.min.js"></script>
   </head>
@@ -191,6 +192,7 @@
         <form class="rm-compose" @submit.prevent="send()">
           <label class="rm-plus" title="Add a picture"><input type="file" accept="image/jpeg,image/png,image/webp" multiple hidden @change="attach($event)" />+</label>
           <input type="text" x-model="draft" x-ref="ask" :placeholder="toMain ? `Message ${assistant.name}` : 'Start a new thread'" :aria-label="toMain ? `Message ${assistant.name}` : 'Start a new thread'" autocomplete="off" enterkeyhint="send" />
+          <button class="rm-mic" type="button" x-show="canDictate" x-cloak :class="{ on: listening?.target === 'draft' }" :disabled="Boolean(listening && (listening.target !== 'draft' || listening.busy))" @click="toggleDictation('draft')" :aria-label="listening?.target === 'draft' ? 'Stop, and write it down' : 'Dictate'" :title="listening?.target === 'draft' ? 'Stop, and write it down' : 'Dictate'"><span x-show="listening?.target !== 'draft'"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></span><span x-show="listening?.target === 'draft'" x-text="listening?.busy ? '…' : `${listening?.seconds || 0}s`"></span></button>
           <button class="rm-btn solid" type="submit" :disabled="sending || (!draft.trim() && !pictures.length)">Send</button>
         </form>
       </section>
@@ -281,6 +283,7 @@
             </label>
             <form class="rm-compose" x-show="!open.readOnly" @submit.prevent="reply()">
               <input type="text" x-model="replyDraft" x-ref="reply" :placeholder="open.feed ? `Message ${assistant.name}` : open.job ? 'Reply to this job' : 'Reply'" aria-label="Reply" autocomplete="off" enterkeyhint="send" />
+              <button class="rm-mic" type="button" x-show="canDictate" x-cloak :class="{ on: listening?.target === 'reply' }" :disabled="Boolean(listening && (listening.target !== 'reply' || listening.busy))" @click="toggleDictation('reply')" :aria-label="listening?.target === 'reply' ? 'Stop, and write it down' : 'Dictate'" :title="listening?.target === 'reply' ? 'Stop, and write it down' : 'Dictate'"><span x-show="listening?.target !== 'reply'"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></span><span x-show="listening?.target === 'reply'" x-text="listening?.busy ? '…' : `${listening?.seconds || 0}s`"></span></button>
               <button class="rm-btn solid" type="submit" :disabled="sending || !replyDraft.trim()">Send</button>
             </form>
           </div>
@@ -531,6 +534,16 @@
               <p class="rm-note" x-show="haPhone.target && !haPhone.pictures">Cats in notifications need the phone app connected above and the web_browser option on.</p>
               <p class="rm-note" x-show="!haPhone.phones.length">Home Assistant knows no phone with its app yet. Install the Home Assistant app on your phone and sign in to this Home Assistant.</p>
               <p class="rm-note" role="status" x-show="haNote" x-text="haNote"></p>
+
+              <h3>Dictation</h3>
+              <p x-text="dictationLine"></p>
+              <label class="rm-field" x-show="dictation.entity && dictation.languages.length">Language
+                <select @change="chooseDictationLanguage($event.target.value)">
+                  <template x-for="language in dictation.languages" :key="language">
+                    <option :value="language" :selected="language === dictationPicked" x-text="language"></option>
+                  </template>
+                </select>
+              </label>
 
               <h3>Where you are</h3>
               <p>For reminders like "when I get home" or "when I leave the office". Home Assistant's person for you says where your phone is: at home, in one of its zones, or anywhere on the map. Its app needs location access set to Always.</p>

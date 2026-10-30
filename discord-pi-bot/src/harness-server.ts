@@ -1335,6 +1335,43 @@ app.delete("/api/reminders/:id", async (_request, response) => {
 	);
 	response.status(deleted ? 204 : 404).end();
 });
+/*
+ * Dictation: the phone records 16 kHz mono PCM and Home Assistant's own
+ * speech-to-text (the Whisper app, say) writes it down, so the voice stays
+ * in the house. Without one, the console falls back to the browser's.
+ */
+async function speechToText(): Promise<{ entity?: string; name?: string; languages: string[]; hint?: string }> {
+	if (!home) return { languages: [] };
+	const engines = await home.statesOf(["stt"]).catch(() => [] as HassEntity[]);
+	const ready = engines.find((engine) => engine.state !== "unavailable");
+	if (!ready) {
+		const name = engines[0] ? String(engines[0].attributes.friendly_name || engines[0].entity_id) : "";
+		return { languages: [], ...(name ? { hint: `Home Assistant's ${name} isn't running. Start its app (Whisper) in Home Assistant to dictate on the Pi.` } : {}) };
+	}
+	return { entity: ready.entity_id, name: String(ready.attributes.friendly_name || ready.entity_id), languages: await home.sttLanguages(ready.entity_id).catch(() => []) };
+}
+/** The language to ask for: the one picked, or the closest the engine has ("de-DE" → "de"). */
+function sttLanguage(wanted: string, languages: string[]): string {
+	const base = wanted.toLowerCase().split("-")[0];
+	return languages.find((language) => language.toLowerCase() === wanted.toLowerCase()) || languages.find((language) => language.toLowerCase().split("-")[0] === base) || languages[0] || wanted || "en";
+}
+app.get("/api/dictation", async (_request, response) => {
+	response.set("Cache-Control", "no-store").json(await speechToText());
+});
+app.post("/api/dictation", express.raw({ type: "application/octet-stream", limit: "4mb" }), async (request, response) => {
+	const pcm = Buffer.isBuffer(request.body) ? request.body : Buffer.alloc(0);
+	// A minute at most: 16 000 samples a second, two bytes each.
+	if (pcm.length < 3_200 || pcm.length > 16_000 * 2 * 62) return void response.status(400).json({ error: "That recording is too short or too long. Up to a minute works." });
+	const engine = await speechToText();
+	if (!engine.entity || !home) return void response.status(503).json({ error: engine.hint || "Home Assistant has no speech-to-text running." });
+	try {
+		const text = await home.transcribe(engine.entity, pcm, sttLanguage(String(request.query.language || "en"), engine.languages));
+		response.json({ text });
+	} catch (error) {
+		response.status(502).json({ error: error instanceof Error ? error.message : "Dictation failed." });
+	}
+});
+
 /* What it may do on its own: each kind of action with its choices and what it's set to. */
 app.get("/api/rules", (_request, response) => {
 	response.set("Cache-Control", "no-store").json(rules.view());

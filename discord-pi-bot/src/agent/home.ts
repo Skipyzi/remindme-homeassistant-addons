@@ -156,6 +156,30 @@ export class HomeApi {
 		return cards;
 	}
 
+	/** What a speech-to-text entity understands: its languages. */
+	async sttLanguages(entityId: string): Promise<string[]> {
+		const info = (await (await this.call(`/stt/${encodeURIComponent(entityId)}`)).json()) as { languages?: unknown };
+		return Array.isArray(info.languages) ? info.languages.filter((language): language is string => typeof language === "string") : [];
+	}
+
+	/** Words from 16 kHz, 16-bit mono PCM, through one of Home Assistant's speech-to-text entities (Whisper, say). */
+	async transcribe(entityId: string, pcm: Buffer, language: string): Promise<string> {
+		const response = await this.fetcher(`${this.baseUrl}/stt/${encodeURIComponent(entityId)}`, {
+			method: "POST",
+			headers: {
+				Authorization: `Bearer ${this.token}`,
+				"Content-Type": "application/octet-stream",
+				"X-Speech-Content": `format=wav; codec=pcm; sample_rate=16000; bit_rate=16; channel=1; language=${language}`,
+			},
+			body: new Uint8Array(pcm),
+			signal: AbortSignal.timeout(60_000),
+		});
+		if (!response.ok) throw new Error(`Home Assistant's speech-to-text answered HTTP ${response.status}`);
+		const result = (await response.json()) as { text?: unknown; result?: unknown };
+		if (result.result !== "success") throw new Error("Home Assistant's speech-to-text couldn't make out any words");
+		return typeof result.text === "string" ? result.text.trim() : "";
+	}
+
 	/** Some domains' states as Home Assistant has them, attributes and all: a person's position, the zones. */
 	async statesOf(domains: string[]): Promise<HassEntity[]> {
 		const states = (await (await this.call("/states")).json()) as HassEntity[];
