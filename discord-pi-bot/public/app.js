@@ -1394,6 +1394,7 @@ function remindme() {
 			}
 			this.aiModels = data.models || [];
 			this.modelTable = { billing: data.billing || "unknown", budget: data.budget || 0, featured: data.featured || [], others: data.others || [] };
+			if (data.unreachable) this.aiError = `Couldn't ask ${option.label} for its list of models (${data.unreachable.replace(/\.$/, "")}), so these are the ones RemindMe knows. Answers fail too until it can be reached.`;
 			// A model picked from the older list or typed in shows where it is.
 			this.modelsOpen = Boolean(this.aiModel) && !this.modelTable.featured.some((model) => model.id === this.aiModel);
 		},

@@ -33,7 +33,21 @@
 	--glass-float: rgba(30, 30, 33, 0.62);
 	--glass-edge: rgba(255, 255, 255, 0.12);
 	--glass-shine: rgba(255, 255, 255, 0.16);
+	/* Room kept clear of text under the top edge; see the iPhone note below. */
+	--edge-ramp: 0px;
 	color-scheme: dark;
+}
+/*
+ * iOS 26 blurs and fades the top ~40pt of an installed web app, whatever the
+ * status bar style, and no meta tag or CSS turns it off. On an iPhone or iPad
+ * home-screen app, the tops of pages start that much lower so no text sits in it.
+ */
+@media (display-mode: standalone) {
+	@supports (-webkit-touch-callout: none) {
+		:root {
+			--edge-ramp: 32px;
+		}
+	}
 }
 
 *,
@@ -172,7 +186,7 @@ a {
 	flex-wrap: wrap;
 	align-items: center;
 	gap: 4px 14px;
-	padding: calc(18px + env(safe-area-inset-top)) 18px 10px;
+	padding: calc(18px + env(safe-area-inset-top) + var(--edge-ramp)) 18px 10px;
 }
 .rm-title h1 {
 	flex: 1;
@@ -486,7 +500,7 @@ a {
 .rm-sheet-in {
 	max-width: 1280px;
 	margin: 0 auto;
-	padding: 24px var(--gutter) 64px;
+	padding: calc(24px + env(safe-area-inset-top) + var(--edge-ramp)) var(--gutter) 64px;
 }
 .rm-sheet-top {
 	display: flex;
@@ -742,6 +756,9 @@ a {
 }
 .rm-note {
 	color: var(--mute);
+}
+.rm-note.bad {
+	color: #ff6b5e;
 }
 /* Sign-in set-up: numbered steps, and the values to copy into Google */
 .rm-steps {
@@ -1011,7 +1028,7 @@ body:has(> .rm-app) {
 	align-items: center;
 	gap: 12px;
 	min-height: 60px;
-	padding: calc(10px + env(safe-area-inset-top)) 18px 10px;
+	padding: calc(10px + env(safe-area-inset-top) + var(--edge-ramp)) 18px 10px;
 	background: #000;
 }
 .rm-menu {
@@ -1205,7 +1222,7 @@ body:has(> .rm-app) {
 		max-width: none;
 		height: auto;
 		margin: 0;
-		padding: calc(16px + env(safe-area-inset-top)) 10px 16px;
+		padding: calc(16px + env(safe-area-inset-top) + var(--edge-ramp)) 10px 16px;
 		border: 0;
 		border-right: 1px solid var(--rule);
 		border-radius: 0;
@@ -1245,7 +1262,7 @@ body:has(> .rm-app) {
 		display: none;
 	}
 	.rm-title {
-		padding-top: calc(24px + env(safe-area-inset-top));
+		padding-top: calc(24px + env(safe-area-inset-top) + var(--edge-ramp));
 	}
 }
 

@@ -83,7 +83,7 @@ import { MediaProxy } from "./harness/media";
 import { pagePreview } from "./harness/reader";
 import { GEIZHALS_CHECKING, GEIZHALS_SEARCH, PriceWatches, euro, geizhalsBlocked, parseShopPrice, searchResults, type PriceWatch, type SearchResult } from "./assistant/prices";
 import type { EntryAction } from "./assistant/activity";
-import { modelTable } from "./ai/catalog";
+import { catalogEntries, modelTable } from "./ai/catalog";
 import { MAIN_THREAD, ThreadStore, titleFrom, type Thread } from "./assistant/threads";
 import type { Confirmation } from "./assistant/confirmations";
 import { JobRunner } from "./assistant/jobs";
@@ -797,7 +797,11 @@ app.get("/api/ai/models", async (request, response) => {
 		// The plain list, plus the console's table: the current models explained, the rest under "Older".
 		response.json({ models, ...modelTable(id as ProviderId, models, aiSettings.dailyBudget()) });
 	} catch (error) {
-		response.status(502).json({ error: error instanceof Error ? error.message : "Could not list models" });
+		const reason = error instanceof Error ? error.message : "Could not list models";
+		// Unreachable for now: the models RemindMe knows still make a table, rather than only a box to type in.
+		const known = catalogEntries(id as ProviderId).map((entry) => entry.id);
+		if (!known.length) return response.status(502).json({ error: reason });
+		response.json({ models: [], ...modelTable(id as ProviderId, known, aiSettings.dailyBudget()), unreachable: reason });
 	}
 });
 /* One tiny request, to prove the key and model work before trusting them with a turn. */

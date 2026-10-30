@@ -102,3 +102,14 @@ test("a task the chat starts shows as its card in the chat, and its news comes b
 	assert.match(app, /receipt\.job/);
 	assert.match(app, /entry\.threadId/);
 });
+
+test("on an iPhone home-screen app, no text sits in iOS 26's blurred top edge", () => {
+	const css = readFileSync("public/styles.css", "utf8");
+	assert.match(css, /@media \(display-mode: standalone\) \{\s*@supports \(-webkit-touch-callout: none\) \{\s*:root \{\s*--edge-ramp: \d+px;/);
+	for (const top of [".rm-bar", ".rm-title", ".rm-sheet-in"]) assert.match(css, new RegExp(`\\${top} \\{[^}]*env\\(safe-area-inset-top\\) \\+ var\\(--edge-ramp\\)`), top);
+});
+
+test("the model picker says when the AI can't be reached instead of hiding it", () => {
+	assert.match(html, /x-show="aiError"[^>]*x-text="aiError"/);
+	assert.match(app, /data\.unreachable/);
+});
