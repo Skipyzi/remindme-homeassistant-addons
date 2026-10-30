@@ -1117,6 +1117,47 @@ body:has(> .rm-app) {
 	color: #fff;
 	border-color: rgba(255, 255, 255, 0.3);
 }
+/*
+ * In the iPhone or iPad home-screen app, where the top edge is kept clear of
+ * iOS's blur, the bar is one line (the name with its model beside it) and a
+ * little smaller, so it ends up about as tall as in Safari. Its text still
+ * starts below the blur; the cat and the gear may reach into it.
+ */
+@media (display-mode: standalone) {
+	@supports (-webkit-touch-callout: none) {
+		.rm-bar {
+			min-height: 0;
+			padding-top: calc(env(safe-area-inset-top) + var(--edge-ramp) + 4px);
+			padding-bottom: 8px;
+		}
+		.rm-bar h1 {
+			display: flex;
+			gap: 10px;
+			align-items: baseline;
+		}
+		.rm-bar h1 > span {
+			flex: 0 1 auto;
+			max-width: 62%;
+		}
+		.rm-bar h1 small,
+		.rm-head-model {
+			flex: 1 1 0;
+			min-width: 0;
+		}
+		.rm-cat-head {
+			width: 34px;
+			height: 34px;
+		}
+		.rm-round {
+			width: 34px;
+			height: 34px;
+			border-radius: 17px;
+		}
+		.rm-title {
+			padding-top: calc(10px + env(safe-area-inset-top) + var(--edge-ramp));
+		}
+	}
+}
 .rm-scroll {
 	flex: 1;
 	min-height: 0;
