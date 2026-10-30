@@ -531,6 +531,18 @@
               <p class="rm-note" x-show="haPhone.target && !haPhone.pictures">Cats in notifications need the phone app connected above and the web_browser option on.</p>
               <p class="rm-note" x-show="!haPhone.phones.length">Home Assistant knows no phone with its app yet. Install the Home Assistant app on your phone and sign in to this Home Assistant.</p>
               <p class="rm-note" role="status" x-show="haNote" x-text="haNote"></p>
+
+              <h3>Where you are</h3>
+              <p>For reminders like "when I get home" or "when I leave the office". Home Assistant's person for you says where your phone is: at home, in one of its zones, or anywhere on the map. Its app needs location access set to Always.</p>
+              <label class="rm-field">Follow
+                <select @change="chooseLocation($event.target.value)" :disabled="!location.people.length">
+                  <template x-for="person in location.people" :key="person.id">
+                    <option :value="person.id" :selected="person.id === location.person" x-text="`${person.name} (${placeState(person.state)})`"></option>
+                  </template>
+                </select>
+              </label>
+              <p class="rm-note" x-show="!location.people.length">Home Assistant has no person yet. Add one under Settings → People there, with your phone as its tracker.</p>
+              <p class="rm-note" role="status" x-show="locationNote" x-text="locationNote"></p>
             </div>
 
             <!-- Connectors -->

@@ -155,6 +155,9 @@ function remindme() {
 		toMain: window.matchMedia("(max-width: 820px)").matches,
 		identity: { name: "", look: { coat: 0, accessory: 0 } },
 		identityNote: "",
+		/* Place reminders: the people in Home Assistant, and whose whereabouts they follow */
+		location: { people: [], person: null, chosen: null, reminders: 0 },
+		locationNote: "",
 		/* The daily news */
 		news: { on: false, time: "07:30", language: "en", stories: 5, sources: [], catalog: [], own: [] },
 		newsNote: "",
@@ -1252,7 +1255,7 @@ function remindme() {
 			return this.upcoming.map((item, index) => {
 				const at = new Date(item.at);
 				const until = item.until ? ` until ${this.timeOf(new Date(item.until))}` : "";
-				return { type: "row", key: `up-${index}-${item.at}`, at, time: item.allDay ? "all day" : this.timeOf(at), kind: item.kind, text: `${item.text}${until}`, css: "future", reminderId: item.reminderId };
+				return { type: "row", key: `up-${index}-${item.at}`, at, time: item.place ? "place" : item.allDay ? "all day" : this.timeOf(at), kind: item.kind, text: `${item.text}${until}`, css: "future", reminderId: item.reminderId };
 			});
 		},
 
@@ -1720,7 +1723,8 @@ function remindme() {
 			return `${devices} Turn them on in the phone app itself: open the address above on your phone, install it, and come back to this page there.`;
 		},
 		async loadPhone() {
-			const [phone, ha] = await Promise.all([this.getJson("./api/phone", { state: "error", error: "RemindMe didn't answer." }), this.getJson("./api/phone/ha", null)]);
+			const [phone, ha, location] = await Promise.all([this.getJson("./api/phone", { state: "error", error: "RemindMe didn't answer." }), this.getJson("./api/phone/ha", null), this.getJson("./api/location", null)]);
+			if (location) this.location = location;
 			this.phone = phone;
 			if (ha) this.haPhone = { phones: ha.phones || [], target: ha.target || "", liveActivities: ha.liveActivities !== false, pictures: Boolean(ha.pictures) };
 			if (this.pushPossible) {
@@ -1728,6 +1732,19 @@ function remindme() {
 				this.pushOn = Boolean(await registration?.pushManager.getSubscription().catch(() => null));
 			}
 			this.pollPhone();
+		},
+		/* Whose whereabouts place reminders follow */
+		placeState(state) {
+			return { home: "home now", not_home: "away", unknown: "not known", unavailable: "not known" }[state] || `at ${state}`;
+		},
+		async chooseLocation(person) {
+			try {
+				await this.request("./api/location", "PUT", { person });
+				this.location = { ...this.location, person, chosen: person };
+				this.locationNote = "Place reminders follow them now.";
+			} catch (error) {
+				this.locationNote = error.message;
+			}
 		},
 		async chooseHaPhone(change) {
 			try {

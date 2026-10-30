@@ -18,6 +18,7 @@ import { euro, type PriceOffer, type PriceWatch, type SearchResult } from "./pri
 import type { FeedItem, NewsItem, Region } from "./news";
 import { addEmbed, takeEmbeds, type Embed } from "./embeds";
 import { placeEmbed, type Place } from "./places";
+import { placeWhen, type PlaceEvent, type PlaceReminder } from "./placeReminders";
 import { BrowserRefused, describe, judge, type WebBrowser } from "../harness/browser";
 import { ReaderError } from "../harness/reader";
 import { eventTimes, listCalendars } from "../connectors/calendar";
@@ -72,6 +73,11 @@ export interface ToolContext {
 	news?: { headlines(): Promise<{ items: NewsItem[]; problems: string[] }> };
 	/** Places from OpenStreetMap, near home. */
 	places?: { find(query: string): Promise<Place[]> };
+	/** Reminders for arriving at or leaving a place, from Home Assistant's idea of where the user is. */
+	placeReminders?: {
+		add(input: { message: string; on: PlaceEvent; place: string; lat?: number; lon?: number; everyTime?: boolean }): Promise<{ reminder: PlaceReminder; insideNow?: boolean }>;
+		list(): PlaceReminder[];
+	};
 	/** The user's own feeds (feed connectors): their latest posts. */
 	feeds?: { latest(which?: string): Promise<{ posts: Array<FeedItem & { feed: string }>; problems: string[] }>; names(): string[] };
 	prices?: {
@@ -580,15 +586,17 @@ function reminderTools(ctx: ToolContext): AssistantTool[] {
 				return { content: `Reminder ${created.id} set for ${describeWhenDated(at)}: ${message}` };
 			},
 		},
+		...(ctx.placeReminders ? [placeReminderTool(ctx.placeReminders)] : []),
 		{
-			spec: { name: "list_reminders", description: "The reminders still to come.", parameters: object({}) },
+			spec: { name: "list_reminders", description: "The reminders still to come, by time and by place.", parameters: object({}) },
 			async run() {
 				const reminders = await ctx.reminders.list();
-				return {
-					content: reminders.length
-						? json(reminders.map((reminder) => ({ id: reminder.id, message: reminder.message, when: describeWhen(reminder.time), at: reminder.time.toISOString() })))
-						: "No reminders are set.",
-				};
+				const byPlace = ctx.placeReminders?.list() || [];
+				const rows = [
+					...reminders.map((reminder) => ({ id: reminder.id, message: reminder.message, when: describeWhen(reminder.time), at: reminder.time.toISOString() })),
+					...byPlace.map((reminder) => ({ id: reminder.id, message: reminder.message, when: `${placeWhen(reminder)}${reminder.everyTime ? ", every time" : ""}` })),
+				];
+				return { content: rows.length ? json(rows) : "No reminders are set." };
 			},
 		},
 		{
@@ -605,6 +613,39 @@ function reminderTools(ctx: ToolContext): AssistantTool[] {
 			},
 		},
 	];
+}
+
+/* "Remind me when I get home": Home Assistant knows where the user's phone is. */
+function placeReminderTool(places: NonNullable<ToolContext["placeReminders"]>): AssistantTool {
+	return {
+		spec: {
+			name: "set_place_reminder",
+			description:
+				"Remind the user when they arrive at or leave a place, from where Home Assistant knows their phone to be: home, another Home Assistant zone by its name, or a place from find_place (pass its lat and lon, and its name as place). It goes out like any reminder once the move has held for a minute; once, unless every_time is set. Use it for \"when I get home\", \"when I leave work\", \"next time I'm at the pharmacy\".",
+			parameters: object(
+				{
+					message: { type: "string", description: "What to remind them of, as they'd want to read it." },
+					on: { type: "string", enum: ["arrive", "leave"] },
+					place: { type: "string", description: '"home", a zone\'s name, or the name of the place found with find_place.' },
+					lat: { type: "number", description: "For a place from find_place: its latitude." },
+					lon: { type: "number", description: "For a place from find_place: its longitude." },
+					every_time: { type: "boolean", description: "Every time they arrive or leave, not just the next." },
+				},
+				["message", "on", "place"],
+			),
+		},
+		async run(input, effects) {
+			const on = input.on === "leave" ? "leave" : input.on === "arrive" ? "arrive" : undefined;
+			if (!on) throw new InputError("on must be arrive or leave");
+			const lat = typeof input.lat === "number" ? input.lat : undefined;
+			const lon = typeof input.lon === "number" ? input.lon : undefined;
+			const { reminder, insideNow } = await places.add({ message: text(input, "message", 300), on, place: text(input, "place", 80), lat, lon, everyTime: input.every_time === true });
+			const when = placeWhen(reminder);
+			effects.did.push({ text: `Reminder ${when}${reminder.everyTime ? " (every time)" : ""}: ${reminder.message}` });
+			const now = insideNow === undefined ? "Home Assistant doesn't know right now where they are." : insideNow ? `They're ${reminder.place === "home" ? "home" : `at ${reminder.place}`} now${on === "arrive" ? ", so it's for the next time they arrive" : ""}.` : `They're not ${reminder.place === "home" ? "home" : `at ${reminder.place}`} now.`;
+			return { content: `Reminder ${reminder.id} set ${when}: ${reminder.message}. ${now}` };
+		},
+	};
 }
 
 function noteTools(ctx: ToolContext): AssistantTool[] {

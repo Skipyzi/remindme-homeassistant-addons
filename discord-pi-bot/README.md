@@ -95,6 +95,12 @@ DHL's own Shipment Tracking API can be a connector, so DHL parcels are tracked s
 
 Your postcode is optional; with it, DHL names the towns along the way. Give RemindMe a tracking number ("track 340434161094, it's the keyboard"), or ask it to track the parcel from a shipping email, and you hear when it moves, is out for delivery, waits at a Packstation or arrives. DHL's free level allows 250 checks a day. RemindMe checks each parcel every 45 minutes outside quiet hours (every 15 once it's out for delivery), keeps 50 checks for when you ask, and stops tracking once it's delivered. Hermes, DPD, GLS and UPS still go through TrackingMore (`trackingmore_api_key`).
 
+## Reminders by place
+
+"Remind me when I get home", "when I leave the office", "next time I'm at the pharmacy": RemindMe follows your person in Home Assistant, which knows where your phone is through the Home Assistant app (location access set to **Always**). A place is home, another Home Assistant zone by its name, or a spot it found on the map (within about 200 m). It looks every half minute and acts once a move has held for a minute, so a phone at the edge of a zone doesn't set it off; the reminder then goes out like any other. Said while you're already there, "when I get home" waits for the next time you arrive. Reminders fire once unless you ask for every time; they're listed in History under Coming up, where Cancel removes them.
+
+**Settings → Phone app → Where you are** picks whose whereabouts it follows: by default the person whose tracker is the phone picked for notifications, or the only person. Zones are made in Home Assistant under Settings → Areas, labels & zones; a zone is more reliable than a spot from the map, since the phone reports crossing it right away.
+
 ## Calendars
 
 RemindMe reads every calendar in Home Assistant and adds events to the one chosen under **Settings → Connectors → New events go to**. "Put the dentist on Friday at 10" comes back as a button; nothing is added until you tap it. With no calendar chosen, it asks which one.

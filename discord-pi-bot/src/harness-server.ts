@@ -77,6 +77,7 @@ import { WebBrowser } from "./harness/browser";
 import { News } from "./assistant/news";
 import { type Embed, embedText, mapImages } from "./assistant/embeds";
 import { PlaceSearch } from "./assistant/places";
+import { PlaceReminders, placeWhen, type Whereabouts } from "./assistant/placeReminders";
 import { MediaProxy } from "./harness/media";
 import { pagePreview } from "./harness/reader";
 import { GEIZHALS_CHECKING, GEIZHALS_SEARCH, PriceWatches, euro, geizhalsBlocked, parseShopPrice, searchResults, type PriceWatch, type SearchResult } from "./assistant/prices";
@@ -101,8 +102,8 @@ import { agentDirectory } from "./agents/paths";
 import { RunnerThreads } from "./agents/threads";
 import { chatgptAuth } from "./subscriptions/chatgptAuth";
 import { claudeAuth } from "./subscriptions/claudeAuth";
-import { readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
 
 const app = express();
 /* The phone app: RemindMe on the tailnet, and notifications to the phones that installed it. */
@@ -268,6 +269,54 @@ export function setOwnerNotifier(notify: (text: string, extra?: OwnerNews) => Pr
 
 const BROWSER_UA = "Mozilla/5.0 (X11; Linux aarch64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36";
 /* Price watches and comparisons: Geizhals read straight from its pages, any other shop by the cheapest model. */
+/*
+ * Whose whereabouts place reminders follow: the person picked under Phone
+ * app, else the one whose tracker is the phone picked for notifications,
+ * else the only person in Home Assistant.
+ */
+const locationPath = process.env.LOCATION_DATA_PATH || "./data/location.json";
+let locationPerson: string | undefined;
+async function loadLocation(): Promise<void> {
+	try {
+		const saved = JSON.parse(await readFile(locationPath, "utf8"));
+		locationPerson = typeof saved?.person === "string" ? saved.person : undefined;
+	} catch {
+		locationPerson = undefined;
+	}
+}
+function followedPerson(states: HassEntity[]): HassEntity | undefined {
+	const people = states.filter((state) => state.entity_id.startsWith("person."));
+	const chosen = locationPerson && people.find((person) => person.entity_id === locationPerson);
+	if (chosen) return chosen;
+	const tracker = haApp.target ? `device_tracker.${haApp.target.replace(/^mobile_app_/, "")}` : "";
+	const withPhone = tracker && people.find((person) => Array.isArray(person.attributes.device_trackers) && (person.attributes.device_trackers as unknown[]).includes(tracker));
+	return withPhone || (people.length === 1 ? people[0] : undefined);
+}
+async function whereabouts(): Promise<Whereabouts | undefined> {
+	if (!home) return undefined;
+	const states = await home.statesOf(["person", "zone"]);
+	const person = followedPerson(states);
+	if (!person) return undefined;
+	const number = (value: unknown) => (typeof value === "number" && Number.isFinite(value) ? value : undefined);
+	return {
+		state: person.state,
+		lat: number(person.attributes.latitude),
+		lon: number(person.attributes.longitude),
+		accuracy: number(person.attributes.gps_accuracy),
+		zones: states
+			.filter((state) => state.entity_id.startsWith("zone.") && number(state.attributes.latitude) !== undefined)
+			.map((zone) => ({ id: zone.entity_id, name: String(zone.attributes.friendly_name || zone.entity_id.slice(5)), lat: zone.attributes.latitude as number, lon: zone.attributes.longitude as number, radius: number(zone.attributes.radius) ?? 100 })),
+	};
+}
+/* "When I get home": goes out like any reminder that's due, once the move has held for a minute. */
+export const placeReminders = new PlaceReminders({
+	where: whereabouts,
+	fire: async (reminder) => {
+		const where = reminder.on === "arrive" ? (reminder.place === "home" ? "you're home" : `you're at ${reminder.place}`) : `you left ${reminder.place}`;
+		await addReminder(`${reminder.message} (${where})`, 0, process.env.OWNER_ID || "", "");
+	},
+});
+
 export const prices = new PriceWatches({
 	async geizhalsPage(url) {
 		const target = await assertPublicUrl(url);
@@ -1265,20 +1314,41 @@ app.get("/api/pulse", async (_request, response) => {
 });
 app.get("/api/reminders", async (_request, response) => {
 	const reminders = await listReminders(process.env.OWNER_ID || "");
-	response.json(
-		reminders.map((item) => ({
+	response.json([
+		...reminders.map((item) => ({
 			id: item.id,
 			message: item.message,
 			time: item.time.toISOString(),
 		})),
-	);
+		...placeReminders.list().map((item) => ({ id: item.id, message: item.message, place: placeWhen(item), everyTime: item.everyTime })),
+	]);
 });
 app.delete("/api/reminders/:id", async (_request, response) => {
+	if (_request.params.id.startsWith("place_")) return void response.status(placeReminders.cancel(_request.params.id) ? 204 : 404).end();
 	const deleted = await deleteReminder(
 		_request.params.id,
 		process.env.OWNER_ID || "",
 	);
 	response.status(deleted ? 204 : 404).end();
+});
+/* Whose whereabouts place reminders follow: the people in Home Assistant, and which one. */
+app.get("/api/location", async (_request, response) => {
+	const states = home ? await home.statesOf(["person"]).catch(() => [] as HassEntity[]) : [];
+	const followed = followedPerson(states);
+	response.set("Cache-Control", "no-store").json({
+		people: states.map((person) => ({ id: person.entity_id, name: String(person.attributes.friendly_name || person.entity_id), state: person.state })),
+		person: followed?.entity_id || null,
+		chosen: locationPerson || null,
+		reminders: placeReminders.list().length,
+	});
+});
+app.put("/api/location", async (request, response) => {
+	const person = request.body?.person;
+	if (person !== null && (typeof person !== "string" || !/^person\.[a-z0-9_]+$/.test(person))) return void response.status(400).json({ error: "Pick a person from the list." });
+	locationPerson = person || undefined;
+	await mkdir(dirname(locationPath), { recursive: true });
+	await writeFile(locationPath, JSON.stringify(locationPerson ? { person: locationPerson } : {}));
+	response.json({ person: locationPerson || null });
 });
 /* The composer's thinking choices, as effort levels. The ids are the old ones,
  * so a choice saved in the browser keeps working. */
@@ -1666,6 +1736,8 @@ app.get("/api/ledger", async (_request, response) => {
 		...reminders
 			.filter((item) => item.time.getTime() <= weekAhead)
 			.map((item) => ({ at: item.time.toISOString(), kind: "reminder", text: item.message, reminderId: item.id })),
+		// Place reminders have no time: they list first, saying where.
+		...placeReminders.list().map((item) => ({ at: now.toISOString(), kind: "reminder", text: `${item.message} (${placeWhen(item)}${item.everyTime ? ", every time" : ""})`, reminderId: item.id, place: true })),
 		...events
 			.filter((event) => !event.allDay && Date.parse(event.start) > now.getTime())
 			.map((event) => ({ at: new Date(event.start).toISOString(), kind: "calendar", text: event.summary, until: event.end })),
@@ -2082,8 +2154,9 @@ export function toolContext(): ToolContext {
 		reminders: {
 			add: (message, at) => addReminder(message, Math.max(0, (at.getTime() - Date.now()) / 60_000), ownerId, ""),
 			list: () => listReminders(ownerId),
-			cancel: (id) => deleteReminder(id, ownerId),
+			cancel: (id) => (id.startsWith("place_") ? Promise.resolve(placeReminders.cancel(id)) : deleteReminder(id, ownerId)),
 		},
+		placeReminders: { add: (input) => placeReminders.add(input), list: () => placeReminders.list() },
 		vault,
 		webSearch: searchFallback() ? webSearch : undefined,
 		async readPage(url) {
@@ -2834,12 +2907,13 @@ export function createHarnessApp(): Express {
  * runs on the container's clock.
  */
 export async function startHarness(): Promise<void> {
-	await Promise.all([loadConnectors(), threads.load(), phonePush.load(), memory.load(), batteryHides.load(), haApp.load(), loadAppSlug(), prices.load(), news.load(), feeds.load()]);
+	await Promise.all([loadConnectors(), threads.load(), phonePush.load(), memory.load(), batteryHides.load(), haApp.load(), loadAppSlug(), prices.load(), news.load(), feeds.load(), placeReminders.load(), loadLocation()]);
 	// Feeds added under News in 4.18 become feed connectors.
 	for (const old of await news.takeOldFeeds()) await feeds.add({ url: old.url, name: old.name, news: old.on, alerts: false }).catch((error) => console.warn(`Couldn't move the feed ${old.name}:`, error instanceof Error ? error.message : error));
 	prices.startClock();
 	news.startClock();
 	feeds.startClock();
+	placeReminders.startClock();
 	haEvents?.start();
 	app.listen(port, () => console.log(`RemindMe console listening on port ${port}`));
 	jobs.resume();

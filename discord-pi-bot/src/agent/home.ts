@@ -156,6 +156,12 @@ export class HomeApi {
 		return cards;
 	}
 
+	/** Some domains' states as Home Assistant has them, attributes and all: a person's position, the zones. */
+	async statesOf(domains: string[]): Promise<HassEntity[]> {
+		const states = (await (await this.call("/states")).json()) as HassEntity[];
+		return states.filter((state) => domains.includes(state.entity_id.split(".")[0]));
+	}
+
 	async card(entityId: string): Promise<EntityCard | undefined> {
 		try {
 			const response = await this.call(`/states/${encodeURIComponent(entityId)}`);
