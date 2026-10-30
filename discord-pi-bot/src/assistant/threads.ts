@@ -216,18 +216,30 @@ export class ThreadStore {
 
 	/**
 	 * The thread as the model's history: what the user said and what was
-	 * answered, in turn. Steps are left out here; a job gets them as context.
+	 * answered, in turn, with when each was sent and what the tools did.
+	 * Steps are left out here; a job gets them as context.
 	 */
 	history(id: string): PriorTurn[] {
 		const turns: PriorTurn[] = [];
 		for (const message of this.get(id)?.messages || []) {
 			if (message.role === "step") continue;
 			const role = message.role;
+			const did = [
+				...(message.receipts || []).map((receipt) => receipt.text),
+				...(message.confirms || []).map((confirm) => `Waiting for the user's tap: ${confirm.message}`),
+			];
 			const last = turns[turns.length - 1];
-			if (last?.role === role) last.text = `${last.text}\n\n${message.text}`;
-			else turns.push({ role, text: message.text });
+			if (last?.role === role) {
+				last.text = [last.text, message.text].filter(Boolean).join("\n\n");
+				if (did.length) last.did = [...(last.did || []), ...did];
+			} else turns.push({ role, text: message.text, at: message.at, ...(did.length ? { did } : {}) });
 		}
 		return turns;
+	}
+
+	/** A thread that has been answered keeps its AI: another provider wouldn't have its context. */
+	answered(id: string): boolean {
+		return Boolean(this.get(id)?.messages.some((message) => message.role === "assistant"));
 	}
 
 	/* A turn running in a thread: a job started from it waits until it is done. */

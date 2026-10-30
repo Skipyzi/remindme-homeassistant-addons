@@ -1469,6 +1469,16 @@ body:has(> .rm-app) {
 	font-size: 12px;
 	white-space: nowrap;
 }
+/* Which AI a chat runs on: it keeps it once answered. */
+.rm-entry-model {
+	display: block;
+	margin-top: 3px;
+	color: var(--dim);
+	font-size: 11px;
+	font-style: normal;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+}
 .rm-entry.bad .rm-entry-what {
 	padding-left: 10px;
 	border-left: 2px solid #fff;

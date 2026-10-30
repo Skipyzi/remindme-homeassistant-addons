@@ -7,7 +7,7 @@ import type { AiSettings } from "../src/ai/settings.ts";
 import { SpendLedger } from "../src/ai/spend.ts";
 import type { Provider, Session, Step, ToolCall, ToolOutcome, TurnRequest } from "../src/ai/types.ts";
 import { HomeApi } from "../src/agent/home.ts";
-import { Assistant, trimHistory } from "../src/assistant/agent.ts";
+import { Assistant, historyForModel, trimHistory, withoutNotes } from "../src/assistant/agent.ts";
 import { ConfirmationStore } from "../src/assistant/confirmations.ts";
 import { ActivityLog } from "../src/assistant/activity.ts";
 import { ThreadStore } from "../src/assistant/threads.ts";
@@ -274,6 +274,33 @@ test("history keeps the latest turns that fit", () => {
 	assert.equal(kept.at(-1)?.text, "turn 49");
 	const long = trimHistory([{ role: "user", text: "x".repeat(39_000) }, { role: "assistant", text: "y".repeat(2_000) }]);
 	assert.deepEqual(long.map((turn) => turn.role), ["assistant"]);
+});
+
+test("earlier messages reach the model with when they were sent and what the tools did", async () => {
+	const { home } = fakeHome();
+	const store = new ThreadStore(join(mkdtempSync(join(tmpdir(), "threads-")), "threads.json"));
+	const chat = store.create({ title: "Feature list", origin: "console" });
+	const asked = new Date(2026, 9, 29, 23, 26, 56);
+	const later = (minutes: number) => new Date(asked.getTime() + minutes * 60_000);
+	store.append(chat.id, { role: "user", text: "Well then in 90min remind me", at: asked });
+	store.append(chat.id, { role: "assistant", text: "Reminder set for 00:56.", at: later(0.1), receipts: [{ text: "Reminder for tomorrow at 00:56 (Fri 30 Oct): Add the model to each thread." }] });
+	store.append(chat.id, { role: "assistant", text: "Your morning brief.", at: later(480) });
+	store.append(chat.id, { role: "user", text: "Also location based notifications", at: later(45) });
+	const rendered = historyForModel(store.history(chat.id));
+	assert.equal(rendered[0].text, "[Thu 29 Oct, 23:26] Well then in 90min remind me", "the user's message says when it was sent");
+	assert.equal(
+		rendered[1].text,
+		"Reminder set for 00:56.\n\nYour morning brief.\n\n[Done with tools: Reminder for tomorrow at 00:56 (Fri 30 Oct): Add the model to each thread.]",
+		"a reply right after needs no time, and what its tools did follows it",
+	);
+	assert.match(historyForModel([{ role: "user", text: "hi", at: asked.toISOString() }, { role: "assistant", text: "Brief", at: later(480).toISOString() }])[1].text, /^\[Fri 30 Oct, 07:26\] Brief$/, "a message RemindMe sent on its own has its time");
+
+	const provider = new ScriptedProvider([step({ text: "[Fri 30 Oct, 00:12] Added it. [[c9]]\n\n[Done with tools: Wrote a document]" })]);
+	const result = await assistantWith(provider, context(home)).ask({ prompt: "Also location based notifications", channel: "console", history: store.history(chat.id) });
+	assert.equal(provider.requests[0].history[0].text, rendered[0].text, "the provider gets the history with its notes");
+	assert.equal(result.text, "Added it.", "notes the model copies into its answer come out again");
+	assert.equal(withoutNotes("Plain answer"), "Plain answer");
+	assert.match(provider.requests[0].system, /counts from when that message was sent/);
 });
 
 test("the prompt names the AI and model that answer", async () => {

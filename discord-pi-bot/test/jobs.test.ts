@@ -43,7 +43,7 @@ test("a thread keeps its title short, and its history alternates for the model",
 	threads.append(thread.id, { role: "step", text: "Eurowings: 84 €" });
 	threads.append(thread.id, { role: "assistant", text: "Two options." });
 	threads.append(thread.id, { role: "user", text: "Thursday" });
-	assert.deepEqual(threads.history(thread.id), [
+	assert.deepEqual(threads.history(thread.id).map(({ role, text }) => ({ role, text })), [
 		{ role: "user", text: "Find flights" },
 		{ role: "assistant", text: "On it.\n\nTwo options." },
 		{ role: "user", text: "Thursday" },

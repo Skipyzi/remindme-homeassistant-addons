@@ -107,7 +107,7 @@
               <div class="rm-swipe-face">
                 <button class="rm-entry" type="button" :class="{ on: open?.id === 'remindme' }" @click="openThread('remindme')">
                   <span class="rm-mark" aria-hidden="true"><span class="rm-cat" x-effect="drawCat($el, 'remindme', feedRow?.fresh ? 'asking' : 'done')"></span></span>
-                  <span class="rm-entry-what"><b>RemindMe<em class="rm-new" x-show="feedRow?.fresh" x-text="`${feedRow?.fresh} new`"></em></b><span x-text="feedRow?.line"></span></span>
+                  <span class="rm-entry-what"><b>RemindMe<em class="rm-new" x-show="feedRow?.fresh" x-text="`${feedRow?.fresh} new`"></em></b><span x-text="feedRow?.line"></span><i class="rm-entry-model" x-show="feedRow?.model" x-text="feedRow?.model"></i></span>
                   <time x-text="feedRow?.time"></time>
                 </button>
               </div>
@@ -124,7 +124,7 @@
                 <div class="rm-swipe-face">
                   <button class="rm-entry" type="button" :class="{ on: open?.id === thread.id }" @click="openThread(thread.id)">
                     <span class="rm-mark" aria-hidden="true"><span class="rm-cat" x-effect="drawCat($el, thread.id, catState(thread))"></span></span>
-                    <span class="rm-entry-what"><b x-text="thread.title"></b><span x-text="jobLine(thread)"></span></span>
+                    <span class="rm-entry-what"><b x-text="thread.title"></b><span x-text="jobLine(thread)"></span><i class="rm-entry-model" x-show="thread.model" x-text="thread.model ? modelName(thread.model) : ''"></i></span>
                     <time x-text="timeOf(new Date(thread.createdAt))"></time>
                     <span class="rm-progress" x-show="thread.job.progress" :style="`--p:${progressOf(thread)}%`"><i></i></span>
                   </button>
@@ -152,7 +152,7 @@
                   <div class="rm-swipe-face">
                     <button class="rm-entry" type="button" :class="{ bad: item.bad, on: open && open.id === item.openId }" @click="openThread(item.threadId)">
                       <span class="rm-mark" aria-hidden="true"><span class="rm-cat" x-effect="drawCat($el, item.threadId, item.cat)"></span></span>
-                      <span class="rm-entry-what"><b x-text="item.title"></b><span x-text="item.line"></span></span>
+                      <span class="rm-entry-what"><b x-text="item.title"></b><span x-text="item.line"></span><i class="rm-entry-model" x-show="item.model" x-text="item.model"></i></span>
                       <time x-text="item.time"></time>
                     </button>
                   </div>
@@ -261,8 +261,8 @@
             </div>
             <label class="rm-model-pick" x-show="!open.readOnly && modelChoices.groups.length">Answers with
               <select aria-label="Model for this thread" @change="setThreadModel($event.target.value)">
-                <option value="" x-text="defaultModelLabel()"></option>
-                <template x-for="group in modelChoices.groups" :key="group.provider">
+                <template x-if="!threadLocked(open)"><option value="" x-text="defaultModelLabel()"></option></template>
+                <template x-for="group in threadModelGroups(open)" :key="group.provider">
                   <optgroup :label="group.label">
                     <template x-for="model in group.models" :key="model.id">
                       <option :value="`${group.provider}|${model.id}`" x-text="model.name" :selected="modelValue(open.model) === `${group.provider}|${model.id}`"></option>

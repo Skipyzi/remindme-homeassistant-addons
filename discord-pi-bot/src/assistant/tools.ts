@@ -2,7 +2,7 @@ import type { ToolCall, ToolOutcome, ToolSpec } from "../ai/types";
 import type { Artifact } from "../harness/artifacts";
 import type { EntityCard } from "../harness/entities";
 import type { VaultNote } from "../harness/vault";
-import { describeWhen } from "../harness/reminderParser";
+import { describeWhen, describeWhenDated } from "../harness/reminderParser";
 import { findCandidates } from "../agent/candidates";
 import {
 	HOME_COMMANDS,
@@ -576,8 +576,8 @@ function reminderTools(ctx: ToolContext): AssistantTool[] {
 				if (at.getTime() < now - 60_000) throw new InputError("That time has already passed");
 				if (at.getTime() > now + 366 * 86_400_000) throw new InputError("Reminders can be at most a year ahead");
 				const created = await ctx.reminders.add(message, at);
-				effects.did.push({ text: `Reminder for ${describeWhen(at)}: ${message}` });
-				return { content: `Reminder ${created.id} set for ${describeWhen(at)}: ${message}` };
+				effects.did.push({ text: `Reminder for ${describeWhenDated(at)}: ${message}` });
+				return { content: `Reminder ${created.id} set for ${describeWhenDated(at)}: ${message}` };
 			},
 		},
 		{

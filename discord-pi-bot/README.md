@@ -15,7 +15,11 @@ Add at least one key in the app's **Configuration** page, then restart the app:
 
 ### A model per thread
 
-**Settings → AI** picks the default. Any thread can have its own: **Answers with**, above the reply box, lists the current models of every AI that's set up. A long job can run on Opus while quick questions stay on Haiku. A new request can be given one before it's sent (the picker shows up once you type), so a job runs on it from its first step. The thread keeps its model, job runs included, until you set it back to **Default**. If that AI is later removed, the thread falls back to the default. The daily news has its own **Written by** under **Settings → News**; Haiku writes it well for a fraction of Opus's price.
+**Settings → AI** picks the default. Any thread can have its own: **Answers with**, above the reply box, lists the current models of every AI that's set up. A long job can run on Opus while quick questions stay on Haiku. A new request can be given one before it's sent (the picker shows up once you type), so a job runs on it from its first step.
+
+A thread keeps the AI that first answered it, job runs included, and the inbox shows it under each thread. Once answered, **Answers with** only offers that AI's other models (Haiku to Opus is fine, Claude to ChatGPT isn't): start a new thread for another AI. Changing the default under **Settings → AI** only affects new threads. If a thread's AI is later removed, it falls back to the default. The daily news has its own **Written by** under **Settings → News**; Haiku writes it well for a fraction of Opus's price.
+
+Every earlier message reaches the AI with the time it was sent, and every earlier answer with what its tools did then (reminders set, documents written, actions waiting for a tap). So "in 90 minutes" from last night stays last night's 90 minutes, and a reminder it set an hour ago isn't second-guessed.
 
 ### Or sign in with a subscription
 

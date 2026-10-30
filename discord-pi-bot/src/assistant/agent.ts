@@ -21,7 +21,7 @@ import { takeEmbeds, type Embed } from "./embeds";
 import type { EntityCard } from "../harness/entities";
 import type { VaultNote } from "../harness/vault";
 import type { Confirmation } from "./confirmations";
-import { systemPrompt, turnContext, type Channel } from "./prompt";
+import { sentAt, systemPrompt, turnContext, type Channel } from "./prompt";
 import { buildTools, newEffects, runTool, type Effects, type ToolContext, type ToolRun } from "./tools";
 
 /** Tool rounds per turn. A brief or a "check everything" question needs a few. */
@@ -132,6 +132,33 @@ export function trimHistory(history: PriorTurn[]): PriorTurn[] {
 	return kept.reverse();
 }
 
+/* An answer that follows its question this closely needs no time of its own. */
+const REPLY_GAP_MS = 2 * 60_000;
+
+/**
+ * The history as the model reads it: each message with when it was sent
+ * (an answer only when it came on its own, like the brief), each answer
+ * with what its tools did. Without these, "in 90 minutes" from last night
+ * gets counted from now, and a reminder set an hour ago looks unconfirmed.
+ */
+export function historyForModel(history: PriorTurn[]): PriorTurn[] {
+	return history.map((turn, index) => {
+		const at = turn.at ? Date.parse(turn.at) : Number.NaN;
+		const before = index > 0 && history[index - 1].at ? Date.parse(history[index - 1].at!) : Number.NaN;
+		const reply = turn.role === "assistant" && at - before >= 0 && at - before < REPLY_GAP_MS;
+		const stamp = Number.isNaN(at) || reply ? "" : `[${sentAt(new Date(at))}] `;
+		const did = turn.did?.length ? `\n\n[Done with tools: ${turn.did.join("; ")}]` : "";
+		return { role: turn.role, text: `${stamp}${turn.text}${did}`.trim() };
+	});
+}
+
+/* Should the model copy those notes into its answer anyway, they come out again. */
+export function withoutNotes(text: string): string {
+	return text
+		.replace(/^\s*\[(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun) \d{1,2} [A-Z][a-z]{2}, \d{2}:\d{2}\]\s*/, "")
+		.replace(/\s*\[Done with tools:[^\]]*\]\s*$/, "");
+}
+
 function failure(problem: string, model = ""): AskResult {
 	return { text: problem, problem, confirms: [], cards: [], embeds: [], artifacts: [], did: [], model, usage: emptyUsage(), rounds: 0 };
 }
@@ -210,7 +237,7 @@ export class Assistant {
 				extra: extraFor(this.deps, input),
 				servedBy: `${provider.label}, model ${provider.model}`,
 			}),
-			history: trimHistory(input.history || []),
+			history: historyForModel(trimHistory(input.history || [])),
 			prompt: input.prompt,
 			images: input.images,
 			tools: tools.map((tool) => tool.spec),
@@ -273,7 +300,7 @@ export class Assistant {
 			answer = problem;
 		}
 		const costUsd = usage.inputTokens || usage.outputTokens ? await spend.record(model, usage) : undefined;
-		const shown = takeEmbeds(answer, effects.embeds);
+		const shown = takeEmbeds(withoutNotes(answer), effects.embeds);
 		return {
 			text: shown.text || (shown.shown.length ? "" : "Done."),
 			problem,
@@ -338,8 +365,9 @@ export class Assistant {
 					extra: extraFor(this.deps, input),
 					servedBy: `${runner.label}, model ${runner.model}`,
 				})}`,
-				prompt: input.prompt,
-				history: trimHistory(input.history || []),
+				// A resumed session keeps its own transcript, so the time goes on each new message.
+				prompt: `[${sentAt(new Date())}] ${input.prompt}`,
+				history: historyForModel(trimHistory(input.history || [])),
 				effort: input.effort || this.deps.settings.effort(),
 				thread: conversation
 					? { get: () => agents.threads.get(conversation, runner.id), set: (id) => agents.threads.set(conversation, runner.id, id) }
@@ -363,7 +391,7 @@ export class Assistant {
 			abort.abort();
 			input.signal?.removeEventListener("abort", cancel);
 		}
-		const shown = takeEmbeds(answer, effects.embeds);
+		const shown = takeEmbeds(withoutNotes(answer), effects.embeds);
 		return {
 			text: shown.text || (shown.shown.length ? "" : "Done."),
 			confirms: effects.confirms,

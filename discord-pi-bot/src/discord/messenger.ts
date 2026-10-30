@@ -27,7 +27,7 @@ export class OwnerMessenger {
 				if (index === 0 && options.title) card.setTitle(options.title);
 				await dm.send({ embeds: [card] });
 			}
-			this.chats.append(dm.id, [{ role: "assistant", text: options.title ? `${options.title}\n${text}` : text }]);
+			this.chats.append(dm.id, [{ role: "assistant", text: options.title ? `${options.title}\n${text}` : text, at: new Date().toISOString() }]);
 			return true;
 		} catch (error) {
 			console.warn("Could not DM the owner:", error instanceof Error ? error.message : error);

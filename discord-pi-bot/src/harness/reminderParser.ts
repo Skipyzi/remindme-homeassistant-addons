@@ -185,3 +185,10 @@ export function describeWhen(at: Date, now = new Date()): string {
 	if (days < 7) return `${WEEKDAYS[at.getDay()]} at ${time}`;
 	return `${at.toLocaleDateString()} at ${time}`;
 }
+
+/** For receipts read later, when "tomorrow" means another day: "tomorrow at 00:56 (Fri 30 Oct)". */
+export function describeWhenDated(at: Date, now = new Date()): string {
+	const when = describeWhen(at, now);
+	if (!/^(today|tomorrow|[A-Z][a-z]+day) at/.test(when)) return when;
+	return `${when} (${at.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })})`;
+}

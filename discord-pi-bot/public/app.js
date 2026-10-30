@@ -336,7 +336,7 @@ function remindme() {
 			const job = thread.job;
 			// A snoozed thread that's due comes back on top.
 			const back = thread.snoozedUntil && Date.parse(thread.snoozedUntil) > Date.parse(thread.updatedAt) ? thread.snoozedUntil : thread.updatedAt;
-			const item = { key: `t-${thread.id}`, threadId: thread.id, openId: thread.id, at: new Date(back), title: thread.title, line: firstLine(thread.last), mark: "›", bad: false, cat: this.catState(thread) };
+			const item = { key: `t-${thread.id}`, threadId: thread.id, openId: thread.id, at: new Date(back), title: thread.title, line: firstLine(thread.last), model: thread.model ? this.modelName(thread.model) : "", mark: "›", bad: false, cat: this.catState(thread) };
 			if (job?.status === "done") item.mark = "✓";
 			if (job?.status === "stopped") Object.assign(item, { mark: "✕", bad: Boolean(job.error), line: job.error || job.note || item.line });
 			return item;
@@ -378,6 +378,7 @@ function remindme() {
 			const at = new Date(Math.max(entryAt, threadAt));
 			return {
 				line: entryAt >= threadAt ? firstLine(entry.text) : firstLine(thread.last),
+				model: thread?.model ? this.modelName(thread.model) : "",
 				time: dayKey(at) === dayKey(this.now) ? this.timeOf(at) : at.toLocaleDateString("en-GB", { weekday: "short" }),
 				fresh: this.activity.filter((item) => Date.parse(item.at) > this.feedSeen).length,
 			};
@@ -562,6 +563,14 @@ function remindme() {
 			if (!choice) return this.defaultModelLabel();
 			const group = this.modelChoices.groups.find((entry) => entry.provider === choice.provider);
 			return group?.models.find((model) => model.id === choice.model)?.name || choice.model;
+		},
+		/* Once a chat has an answer it keeps its AI: only that provider's models are offered. */
+		threadLocked(thread) {
+			return Boolean(thread?.model && thread.messages?.some((message) => message.role === "assistant"));
+		},
+		threadModelGroups(thread) {
+			const groups = this.modelChoices.groups;
+			return this.threadLocked(thread) ? groups.filter((group) => group.provider === thread.model.provider) : groups;
 		},
 		defaultModelLabel() {
 			return this.modelChoices.default ? `Default · ${this.modelChoices.default.name}` : "Default";

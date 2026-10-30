@@ -43,7 +43,7 @@ import { DHL_BACKGROUND_SHARE, DHL_KIND, DhlTracker, chooseTracker } from "./con
 import { readSystemStats } from "./harness/systemStats";
 import { ArtifactStore, toDocument } from "./harness/artifacts";
 import { assertPublicUrl, readablePage, ReaderError } from "./harness/reader";
-import { describeWhen } from "./harness/reminderParser";
+import { describeWhen, describeWhenDated } from "./harness/reminderParser";
 import {
 	McpServerStore,
 	callTool as callMcpTool,
@@ -56,7 +56,7 @@ import {
 } from "./harness/mcp";
 import { validateAttachments } from "./harness/attachments";
 import { HomeApi } from "./agent/home";
-import { AiSettings, PROVIDERS } from "./ai/settings";
+import { AiSettings, PROVIDERS, type ModelChoice } from "./ai/settings";
 import { SpendLedger } from "./ai/spend";
 import { withLegacyKeys } from "./ai/legacyEndpoints";
 import type { Effort, ImageInput, ProviderId } from "./ai/types";
@@ -1510,6 +1510,10 @@ app.patch("/api/threads/:id", (request, response) => {
 	if (body.model !== undefined) {
 		const model = body.model === null ? undefined : aiSettings.checkChoice(body.model);
 		if (body.model !== null && !model) return response.status(400).json({ error: "That model isn't available. Pick one from the list." });
+		// Once answered, a chat keeps its AI: another one wouldn't have what was said and done here.
+		const own = threads.get(request.params.id)?.model;
+		if (own && threads.answered(request.params.id) && model?.provider !== own.provider)
+			return response.status(409).json({ error: `This chat stays with ${aiSettings.label(own.provider as ModelChoice["provider"])}. Start a new one for another AI.` });
 		if (request.params.id === FEED_ID) threads.ensure(FEED_ID, "RemindMe");
 		if (!threads.setModel(request.params.id, model)) return response.status(404).json({ error: "That conversation is gone." });
 	}
@@ -1689,7 +1693,7 @@ async function batteryAction(entityId: string, action: "remind" | "hide", at?: D
 	const message = battery.rechargeable ? `Charge the ${battery.name}` : `Put a new ${battery.battery || "battery"} in the ${battery.name}`;
 	await addReminder(message, (at.getTime() - Date.now()) / 60_000, process.env.OWNER_ID || "", "");
 	await batteryHides.hide(battery.entityId, at);
-	const line = `Reminder for ${describeWhen(at)}: ${message}`;
+	const line = `Reminder for ${describeWhenDated(at)}: ${message}`;
 	activity.add({ kind: "did", channel: "console", text: line, receipts: [{ text: line }] });
 	const day = at.toLocaleDateString("en-GB", { weekday: "long" });
 	const time = at.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
@@ -1727,7 +1731,8 @@ app.post("/api/reminders", async (request, response) => {
 	const at = new Date(String(request.body?.at || ""));
 	if (!message || Number.isNaN(at.getTime()) || at.getTime() < Date.now()) return response.status(400).json({ error: "Say what to remind you of, and a time in the future." });
 	const created = await addReminder(message, (at.getTime() - Date.now()) / 60_000, process.env.OWNER_ID || "", "");
-	activity.add({ kind: "did", channel: "console", text: `Reminder for ${describeWhen(at)}: ${message}`, receipts: [{ text: `Reminder for ${describeWhen(at)}: ${message}` }] });
+	const line = `Reminder for ${describeWhenDated(at)}: ${message}`;
+	activity.add({ kind: "did", channel: "console", text: line, receipts: [{ text: line }] });
 	response.status(201).json({ id: created.id, at: at.toISOString() });
 });
 /*
@@ -2141,7 +2146,16 @@ export const assistant = new Assistant({
 	settings: aiSettings,
 	spend,
 	persona: () => persona.get() + skillPrompt(skills.enabled()),
-	modelFor: (id) => aiSettings.checkChoice(threads.get(id)?.model),
+	// A chat keeps the AI it started with: its first answer pins it, so a change under AI later doesn't switch it midway.
+	modelFor: (id) => {
+		const thread = threads.get(id);
+		if (!thread) return undefined;
+		const own = aiSettings.checkChoice(thread.model);
+		if (own) return own;
+		const current = aiSettings.current();
+		if (current) threads.setModel(id, current);
+		return current;
+	},
 	tools: toolContext,
 	recall: (prompt) => vault.recall(prompt, 5),
 	home: () => homeName,

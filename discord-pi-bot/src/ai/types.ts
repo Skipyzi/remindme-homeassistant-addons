@@ -36,6 +36,10 @@ export interface ImageInput {
 export interface PriorTurn {
 	role: "user" | "assistant";
 	text: string;
+	/** When it was sent (ISO), so "in 90 minutes" in an old message counts from then. */
+	at?: string;
+	/** What the tools did in that answer: "Reminder for tomorrow at 00:56 (Fri 30 Oct): …". */
+	did?: string[];
 }
 
 export interface TurnRequest {

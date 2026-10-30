@@ -196,7 +196,8 @@ export class AiSettings {
 		}
 	}
 
-	private label(id: AssistantId): string {
+	/** "Claude", "ChatGPT subscription". */
+	label(id: AssistantId): string {
 		return PROVIDERS.find((provider) => provider.id === id)?.label || id;
 	}
 
@@ -255,6 +256,14 @@ export class AiSettings {
 		const { provider, model } = value as Record<string, unknown>;
 		if (!isAssistant(provider) || !this.configured(provider) || typeof model !== "string" || !/^[\w.:/-]{1,100}$/.test(model)) return undefined;
 		return { provider, model };
+	}
+
+	/** What answers when nothing else is picked: the AI and model chosen under AI, when it's ready. */
+	current(): ModelChoice | undefined {
+		if (this.problem()) return undefined;
+		const provider = this.providerId();
+		const model = this.model(provider);
+		return model ? { provider, model } : undefined;
 	}
 
 	/** A choice in plain words: "Claude Haiku 5.5", or the provider and model name. */

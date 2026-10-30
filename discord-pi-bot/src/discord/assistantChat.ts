@@ -134,8 +134,8 @@ async function handleMessage(client: Client, deps: ChatDeps, message: Message): 
 			const text = [result.text, ...result.embeds.map(embedText)].filter(Boolean).join("\n\n") || "Done.";
 			if (!result.problem)
 				deps.chats.append(message.channelId, [
-					{ role: "user", text: images.length ? `${prompt} (with ${images.length} image${images.length === 1 ? "" : "s"})` : prompt },
-					{ role: "assistant", text },
+					{ role: "user", text: images.length ? `${prompt} (with ${images.length} image${images.length === 1 ? "" : "s"})` : prompt, at: new Date(message.createdTimestamp).toISOString() },
+					{ role: "assistant", text, at: new Date().toISOString(), ...(result.did.length ? { did: result.did.map((item) => item.text) } : {}) },
 				]);
 			await reply(message, text, result.confirms);
 		} catch (error) {
@@ -174,7 +174,7 @@ async function handleButton(deps: ChatDeps, interaction: ButtonInteraction): Pro
 			}
 		}
 	}
-	deps.chats.append(interaction.channelId, [{ role: "assistant", text: `(${line})` }]);
+	deps.chats.append(interaction.channelId, [{ role: "assistant", text: `(${line})`, at: new Date().toISOString() }]);
 	// Keep the other actions' buttons; drop the one just answered.
 	const remaining = interaction.message.components
 		.map((row) => row.toJSON())
