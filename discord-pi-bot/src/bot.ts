@@ -4,13 +4,14 @@ import { setupCommands } from "./commands";
 import { startPresenceMonitor } from "./presence";
 import { setupAssistantChat, type ChatDeps } from "./discord/assistantChat";
 import { OwnerMessenger } from "./discord/messenger";
+import { IdentitySync, type Identity } from "./discord/identity";
 
 /**
  * The Discord side: slash commands and the assistant in DMs. Returns the
  * messenger that brief, nudges and reminders use when Discord is wanted, or
  * undefined when no bot token is set (everything else works without it).
  */
-export function startBot(deps: ChatDeps): OwnerMessenger | undefined {
+export function startBot(deps: ChatDeps & { identity?: Identity }): OwnerMessenger | undefined {
 	const errors = validateConfig();
 	if (errors.length > 0) {
 		console.warn(`Discord is off: ${errors.join("; ")}. The console still works.`);
@@ -32,6 +33,8 @@ export function startBot(deps: ChatDeps): OwnerMessenger | undefined {
 
 	setupCommands(client);
 	setupAssistantChat(client, deps);
+	// The bot goes by the assistant's name and wears its cat.
+	if (deps.identity) new IdentitySync(client, deps.identity).start();
 	const messenger = new OwnerMessenger(client, config.ownerId, deps.chats);
 
 	client.login(config.token).catch((error) => console.error("Discord login failed:", error));

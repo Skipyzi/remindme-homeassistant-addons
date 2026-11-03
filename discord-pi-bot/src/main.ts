@@ -16,6 +16,7 @@ import {
 	activity,
 	aiSettings,
 	assistant,
+	assistantIdentity,
 	batteryButtons,
 	batteryNeeds,
 	confirmations,
@@ -48,7 +49,7 @@ async function main() {
 	const chats = new DiscordChats();
 	await chats.load();
 	const ownerId = process.env.OWNER_ID || "";
-	const messenger = startBot({ assistant, chats, confirmations, home, ownerId, activity, guestRoles: discordMessages.guestRoles });
+	const messenger = startBot({ assistant, chats, confirmations, home, ownerId, activity, guestRoles: discordMessages.guestRoles, identity: assistantIdentity });
 	setDiscordBot(messenger);
 	// Discord is one way out, wanted or not (Settings → Discord); the clock runs without it.
 	const toDiscord = () => (messenger && discordMessages.on() ? messenger : undefined);

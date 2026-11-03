@@ -73,6 +73,7 @@ export PARCEL_DATA_PATH=/data/parcels.json
 export AI_DATA_PATH=/data/ai.json
 export SPEND_DATA_PATH=/data/spend.json
 export DISCORD_CHAT_PATH=/data/discord-chats.json
+export DISCORD_IDENTITY_PATH=/data/discord-identity.json
 export PROACTIVE_DATA_PATH=/data/proactive.json
 export ACTIVITY_DATA_PATH=/data/activity.json
 export CONSOLE_CHAT_PATH=/data/console-chat.json

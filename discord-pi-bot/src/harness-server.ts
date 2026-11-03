@@ -924,6 +924,7 @@ app.put("/api/persona", async (request, response) => {
 	if (body.prompt !== undefined) await persona.set(String(body.prompt ?? ""));
 	if (body.name !== undefined || body.look !== undefined) {
 		await persona.setIdentity({ name: body.name, look: body.look });
+		for (const listener of identityListeners) listener();
 		// Its chat goes by its name.
 		const main = threads.get(FEED_ID);
 		if (main) threads.rename(FEED_ID, persona.assistantName());
@@ -2677,12 +2678,22 @@ app.post("/api/phone/ha/test", async (_request, response) => {
 });
 /* A thread's cat as a PNG, for notification pictures. Drawn by the browser, kept in memory. */
 const catPictures = new Map<string, Promise<Buffer>>();
-async function drawCat(seed: string, state: string): Promise<Buffer> {
+async function drawCat(seed: string, state: string, size = 256): Promise<Buffer> {
 	if (!webBrowser) throw new Error("No browser to draw with");
 	const cats = await readFile(resolve(process.cwd(), "public/components/cats.js"), "utf8");
-	const html = `<!doctype html><html><body style="margin:0;width:256px;height:256px;background:#000;display:grid;place-items:center"><div id="cat" style="width:210px;height:210px"></div><script>${cats}</script><script>const box=document.getElementById("cat");box.innerHTML=window.RemindMeCats.draw(${JSON.stringify(seed)},${JSON.stringify(state)});box.firstElementChild.setAttribute("width","210");box.firstElementChild.setAttribute("height","210");</script></body></html>`;
-	return webBrowser.renderPng(html, 256);
+	// Big enough to read as an avatar; a round crop (Discord's) still keeps its ears and paws.
+	const cat = Math.round(size * (size > 256 ? 0.88 : 0.82));
+	const html = `<!doctype html><html><body style="margin:0;width:${size}px;height:${size}px;background:#000;display:grid;place-items:center"><div id="cat" style="width:${cat}px;height:${cat}px"></div><script>${cats}</script><script>const box=document.getElementById("cat");box.innerHTML=window.RemindMeCats.draw(${JSON.stringify(seed)},${JSON.stringify(state)});box.firstElementChild.setAttribute("width","${cat}");box.firstElementChild.setAttribute("height","${cat}");</script></body></html>`;
+	return webBrowser.renderPng(html, size);
 }
+/* The assistant's name and cat, for the Discord bot to go by. */
+const identityListeners: Array<() => void> = [];
+export const assistantIdentity = {
+	name: () => persona.assistantName(),
+	seed: () => persona.catSeed(),
+	avatar: () => drawCat(persona.catSeed(), "done", 512),
+	onChange: (listener: () => void) => void identityListeners.push(listener),
+};
 app.get("/api/cats/:seed/:file", async (request, response) => {
 	const state = /^(asking|working|done|stopped)\.png$/.exec(request.params.file)?.[1];
 	const seed = request.params.seed;
