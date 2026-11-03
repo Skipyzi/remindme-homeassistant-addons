@@ -97,6 +97,14 @@ export interface Step {
 	usage: Usage;
 	/** The model that actually answered (a refusal fallback can change it). */
 	model: string;
+	/** Pages the answer cites, from the provider's own web search. */
+	sources?: Source[];
+}
+
+/** A web page an answer cites. */
+export interface Source {
+	url: string;
+	title?: string;
 }
 
 /**

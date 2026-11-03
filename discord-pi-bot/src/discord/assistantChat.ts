@@ -8,7 +8,7 @@ import {
 	type Client,
 	type Message,
 } from "discord.js";
-import type { ImageInput } from "../ai/types";
+import type { ImageInput, Source } from "../ai/types";
 import { embedText } from "../assistant/embeds";
 import type { HomeApi } from "../agent/home";
 import type { Assistant } from "../assistant/agent";
@@ -40,6 +40,18 @@ export function promptFrom(content: string, botId?: string, roleIds: string[] = 
 function botRoles(message: Message, botId: string | undefined): string[] {
 	if (!botId || !message.inGuild()) return [];
 	return [...message.mentions.roles.values()].filter((role) => role.tags?.botId === botId).map((role) => role.id);
+}
+
+/** The pages an answer cites, under it as links that don't unfold into previews. */
+export function withSources(text: string, sources: Source[] = []): string {
+	const listed = sources.filter((source) => /^https?:\/\//.test(source.url) && !text.includes(source.url)).slice(0, 5);
+	if (!listed.length) return text;
+	const label = (source: Source) => {
+		const title = (source.title || "").replace(/[[\]]/g, "").replace(/\s+/g, " ").trim();
+		const site = new URL(source.url).hostname.replace(/^www\./, "");
+		return title ? `${title.length > 70 ? `${title.slice(0, 69)}…` : title} (${site})` : site;
+	};
+	return `${text}\n\n**Sources**\n${listed.map((source) => `- [${label(source)}](<${source.url}>)`).join("\n")}`;
 }
 
 /** What the turn was about, for the chat's history: so "move it to 10" later still knows what "it" was. */
@@ -153,7 +165,7 @@ async function handleMessage(client: Client, deps: ChatDeps, message: Message): 
 				...(extra ? { extra } : {}),
 			});
 			// Discord has no cards: they follow the answer as plain lines.
-			const text = [result.text, ...result.embeds.map(embedText)].filter(Boolean).join("\n\n") || "Done.";
+			const text = withSources([result.text, ...result.embeds.map(embedText)].filter(Boolean).join("\n\n") || "Done.", result.sources);
 			if (!result.problem)
 				deps.chats.append(message.channelId, [
 					{

@@ -10,6 +10,7 @@ import {
 	type Effort,
 	type ImageInput,
 	type PriorTurn,
+	type Source,
 	type Step,
 	type ToolCall,
 	type Usage,
@@ -119,6 +120,8 @@ export interface AskResult {
 	artifacts: Artifact[];
 	/** What the tools changed, for the ledger. */
 	did: Receipt[];
+	/** Web pages the answer cites (Claude's web search), for channels that list them. */
+	sources?: Source[];
 	model: string;
 	usage: Usage;
 	costUsd?: number;
@@ -258,6 +261,7 @@ export class Assistant {
 		let answer = "";
 		let rounds = 0;
 		let problem: string | undefined;
+		const sources = new Map<string, Source>();
 		try {
 			for (; rounds < MAX_ROUNDS; ) {
 				const round = rounds++;
@@ -269,6 +273,7 @@ export class Assistant {
 				});
 				usage = addUsage(usage, step.usage);
 				model = step.model;
+				for (const source of step.sources || []) if (!sources.has(source.url)) sources.set(source.url, source);
 				if (step.stop !== "tools") events.roundEnd?.(round, step);
 				if (step.stop === "refused") {
 					answer = step.text.trim() || "I can't help with that one.";
@@ -314,6 +319,7 @@ export class Assistant {
 			embeds: shown.shown,
 			artifacts: effects.artifacts,
 			did: effects.did,
+			...(sources.size && !problem ? { sources: [...sources.values()] } : {}),
 			model,
 			usage,
 			costUsd,

@@ -171,7 +171,7 @@ test("a turn finds the lamp, dims it, reads it back and answers", async () => {
 	assert.ok(result.costUsd! > 0);
 	// The request carried the standing instructions and the Discord style.
 	assert.match(provider.requests[0].system, /You are RemindMe\./);
-	assert.match(provider.requests[0].context, /Discord direct message/);
+	assert.match(provider.requests[0].context, /This is Discord: a direct message, or a mention in a server/);
 	assert.ok(provider.requests[0].tools.some((tool) => tool.name === "calendar_events"));
 });
 

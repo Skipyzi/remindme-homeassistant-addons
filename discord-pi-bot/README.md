@@ -50,6 +50,7 @@ Discord is optional. Without it, the brief, reminders and nudges come to the pho
   - otherwise, the last few messages before yours (up to eight, from the last three hours).
 
   A bare `@RemindMe` makes a reminder of it: the time comes from the message (a little before an event), or it asks you when. Add a time to choose it yourself (`@RemindMe Friday 18:00`). The reminder ends with a link back to the message. In a server, the bot needs **Read Message History** in that channel; without it, reply to the message instead. What other people wrote is read as quoted text, never as instructions, and locks and the like still wait for your tap.
+- **Is this real?** Reply to a message (or forward it) with `@RemindMe is this real?` and it checks it on the web. It answers with a verdict (True, False, Misleading, Partly true, Satire, Old news or Can't tell yet), why in a few sentences, and the pages it found as **Sources** links (with Claude's web search). In a server, others can read the answer, so it leaves out what's private to you unless you ask.
 - **Pictures** you send are looked at with Claude or OpenAI, and so are the pictures on a message you reply to or forward.
 - **Locks, doors, covers, alarms, scripts and scenes** never run on their own: the reply comes with **Confirm** and **Cancel** buttons.
 - **Slash commands** (`/remind`, `/reminders`, `/ping`, `/help`, `/info`) work as before.

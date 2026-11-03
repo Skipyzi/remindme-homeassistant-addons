@@ -112,3 +112,24 @@ test("without Read Message History it says so instead of failing", async () => {
 	const { context } = await gatherContext(fakeMessage({ id: "m", authorId: "owner", created: 1, history: denied }), "owner", { recent: true });
 	assert.match(context.unreadable!, /Read Message History/);
 });
+
+test("a Discord answer lists the pages it cites as links without previews, once and only five", async () => {
+	const { withSources } = await import("../src/discord/assistantChat.ts");
+	assert.equal(withSources("**True.**"), "**True.**");
+	const text = withSources("**False.** See https://already.example/x", [
+		{ url: "https://already.example/x", title: "In the text" },
+		{ url: "https://www.tagesschau.de/faktenfinder/a", title: "Faktencheck: [Video] ist alt" },
+		{ url: "https://reuters.com/b" },
+		...Array.from({ length: 6 }, (_, index) => ({ url: `https://s${index}.example/` })),
+	]);
+	assert.match(text, /\n\n\*\*Sources\*\*\n- \[Faktencheck: Video ist alt \(tagesschau\.de\)\]\(<https:\/\/www\.tagesschau\.de\/faktenfinder\/a>\)\n- \[reuters\.com\]\(<https:\/\/reuters\.com\/b>\)/);
+	assert.doesNotMatch(text, /In the text/);
+	assert.equal(text.match(/^- /gm)?.length, 5);
+});
+
+test("in a server, the answer is said to be read by others, so private things stay out", () => {
+	const text = mentionContext({ where: "#general on Friends", shared: true })!;
+	assert.match(text, /Other people in #general on Friends read your answer/);
+	assert.match(mentionContext({ where: "#general", shared: true, replied: { author: "Anna", at, text: "Is this real? pic" } })!, /To check whether one of them is true, use web search/);
+	assert.equal(mentionContext({ where: "your DMs" }), undefined);
+});

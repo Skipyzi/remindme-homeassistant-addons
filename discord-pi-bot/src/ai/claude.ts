@@ -3,6 +3,7 @@ import {
 	ProviderError,
 	type Provider,
 	type Session,
+	type Source,
 	type Step,
 	type StreamEvents,
 	type ToolCall,
@@ -123,6 +124,7 @@ class ClaudeSession implements Session {
 	async next(events: StreamEvents): Promise<Step> {
 		const usage: Usage = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 };
 		let message: Message;
+		const sources = new Map<string, Source>();
 		// A long server-side web search can pause the turn; sending it back resumes it.
 		for (let pauses = 0; ; pauses++) {
 			message = await this.call(events);
@@ -132,9 +134,15 @@ class ClaudeSession implements Session {
 			usage.cacheWriteTokens += message.usage.cache_creation_input_tokens || 0;
 			const searches = message.usage.server_tool_use?.web_search_requests || 0;
 			if (searches) usage.webSearches = (usage.webSearches || 0) + searches;
-			for (const block of message.content)
+			for (const block of message.content) {
 				if (block.type === "server_tool_use" && block.name === "web_search")
 					events.searched?.(String((block.input as { query?: unknown })?.query || ""));
+				// What web search found is cited on the text; the links are kept for the answer's sources.
+				if (block.type === "text")
+					for (const citation of (block.citations || []) as Array<{ type?: string; url?: string; title?: string | null }>)
+						if (citation.type === "web_search_result_location" && citation.url && !sources.has(citation.url))
+							sources.set(citation.url, { url: citation.url, ...(citation.title ? { title: citation.title } : {}) });
+			}
 			if (message.stop_reason !== "pause_turn" || pauses >= 3) break;
 			this.messages.push({ role: "assistant", content: message.content });
 		}
@@ -149,7 +157,7 @@ class ClaudeSession implements Session {
 				name: block.name,
 				input: block.input && typeof block.input === "object" ? (block.input as Record<string, unknown>) : {},
 			}));
-		const base = { text, usage, model: message.model || this.model };
+		const base = { text, usage, model: message.model || this.model, ...(sources.size ? { sources: [...sources.values()] } : {}) };
 		if (message.stop_reason === "refusal") return { ...base, calls: [], stop: "refused" };
 		// A tool input cut off at the limit can still parse; never run it.
 		if (message.stop_reason === "max_tokens") return { ...base, calls: [], stop: "max_tokens" };

@@ -196,3 +196,26 @@ test("OpenAI: a commentary message streams as thinking and stays out of the answ
 	assert.deepEqual(text, ["Paper bin out tonight."]);
 	assert.deepEqual(thinking, ["Let me gather the facts."]);
 });
+
+test("Claude: what web search cites is kept as the answer's sources, once each", async () => {
+	const citation = (url: string, title: string) => ({ type: "web_search_result_location", url, title, cited_text: "…", encrypted_index: "x" });
+	script = [
+		sse([
+			["message_start", { type: "message_start", message: { id: "m", type: "message", role: "assistant", model: "claude-opus-5-5", content: [], stop_reason: null, stop_sequence: null, usage: { input_tokens: 3, output_tokens: 0 } } }],
+			["content_block_start", { type: "content_block_start", index: 0, content_block: { type: "text", text: "", citations: [] } }],
+			["content_block_delta", { type: "content_block_delta", index: 0, delta: { type: "citations_delta", citation: citation("https://www.tagesschau.de/a", "Faktencheck: Das Video ist alt") } }],
+			["content_block_delta", { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "**False.** The video is from 2019." } }],
+			["content_block_delta", { type: "content_block_delta", index: 0, delta: { type: "citations_delta", citation: citation("https://www.tagesschau.de/a", "Faktencheck: Das Video ist alt") } }],
+			["content_block_delta", { type: "content_block_delta", index: 0, delta: { type: "citations_delta", citation: citation("https://www.reuters.com/b", "Fact check") } }],
+			["content_block_stop", { type: "content_block_stop", index: 0 }],
+			["message_delta", { type: "message_delta", delta: { stop_reason: "end_turn", stop_sequence: null }, usage: { output_tokens: 6 } }],
+			["message_stop", { type: "message_stop" }],
+		]),
+	];
+	const step = await new ClaudeProvider("k", "claude-opus-5-5", { baseURL: base }).start(request()).next({});
+	assert.equal(step.text, "**False.** The video is from 2019.");
+	assert.deepEqual(step.sources, [
+		{ url: "https://www.tagesschau.de/a", title: "Faktencheck: Das Video ist alt" },
+		{ url: "https://www.reuters.com/b", title: "Fact check" },
+	]);
+});
