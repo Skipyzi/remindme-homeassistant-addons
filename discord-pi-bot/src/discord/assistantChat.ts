@@ -3,6 +3,7 @@ import {
 	ButtonBuilder,
 	ButtonStyle,
 	MessageFlags,
+	type Attachment,
 	type ButtonInteraction,
 	type Client,
 	type Message,
@@ -14,6 +15,7 @@ import type { Assistant } from "../assistant/agent";
 import type { ActivityLog } from "../assistant/activity";
 import type { Confirmation, ConfirmationStore } from "../assistant/confirmations";
 import { splitMessage, type DiscordChats } from "./chats";
+import { BARE_MENTION_PROMPT, gatherContext, isPicture, mentionContext, type MentionContext } from "./context";
 
 export interface ChatDeps {
 	assistant: Assistant;
@@ -24,25 +26,40 @@ export interface ChatDeps {
 	activity?: ActivityLog;
 }
 
-const IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 const MAX_IMAGE_BYTES = 5_000_000;
 
-/** What the owner wrote, without the bot mention or the old "!chat" prefix. */
-export function promptFrom(content: string, botId?: string): string {
+/** What the owner wrote, without the bot mention (as a user or its role) or the old "!chat" prefix. */
+export function promptFrom(content: string, botId?: string, roleIds: string[] = []): string {
 	let text = content;
 	if (botId) text = text.replace(new RegExp(`<@!?${botId}>`, "g"), "");
+	for (const roleId of roleIds) text = text.replace(new RegExp(`<@&${roleId}>`, "g"), "");
 	return text.trim().replace(/^!chat\b\s*/i, "").trim();
+}
+
+/** The bot's own role in a server: picking "@RemindMe" from the list can mention that instead of the bot. */
+function botRoles(message: Message, botId: string | undefined): string[] {
+	if (!botId || !message.inGuild()) return [];
+	return [...message.mentions.roles.values()].filter((role) => role.tags?.botId === botId).map((role) => role.id);
+}
+
+/** What the turn was about, for the chat's history: so "move it to 10" later still knows what "it" was. */
+export function aboutLine(context: MentionContext): string | undefined {
+	const first = context.replied || context.forwarded?.[0] || context.recent?.[context.recent.length - 1];
+	if (!first) return undefined;
+	const text = first.text.replace(/\s+/g, " ").trim();
+	const which = context.replied ? "the message" : context.forwarded ? "a forwarded message" : "the messages before it, the last";
+	return `(about ${which} from ${first.author}: «${text.length > 160 ? `${text.slice(0, 159)}…` : text || "(no text)"}»${first.link ? ` ${first.link}` : ""})`;
 }
 
 export function isReset(prompt: string): boolean {
 	return /^(new|reset|start over|new chat|forget (it|that|this))[.!]?$/i.test(prompt.trim());
 }
 
-async function readImages(message: Message): Promise<ImageInput[]> {
+async function readImages(attachments: Attachment[]): Promise<ImageInput[]> {
 	const images: ImageInput[] = [];
-	for (const attachment of message.attachments.values()) {
+	for (const attachment of attachments) {
 		const type = (attachment.contentType || "").split(";")[0];
-		if (!IMAGE_TYPES.has(type) || attachment.size > MAX_IMAGE_BYTES || images.length >= 4) continue;
+		if (!isPicture(attachment) || attachment.size > MAX_IMAGE_BYTES || images.length >= 4) continue;
 		try {
 			const response = await fetch(attachment.url, { signal: AbortSignal.timeout(15_000) });
 			if (!response.ok) continue;
@@ -98,21 +115,28 @@ async function handleMessage(client: Client, deps: ChatDeps, message: Message): 
 	if (message.author.bot) return;
 	const botId = client.user?.id;
 	const inDm = !message.inGuild();
-	const mentioned = Boolean(botId && message.mentions.users.has(botId));
+	const roles = botRoles(message, botId);
+	const mentioned = Boolean(botId && message.mentions.users.has(botId)) || roles.length > 0;
 	if (!inDm && !mentioned) return;
 	if (message.author.id !== deps.ownerId) {
 		if (inDm) await message.reply("I'm a private assistant and only answer my owner.");
 		return;
 	}
-	let prompt = promptFrom(message.content, botId);
+	let prompt = promptFrom(message.content, botId, roles);
 	if (isReset(prompt)) {
 		deps.chats.reset(message.channelId);
 		await message.reply("Fresh start. What's up?");
 		return;
 	}
-	const images = await readImages(message);
-	if (!prompt && !images.length) return;
-	if (!prompt) prompt = "What's in this picture?";
+	// What "this" is: the message replied to or forwarded, or in a server the last few before it.
+	const { context, pictures } = await gatherContext(message, deps.ownerId, { recent: !inDm });
+	const extra = mentionContext(context);
+	const own = [...message.attachments.values()].filter(isPicture);
+	const images = await readImages([...own, ...pictures]);
+	const about = Boolean(context.replied || context.forwarded?.length || context.recent?.length);
+	if (!prompt && !images.length && !about) return;
+	if (!prompt) prompt = about ? BARE_MENTION_PROMPT : "What's in this picture?";
+	const note = aboutLine(context);
 	await enqueue(message.channelId, async () => {
 		const typing = () => {
 			if (message.channel.isSendable()) void message.channel.sendTyping().catch(() => {});
@@ -126,12 +150,17 @@ async function handleMessage(client: Client, deps: ChatDeps, message: Message): 
 				history: deps.chats.history(message.channelId),
 				conversationId: deps.chats.conversationId(message.channelId),
 				images,
+				...(extra ? { extra } : {}),
 			});
 			// Discord has no cards: they follow the answer as plain lines.
 			const text = [result.text, ...result.embeds.map(embedText)].filter(Boolean).join("\n\n") || "Done.";
 			if (!result.problem)
 				deps.chats.append(message.channelId, [
-					{ role: "user", text: images.length ? `${prompt} (with ${images.length} image${images.length === 1 ? "" : "s"})` : prompt, at: new Date(message.createdTimestamp).toISOString() },
+					{
+						role: "user",
+						text: [prompt, images.length ? `(with ${images.length} image${images.length === 1 ? "" : "s"})` : "", note || ""].filter(Boolean).join(" "),
+						at: new Date(message.createdTimestamp).toISOString(),
+					},
 					{ role: "assistant", text, at: new Date().toISOString(), ...(result.did.length ? { did: result.did.map((item) => item.text) } : {}) },
 				]);
 			await reply(message, text, result.confirms);
@@ -184,7 +213,9 @@ async function handleButton(deps: ChatDeps, interaction: ButtonInteraction): Pro
 
 /**
  * The assistant on Discord: every DM from the owner (and a mention in a
- * server) is a turn. Actions that wait for confirmation come back as buttons.
+ * server) is a turn. A mention reads what it's about: the message replied
+ * to or forwarded, or the last few in the channel; a bare mention makes a
+ * reminder of it. Actions that wait for confirmation come back as buttons.
  */
 export function setupAssistantChat(client: Client, deps: ChatDeps): void {
 	client.on("messageCreate", (message) => {

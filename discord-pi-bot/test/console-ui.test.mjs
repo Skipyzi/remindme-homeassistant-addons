@@ -136,3 +136,11 @@ test("the model picker says when the AI can't be reached instead of hiding it", 
 	assert.match(html, /x-show="aiError"[^>]*x-text="aiError"/);
 	assert.match(app, /data\.unreachable/);
 });
+
+test("a picture can be pasted or dropped into the message box, not only picked with +", () => {
+	assert.match(html, /x-ref="ask" @paste="pastePictures\(\$event\)"/);
+	assert.match(html, /@drop\.prevent="dropPictures\(\$event\)"/);
+	assert.match(app, /pastePictures\(event\) \{/);
+	assert.match(app, /item\.kind === "file"/, "pasted files come from the clipboard's items");
+	assert.match(app, /PICTURE_TYPES\.includes\(file\.type\)/);
+});

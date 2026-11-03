@@ -18,6 +18,8 @@ const KIND_LABELS = {
 
 /* RemindMe's own thread: what it sent and did on its own, and the replies to it. */
 const FEED = "remindme";
+/* What the AI can look at; the + button, paste and drop take only these. */
+const PICTURE_TYPES = ["image/jpeg", "image/png", "image/webp"];
 /* The recording or recogniser running now; kept out of Alpine's state, which would wrap and call into it. */
 let dictating = null;
 const storedNumber = (key) => {
@@ -968,17 +970,41 @@ function remindme() {
 		/* ── Sending ─────────────────────────────────────────────────── */
 
 		attach(event) {
-			for (const file of event.target.files || []) {
+			this.addPictures(event.target.files);
+			event.target.value = "";
+		},
+
+		/* Pictures from the + button, a paste or a drop: up to four, 6 MB each, JPEG, PNG or WebP. */
+		addPictures(files) {
+			for (const file of files || []) {
 				if (this.pictures.length >= 4) break;
-				if (file.size > 6_000_000) {
-					this.error = `${file.name} is bigger than 6 MB.`;
+				if (!PICTURE_TYPES.includes(file.type)) {
+					this.error = `${file.name || "That file"} isn't a picture RemindMe can read (JPEG, PNG or WebP).`;
 					continue;
 				}
+				if (file.size > 6_000_000) {
+					this.error = `${file.name || "That picture"} is bigger than 6 MB.`;
+					continue;
+				}
+				const name = file.name && file.name !== "image.png" ? file.name : `Pasted picture ${this.pictures.length + 1}`;
 				const reader = new FileReader();
-				reader.onload = () => this.pictures.push({ name: file.name, mediaType: file.type, dataUrl: String(reader.result) });
+				reader.onload = () => this.pictures.push({ name, mediaType: file.type, dataUrl: String(reader.result) });
 				reader.readAsDataURL(file);
 			}
-			event.target.value = "";
+		},
+
+		/* A picture pasted into the message box is attached; pasted text goes in as usual. */
+		pastePictures(event) {
+			if (!this.open?.feed) return;
+			const files = [...(event.clipboardData?.items || [])].filter((item) => item.kind === "file").map((item) => item.getAsFile()).filter(Boolean);
+			if (!files.length) return;
+			event.preventDefault();
+			this.addPictures(files);
+		},
+
+		dropPictures(event) {
+			if (!this.open?.feed) return;
+			this.addPictures(event.dataTransfer?.files);
 		},
 
 		/* A message in the chat, with its pictures. Work that takes a while comes back as a task's card. */

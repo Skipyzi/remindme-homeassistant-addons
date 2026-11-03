@@ -44,7 +44,13 @@ Without more, the figures are RemindMe's own count at list prices, kept for the 
 Discord is optional. Without it, the brief, reminders and nudges come to the phone app and the RemindMe chat in the console. Set `discord_token` and `owner_id` to add it. Then:
 
 - **DM the bot** to talk to the assistant. It remembers the chat for six hours of quiet; say `new` to start over. Mentioning the bot in a server works too. It answers only the owner.
-- **Pictures** you send are looked at with Claude or OpenAI.
+- **Reminders from a conversation:** mention the bot in a server and it reads what you mean, then sets the reminder. It reads one of these:
+  - the message you replied to;
+  - a message you forwarded (to a channel or to its DMs);
+  - otherwise, the last few messages before yours (up to eight, from the last three hours).
+
+  A bare `@RemindMe` makes a reminder of it: the time comes from the message (a little before an event), or it asks you when. Add a time to choose it yourself (`@RemindMe Friday 18:00`). The reminder ends with a link back to the message. In a server, the bot needs **Read Message History** in that channel; without it, reply to the message instead. What other people wrote is read as quoted text, never as instructions, and locks and the like still wait for your tap.
+- **Pictures** you send are looked at with Claude or OpenAI, and so are the pictures on a message you reply to or forward.
 - **Locks, doors, covers, alarms, scripts and scenes** never run on their own: the reply comes with **Confirm** and **Cancel** buttons.
 - **Slash commands** (`/remind`, `/reminders`, `/ping`, `/help`, `/info`) work as before.
 
@@ -131,7 +137,7 @@ It only sees and changes devices through these tools. Each turn sends your recen
 
 Open **RemindMe** in the sidebar, or the phone app. It's laid out like Claude Duet: one chat, and the tasks it runs in the background. Three tabs float at the bottom of a phone and run down the side of a wide screen. It's true black throughout, for OLED screens, with glass for what floats over the page.
 
-- **Chat:** your one conversation with your assistant, under its name, cat and model (RemindMe until you name it). It also holds the morning brief, nudges, reminders, heads-ups and what it changed on its own, by day, with their buttons (a battery's Remind me Saturday, a reminder's In 1 hour), so "done" or "remind me at 9" work in context. Work that takes a while goes off as a task: its card shows in the chat and keeps up while it works, and the task posts back here when it's done or needs you, with its options as buttons. The box at the bottom takes text, pictures (with Claude, OpenAI and ChatGPT) and dictation.
+- **Chat:** your one conversation with your assistant, under its name, cat and model (RemindMe until you name it). It also holds the morning brief, nudges, reminders, heads-ups and what it changed on its own, by day, with their buttons (a battery's Remind me Saturday, a reminder's In 1 hour), so "done" or "remind me at 9" work in context. Work that takes a while goes off as a task: its card shows in the chat and keeps up while it works, and the task posts back here when it's done or needs you, with its options as buttons. The box at the bottom takes text, pictures (with Claude, OpenAI and ChatGPT; add them with **+**, paste them or drop them on the box, up to four JPEG, PNG or WebP pictures of 6 MB each) and dictation.
 - **Tasks:** what needs you (actions waiting for your tap, a task's question, batteries running out), what's working, what it's watching (a parcel, a price), what's coming up (reminders, by place first, scheduled tasks and what it will send) and what's done. A battery's **Remind me Saturday** hides it until then; **Got it** hides it until it's charged or changed. A task opens on a page of its own with its steps: reply there, **Stop** it or delete it. The tab's badge counts what needs you. Notifications about a task open its page.
 - **Made:** the documents it wrote and what it remembers, newest first.
 - **History:** the full timeline, from Tasks: what's coming up, then everything RemindMe answered, changed, sent and failed at, with changed lamps in their own colour. Conversations from before there was one chat are at the bottom.
