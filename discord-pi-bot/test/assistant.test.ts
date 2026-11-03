@@ -494,3 +494,28 @@ test("the user's rules decide what it does on its own, asks first, or leaves alo
 	assert.equal(again.get("devices"), "auto", "back to the default isn't stored");
 	assert.equal(again.get("todo"), "ask");
 });
+
+test("a guest from a Discord server gets the web and nothing of the owner's", async () => {
+	const { home } = fakeHome();
+	const provider = new ScriptedProvider([step({ text: "**False.** It's from 2019." })]);
+	const learned: string[] = [];
+	const assistant = new Assistant({
+		settings: settings(provider, 2),
+		spend: ledger(),
+		persona: () => "You are RemindMe.",
+		tools: () => context(home, { readPage: async () => ({ url: "https://a.example", title: "A", text: "…" }) as never }),
+		searchFallback: () => false,
+		memory: () => "The owner's sister is called Anna.",
+		whereabouts: async () => "Where the user is: at home.",
+		learn: (input) => learned.push(input.prompt),
+	} as never);
+	const result = await assistant.ask({ prompt: "is this real?", channel: "discord", guest: { name: "Lukas" }, extra: "The message they replied to: «Aliens landed»" });
+	assert.equal(result.text, "**False.** It's from 2019.");
+	const request = provider.requests[0];
+	assert.deepEqual(request.tools.map((tool) => tool.name).filter((name) => !["web_search", "read_web_page"].includes(name)), [], "only the web");
+	assert.ok(request.tools.some((tool) => tool.name === "read_web_page"));
+	assert.match(request.context, /This message is from Lukas, someone in a Discord server your owner is in, not your owner/);
+	assert.match(request.context, /Aliens landed/);
+	assert.doesNotMatch(request.context, /sister|at home|Home:/, "no memory, whereabouts or home");
+	assert.deepEqual(learned, [], "a guest's words aren't remembered about the owner");
+});

@@ -869,13 +869,23 @@
             <div class="rm-panel" x-show="settingsTab === 'discord'">
               <div class="rm-rows">
                 <div class="rm-r">
-                  <div class="rm-r-main"><span class="rm-lamp" :class="discord.bot ? '' : 'off'"></span><span class="rm-r-t"><b x-text="discord.bot || 'No bot set up'"></b><small x-text="discord.bot ? 'Answers your direct messages, with the same tools as here' : 'Add a bot token in the RemindMe app\'s options'"></small></span></div>
+                  <div class="rm-r-main"><span class="rm-lamp" :class="discord.bot ? '' : 'off'"></span><span class="rm-r-t"><b x-text="discord.bot || 'No bot set up'"></b><small x-text="discord.bot ? 'Answers your DMs and mentions, with the same tools as here' : 'Add a bot token in the RemindMe app\'s options'"></small></span></div>
                 </div>
                 <div class="rm-r rm-r-switch" x-show="discord.bot">
                   <span class="rm-r-t"><b>Its messages go there too</b><small class="wrap">The brief, reminders, heads-ups, news and task updates</small></span>
                   <button class="rm-switch" type="button" role="switch" :aria-checked="String(Boolean(discord.messages))" aria-label="Its messages go to Discord too" @click="setDiscordMessages(!discord.messages)"></button>
                 </div>
               </div>
+              <h3 x-show="discord.bot">Others in your servers</h3>
+              <div class="rm-rows" x-show="discord.bot">
+                <div class="rm-r">
+                  <div class="rm-r-main"><span class="rm-lamp" :class="discord.guestRoles?.length ? '' : 'off'"></span><span class="rm-r-t"><b x-text="discord.guestRoles?.length ? discord.guestRoles.map((role) => `@${role}`).join(', ') : 'Only you'"></b><small class="wrap">Can mention it to ask and fact-check, 20 a day each. Nothing else, none of your things.</small></span></div>
+                </div>
+              </div>
+              <form class="rm-ask" x-show="discord.bot" @submit.prevent="saveGuestRoles()">
+                <input type="text" x-model="discordRoles" placeholder="Role names, like computha" aria-label="Roles that may ask too" autocomplete="off" />
+                <button class="rm-btn solid" type="submit">Save</button>
+              </form>
               <p class="rm-note" x-show="discord.bot && !discord.messages">Off, they still reach your phone and the chat, it still answers on Discord, and a reminder set in a Discord channel still rings there.</p>
               <p class="rm-note bad" x-show="discord.bot && !discord.messages && !discord.phones">No phone gets RemindMe's notifications yet, so you'd only see its messages in the console. Turn them on under Phone app.</p>
               <p class="rm-note" role="status" x-show="discordNote" x-text="discordNote"></p>

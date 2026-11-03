@@ -178,7 +178,9 @@ function remindme() {
 		})(),
 		listening: null,
 		/* Discord: the bot, and whether RemindMe's messages go there too */
-		discord: { bot: null, messages: true, phones: 0 },
+		discord: { bot: null, messages: true, phones: 0, guestRoles: [] },
+		/* The roles that may ask too, as typed: "computha, friends". */
+		discordRoles: "",
 		discordNote: "",
 		/* What it may do on its own, per kind of action */
 		rules: [],
@@ -1346,7 +1348,10 @@ function remindme() {
 			if (tab === "ai") await this.loadAi();
 			if (tab === "prompt") await this.loadPersona();
 			if (tab === "rules") this.rules = await this.getJson("./api/rules", []);
-			if (tab === "discord") this.discord = await this.getJson("./api/discord", this.discord);
+			if (tab === "discord") {
+				this.discord = await this.getJson("./api/discord", this.discord);
+				this.discordRoles = (this.discord.guestRoles || []).join(", ");
+			}
 			if (tab === "credits") this.credits = await this.getJson("./api/credits", this.credits);
 			if (tab === "skills") this.skills = await this.getJson("./api/skills", []);
 			if (tab === "mcp") await Promise.all([this.getJson("./api/mcp", []).then((servers) => (this.mcpServers = servers)), this.directory.loaded ? null : this.loadDirectory()]);
@@ -1990,6 +1995,18 @@ function remindme() {
 				await this.request("./api/discord", "PUT", { messages: on });
 				this.discord = { ...this.discord, messages: on };
 				this.discordNote = on ? "Its messages go to Discord again." : "Done. Its messages come to your phone and the RemindMe chat, not Discord.";
+			} catch (error) {
+				this.discordNote = error.message;
+			}
+		},
+		async saveGuestRoles() {
+			try {
+				const saved = await this.request("./api/discord", "PUT", { guestRoles: this.discordRoles });
+				this.discord = { ...this.discord, guestRoles: saved.guestRoles };
+				this.discordRoles = saved.guestRoles.join(", ");
+				this.discordNote = saved.guestRoles.length
+					? `People with ${saved.guestRoles.map((role) => `@${role}`).join(" or ")} can now mention it to ask questions and check facts.`
+					: "Only you can talk to it now.";
 			} catch (error) {
 				this.discordNote = error.message;
 			}

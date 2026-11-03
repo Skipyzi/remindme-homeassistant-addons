@@ -153,3 +153,9 @@ test("your message shows the pictures you sent, and a tap opens one full screen"
 	assert.match(app, /\.\/api\/pictures\/\$\{picture\.id\}/);
 	assert.match(app, /pictures: attachments\.map\(\(picture\) => \(\{ src: picture\.dataUrl \}\)\)/, "the picture shows at once, before the Pi has it");
 });
+
+test("Settings → Discord says which roles may ask too, and saves them", () => {
+	assert.match(html, /x-model="discordRoles"/);
+	assert.match(html, /@submit\.prevent="saveGuestRoles\(\)"/);
+	assert.match(app, /"\.\/api\/discord", "PUT", \{ guestRoles: this\.discordRoles \}/);
+});

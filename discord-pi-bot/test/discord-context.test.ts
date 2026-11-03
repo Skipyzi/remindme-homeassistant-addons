@@ -133,3 +133,22 @@ test("in a server, the answer is said to be read by others, so private things st
 	assert.match(mentionContext({ where: "#general", shared: true, replied: { author: "Anna", at, text: "Is this real? pic" } })!, /To check whether one of them is true, use web search/);
 	assert.equal(mentionContext({ where: "your DMs" }), undefined);
 });
+
+test("an allowed role lets a server member ask, up to the day's limit", async () => {
+	const { hasGuestRole, guestAllowed, GUEST_DAILY } = await import("../src/discord/assistantChat.ts");
+	assert.equal(hasGuestRole(["@everyone", "Computha"], ["computha"]), true, "by name, ignoring case");
+	assert.equal(hasGuestRole(["friends"], ["computha"]), false);
+	assert.equal(hasGuestRole(["computha"], []), false, "no roles set: only the owner");
+	const now = new Date("2026-11-03T12:00:00Z");
+	for (let index = 0; index < GUEST_DAILY; index++) assert.equal(guestAllowed("lukas", now), true);
+	assert.equal(guestAllowed("lukas", now), false);
+	assert.equal(guestAllowed("lukas", new Date("2026-11-04T08:00:00Z")), true, "a new day, new questions");
+	assert.equal(guestAllowed("anna", now), true, "each person counts on their own");
+});
+
+test("the roles setting takes a list or a typed line", async () => {
+	const { guestRoleList } = await import("../src/harness-server.ts");
+	assert.deepEqual(guestRoleList("@computha, friends , computha,"), ["computha", "friends"]);
+	assert.deepEqual(guestRoleList(["computha"]), ["computha"]);
+	assert.deepEqual(guestRoleList(undefined), []);
+});

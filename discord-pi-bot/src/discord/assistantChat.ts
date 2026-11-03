@@ -24,7 +24,32 @@ export interface ChatDeps {
 	home?: HomeApi;
 	ownerId: string;
 	activity?: ActivityLog;
+	/** Server roles whose members may mention the bot too, for questions and fact checks. */
+	guestRoles?: () => string[];
 }
+
+/** Questions a guest may ask a day, so the owner's AI budget stays theirs. */
+export const GUEST_DAILY = 20;
+const guestCounts = new Map<string, { day: string; count: number }>();
+
+/** Whether a guest has a question left today; counts it if so. */
+export function guestAllowed(userId: string, now = new Date()): boolean {
+	const day = now.toISOString().slice(0, 10);
+	const seen = guestCounts.get(userId);
+	const count = seen?.day === day ? seen.count : 0;
+	if (count >= GUEST_DAILY) return false;
+	guestCounts.set(userId, { day, count: count + 1 });
+	return true;
+}
+
+/** Whether a server member has one of the allowed roles, by name and ignoring case. */
+export function hasGuestRole(memberRoles: string[], allowed: string[]): boolean {
+	const wanted = new Set(allowed.map((role) => role.toLowerCase()));
+	return memberRoles.some((role) => wanted.has(role.toLowerCase()));
+}
+
+/** A guest's bare mention on a message: check it. */
+export const GUEST_BARE_PROMPT = "Is this true? Check it.";
 
 const MAX_IMAGE_BYTES = 5_000_000;
 
@@ -103,7 +128,8 @@ async function reply(message: Message, text: string, confirms: Confirmation[]): 
 	const chunks = splitMessage(text);
 	for (const [index, chunk] of chunks.entries()) {
 		const last = index === chunks.length - 1;
-		const payload = { content: chunk, components: last ? confirmRows(confirms) : [] };
+		// Never @everyone or a role, whatever the answer quotes; only the person asking hears of the reply.
+		const payload = { content: chunk, components: last ? confirmRows(confirms) : [], allowedMentions: { parse: [], repliedUser: true } };
 		if (index === 0) await message.reply(payload);
 		else if (message.channel.isSendable()) await message.channel.send(payload);
 	}
@@ -130,26 +156,39 @@ async function handleMessage(client: Client, deps: ChatDeps, message: Message): 
 	const roles = botRoles(message, botId);
 	const mentioned = Boolean(botId && message.mentions.users.has(botId)) || roles.length > 0;
 	if (!inDm && !mentioned) return;
-	if (message.author.id !== deps.ownerId) {
+	const owner = message.author.id === deps.ownerId;
+	// Someone else in a server with an allowed role may ask questions and check facts; nobody else gets an answer.
+	const guest =
+		!owner && !inDm && message.member && hasGuestRole([...message.member.roles.cache.values()].map((role) => role.name), deps.guestRoles?.() || [])
+			? { name: message.member.displayName || message.author.username }
+			: undefined;
+	if (!owner && !guest) {
 		if (inDm) await message.reply("I'm a private assistant and only answer my owner.");
 		return;
 	}
+	// Each guest has a conversation of their own, apart from the owner's in the same channel.
+	const chatKey = guest ? `guest:${message.channelId}:${message.author.id}` : message.channelId;
 	let prompt = promptFrom(message.content, botId, roles);
 	if (isReset(prompt)) {
-		deps.chats.reset(message.channelId);
+		deps.chats.reset(chatKey);
 		await message.reply("Fresh start. What's up?");
 		return;
 	}
+	if (guest && !guestAllowed(message.author.id)) {
+		await message.reply({ content: `That's all the questions I can take from you today (${GUEST_DAILY}). Try again tomorrow.`, allowedMentions: { parse: [], repliedUser: true } });
+		return;
+	}
 	// What "this" is: the message replied to or forwarded, or in a server the last few before it.
-	const { context, pictures } = await gatherContext(message, deps.ownerId, { recent: !inDm });
-	const extra = mentionContext(context);
+	// "(the user)" marks whoever is asking: the owner, or the guest.
+	const { context, pictures } = await gatherContext(message, guest ? message.author.id : deps.ownerId, { recent: !inDm });
+	const extra = mentionContext(context, undefined, { guest: Boolean(guest) });
 	const own = [...message.attachments.values()].filter(isPicture);
 	const images = await readImages([...own, ...pictures]);
 	const about = Boolean(context.replied || context.forwarded?.length || context.recent?.length);
 	if (!prompt && !images.length && !about) return;
-	if (!prompt) prompt = about ? BARE_MENTION_PROMPT : "What's in this picture?";
+	if (!prompt) prompt = about ? (guest ? GUEST_BARE_PROMPT : BARE_MENTION_PROMPT) : "What's in this picture?";
 	const note = aboutLine(context);
-	await enqueue(message.channelId, async () => {
+	await enqueue(chatKey, async () => {
 		const typing = () => {
 			if (message.channel.isSendable()) void message.channel.sendTyping().catch(() => {});
 		};
@@ -159,15 +198,16 @@ async function handleMessage(client: Client, deps: ChatDeps, message: Message): 
 			const result = await deps.assistant.ask({
 				prompt,
 				channel: "discord",
-				history: deps.chats.history(message.channelId),
-				conversationId: deps.chats.conversationId(message.channelId),
+				history: deps.chats.history(chatKey),
+				conversationId: deps.chats.conversationId(chatKey),
 				images,
 				...(extra ? { extra } : {}),
+				...(guest ? { guest } : {}),
 			});
 			// Discord has no cards: they follow the answer as plain lines.
 			const text = withSources([result.text, ...result.embeds.map(embedText)].filter(Boolean).join("\n\n") || "Done.", result.sources);
 			if (!result.problem)
-				deps.chats.append(message.channelId, [
+				deps.chats.append(chatKey, [
 					{
 						role: "user",
 						text: [prompt, images.length ? `(with ${images.length} image${images.length === 1 ? "" : "s"})` : "", note || ""].filter(Boolean).join(" "),
@@ -228,6 +268,8 @@ async function handleButton(deps: ChatDeps, interaction: ButtonInteraction): Pro
  * server) is a turn. A mention reads what it's about: the message replied
  * to or forwarded, or the last few in the channel; a bare mention makes a
  * reminder of it. Actions that wait for confirmation come back as buttons.
+ * Server members with an allowed role may mention it too: they get answers
+ * and fact checks from the web, and nothing of the owner's.
  */
 export function setupAssistantChat(client: Client, deps: ChatDeps): void {
 	client.on("messageCreate", (message) => {

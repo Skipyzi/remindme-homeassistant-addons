@@ -331,14 +331,24 @@ async function whereabouts(): Promise<Fix | undefined> {
  */
 const discordPath = process.env.DISCORD_SETTINGS_PATH || "./data/discord.json";
 let discordMessagesOn = true;
+/* Server roles whose members may mention the bot too: to ask and check facts, nothing else. */
+let discordGuestRoles: string[] = [];
 async function loadDiscordSettings(): Promise<void> {
 	try {
-		discordMessagesOn = JSON.parse(await readFile(discordPath, "utf8"))?.messages !== false;
+		const saved = JSON.parse(await readFile(discordPath, "utf8"));
+		discordMessagesOn = saved?.messages !== false;
+		discordGuestRoles = guestRoleList(saved?.guestRoles);
 	} catch {
 		discordMessagesOn = true;
+		discordGuestRoles = [];
 	}
 }
-export const discordMessages = { on: () => discordMessagesOn };
+/** Role names from a list or "a, b": trimmed, without @, at most ten. */
+export function guestRoleList(value: unknown): string[] {
+	const items = Array.isArray(value) ? value : typeof value === "string" ? value.split(",") : [];
+	return [...new Set(items.map((item) => String(item).replace(/^@/, "").trim().slice(0, 100)).filter(Boolean))].slice(0, 10);
+}
+export const discordMessages = { on: () => discordMessagesOn, guestRoles: () => discordGuestRoles };
 /* The bot, once main has started it: who it's logged in as, for Settings. */
 let discordBot: { who(): string | undefined } | undefined;
 export function setDiscordBot(bot: { who(): string | undefined } | undefined): void {
@@ -1531,16 +1541,21 @@ app.get("/api/discord", (_request, response) => {
 	response.set("Cache-Control", "no-store").json({
 		bot: discordBot ? discordBot.who() || "connecting" : null,
 		messages: discordMessagesOn,
+		guestRoles: discordGuestRoles,
 		// What else would tell the user: phones with the app's notifications, or the Home Assistant app.
 		phones: phoneApp.devices(),
 	});
 });
 app.put("/api/discord", async (request, response) => {
-	if (typeof request.body?.messages !== "boolean") return void response.status(400).json({ error: "Say whether messages go to Discord." });
-	discordMessagesOn = request.body.messages;
+	const messages = request.body?.messages;
+	const roles = request.body?.guestRoles;
+	if (messages === undefined && roles === undefined) return void response.status(400).json({ error: "Say whether messages go to Discord, or which roles may ask." });
+	if (messages !== undefined && typeof messages !== "boolean") return void response.status(400).json({ error: "Say whether messages go to Discord." });
+	if (typeof messages === "boolean") discordMessagesOn = messages;
+	if (roles !== undefined) discordGuestRoles = guestRoleList(roles);
 	await mkdir(dirname(discordPath), { recursive: true });
-	await writeFile(discordPath, JSON.stringify({ messages: discordMessagesOn }));
-	response.json({ messages: discordMessagesOn });
+	await writeFile(discordPath, JSON.stringify({ messages: discordMessagesOn, guestRoles: discordGuestRoles }));
+	response.json({ messages: discordMessagesOn, guestRoles: discordGuestRoles });
 });
 
 /* What it may do on its own: each kind of action with its choices and what it's set to. */
