@@ -20,6 +20,7 @@ const KIND_LABELS = {
 const FEED = "remindme";
 /* What the AI can look at; the + button, paste and drop take only these. */
 const PICTURE_TYPES = ["image/jpeg", "image/png", "image/webp"];
+const PICTURE_EXTENSIONS = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp" };
 /* The recording or recogniser running now; kept out of Alpine's state, which would wrap and call into it. */
 let dictating = null;
 const storedNumber = (key) => {
@@ -279,6 +280,8 @@ function remindme() {
 		notes: [],
 		/* What a change did, with a moment to take it back */
 		toast: null,
+		/* A picture from the chat, full screen. */
+		viewing: null,
 		/* A home-screen copy from before 28 Oct 2026, which iOS blurs at the top */
 		oldHomeCopy: false,
 		oldCopyHidden: (() => {
@@ -1015,7 +1018,7 @@ function remindme() {
 			this.draft = "";
 			this.pictures = [];
 			const at = new Date().toISOString();
-			this.open.messages = [...this.open.messages, { id: `local-${Date.now()}`, role: "user", at, text: text || "(picture)" }];
+			this.open.messages = [...this.open.messages, { id: `local-${Date.now()}`, role: "user", at, text, pictures: attachments.map((picture) => ({ src: picture.dataUrl })) }];
 			await this.stream(`./api/threads/${FEED}/messages`, { message: text, attachments }, false);
 		},
 
@@ -1246,6 +1249,15 @@ function remindme() {
 			if (diff === 1) return `Tomorrow, ${long}`;
 			if (diff === -1) return `Yesterday, ${long}`;
 			return long;
+		},
+
+		/* A picture on one of your messages: kept on the Pi, or still the one you just picked. */
+		pictureSrc(picture) {
+			return picture.src || `./api/pictures/${picture.id}.${PICTURE_EXTENSIONS[picture.type] || "jpg"}`;
+		},
+		/* What your message says, without the "(1 picture)" note when the picture shows. */
+		shownText(message) {
+			return message.pictures?.length ? (message.text || "").replace(/\s*\(\d+ pictures?\)\s*$/, "").trim() : message.text;
 		},
 
 		timeOf(date) {

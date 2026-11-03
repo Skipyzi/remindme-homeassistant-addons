@@ -144,3 +144,12 @@ test("a picture can be pasted or dropped into the message box, not only picked w
 	assert.match(app, /item\.kind === "file"/, "pasted files come from the clipboard's items");
 	assert.match(app, /PICTURE_TYPES\.includes\(file\.type\)/);
 });
+
+test("your message shows the pictures you sent, and a tap opens one full screen", () => {
+	assert.match(html, /class="rm-me-pics"/);
+	assert.match(html, /@click="viewing = pictureSrc\(picture\)"/);
+	assert.match(html, /class="rm-viewer"/);
+	assert.match(html, /x-text="shownText\(message\)"/);
+	assert.match(app, /\.\/api\/pictures\/\$\{picture\.id\}/);
+	assert.match(app, /pictures: attachments\.map\(\(picture\) => \(\{ src: picture\.dataUrl \}\)\)/, "the picture shows at once, before the Pi has it");
+});

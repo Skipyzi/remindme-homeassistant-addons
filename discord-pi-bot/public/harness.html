@@ -265,7 +265,15 @@
                   <template x-if="message.role === 'day'"><p class="rm-feed-day" x-text="message.text"></p></template>
                   <template x-if="message.role === 'fold'"><button class="rm-feed-fold" type="button" @click="unfoldFeed()" x-text="message.text"></button></template>
                   <template x-if="message.role === 'user'">
-                    <div class="rm-me"><p x-text="message.text"></p><span class="rm-meta" x-text="timeOf(new Date(message.at))"></span></div>
+                    <div class="rm-me">
+                      <div class="rm-me-pics" :class="{ many: message.pictures?.length > 1 }" x-show="message.pictures?.length">
+                        <template x-for="(picture, index) in message.pictures || []" :key="index">
+                          <button class="rm-me-pic" type="button" @click="viewing = pictureSrc(picture)" aria-label="Show the picture"><img :src="pictureSrc(picture)" alt="" loading="lazy" /></button>
+                        </template>
+                      </div>
+                      <p x-show="shownText(message)" x-text="shownText(message)"></p>
+                      <span class="rm-meta" x-text="timeOf(new Date(message.at))"></span>
+                    </div>
                   </template>
                   <template x-if="message.role === 'step'">
                     <div class="rm-step"><time x-text="timeOf(new Date(message.at))"></time><span x-text="message.text"></span></div>
@@ -345,7 +353,7 @@
             <div class="rm-dock" x-show="!open.readOnly">
               <div class="rm-pictures" x-show="open.feed && pictures.length" x-cloak>
                 <template x-for="(picture, index) in pictures" :key="index">
-                  <button type="button" @click="pictures.splice(index, 1)" :title="`Remove ${picture.name}`" x-text="`${picture.name} ✕`"></button>
+                  <button class="rm-pick" type="button" @click="pictures.splice(index, 1)" :title="`Remove ${picture.name}`"><img :src="picture.dataUrl" alt="" /><span aria-hidden="true">✕</span><span class="rm-sr" x-text="`Remove ${picture.name}`"></span></button>
                 </template>
               </div>
               <form class="rm-compose" @submit.prevent="open.feed ? send() : reply()" @dragover.prevent @drop.prevent="dropPictures($event)">
@@ -361,6 +369,11 @@
         <p class="rm-thread-empty" x-show="tab === 'tasks' && !(open && !open.feed)">Pick a task to see its steps.</p>
       </section>
       <!-- What happened, with a moment to take it back. -->
+      <!-- A picture from the chat, full screen; a tap or Escape closes it. -->
+      <div class="rm-viewer" x-show="viewing" x-cloak role="dialog" aria-label="Picture" @click="viewing = null" @keydown.escape.window="viewing = null">
+        <img :src="viewing || ''" alt="" />
+        <button class="rm-x" type="button" aria-label="Close">×</button>
+      </div>
       <div class="rm-toast" x-show="toast" x-cloak role="status"><span x-text="toast?.text"></span><button type="button" x-show="toast?.canUndo" @click="undoToast()">Undo</button></div>
 
       <!-- History: the old ledger, everything RemindMe said, did and will do. -->

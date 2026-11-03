@@ -1,3 +1,4 @@
+import type { StoredPicture } from "../harness/pictures";
 import type { Embed } from "./embeds";
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
@@ -48,6 +49,8 @@ export interface ThreadMessage {
 	confirms?: Array<{ token: string; message: string; destructive?: boolean }>;
 	/** Cards under the answer: offers, a place, articles. */
 	embeds?: Embed[];
+	/** Pictures the user sent with it, kept under /data/pictures. */
+	pictures?: StoredPicture[];
 }
 
 export interface Thread {
@@ -116,6 +119,11 @@ export class ThreadStore {
 				const said = [...messages].reverse().find((message) => message.role !== "user") || messages[messages.length - 1];
 				return { ...thread, last: (said?.text || "").replace(/\s+/g, " ").trim().slice(0, 200), count: messages.length };
 			});
+	}
+
+	/** Every picture a message still points to, so the rest can go. */
+	pictureIds(): Set<string> {
+		return new Set(this.threads.flatMap((thread) => thread.messages.flatMap((message) => (message.pictures || []).map((picture) => picture.id))));
 	}
 
 	get(id: string): Thread | undefined {
@@ -201,7 +209,7 @@ export class ThreadStore {
 	append(id: string, message: Omit<ThreadMessage, "id" | "at"> & { at?: Date }): ThreadMessage | undefined {
 		const thread = this.get(id);
 		const text = message.text.trim();
-		if (!thread || (!text && !message.receipts?.length && !message.confirms?.length && !message.embeds?.length)) return undefined;
+		if (!thread || (!text && !message.receipts?.length && !message.confirms?.length && !message.embeds?.length && !message.pictures?.length)) return undefined;
 		const saved: ThreadMessage = {
 			id: randomUUID().slice(0, 12),
 			at: (message.at || new Date()).toISOString(),
@@ -210,6 +218,7 @@ export class ThreadStore {
 			...(message.receipts?.length ? { receipts: message.receipts } : {}),
 			...(message.confirms?.length ? { confirms: message.confirms } : {}),
 			...(message.embeds?.length ? { embeds: message.embeds.slice(0, 12) } : {}),
+			...(message.pictures?.length ? { pictures: message.pictures.slice(0, 4) } : {}),
 		};
 		thread.messages = [...thread.messages, saved].slice(-MAX_MESSAGES);
 		thread.updatedAt = saved.at;

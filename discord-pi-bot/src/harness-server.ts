@@ -57,6 +57,7 @@ import {
 	toolCallName,
 } from "./harness/mcp";
 import { validateAttachments } from "./harness/attachments";
+import { PictureStore, type StoredPicture } from "./harness/pictures";
 import { HomeApi } from "./agent/home";
 import { AiSettings, PROVIDERS, type ModelChoice } from "./ai/settings";
 import { SpendLedger } from "./ai/spend";
@@ -524,6 +525,7 @@ const placeSearch = new PlaceSearch({
 		})()),
 });
 /* Pictures on cards and map tiles come through RemindMe: the phone never asks the shops or news sites itself. */
+const pictures = new PictureStore();
 const media = new MediaProxy({ dir: process.env.MEDIA_CACHE_PATH || "./data/media", userAgent: BROWSER_UA });
 const proxiedEmbed = (embed: Embed) => mapImages(embed, (url) => media.link(url));
 /**
@@ -1740,6 +1742,15 @@ app.put("/api/memory/settings", async (request, response) => {
 	response.json({ learn: memory.learning, facts: memory.facts() });
 });
 
+/* A picture the owner sent, for their message in the chat. */
+app.get("/api/pictures/:name", (request, response) => {
+	const path = pictures.path(request.params.name);
+	if (!path) return response.status(404).end();
+	response.set("Cache-Control", "private, max-age=31536000, immutable").sendFile(path, (error) => {
+		if (error && !response.headersSent) response.status(404).end();
+	});
+});
+
 app.get("/api/threads/:id", (request, response) => {
 	const thread = threads.get(request.params.id);
 	if (!thread) return response.status(404).json({ error: "That conversation is gone." });
@@ -1777,7 +1788,15 @@ async function threadTurn(request: express.Request, response: express.Response, 
 	send("thread", { id: thread.id, title: thread.title });
 	const history = threads.history(thread.id);
 	threads.setBusy(thread.id, true);
-	threads.append(thread.id, { role: "user", text: attachments.length ? `${prompt}\n\n(${attachments.length} picture${attachments.length === 1 ? "" : "s"})` : prompt });
+	// The pictures are kept so the message shows them; the AI's history notes how many there were.
+	const kept: StoredPicture[] = [];
+	for (const image of attachments)
+		await pictures
+			.save(image.mediaType, image.dataUrl.slice(image.dataUrl.indexOf(",") + 1))
+			.then((picture) => kept.push(picture))
+			.catch((error) => console.warn("Couldn't keep a picture:", error instanceof Error ? error.message : error));
+	const note = attachments.length ? `(${attachments.length} picture${attachments.length === 1 ? "" : "s"})` : "";
+	threads.append(thread.id, { role: "user", text: [said, note].filter(Boolean).join("\n\n"), ...(kept.length ? { pictures: kept } : {}) });
 	try {
 		const result = await runConsoleTurn(send, `thread-${thread.id}-${Date.now()}`, {
 			prompt,
@@ -3161,6 +3180,7 @@ export function createHarnessApp(): Express {
  */
 export async function startHarness(): Promise<void> {
 	await Promise.all([loadConnectors(), threads.load(), phonePush.load(), memory.load(), batteryHides.load(), haApp.load(), loadAppSlug(), prices.load(), news.load(), feeds.load(), placeReminders.load(), loadLocation(), rules.load(), loadDiscordSettings()]);
+	void pictures.prune(threads.pictureIds()).then((removed) => removed && console.log(`Removed ${removed} picture${removed === 1 ? "" : "s"} no message shows any more.`));
 	// Feeds added under News in 4.18 become feed connectors.
 	for (const old of await news.takeOldFeeds()) await feeds.add({ url: old.url, name: old.name, news: old.on, alerts: false }).catch((error) => console.warn(`Couldn't move the feed ${old.name}:`, error instanceof Error ? error.message : error));
 	prices.startClock();

@@ -88,6 +88,7 @@ export LOCATION_DATA_PATH=/data/location.json
 export RULES_DATA_PATH=/data/rules.json
 export DISCORD_SETTINGS_PATH=/data/discord.json
 export MEDIA_CACHE_PATH=/data/media
+export PICTURES_PATH=/data/pictures
 export HA_APP_DATA_PATH=/data/ha-app.json
 export CONNECTORS_DATA_PATH=/data/connectors.json
 export GOOGLE_APP_PATH=/data/google-app.json
