@@ -299,6 +299,10 @@ export class ThreadStore {
 		for (const resolve of waiting) resolve();
 	}
 
+	isBusy(id: string): boolean {
+		return this.busy.has(id);
+	}
+
 	idle(id: string): Promise<void> {
 		const waiting = this.busy.get(id);
 		if (!waiting) return Promise.resolve();

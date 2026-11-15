@@ -338,8 +338,8 @@
                   </template>
                 </div>
               </template>
-              <div class="rm-it rm-typing" x-show="streaming && streaming.threadId === open.id" x-cloak>
-                <span class="rm-meta"><span class="rm-cat rm-cat-say" x-effect="streaming && drawCat($el, open.id, 'working')"></span><span x-text="streaming?.status"></span></span>
+              <div class="rm-it rm-typing" x-show="(streaming && streaming.threadId === open.id) || (!streaming && open.answering)" x-cloak>
+                <span class="rm-meta"><span class="rm-cat rm-cat-say" x-effect="(streaming || open.answering) && drawCat($el, open.id, 'working')"></span><span x-text="streaming?.status || 'thinking'"></span></span>
                 <div class="rm-md" x-effect="renderText($el, (streaming?.text || '').replace(/\[\[c\d+\]\]/g, ''))"></div>
               </div>
               <div class="rm-need-acts rm-answers" x-show="open.job?.status === 'needs_you' && open.job.question?.options?.length" x-cloak>
@@ -361,7 +361,7 @@
                 <input x-show="open.feed" type="text" x-model="draft" x-ref="ask" @paste="pastePictures($event)" :placeholder="`Message ${assistant.name}`" :aria-label="`Message ${assistant.name}`" autocomplete="off" enterkeyhint="send" />
                 <input x-show="!open.feed" type="text" x-model="replyDraft" x-ref="reply" :placeholder="open.job ? 'Reply to this task' : 'Reply'" aria-label="Reply" autocomplete="off" enterkeyhint="send" />
                 <button class="rm-mic" type="button" x-show="canDictate" x-cloak :class="{ on: listening?.target === micTarget }" :disabled="Boolean(listening && (listening.target !== micTarget || listening.busy))" @click="toggleDictation(micTarget)" :aria-label="listening?.target === micTarget ? 'Stop, and write it down' : 'Dictate'" :title="listening?.target === micTarget ? 'Stop, and write it down' : 'Dictate'"><span x-show="listening?.target !== micTarget"><svg class="rm-ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3" /><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21" /></svg></span><span x-show="listening?.target === micTarget" x-text="listening?.busy ? '…' : `${listening?.seconds || 0}s`"></span></button>
-                <button class="rm-send" type="submit" :disabled="sending || (open.feed ? !draft.trim() && !pictures.length : !replyDraft.trim())" aria-label="Send" title="Send"><svg class="rm-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5M6 11l6-6 6 6" /></svg></button>
+                <button class="rm-send" type="submit" :disabled="sending || open.answering || (open.feed ? !draft.trim() && !pictures.length : !replyDraft.trim())" aria-label="Send" title="Send"><svg class="rm-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5M6 11l6-6 6 6" /></svg></button>
               </form>
             </div>
           </div>

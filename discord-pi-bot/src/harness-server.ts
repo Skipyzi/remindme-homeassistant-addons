@@ -1770,8 +1770,15 @@ app.get("/api/pictures/:name", (request, response) => {
 app.get("/api/threads/:id", (request, response) => {
 	const thread = threads.get(request.params.id);
 	if (!thread) return response.status(404).json({ error: "That conversation is gone." });
-	response.set("Cache-Control", "no-store").json(withMedia(thread));
+	response.set("Cache-Control", "no-store").json({ ...withMedia(thread), answering: threads.isBusy(thread.id) });
 });
+
+/*
+ * The turns answering right now, by thread. A turn runs to its end even when
+ * the app that asked goes to the background or closes; only Stop ends it.
+ * `away` is set when nobody is looking, so the answer goes to the phone too.
+ */
+const liveTurns = new Map<string, { abort: AbortController; away: boolean }>();
 
 /*
  * A turn in a thread, streamed like the old console chat. A new message from
@@ -1791,13 +1798,20 @@ async function threadTurn(request: express.Request, response: express.Response, 
 		response.status(400).json({ error: "Say something first." });
 		return;
 	}
+	if (existing && threads.isBusy(existing.id)) {
+		response.status(409).json({ error: "Still answering your last message. Wait for it, or tap Stop." });
+		return;
+	}
 	response.status(200).set({ "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" });
 	const send = createSseSender(response);
-	const abort = new AbortController();
+	const turn = { abort: new AbortController(), away: false };
+	const abort = turn.abort;
+	// A locked phone or a closed app drops the stream; the turn carries on and its answer waits in the thread.
 	response.on("close", () => {
-		if (!response.writableFinished) abort.abort();
+		if (!response.writableFinished) turn.away = true;
 	});
 	const thread = existing || threads.create({ title: titleFrom(prompt), origin: "console" });
+	liveTurns.set(thread.id, turn);
 	// A new request can come with its model, so a long job runs on it from the first step.
 	const model = existing ? undefined : aiSettings.checkChoice(request.body?.model);
 	if (model) threads.setModel(thread.id, model);
@@ -1833,17 +1847,25 @@ async function threadTurn(request: express.Request, response: express.Response, 
 			confirms: result.confirms.map((item) => ({ token: item.token, message: item.message, destructive: item.destructive })),
 		});
 		send("complete", { threadId: thread.id });
+		if (turn.away) void answerToPhone(thread, result.text || (embeds.length ? "Your answer is ready." : ""));
 	} catch (error) {
 		if (abort.signal.aborted) threads.append(thread.id, { role: "assistant", text: "(Stopped before answering.)" });
 		else {
 			console.error("Thread turn failed:", error);
 			threads.append(thread.id, { role: "assistant", text: `Something went wrong: ${error instanceof Error ? error.message : error}` });
 			send("error", { message: error instanceof Error ? error.message : "Unknown error" });
+			if (turn.away) void answerToPhone(thread, `Something went wrong: ${error instanceof Error ? error.message : error}`);
 		}
 	} finally {
+		if (liveTurns.get(thread.id) === turn) liveTurns.delete(thread.id);
 		threads.setBusy(thread.id, false);
 		response.end();
 	}
+}
+/* An answer nobody stayed to read goes to the phone; tapping it opens the chat it belongs to. */
+function answerToPhone(thread: Thread, text: string): Promise<number> {
+	if (!text) return Promise.resolve(0);
+	return phoneNotify({ title: thread.id === FEED_ID ? persona.assistantName() : thread.title, body: text, url: `./#t/${encodeURIComponent(thread.id)}`, tag: `answer-${thread.id}` });
 }
 app.post("/api/threads", (request, response) => void threadTurn(request, response));
 /* The main chat starts over: what was said goes to History, and the next answer comes from the default AI. */
@@ -1863,7 +1885,19 @@ app.post("/api/threads/:id/messages", (request, response) => {
 	if (!text || !jobs.answer(thread.id, text)) return void response.status(400).json({ error: "Say something first." });
 	response.json(threads.get(thread.id));
 });
+/* The app says whether anyone is looking while it answers: an answer nobody sees goes to the phone. */
+app.post("/api/threads/:id/presence", (request, response) => {
+	const turn = liveTurns.get(request.params.id);
+	if (turn) turn.away = request.body?.away === true;
+	response.status(204).end();
+});
 app.post("/api/threads/:id/stop", (request, response) => {
+	// A turn answering now: Stop is the one thing that ends it.
+	const turn = liveTurns.get(request.params.id);
+	if (turn) {
+		turn.abort.abort();
+		return response.json({ stopped: true });
+	}
 	if (!jobs.stop(request.params.id)) return response.status(400).json({ error: "That job isn't running." });
 	response.json(threads.get(request.params.id));
 });
@@ -1962,7 +1996,7 @@ app.get("/api/tiles/:z/:x/:y", async (request, response) => {
 });
 app.get("/api/feed", (_request, response) => {
 	const thread = threads.get(FEED_ID);
-	response.set("Cache-Control", "no-store").json({ entries: feedEntries(14).map((entry) => (entry.embeds?.length ? { ...entry, embeds: entry.embeds.map(proxiedEmbed) } : entry)), thread: thread ? withMedia(thread) : null });
+	response.set("Cache-Control", "no-store").json({ entries: feedEntries(14).map((entry) => (entry.embeds?.length ? { ...entry, embeds: entry.embeds.map(proxiedEmbed) } : entry)), thread: thread ? { ...withMedia(thread), answering: threads.isBusy(thread.id) } : null });
 });
 app.post("/api/activity/:id/act/:index", async (request, response) => {
 	const entry = activity.get(request.params.id);

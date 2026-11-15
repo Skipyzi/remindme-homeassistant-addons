@@ -333,7 +333,11 @@ function remindme() {
 				if (this.tab === "tasks" && !document.hidden) this.loadUpcoming();
 			}, 60_000);
 			document.addEventListener("visibilitychange", () => {
+				// While an answer is on its way, the Pi learns whether anyone is looking; if not, the answer goes to the phone.
+				const answering = this.streaming?.threadId || (this.open?.answering && this.open.id);
+				if (answering) this.tellPresence(answering, document.hidden);
 				if (document.hidden) return;
+				if (this.streaming?.threadId) this.checkStream(this.streaming.threadId);
 				this.loadInbox();
 				if (this.open && !this.open.readOnly && !this.streaming) this.refreshThread();
 			});
@@ -686,7 +690,7 @@ function remindme() {
 				}
 				messages.push(message);
 			}
-			return { id: FEED, feed: true, title: this.assistant.name, createdAt: all[0]?.at || new Date().toISOString(), updatedAt: all.at(-1)?.at || "", messages, model: data.thread?.model, answered: said.some((message) => message.role === "assistant") };
+			return { id: FEED, feed: true, answering: Boolean(data.thread?.answering), title: this.assistant.name, createdAt: all[0]?.at || new Date().toISOString(), updatedAt: all.at(-1)?.at || "", messages, model: data.thread?.model, answered: said.some((message) => message.role === "assistant") };
 		},
 		async unfoldFeed() {
 			this.feedFold = false;
@@ -947,7 +951,33 @@ function remindme() {
 		},
 
 		isRunning(thread) {
-			return Boolean(thread && !thread.readOnly && (["queued", "working"].includes(thread.job?.status) || this.streaming?.threadId === thread.id));
+			return Boolean(thread && !thread.readOnly && (["queued", "working"].includes(thread.job?.status) || thread.answering || this.streaming?.threadId === thread.id));
+		},
+
+		/*
+		 * Back from the background with an answer still streaming: a phone can
+		 * leave the connection hanging. If the Pi is done but nothing arrived,
+		 * let the connection go; the thread then shows the answer.
+		 */
+		async checkStream(threadId) {
+			const controller = this.abort;
+			const thread = await this.getJson(`./api/threads/${encodeURIComponent(threadId)}`, null);
+			if (!thread || thread.answering) return;
+			setTimeout(() => {
+				if (this.abort === controller && this.streaming?.threadId === threadId) controller?.abort();
+			}, 1500);
+		},
+
+		/* Whether anyone is looking at an answer on its way; a beacon still goes out while the page hides or closes. */
+		tellPresence(threadId, away) {
+			const url = `./api/threads/${encodeURIComponent(threadId)}/presence`;
+			const body = JSON.stringify({ away });
+			try {
+				if (navigator.sendBeacon?.(url, new Blob([body], { type: "application/json" }))) return;
+			} catch {
+				/* no beacon: a plain request below */
+			}
+			fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body, keepalive: true }).catch(() => {});
 		},
 
 		/* The held actions a message left behind that still wait for a tap. */
@@ -1015,7 +1045,7 @@ function remindme() {
 		/* A message in the chat, with its pictures. Work that takes a while comes back as a task's card. */
 		async send() {
 			const text = this.draft.trim();
-			if ((!text && !this.pictures.length) || this.sending || !this.open?.feed) return;
+			if ((!text && !this.pictures.length) || this.sending || this.open?.answering || !this.open?.feed) return;
 			const attachments = this.pictures;
 			this.draft = "";
 			this.pictures = [];
@@ -1027,7 +1057,7 @@ function remindme() {
 		async reply() {
 			const open = this.open;
 			const text = this.replyDraft.trim();
-			if (!open || open.readOnly || !text || this.sending) return;
+			if (!open || open.readOnly || !text || this.sending || open.answering) return;
 			this.replyDraft = "";
 			// A job takes the reply as an answer and carries on in the background.
 			if (open.job) {
@@ -1062,6 +1092,9 @@ function remindme() {
 			this.error = "";
 			this.abort = new AbortController();
 			let threadId = fresh ? null : this.open?.id;
+			// Once the Pi has the message it answers whatever happens to this connection.
+			let started = false;
+			let dropped = false;
 			this.streaming = { threadId, status: "thinking", text: "" };
 			this.scrollMessages();
 			try {
@@ -1085,6 +1118,7 @@ function remindme() {
 						if (!line.startsWith("data: ")) continue;
 						const data = JSON.parse(line.slice(6));
 						if (event === "thread") {
+							started = true;
 							threadId = data.id;
 							this.streaming.threadId = data.id;
 							if (fresh) {
@@ -1101,11 +1135,14 @@ function remindme() {
 					}
 				}
 			} catch (error) {
-				if (error.name !== "AbortError") this.error = error.message || String(error);
+				// A locked phone or a backgrounded app drops the connection, not the answer: the thread shows it still coming.
+				dropped = started && error instanceof TypeError;
+				if (error.name !== "AbortError" && !dropped) this.error = error.message || String(error);
 			} finally {
 				this.sending = this.busy = false;
 				this.abort = null;
 				this.streaming = null;
+				if (dropped && !document.hidden) this.tellPresence(threadId, false);
 				if (threadId && (!this.open || this.open.id === threadId)) await this.showThread(threadId);
 				await this.loadInbox();
 				// A task the answer started has its card now; draw the chat again with it.
@@ -1114,8 +1151,14 @@ function remindme() {
 		},
 
 		async stopJob(thread) {
-			if (this.streaming?.threadId === thread.id) {
-				this.abort?.abort();
+			// An answer on its way stops on the Pi; closing the connection alone no longer stops it.
+			if (this.streaming?.threadId === thread.id || thread.answering) {
+				try {
+					await this.request(`./api/threads/${encodeURIComponent(thread.id)}/stop`);
+				} catch (error) {
+					this.error = error.message;
+				}
+				if (!this.streaming) setTimeout(() => this.refreshThread(), 500);
 				return;
 			}
 			try {
