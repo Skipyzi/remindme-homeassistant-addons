@@ -71,7 +71,15 @@ const TOOL_WORDS = {
 
 const JOB_WORDS = { queued: "Waiting its turn", working: "Working", waiting: "Watching", needs_you: "Needs you", done: "Done", stopped: "Stopped" };
 /* The tabs; the chat is home. */
-const TABS = ["chat", "tasks", "made"];
+const TABS = ["chat", "tasks", "news", "made"];
+/* The News tab's sections, in the order the digest has them; "latest" is the mixed feeds' when it's headlines only. */
+const NEWS_SECTIONS = [
+	{ id: "germany", label: "Germany", flag: "🇩🇪" },
+	{ id: "eu", label: "EU", flag: "🇪🇺" },
+	{ id: "world", label: "World", flag: "🌍" },
+	{ id: "latest", label: "Latest", flag: "📰" },
+];
+const NEWS_RATES = [1, 1.25, 1.5, 0.85];
 /* The first word of a held action, when it is a plain verb, names its button. */
 const VERBS = new Set(["Unlock", "Lock", "Open", "Close", "Add", "Run", "Arm", "Disarm", "Send"]);
 
@@ -91,6 +99,12 @@ function euroNumber(text) {
 
 function dayKey(date) {
 	return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+/* The news in the chat: its title and each section's top story; the rest is on the News tab. */
+function newsPointer(text, card) {
+	const tops = (card.sections || []).filter((section) => section.items?.length).map((section) => `- ${section.label}: ${section.items[0].title}`);
+	return [`**${firstLine(text)}**`, tops.join("\n")].filter(Boolean).join("\n\n");
 }
 
 function firstLine(text) {
@@ -193,6 +207,24 @@ function remindme() {
 		news: { on: false, time: "07:30", language: "en", stories: 5, sources: [], catalog: [], own: [] },
 		newsNote: "",
 		newsBusy: false,
+		/* The News tab: the days kept, the one shown, which stories are open, and its player */
+		newsDays: [],
+		newsDay: null,
+		newsLoaded: false,
+		newsWanted: "",
+		newsSection: "all",
+		newsOpen: {},
+		newsWriting: false,
+		newsError: "",
+		newsSeen: (() => {
+			try {
+				return localStorage.getItem("rm-news-seen") || "";
+			} catch {
+				return "";
+			}
+		})(),
+		newsTimer: 0,
+		player: { src: "", date: "", playing: false, at: 0, length: 0, rate: 1 },
 		newFeed: "",
 		feedBusy: false,
 		feedResult: null,
@@ -306,6 +338,7 @@ function remindme() {
 				if (!event.matches && !this.settingsTab) this.settingsTab = "ai";
 			});
 			this.loadInbox();
+			this.loadNewsDays();
 			this.loadModelChoices();
 			this.checkHomeScreenCopy();
 			this.loadDictation();
@@ -331,6 +364,7 @@ function remindme() {
 			// What's coming up moves with the clock.
 			setInterval(() => {
 				if (this.tab === "tasks" && !document.hidden) this.loadUpcoming();
+				if (!document.hidden) this.loadNewsDays();
 			}, 60_000);
 			document.addEventListener("visibilitychange", () => {
 				// While an answer is on its way, the Pi learns whether anyone is looking; if not, the answer goes to the phone.
@@ -339,6 +373,7 @@ function remindme() {
 				if (document.hidden) return;
 				if (this.streaming?.threadId) this.checkStream(this.streaming.threadId);
 				this.loadInbox();
+				this.loadNewsDays();
 				if (this.open && !this.open.readOnly && !this.streaming) this.refreshThread();
 			});
 		},
@@ -553,6 +588,11 @@ function remindme() {
 					this.haLinked = thread;
 					this.openThread(thread);
 				}
+				// A tap on the news notification: the News tab.
+				if (/^\/news\b/.test(event.data.route?.path || "") && this.haLinked !== "news") {
+					this.haLinked = "news";
+					this.goTab("news");
+				}
 			});
 			window.parent.postMessage({ type: "home-assistant/subscribe-properties" }, "*");
 		},
@@ -599,6 +639,7 @@ function remindme() {
 		async loadTab(tab) {
 			if (tab === "tasks") await Promise.all([this.loadUpcoming(), this.loadSection("prices")]);
 			if (tab === "made") await this.loadMade();
+			if (tab === "news") await this.loadNewsTab();
 		},
 
 		openThread(id) {
@@ -652,14 +693,16 @@ function remindme() {
 				const title = task?.title || "";
 				// A task's news comes from the task: its title and cat on top, its options as buttons rather than a list.
 				const said = entry.threadId ? (title && entry.text.startsWith(`${title}: `) ? entry.text.slice(title.length + 2) : entry.text).replace(/(\n• [^\n]*)+\s*$/, "") : entry.text;
+				// The news shows as its top story in each section and a way to the News tab; its text stays for Discord and the phone.
+				const stories = entry.embeds?.find((embed) => embed.kind === "stories");
 				return {
 					id: `e-${entry.id}`,
 					role: "assistant",
 					at: entry.at,
-					// The news shows as its stories card; its text stays for Discord and the phone.
-					text: entry.receipts?.length ? "" : entry.embeds?.some((embed) => embed.kind === "stories") ? `**${firstLine(entry.text)}**` : said,
+					text: entry.receipts?.length ? "" : stories ? newsPointer(entry.text, stories) : said,
 					receipts: entry.receipts,
-					embeds: entry.embeds,
+					embeds: stories ? undefined : entry.embeds,
+					news: stories ? dayKey(new Date(entry.at)) : undefined,
 					entry,
 					from: entry.threadId ? { id: entry.threadId, title: title || "A task", latest: latest.get(entry.threadId) === entry } : undefined,
 					bad: entry.kind === "failed",
@@ -817,6 +860,216 @@ function remindme() {
 				this.newsBusy = false;
 				await this.loadSection("news");
 			}
+		},
+
+		/* ── The News tab ──────────────────────────────────────────────── */
+
+		/* The days kept, for the tab's dot and its day chips; a new day marks the tab until it's opened. */
+		async loadNewsDays() {
+			const days = await this.getJson("./api/news/editions", null);
+			if (!days) return;
+			this.newsDays = days;
+			if (this.tab === "news" && days[0]) this.markNewsSeen(days[0].date);
+		},
+		get newsFresh() {
+			return Boolean(this.tab !== "news" && this.newsDays[0] && this.newsDays[0].date > this.newsSeen);
+		},
+		markNewsSeen(date) {
+			if (date <= this.newsSeen) return;
+			this.newsSeen = date;
+			try {
+				localStorage.setItem("rm-news-seen", date);
+			} catch {
+				/* private browsing: it shows again next time */
+			}
+		},
+		async loadNewsTab() {
+			await Promise.all([this.loadNewsDays(), this.news.catalog.length ? null : this.loadSection("news")]);
+			const wanted = this.newsWanted;
+			this.newsWanted = "";
+			const pick = [wanted, this.newsDay?.date, this.newsDays[0]?.date].find((date) => date && this.newsDays.some((day) => day.date === date));
+			if (pick) await this.showNewsDay(pick);
+			else this.newsDay = null;
+			this.newsLoaded = true;
+		},
+		async showNewsDay(date) {
+			const edition = await this.getJson(`./api/news/editions/${encodeURIComponent(date)}`, null);
+			if (!edition) return;
+			if (this.newsDay?.date !== date) {
+				this.newsOpen = {};
+				this.newsSection = "all";
+				document.querySelector(".rm-news .rm-scroll")?.scrollTo({ top: 0 });
+			}
+			this.newsDay = edition;
+			this.newsError = "";
+			this.watchSpoken();
+		},
+		/* From the chat: the News tab on that day's news. */
+		openNews(date) {
+			this.newsWanted = date || "";
+			if (this.tab === "news") return this.loadNewsTab();
+			this.goTab("news");
+		},
+		/* While its spoken version is being made, the day looks again every few seconds. */
+		watchSpoken() {
+			clearTimeout(this.newsTimer);
+			if (this.newsDay?.spoken?.state !== "making") return;
+			this.newsTimer = setTimeout(async () => {
+				if (this.tab !== "news" || document.hidden) return this.watchSpoken();
+				const edition = await this.getJson(`./api/news/editions/${encodeURIComponent(this.newsDay.date)}`, null);
+				if (edition && edition.date === this.newsDay?.date) this.newsDay = edition;
+				if (edition?.spoken?.state !== "making") this.loadNewsDays();
+				this.watchSpoken();
+			}, 4_000);
+		},
+		newsDayLabel(date) {
+			const today = dayKey(this.now);
+			if (date === today) return "Today";
+			if (date === dayKey(new Date(this.now.getTime() - 86_400_000))) return "Yesterday";
+			return new Date(`${date}T12:00:00`).toLocaleDateString("en-GB", { weekday: "short", day: "numeric" });
+		},
+		get newsLine() {
+			const day = this.newsDay;
+			if (!day) return this.news.on ? `Every day at ${this.news.time}, from the sources you picked` : "The day's stories from the sources you pick, to read or to hear";
+			const sources = new Set([...day.stories.flatMap((story) => story.links.map((link) => link.source)), ...(day.headlines || []).map((item) => item.source)]);
+			const count = day.stories.length || day.headlines?.length || 0;
+			const date = new Date(`${day.date}T12:00:00`).toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" });
+			return `${date} · ${count} ${day.stories.length ? "stories" : "headlines"} from ${sources.size} source${sources.size === 1 ? "" : "s"} · written ${this.timeOf(new Date(day.at))}`;
+		},
+		/* The day's stories by section; with headlines only, the feeds' newest. */
+		get newsSections() {
+			const day = this.newsDay;
+			if (!day) return [];
+			const rows = day.stories.length
+				? day.stories.map((story, index) => ({ key: `s${index}`, region: story.region, title: story.headline, summary: story.summary, image: story.image, links: story.links }))
+				: (day.headlines || []).map((item, index) => ({ key: `h${index}`, region: item.region || "latest", title: item.title, summary: "", image: item.image, links: [{ source: item.source, url: item.link }] }));
+			return NEWS_SECTIONS.map((section) => ({ ...section, items: rows.filter((row) => row.region === section.id) })).filter((section) => section.items.length);
+		},
+		get newsShown() {
+			return this.newsSections.filter((section) => this.newsSection === "all" || section.id === this.newsSection);
+		},
+		/* The first story of each section is open; a tap opens or closes the others. */
+		storyOpen(section, index, item) {
+			return this.newsOpen[item.key] ?? (index === 0 && Boolean(item.summary));
+		},
+		toggleStory(section, index, item) {
+			this.newsOpen = { ...this.newsOpen, [item.key]: !this.storyOpen(section, index, item) };
+		},
+		async writeNewsNow() {
+			this.newsWriting = true;
+			this.newsError = "";
+			try {
+				const edition = await this.request("./api/news/refresh", "POST", {});
+				await this.loadNewsDays();
+				this.newsDay = null;
+				await this.showNewsDay(edition.date);
+			} catch (error) {
+				this.newsError = error.message;
+			} finally {
+				this.newsWriting = false;
+			}
+		},
+
+		/* The spoken version: what the card under the title says and offers. */
+		get spokenState() {
+			const day = this.newsDay;
+			if (!day) return "none";
+			const spoken = day.spoken?.state;
+			if (spoken === "ready" || spoken === "making" || spoken === "failed") return spoken;
+			return this.news.speech?.ready ? "none" : "unavailable";
+		},
+		async makeSpoken() {
+			this.newsError = "";
+			try {
+				this.newsDay = await this.request(`./api/news/editions/${encodeURIComponent(this.newsDay.date)}/spoken`, "POST", {});
+				this.watchSpoken();
+			} catch (error) {
+				this.newsError = error.message;
+			}
+		},
+		newsAudioSrc(day) {
+			return day?.spoken?.state === "ready" ? `./api/news/audio/${encodeURIComponent(day.date)}.mp3?v=${encodeURIComponent(day.spoken.at)}` : "";
+		},
+		/* Whether the player has this day's spoken version loaded. */
+		get playerHere() {
+			return Boolean(this.player.src && this.player.src === this.newsAudioSrc(this.newsDay));
+		},
+		get playerLength() {
+			return this.playerHere && this.player.length ? this.player.length : this.newsDay?.spoken?.seconds || 0;
+		},
+		toggleListen() {
+			const audio = this.$refs.newsAudio;
+			const src = this.newsAudioSrc(this.newsDay);
+			if (!audio || !src) return;
+			if (this.player.src !== src) {
+				audio.src = src;
+				this.player = { ...this.player, src, date: this.newsDay.date, at: 0, length: this.newsDay.spoken.seconds || 0 };
+				audio.playbackRate = this.player.rate;
+				this.mediaSession();
+			}
+			if (audio.paused) audio.play().catch((error) => (this.newsError = `It didn't play: ${error.message}`));
+			else audio.pause();
+		},
+		onPlayer(event) {
+			const audio = event.target;
+			this.player.playing = !audio.paused && !audio.ended;
+			this.player.at = audio.currentTime || 0;
+			if (Number.isFinite(audio.duration) && audio.duration > 0) this.player.length = audio.duration;
+			if ("mediaSession" in navigator && navigator.mediaSession.setPositionState && this.player.length)
+				try {
+					navigator.mediaSession.setPositionState({ duration: this.player.length, position: Math.min(this.player.at, this.player.length), playbackRate: audio.playbackRate });
+				} catch {
+					/* some browsers refuse a position while it loads */
+				}
+		},
+		seekNews(seconds, relative = false) {
+			const audio = this.$refs.newsAudio;
+			if (!audio || !this.player.src) return;
+			const length = this.player.length || audio.duration || 0;
+			audio.currentTime = Math.max(0, Math.min(length || Infinity, relative ? audio.currentTime + seconds : seconds));
+			this.player.at = audio.currentTime;
+		},
+		nextRate() {
+			this.player.rate = NEWS_RATES[(NEWS_RATES.indexOf(this.player.rate) + 1) % NEWS_RATES.length];
+			if (this.$refs.newsAudio) this.$refs.newsAudio.playbackRate = this.player.rate;
+		},
+		rateLabel(rate) {
+			return `${rate}×`;
+		},
+		/* The lock screen and headphones: what plays, and play, pause and skips. */
+		mediaSession() {
+			if (!("mediaSession" in navigator) || typeof MediaMetadata === "undefined") return;
+			const date = new Date(`${this.player.date}T12:00:00`).toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" });
+			navigator.mediaSession.metadata = new MediaMetadata({ title: `News, ${date}`, artist: this.assistant.name, album: "RemindMe", artwork: [{ src: "./icons/icon-512.png", sizes: "512x512", type: "image/png" }] });
+			const audio = this.$refs.newsAudio;
+			const handlers = {
+				play: () => audio.play(),
+				pause: () => audio.pause(),
+				seekbackward: () => this.seekNews(-15, true),
+				seekforward: () => this.seekNews(30, true),
+				seekto: (details) => this.seekNews(details.seekTime),
+			};
+			for (const [action, handler] of Object.entries(handlers))
+				try {
+					navigator.mediaSession.setActionHandler(action, handler);
+				} catch {
+					/* not every action everywhere */
+				}
+		},
+		clockOf(seconds) {
+			const total = Math.max(0, Math.round(seconds || 0));
+			return `${Math.floor(total / 60)}:${pad(total % 60)}`;
+		},
+		minutesOf(seconds) {
+			const minutes = Math.max(1, Math.round((seconds || 0) / 60));
+			return `about ${minutes} minute${minutes === 1 ? "" : "s"}`;
+		},
+		voiceChoices() {
+			return this.news.voiceChoices?.[this.news.language] || [];
+		},
+		saveVoice(id) {
+			const name = this.voiceChoices().find((voice) => voice.id === id)?.name || id;
+			return this.saveNews({ voices: { ...this.news.voices, [this.news.language]: id } }, `${name} reads the ${this.news.language === "de" ? "German" : "English"} news from now on. Make today's again on the News tab to hear it.`);
 		},
 
 		/* ── Price watches ─────────────────────────────────────────────── */

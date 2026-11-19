@@ -62,7 +62,7 @@ async function main() {
 		const [onDiscord, phones] = await Promise.all([
 			discord ? discord.send(text, { title }) : Promise.resolve(false),
 			// A tap opens RemindMe's own thread, where this message is, with its buttons.
-			phoneApp.send({ title: extra?.phoneTitle || (what === "brief" ? "Morning brief" : what === "price" ? "Price drop" : what === "news" ? "News" : "RemindMe"), body: extra?.phoneBody || text, url: "./#t/remindme", tag: what === "price" ? `price-${Date.now()}` : what, ...(extra?.buttons ? { buttons: extra.buttons } : extra?.battery ? { buttons: batteryButtons(extra.battery) } : {}) }),
+			phoneApp.send({ title: extra?.phoneTitle || (what === "brief" ? "Morning brief" : what === "price" ? "Price drop" : what === "news" ? "News" : "RemindMe"), body: extra?.phoneBody || text, url: what === "news" ? "./#news" : "./#t/remindme", tag: what === "price" ? `price-${Date.now()}` : what, ...(extra?.buttons ? { buttons: extra.buttons } : extra?.battery ? { buttons: batteryButtons(extra.battery) } : {}) }),
 		]);
 		// With Discord off, the RemindMe chat in the console is where it's delivered.
 		const sent = onDiscord || phones > 0 || !discord;

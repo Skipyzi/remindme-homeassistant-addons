@@ -78,7 +78,8 @@ import { GoogleApp, GoogleContacts, GoogleTokens, signedInWithGoogle } from "./c
 import { signInRoutes } from "./connectors/signin-routes";
 import { McpAuth } from "./harness/mcp-auth";
 import { WebBrowser } from "./harness/browser";
-import { News } from "./assistant/news";
+import { type Edition, News } from "./assistant/news";
+import { voiceLanguage } from "./assistant/newsSpoken";
 import { type Embed, embedText, mapImages } from "./assistant/embeds";
 import { PlaceSearch } from "./assistant/places";
 import { type Fix, UserLocation, whereLine } from "./assistant/location";
@@ -273,7 +274,7 @@ const webBrowser = WebBrowser.fromEnv();
 /** What else a notice to the user carries: phone buttons, inbox buttons, what it is, a shorter text for the phone. */
 type OwnerNews = { buttons?: PhoneButton[]; actions?: EntryAction[]; what?: "price" | "news" | "feed"; phoneTitle?: string; phoneBody?: string; embeds?: Embed[] };
 let ownerNotify = async (text: string, extra: OwnerNews = {}): Promise<boolean> => {
-	const reached = await phoneNotify({ title: extra.phoneTitle || (extra.what === "news" ? "News" : "RemindMe"), body: extra.phoneBody || text, url: "./#t/remindme", tag: extra.what === "news" ? "news" : `notice-${Date.now()}`, ...(extra.buttons ? { buttons: extra.buttons } : {}) });
+	const reached = await phoneNotify({ title: extra.phoneTitle || (extra.what === "news" ? "News" : "RemindMe"), body: extra.phoneBody || text, url: extra.what === "news" ? "./#news" : "./#t/remindme", tag: extra.what === "news" ? "news" : `notice-${Date.now()}`, ...(extra.buttons ? { buttons: extra.buttons } : {}) });
 	activity.add({ kind: reached ? "sent" : "failed", channel: "nudge", text, ...(extra.actions ? { actions: extra.actions } : {}), ...(extra.embeds ? { embeds: extra.embeds } : {}) });
 	return reached > 0;
 };
@@ -481,7 +482,28 @@ export const news = new News({
 	send: (digest) => ownerNotify(digest.text, { what: "news", phoneBody: digest.phone, ...(digest.embed ? { embeds: [digest.embed] } : {}) }),
 	ownFeeds: () => feeds.list().filter((feed) => feed.enabled).map((feed) => ({ id: feed.id, name: feed.name, url: feed.values.url, news: feedFlag(feed, "news") })),
 	quietUntil: (at) => afterQuietHours(process.env.QUIET_HOURS ?? "22:30-07:00", at),
+	speak: async (text, voice) => {
+		const engine = await textToSpeech();
+		if (!engine.entity || !home) throw new Error(engine.hint);
+		return home.speak(engine.entity, text, voiceLanguage(voice), engine.piper ? voice : undefined);
+	},
 });
+/*
+ * The spoken news: Home Assistant's text-to-speech, Piper's when it has it
+ * (the voice stays in the house, and the voices are Piper's). Looked up
+ * again after two minutes, so a Piper app added meanwhile is found.
+ */
+let ttsFound: { at: number; engine: { entity?: string; piper: boolean; hint: string } } | undefined;
+async function textToSpeech(): Promise<{ entity?: string; piper: boolean; hint: string }> {
+	if (ttsFound && Date.now() - ttsFound.at < 120_000) return ttsFound.engine;
+	const add = "Add the Piper app in Home Assistant (Settings → Apps), then its Wyoming integration, to hear the news.";
+	if (!home) return { piper: false, hint: "RemindMe isn't connected to Home Assistant, which reads the news aloud." };
+	const engines = await home.statesOf(["tts"]).catch(() => [] as HassEntity[]);
+	const piper = engines.find((engine) => /piper/i.test(`${engine.entity_id} ${engine.attributes.friendly_name || ""}`));
+	const engine = !piper ? { piper: false, hint: add } : piper.state === "unavailable" ? { piper: false, hint: "Home Assistant's Piper is unavailable, so its app is probably stopped. Start it in Home Assistant to hear the news." } : { entity: piper.entity_id, piper: true, hint: "" };
+	ttsFound = { at: Date.now(), engine };
+	return engine;
+}
 /* Feeds as connectors: in the news, new posts told, read when asked. */
 export const feeds = new FeedWatch({
 	store: connectors,
@@ -1958,8 +1980,47 @@ app.delete("/api/prices/:id", async (request, response) => {
 	response.status((await stopWatching(request.params.id)) ? 204 : 404).end();
 });
 /* The daily news: settings, the user's own feeds, and "send it now". */
-app.get("/api/news", (_request, response) => {
-	response.set("Cache-Control", "no-store").json(news.view());
+app.get("/api/news", async (_request, response) => {
+	const engine = await textToSpeech();
+	response.set("Cache-Control", "no-store").json({ ...news.view(), speech: { ready: Boolean(engine.entity), hint: engine.hint } });
+});
+/* The News tab: the days kept, one day's stories with their pictures through RemindMe, and its spoken version. */
+const proxiedEdition = (edition: Edition) => ({
+	...edition,
+	stories: edition.stories.map((story) => (story.image ? { ...story, image: media.link(story.image) } : story)),
+	...(edition.headlines ? { headlines: edition.headlines.map((item) => (item.image ? { ...item, image: media.link(item.image) } : item)) } : {}),
+});
+app.get("/api/news/editions", (_request, response) => {
+	response.set("Cache-Control", "no-store").json(news.editionList());
+});
+app.get("/api/news/editions/:date", (request, response) => {
+	const edition = news.edition(request.params.date);
+	if (!edition) return void response.status(404).json({ error: "There's no news for that day." });
+	response.set("Cache-Control", "no-store").json(proxiedEdition(edition));
+});
+/* A fresh one for the News tab, sent nowhere. */
+app.post("/api/news/refresh", async (_request, response) => {
+	try {
+		response.json(proxiedEdition(await news.refresh()));
+	} catch (error) {
+		response.status(400).json({ error: error instanceof Error ? error.message : "The news couldn't be written." });
+	}
+});
+/* Make a day's spoken version (again): it's being made when this answers. */
+app.post("/api/news/editions/:date/spoken", async (request, response) => {
+	const engine = await textToSpeech();
+	if (!engine.entity) return void response.status(503).json({ error: engine.hint });
+	if (!news.edition(request.params.date)) return void response.status(404).json({ error: "There's no news for that day." });
+	void news.speakEdition(request.params.date).catch(() => {});
+	response.status(202).json(proxiedEdition(news.edition(request.params.date)!));
+});
+/* The MP3, with ranges, so a phone can seek in it and play it with the screen off. */
+app.get("/api/news/audio/:date", (request, response) => {
+	const file = news.audioPath(request.params.date.replace(/\.mp3$/, ""));
+	if (!file) return void response.status(404).end();
+	response.sendFile(resolve(file), { headers: { "Content-Type": "audio/mpeg", "Cache-Control": "private, max-age=86400" } }, (error) => {
+		if (error && !response.headersSent) response.status(404).end();
+	});
 });
 app.put("/api/news", async (request, response) => {
 	try {

@@ -222,7 +222,7 @@ Answers can come with cards under the text, built from what RemindMe's tools fou
 - **Offers**: the product's picture, the cheapest few shops with shipping, and whether you watch its price (from **compare_prices** and price watches).
 - **Places**: a small OpenStreetMap map, whether it's open right now (read from its opening hours), the address, the distance from home, and **Directions**, **Website** and **Call**. Ask "is there a pharmacy open near the Hauptbahnhof?" or "when does the Rewe in Gohlis close?". OpenStreetMap's hours can be out of date.
 - **Articles**: posts from your feeds, news headlines and pages RemindMe read, with their pictures; several sit on a shelf you swipe.
-- **The news digest** in RemindMe's thread shows its stories with photos and every source.
+- **The news digest** in RemindMe's thread shows each section's top story and a way to the News tab, which has all of them with photos and every source.
 
 Each tool gives its findings an id, and the AI shows the ones that matter, so every price, picture and link on a card comes from a tool. Pictures and map tiles load through RemindMe on the Pi (only addresses it handed out itself, kept for a few weeks in `/data/media`), so your phone never contacts the shops or news sites. Discord, notifications and scheduled tasks get the cards as plain lines.
 
@@ -247,6 +247,8 @@ Every day at a time you choose, RemindMe sends a short digest of the news from G
 - The news agencies themselves (dpa, Reuters, AP, AFP) publish no feeds. dpa's wire comes in as headlines through ZEIT ONLINE's newsticker.
 - RemindMe reads the last day's headlines and teasers. The AI picks the 3 or 5 most important stories per section, merges a story that several sources tell, and writes a line or two on each, in English or German, with a link to every source. Links always come from the feeds, never from the AI. That's one AI answer a day, roughly 5–10 cents on Claude Opus and much less on smaller models.
 - The digest goes to Discord, your phone (one headline per section) and the RemindMe thread, never during quiet hours. Without the AI (no key, or over the day's budget) it sends the headlines themselves.
+- The **News** tab in the console has the whole day at a glance: the stories by section (all, or just Germany, the EU or the world), the first of each open with its summary and the rest a tap away, every source linked. The last 14 days are kept, one chip each. **Write a fresh one** writes the day's news again for the tab without sending it anywhere. The news notification and **Open in News** in the chat open it.
+- **Spoken version** (on by default): with each day's news the AI writes a short briefing for the ear, two to four minutes, and Piper reads it aloud on the Pi, so it's ready about a minute later. Play it on the News tab: it keeps playing on other tabs and with the screen locked, with the lock screen's controls, a 15-second skip back and 0.85× to 1.5× speed. Pick the voice under **Settings → News → Read by** (Thorsten, Kerstin or Ramona in German; Alba, a Northern English voice, Lessac or Ryan in English). It needs the **Piper** app in Home Assistant with its Wyoming integration; nothing leaves the house. Without the AI the stories are read one after another.
 - Ask "what's in the news about the Bundestag?" at any time: the assistant reads the same sources.
 
 ## Memory

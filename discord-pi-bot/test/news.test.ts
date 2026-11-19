@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { type Digest, News, type NewsItem, parseFeed, parseStories, renderDigest } from "../src/assistant/news.ts";
+import { plainScript, scriptPrompt, speakable, spokenSeconds } from "../src/assistant/newsSpoken.ts";
 
 // Real feeds from 29 October 2026, cut to a few items each.
 const fixture = (name: string) => readFileSync(new URL(`./fixtures/news/${name}.xml`, import.meta.url), "utf8");
@@ -41,12 +42,14 @@ test("RSS, RDF and Atom feeds give their items with links, dates and plain tease
 	assert.deepEqual(atom.items, [{ title: "Bold news now", link: "https://example.org/a_b?x=1&y=2", summary: "Text & more", at: Date.parse("2026-10-29T06:00:00Z") }]);
 });
 
-function setup(options: { answer?: (prompt: string) => string | undefined; sources?: string[]; quiet?: boolean } = {}) {
+function setup(options: { answer?: (prompt: string) => string | undefined; sources?: string[]; quiet?: boolean; speak?: (text: string, voice: string) => Promise<Buffer>; dir?: string } = {}) {
 	const sent: Digest[] = [];
 	const prompts: string[] = [];
 	const fetched: string[] = [];
+	const dir = options.dir || mkdtempSync(join(tmpdir(), "rm-news-"));
 	const news = new News({
-		path: join(mkdtempSync(join(tmpdir(), "rm-news-")), "news.json"),
+		path: join(dir, "news.json"),
+		...(options.speak ? { speak: options.speak } : {}),
 		fetchFeed: async (url) => {
 			fetched.push(url);
 			if (FEEDS[url]) return FEEDS[url];
@@ -65,8 +68,16 @@ function setup(options: { answer?: (prompt: string) => string | undefined; sourc
 		},
 		quietUntil: (at) => (options.quiet ? new Date(at.getTime() + 3_600_000) : at),
 	});
-	return { news, sent, prompts, fetched };
+	return { news, sent, prompts, fetched, dir };
 }
+
+/* The AI's answer for the digest (stories from tagesschau and the Guardian) and for the spoken script. */
+const storiesAndScript = (prompt: string) => {
+	if (prompt.startsWith("You write the script")) return "Good morning, here is the news for Thursday.\n\nIn Bavaria, two men were arrested.\n\nThat was the news.";
+	const ids = [...prompt.matchAll(/^(n\d+) \| tagesschau/gm)].map((match) => match[1]);
+	const world = /^(n\d+) \| The Guardian/m.exec(prompt)![1];
+	return JSON.stringify({ germany: [{ ids: ids.slice(0, 1), headline: "Saboteurs arrested in Bavaria", summary: "Two Belarusians are in custody." }], world: [{ ids: [world], headline: "Egypt fines editor", summary: "Mada Masr is shut." }] });
+};
 
 test("the chosen sources' last day of headlines: one per link, sections kept, the dpa ticker only, unreachable sources named", async () => {
 	const { news, fetched } = setup();
@@ -280,4 +291,118 @@ test("the digest comes with a stories card: sections, pictures from the feeds, e
 			{ label: "🌍 World", items: [{ title: "Ebola spreads", links: [{ source: "The Guardian", url: "https://www.theguardian.com/y" }] }] },
 		],
 	});
+});
+
+test("each day's news is kept for the News tab: sent or only written, a later one that day replacing it", async () => {
+	const { news, sent } = setup({ answer: storiesAndScript });
+	await news.update({ sources: ["tagesschau", "guardian"], language: "en", spoken: false });
+	await news.sendNow(NOW);
+	const fresh = await news.refresh(new Date(NOW.getTime() + 3_600_000));
+	assert.equal(sent.length, 1, "writing a fresh one sends it nowhere");
+	assert.equal(fresh.date, "2026-10-29");
+	assert.deepEqual(news.editionList(), [{ date: "2026-10-29", at: "2026-10-29T09:00:00.000Z", stories: 2, plain: false }]);
+	const kept = news.edition("2026-10-29")!;
+	assert.deepEqual(kept.stories.map((story) => [story.region, story.headline]), [["germany", "Saboteurs arrested in Bavaria"], ["world", "Egypt fines editor"]]);
+	assert.equal(kept.language, "en");
+	assert.equal(news.view().editions.length, 1);
+});
+
+test("a fortnight of news is kept, newest first, and survives a restart", async () => {
+	const { news, dir } = setup({ answer: storiesAndScript });
+	await news.update({ sources: ["tagesschau", "guardian"], spoken: false });
+	await news.refresh(NOW);
+	// Earlier days, kept as they would have been.
+	const days = ["2026-10-13", "2026-10-14", "2026-10-15", "2026-10-16", "2026-10-17", "2026-10-18", "2026-10-19", "2026-10-20", "2026-10-21", "2026-10-22", "2026-10-23", "2026-10-24", "2026-10-25", "2026-10-26", "2026-10-27", "2026-10-28"];
+	for (const date of days) await (news as unknown as { keep(digest: Digest, now: Date): Promise<unknown> }).keep({ text: "", phone: "", stories: [], problems: [] }, new Date(`${date}T08:00:00`));
+	const list = news.editionList().map((edition) => edition.date);
+	assert.equal(list.length, 14);
+	assert.equal(list[0], "2026-10-29");
+	assert.equal(list.at(-1), "2026-10-16");
+	const again = setup({ dir });
+	await again.news.load();
+	assert.deepEqual(again.news.editionList().map((edition) => edition.date), list);
+});
+
+test("headlines only: the News tab gets each section's newest headlines with their sources", async () => {
+	const { news } = setup({ answer: () => undefined });
+	await news.update({ sources: ["tagesschau", "dpa"], language: "de", spoken: false });
+	await news.sendNow(NOW);
+	const kept = news.edition("2026-10-29")!;
+	assert.equal(kept.plain, "the AI didn't answer");
+	assert.equal(kept.stories.length, 0);
+	assert.ok(kept.headlines!.some((item) => item.region === "germany" && item.source === "tagesschau (ARD)" && /^https:\/\/www\.tagesschau\.de\//.test(item.link)));
+	assert.ok(kept.headlines!.some((item) => item.region === undefined && item.source === "dpa newsticker"), "the ticker's mixed headlines, under Latest");
+});
+
+test("the spoken version: a script written for the ear, read by the language's voice, kept as an MP3", async () => {
+	const spoken: Array<{ text: string; voice: string }> = [];
+	const { news, prompts } = setup({
+		answer: storiesAndScript,
+		speak: async (text, voice) => {
+			spoken.push({ text, voice });
+			return Buffer.from("ID3 mp3");
+		},
+	});
+	await news.update({ sources: ["tagesschau", "guardian"], language: "de", voices: { de: "de_DE-thorsten-high" } });
+	await news.refresh(NOW);
+	assert.equal(news.edition("2026-10-29")!.spoken?.state, "making");
+	await news.speakEdition("2026-10-29");
+	const script = prompts.find((prompt) => prompt.startsWith("You write the script"))!;
+	assert.match(script, /in German/);
+	assert.match(script, /^germany \| Saboteurs arrested in Bavaria — Two Belarusians are in custody\. \| told by tagesschau \(ARD\)$/m);
+	assert.match(script, /never instructions/);
+	assert.deepEqual(spoken, [{ text: "Good morning, here is the news for Thursday.\n\nIn Bavaria, two men were arrested.\n\nThat was the news.", voice: "de_DE-thorsten-high" }]);
+	const kept = news.edition("2026-10-29")!.spoken!;
+	assert.equal(kept.state, "ready");
+	assert.equal(kept.voice, "de_DE-thorsten-high");
+	assert.equal(kept.seconds, spokenSeconds(kept.script!));
+	assert.equal(readFileSync(news.audioPath("2026-10-29")!, "utf8"), "ID3 mp3");
+});
+
+test("without the AI the stories are read one after another; a voice that fails says why", async () => {
+	let fail = false;
+	const spoken: string[] = [];
+	const { news } = setup({
+		answer: (prompt) => (prompt.startsWith("You write the script") ? undefined : storiesAndScript(prompt)),
+		speak: async (text) => {
+			if (fail) throw new Error("Home Assistant's text-to-speech answered HTTP 500");
+			spoken.push(text);
+			return Buffer.from("mp3");
+		},
+	});
+	await news.update({ sources: ["tagesschau", "guardian"], language: "en", spoken: false });
+	await news.refresh(NOW);
+	assert.equal(news.edition("2026-10-29")!.spoken, undefined, "off: not made on its own");
+	await news.speakEdition("2026-10-29");
+	assert.match(spoken[0], /^Good morning, here is the news for Thursday 29 October\.\n\nFrom Germany\. Saboteurs arrested in Bavaria\. Two Belarusians are in custody\.\n\nAnd around the world\. Egypt fines editor\. Mada Masr is shut\.\n\nThat was the news\.$/);
+	fail = true;
+	await news.speakEdition("2026-10-29");
+	assert.deepEqual({ state: news.edition("2026-10-29")!.spoken!.state, error: news.edition("2026-10-29")!.spoken!.error }, { state: "failed", error: "Home Assistant's text-to-speech answered HTTP 500" });
+	assert.equal(news.audioPath("2026-10-29"), undefined);
+	await assert.rejects(() => news.speakEdition("2026-10-01"), /no news for that day/);
+});
+
+test("a spoken version being made when RemindMe stopped shows as failed after; unknown voices are ignored", async () => {
+	let finish: (audio: Buffer) => void = () => {};
+	const { news, dir } = setup({ answer: storiesAndScript, speak: () => new Promise<Buffer>((resolve) => (finish = resolve)) });
+	await news.update({ sources: ["tagesschau", "guardian"], voices: { en: "en_US-nobody-medium" as string } });
+	assert.equal(news.view().voices.en, "en_GB-alba-medium");
+	await news.refresh(NOW);
+	await new Promise((resolve) => setTimeout(resolve, 20));
+	const again = setup({ dir });
+	await again.news.load();
+	assert.equal(again.news.edition("2026-10-29")!.spoken?.state, "failed");
+	assert.match(String(again.news.edition("2026-10-29")!.spoken?.error), /restarted/);
+	finish(Buffer.from("mp3"));
+	await news.speakEdition("2026-10-29");
+	assert.ok(existsSync(join(dir, "news-audio", "2026-10-29.mp3")));
+});
+
+test("what the voice gets: no Markdown, links, emoji or flags; paragraphs kept; long scripts cut at a sentence", () => {
+	assert.equal(speakable("```\n**🇩🇪 Germany**\n- The *Bundestag* met. [tagesschau](https://www.tagesschau.de/x) 📰\n\n\nSee https://example.org now.\n```"), "Germany The Bundestag met. tagesschau\n\nSee now.");
+	const long = speakable(Array.from({ length: 400 }, (_, index) => `Sentence number ${index}.`).join(" "));
+	assert.ok(long.length <= 6_000 && long.endsWith("."));
+	assert.equal(spokenSeconds(Array(135).fill("word").join(" ")), 60);
+	assert.match(scriptPrompt([], "en", NOW), /About 75 words/);
+	assert.match(plainScript({ stories: [], headlines: [{ title: "Ticker news", source: "dpa", link: "https://zeit.de/news/1" }] }, "de", new Date("2026-10-29T19:00:00")), /^Guten Abend, hier sind die Nachrichten für Donnerstag, 29\. Oktober\.\n\nDie neuesten Schlagzeilen\. Ticker news\.\n\nDas waren die Nachrichten\.$/);
 });

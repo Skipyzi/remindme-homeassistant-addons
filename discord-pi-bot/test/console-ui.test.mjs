@@ -159,3 +159,26 @@ test("Settings → Discord says which roles may ask too, and saves them", () => 
 	assert.match(html, /@submit\.prevent="saveGuestRoles\(\)"/);
 	assert.match(app, /"\.\/api\/discord", "PUT", \{ guestRoles: this\.discordRoles \}/);
 });
+
+test("News is a tab: the day's stories by section, earlier days, and the briefing to listen to", () => {
+	assert.match(html, /@click="goTab\('news'\)"/);
+	assert.match(app, /const TABS = \["chat", "tasks", "news", "made"\]/);
+	assert.match(html, /<section class="rm-view rm-news" x-show="tab === 'news'"/);
+	assert.match(html, /x-show="tab !== 'made' && tab !== 'news'"/, "the chat stays out of the News tab");
+	assert.match(html, /x-for="day in newsDays"/);
+	assert.match(html, /x-for="section in newsShown"/);
+	assert.match(html, /@click="toggleStory\(section, index, item\)"/);
+	assert.match(app, /"\.\/api\/news\/editions"/);
+	assert.match(app, /"\.\/api\/news\/refresh"/);
+	// One player for the app, so it plays on with other tabs and the screen off, with lock-screen controls.
+	assert.match(html, /<audio x-ref="newsAudio" preload="none"/);
+	assert.match(html, /@click="toggleListen\(\)"/);
+	assert.match(app, /navigator\.mediaSession\.metadata = new MediaMetadata/);
+	assert.match(app, /\/spoken`, "POST"/);
+	for (const state of ["making", "failed", "none", "unavailable"]) assert.match(html, new RegExp(`x-show="spokenState === '${state}'"`), state);
+	// In the chat the news is its top stories and a way to the tab, not the whole card.
+	assert.match(app, /embeds: stories \? undefined : entry\.embeds/);
+	assert.match(html, /@click="openNews\(message\.news\)"/);
+	assert.match(html, /saveNews\(\{ spoken: !news\.spoken \}/);
+	assert.match(html, /@change="saveVoice\(\$event\.target\.value\)"/);
+});

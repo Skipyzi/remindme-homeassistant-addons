@@ -181,6 +181,29 @@ export class HomeApi {
 	}
 
 	/**
+	 * Text read aloud by one of Home Assistant's text-to-speech entities
+	 * (Piper, say), as MP3. Not kept in Home Assistant's own cache: RemindMe
+	 * keeps what it needs. A few minutes of speech take Piper about half a
+	 * minute on a Pi 5, so it gets five.
+	 */
+	async speak(entityId: string, message: string, language: string, voice?: string): Promise<Buffer> {
+		const url = (await (
+			await this.call("/tts_get_url", {
+				method: "POST",
+				body: JSON.stringify({ engine_id: entityId, message, language, cache: false, options: { preferred_format: "mp3", ...(voice ? { voice } : {}) } }),
+				signal: AbortSignal.timeout(30_000),
+			})
+		).json()) as { path?: unknown };
+		if (typeof url.path !== "string" || !url.path.startsWith("/api/tts_proxy/")) throw new Error("Home Assistant's text-to-speech gave no file");
+		const response = await this.fetcher(`${this.baseUrl.replace(/\/api\/?$/, "")}${url.path}`, {
+			headers: { Authorization: `Bearer ${this.token}` },
+			signal: AbortSignal.timeout(300_000),
+		});
+		if (!response.ok) throw new Error(`Home Assistant's text-to-speech answered HTTP ${response.status}`);
+		return Buffer.from(await response.arrayBuffer());
+	}
+
+	/**
 	 * Whether the engine behind a speech-to-text entity is really there: its
 	 * entity stays "unknown" with the Whisper app stopped. A quarter second
 	 * of silence comes back as success (with no words) only from a running one.

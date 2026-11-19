@@ -73,7 +73,7 @@ export const safeTag = (tag: string) => tag.replace(TAG, "-").slice(0, 64) || "r
  */
 export function appLink(url: string | undefined, slug: string, phoneUrl?: string): string | undefined {
 	const thread = /#t\/([\w-]+)/.exec(url || "")?.[1];
-	if (slug) return `/app/${slug}${thread ? `/t/${thread}` : ""}`;
+	if (slug) return `/app/${slug}${thread ? `/t/${thread}` : /#news$/.test(url || "") ? "/news" : ""}`;
 	return phoneUrl ? new URL(url || "./", `${phoneUrl}/`).toString() : undefined;
 }
 

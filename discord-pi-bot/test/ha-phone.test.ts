@@ -196,6 +196,7 @@ test("notifications show plain text: Markdown's marks come off", () => {
 test("a tap opens RemindMe's panel in the Home Assistant app, on the thread", () => {
 	assert.equal(appLink("./#t/abc-123", "835ec51f_remindme_discord_bot"), "/app/835ec51f_remindme_discord_bot/t/abc-123");
 	assert.equal(appLink("./", "835ec51f_remindme_discord_bot"), "/app/835ec51f_remindme_discord_bot");
+	assert.equal(appLink("./#news", "835ec51f_remindme_discord_bot"), "/app/835ec51f_remindme_discord_bot/news", "the news opens the News tab");
 	assert.equal(appLink("./#t/abc", "", "https://remindme.tail.ts.net"), "https://remindme.tail.ts.net/#t/abc", "without the slug, the phone app's address");
 	assert.equal(appLink("./", ""), undefined);
 });

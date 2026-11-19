@@ -1,7 +1,8 @@
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
-import { dirname } from "node:path";
+import { mkdir, readdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import { localDate } from "../ai/spend";
 import type { Embed } from "./embeds";
+import { DEFAULT_VOICES, isVoice, VOICES, plainScript, scriptPrompt, speakable, spokenSeconds } from "./newsSpoken";
 import { minutesOf } from "./proactive";
 
 /**
@@ -246,6 +247,15 @@ export interface Story {
 	image?: string;
 }
 
+/** A headline as the feed gave it, for the days the AI couldn't write the news. */
+export interface Headline {
+	region?: Region;
+	title: string;
+	source: string;
+	link: string;
+	image?: string;
+}
+
 export interface Digest {
 	/** Markdown, for Discord and the RemindMe thread. */
 	text: string;
@@ -258,6 +268,34 @@ export interface Digest {
 	problems: string[];
 	/** The stories as a card for RemindMe's thread, with their pictures. */
 	embed?: Embed;
+	/** Without the AI: each section's newest headlines. */
+	headlines?: Headline[];
+}
+
+/** The spoken version of a day's news. */
+export interface Spoken {
+	state: "making" | "ready" | "failed";
+	at: string;
+	voice?: string;
+	/** What the voice reads. */
+	script?: string;
+	/** About how long it takes to say. */
+	seconds?: number;
+	error?: string;
+}
+
+/** A day's news as the News tab shows it: the last one written that day. */
+export interface Edition {
+	/** Its day, local: "2026-11-19". */
+	date: string;
+	at: string;
+	language: "en" | "de";
+	stories: Story[];
+	headlines?: Headline[];
+	/** Why it's headlines only. */
+	plain?: string;
+	problems: string[];
+	spoken?: Spoken;
 }
 
 /** A feed of the user's own: a feed connector. */
@@ -279,6 +317,10 @@ export interface NewsSettings {
 	sources: string[];
 	/** The model that writes it, instead of the one chosen under AI. */
 	writer?: { provider: string; model: string };
+	/** A spoken version made with every edition. */
+	spoken: boolean;
+	/** The voice for each language. */
+	voices: { en: string; de: string };
 }
 
 interface State extends NewsSettings {
@@ -302,6 +344,8 @@ export interface NewsDeps {
 	ownFeeds?(): OwnFeed[];
 	/** A time moved out of the quiet hours. */
 	quietUntil?(at: Date): Date;
+	/** The text read aloud by that voice, as MP3; throws when there's no voice to speak with. */
+	speak?(text: string, voice: string): Promise<Buffer>;
 	path?: string;
 }
 
@@ -312,13 +356,19 @@ const LABELS = {
 const FLAGS: Record<Region, string> = { germany: "🇩🇪", eu: "🇪🇺", world: "🌍" };
 const DAY = 86_400_000;
 const MAX_ITEMS = 240;
+/** Days kept for the News tab, with their spoken versions. */
+const KEPT_EDITIONS = 14;
+const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
 /** Links compared without tracking: DW's sections differ only in "?maca=…". */
 export const sameLink = (url: string) => url.replace(/[?#].*$/, "").replace(/\/$/, "").toLowerCase();
 
 export class News {
-	private state: State = { on: false, time: "07:30", language: "en", stories: 5, sources: [...DEFAULT_SOURCES] };
+	private state: State = { on: false, time: "07:30", language: "en", stories: 5, sources: [...DEFAULT_SOURCES], spoken: true, voices: { ...DEFAULT_VOICES } };
 	private running = false;
+	private editions: Edition[] = [];
+	/** Spoken versions are made one at a time. */
+	private speaking: Promise<void> = Promise.resolve();
 	private cache?: { at: number; key: string; result: { items: NewsItem[]; problems: string[] } };
 
 	constructor(private readonly deps: NewsDeps) {}
@@ -327,13 +377,37 @@ export class News {
 		return this.deps.path || process.env.NEWS_DATA_PATH || "./data/news.json";
 	}
 
+	/** The days' news, beside the settings. */
+	private get editionsPath(): string {
+		return join(dirname(this.path), "news-editions.json");
+	}
+	/** The spoken versions, one MP3 a day. */
+	private get audioDir(): string {
+		return join(dirname(this.path), "news-audio");
+	}
+
 	async load(): Promise<void> {
 		try {
 			const saved = JSON.parse(await readFile(this.path, "utf8")) as Partial<State>;
-			this.state = { ...this.state, ...saved, sources: Array.isArray(saved.sources) ? saved.sources : [...DEFAULT_SOURCES] };
+			this.state = { ...this.state, ...saved, sources: Array.isArray(saved.sources) ? saved.sources : [...DEFAULT_SOURCES], voices: { ...DEFAULT_VOICES, ...saved.voices } };
 		} catch {
 			// Nothing saved yet: the defaults.
 		}
+		try {
+			const saved = JSON.parse(await readFile(this.editionsPath, "utf8")) as Edition[];
+			this.editions = Array.isArray(saved) ? saved.filter((edition) => DATE.test(edition?.date)) : [];
+			// One being made when RemindMe stopped never will be.
+			for (const edition of this.editions)
+				if (edition.spoken?.state === "making") edition.spoken = { ...edition.spoken, state: "failed", error: "RemindMe restarted while it was being made" };
+		} catch {
+			// No news kept yet.
+		}
+	}
+
+	private async saveEditions(): Promise<void> {
+		await mkdir(dirname(this.editionsPath), { recursive: true });
+		await writeFile(`${this.editionsPath}.tmp`, JSON.stringify(this.editions));
+		await rename(`${this.editionsPath}.tmp`, this.editionsPath);
 	}
 
 	private async save(): Promise<void> {
@@ -350,6 +424,8 @@ export class News {
 			...rest,
 			catalog: NEWS_SOURCES.map((source) => ({ id: source.id, name: source.name, from: source.from, language: source.language, covers: covers(source), ...(source.note ? { note: source.note } : {}) })),
 			own: this.deps.ownFeeds?.() || [],
+			voiceChoices: VOICES,
+			editions: this.editionList(),
 		};
 	}
 
@@ -377,6 +453,9 @@ export class News {
 			if (at > now.getHours() * 60 + now.getMinutes()) delete this.state.lastSent;
 		}
 		if (patch.language === "en" || patch.language === "de") this.state.language = patch.language;
+		if (typeof patch.spoken === "boolean") this.state.spoken = patch.spoken;
+		if (patch.voices && typeof patch.voices === "object")
+			for (const language of ["en", "de"] as const) if (isVoice(language, patch.voices[language])) this.state.voices[language] = patch.voices[language];
 		if (patch.stories === 3 || patch.stories === 5) this.state.stories = patch.stories;
 		if (Array.isArray(patch.sources)) {
 			const known = new Set(NEWS_SOURCES.map((source) => source.id));
@@ -457,6 +536,7 @@ export class News {
 		try {
 			const digest = await this.digest(now);
 			if (!(await this.deps.send(digest))) throw new Error("It couldn't be sent: neither Discord nor the phone answered.");
+			await this.keep(digest, now);
 			this.state.lastDigestAt = now.toISOString();
 			const problems = [...(digest.plain ? [`Headlines only: ${digest.plain}`] : []), ...(digest.problems.length ? [`Not reached: ${digest.problems.join(", ")}`] : [])];
 			if (problems.length) this.state.lastProblem = problems.join(". ");
@@ -468,6 +548,91 @@ export class News {
 			await this.save();
 			throw error;
 		}
+	}
+
+	/** Write today's news for the News tab only: nothing is sent. */
+	async refresh(now = new Date()): Promise<Edition> {
+		return this.keep(await this.digest(now), now);
+	}
+
+	/** The days kept, newest first, without their stories. */
+	editionList() {
+		return this.editions.map((edition) => ({
+			date: edition.date,
+			at: edition.at,
+			stories: edition.stories.length || edition.headlines?.length || 0,
+			plain: Boolean(edition.plain),
+			...(edition.spoken ? { spoken: { state: edition.spoken.state, seconds: edition.spoken.seconds } } : {}),
+		}));
+	}
+
+	edition(date: string): Edition | undefined {
+		return this.editions.find((edition) => edition.date === date);
+	}
+
+	/** Where a day's spoken version is, once it's made. */
+	audioPath(date: string): string | undefined {
+		const edition = this.edition(date);
+		return edition?.spoken?.state === "ready" ? join(this.audioDir, `${date}.mp3`) : undefined;
+	}
+
+	/** The day's news kept for the News tab (a later one that day replaces it), and spoken when wanted. */
+	private async keep(digest: Digest, now: Date): Promise<Edition> {
+		const edition: Edition = {
+			date: localDate(now),
+			at: now.toISOString(),
+			language: this.state.language,
+			stories: digest.stories,
+			...(digest.headlines?.length ? { headlines: digest.headlines } : {}),
+			...(digest.plain ? { plain: digest.plain } : {}),
+			problems: digest.problems,
+		};
+		this.editions = [edition, ...this.editions.filter((kept) => kept.date !== edition.date)].sort((a, b) => b.date.localeCompare(a.date)).slice(0, KEPT_EDITIONS);
+		await this.saveEditions();
+		await this.pruneAudio();
+		if (this.state.spoken && this.deps.speak) void this.speakEdition(edition.date).catch(() => {});
+		return edition;
+	}
+
+	/** MP3s of days no longer kept are deleted. */
+	private async pruneAudio(): Promise<void> {
+		const kept = new Set(this.editions.map((edition) => `${edition.date}.mp3`));
+		const files = await readdir(this.audioDir).catch(() => [] as string[]);
+		await Promise.all(files.filter((file) => !kept.has(file)).map((file) => unlink(join(this.audioDir, file)).catch(() => {})));
+	}
+
+	/**
+	 * Make a day's spoken version: a script written for the ear by the AI
+	 * (or the stories read one after another when it can't), read by the
+	 * voice chosen for its language. Resolves when it's made or has failed.
+	 */
+	speakEdition(date: string, now = new Date()): Promise<void> {
+		const edition = this.edition(date);
+		if (!edition) return Promise.reject(new Error("There's no news for that day."));
+		if (!this.deps.speak) return Promise.reject(new Error("There's no voice to read the news."));
+		if (edition.spoken?.state === "making") return this.speaking;
+		const voice = this.state.voices[edition.language];
+		edition.spoken = { state: "making", at: now.toISOString(), voice };
+		const run = async () => {
+			try {
+				await this.saveEditions();
+				const written = new Date(edition.at);
+				const answer = edition.stories.length ? await this.deps.ask(scriptPrompt(edition.stories, edition.language, written), this.state.writer).catch(() => undefined) : undefined;
+				const script = speakable(answer && answer.trim().length > 80 ? answer : plainScript(edition, edition.language, written));
+				const audio = await this.deps.speak!(script, voice);
+				if (!audio.length) throw new Error("the voice gave back no sound");
+				await mkdir(this.audioDir, { recursive: true });
+				await writeFile(join(this.audioDir, `${date}.mp3.tmp`), audio);
+				await rename(join(this.audioDir, `${date}.mp3.tmp`), join(this.audioDir, `${date}.mp3`));
+				edition.spoken = { state: "ready", at: new Date().toISOString(), voice, script, seconds: spokenSeconds(script) };
+			} catch (error) {
+				edition.spoken = { state: "failed", at: new Date().toISOString(), voice, error: message(error) };
+			}
+			// It may have been replaced by a newer one that day meanwhile: then this one is gone.
+			if (this.edition(date) === edition) await this.saveEditions();
+		};
+		this.speaking = this.speaking.then(run, run);
+		return this.speaking;
 	}
 
 	/** Every minute: today's news at its time, once, and never in quiet hours. */
@@ -582,12 +747,14 @@ export function plainDigest(items: NewsItem[], problems: string[], language: "en
 	const line = (item: NewsItem) => `- ${item.title} [${item.source}](${markdownUrl(item.link)})`;
 	const parts = [heading(language, now)];
 	const phone: string[] = [];
+	const headlines: Headline[] = [];
 	for (const region of [...REGIONS, undefined]) {
 		const here = items.filter((item) => item.region === region).slice(0, 5);
 		if (!here.length) continue;
+		for (const item of here) headlines.push({ ...(region ? { region } : {}), title: item.title, source: item.source, link: item.link, ...(item.image ? { image: item.image } : {}) });
 		parts.push(`**${region ? `${FLAGS[region]} ${labels[region]}` : labels.latest}**\n${here.map(line).join("\n")}`);
 		phone.push(`${region ? FLAGS[region] : "📰"} ${here[0].title}`);
 	}
 	parts.push(`_${labels.plain}: ${why}._${problems.length ? ` _${labels.missed}: ${problems.map((problem) => problem.replace(/ \(.*\)$/, "")).join(", ")}._` : ""}`);
-	return { text: parts.join("\n\n"), phone: phone.slice(0, 3).join("\n"), stories: [], plain: why, problems };
+	return { text: parts.join("\n\n"), phone: phone.slice(0, 3).join("\n"), stories: [], plain: why, problems, headlines };
 }
