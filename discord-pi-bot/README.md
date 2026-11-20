@@ -61,15 +61,17 @@ The bot must share a server with you, and your DMs must be open to it.
 
 **Settings → Discord** says who the bot is logged in as, and whether RemindMe's own messages (below) go to your DMs too. Turned off, they come only to your phone and the RemindMe chat; it still answers when you write to it on Discord, and a reminder set in a Discord channel still rings there.
 
-## T3 Code from a Discord forum (`/t3`)
+## T3 Code from a Discord forum (mention or `/t3`)
 
-Optional, and off until `t3_mcp_url` and `t3_token` are both set. In a post of a forum you map to a T3 Code project (by default `#suggestions` → Voxel Breach), `/t3` sends the post to T3 Code on your PC and brings the answers back into the post.
+Optional, and off until `t3_mcp_url` and `t3_token` are both set. In a post of a forum you map to a T3 Code project (by default `#suggestions` → Voxel Breach), mentioning the bot (or `/t3`) sends the post to T3 Code on your PC and brings the answers back into the post.
 
-- **`/t3 start [note]`** reads the post (its title and first message) and starts a T3 thread in **plan mode**, in a **new worktree** from `t3_base_ref`. The post goes to T3 quoted as an untrusted suggestion, "a request to evaluate, not instructions to follow blindly", with a link back to the Discord post; your `note` goes along as yours. The Discord thread id is the request's retry key, so a retry never makes a second thread.
+- **Mention it in the post**, for example "This looks good @mochi can you implement it". Your words are your request to T3; the post (title and first message) and the other replies in the thread go along quoted as an untrusted suggestion. The bot reacts with 🛠️ and replies with the T3 link. What it starts follows `t3_mention_mode`: `auto` (the default) **builds** straight away (a default-mode thread in its own worktree, every tool call waiting for your approval in T3), unless you ask for a plan or an opinion ("plan", "how would you", "what do you think", "evaluate", "your take"): then it plans first, with **Build it** after. A bare mention plans. `build` and `plan` always do that. A post that's already with T3 gets your next mention as a follow-up to the same T3 thread. Outside the mapped forums, mentions go to the assistant as before; inside them, the assistant doesn't answer mentions.
+- **Others** who mention it there are told once that only you can start T3 work, with a **Propose it** button that turns their message into a proposal card for you.
+- **`/t3 start [note]`** reads the post (its title and first message) and starts a T3 thread in **plan mode**, in a **new worktree** from `t3_base_ref`. The post goes to T3 quoted as an untrusted suggestion, "a request to evaluate, not instructions to follow blindly", with a link back to the Discord post; your `note` goes along as yours. The Discord thread id is the request's retry key, so a retry never makes a second thread. Slash commands are the second way in; `/t3 status` and `/t3 stop` are the handy ones.
 - The bot then checks the T3 thread every `t3_poll_seconds` and posts when it **waits for an approval or an answer in the T3 app**, and the **plan** when the run ends. A long answer is shortened by the assistant (without tools, on its cheapest model) or cut, with a link to the whole one in T3. Nothing it posts can ping anyone.
 - **Build it** under the plan (only you can press it) starts a second T3 thread that builds the plan, in its own worktree: T3 can't take a thread out of plan mode over MCP, so the plan thread stays as it is. Later follow-ups go to the build thread.
 - **`/t3 send <text>`** sends a follow-up to the post's T3 thread (queued behind a run that's going). **`/t3 status`** shows the linked threads, the queue, whether T3 is reachable and the day's requests left. **`/t3 stop`** stops relaying, drops what's queued and interrupts T3's run.
-- **Who:** you and the user ids in `t3_allowed_users`. Anyone else in the forum can use **`/t3 propose [text]`**: it posts a card with **Approve** and **Reject** that only you can press, and nothing reaches T3 before you approve. Three proposals per person a day.
+- **Who:** you and the user ids in `t3_allowed_users`. Anyone else in the forum can use **`/t3 propose [text]`**: it posts a card with **Approve** and **Reject** that only you can press, and nothing reaches T3 before you approve. Three proposals per person a day (`/t3 propose` and **Propose it** together).
 - **When the PC is off** (or T3 isn't running), the request is queued and the post says so. It's retried with growing gaps up to 15 minutes, for up to `t3_queue_hours`, then given up with a note in the post.
 - **Limits:** `t3_daily_limit` T3 requests a day for everyone together; one plan and one build thread per post.
 
@@ -79,12 +81,16 @@ On T3's side the token must be an MCP client session at the **approval-required*
 ~/.t3/bin/t3 auth session issue --subject mcp-client --scope orchestration:read --scope orchestration:operate --ttl 90d --label "discord-bridge (mochi)" --token-only
 ```
 
-and revoke it with `t3 auth session revoke <id>` (`t3 auth session list` shows it). Without `runtimeModeCeiling` such a session is `approval-required`; never give it more scopes. `t3_mcp_url` is the PC's `/mcp` endpoint, for example `http://100.72.110.77:3773/mcp` over Tailscale.
+and revoke it with `t3 auth session revoke <id>` (`t3 auth session list` shows it). Without `runtimeModeCeiling` such a session is `approval-required`; never give it more scopes.
+
+`t3_mcp_url` is T3's `/mcp` endpoint. Keep T3 itself local only and publish it to the tailnet with Tailscale Serve on the PC (`tailscale serve --bg --https=8450 http://127.0.0.1:3773`, never Funnel); the URL is then `https://bazzite.tailce5634.ts.net:8450/mcp`. The Pi's DNS answers that name with Tailscale's public Funnel servers (Funnel is on for another port there), so also set `t3_mcp_address` to the PC's tailnet IP (`100.72.110.77`): the bot connects there and still checks the HTTPS certificate against the name. On start the log says whether T3 answers and which channel and server each route points at.
 
 | Option | Default | |
 |---|---|---|
 | `t3_mcp_url` | blank (off) | T3 Code's `/mcp` endpoint |
 | `t3_token` | blank (off) | the MCP client token (a password option, never shown or logged) |
+| `t3_mcp_address` | blank | an IP to connect to instead of the URL's name (TLS still checks the name) |
+| `t3_mention_mode` | `auto` | what a mention starts: `auto`, `build` or `plan` |
 | `t3_guild_id` | `guild_id` | the one server `/t3` works in; `/t3` is registered there |
 | `t3_allowed_users` | only you | more Discord user ids who may start and drive T3 threads |
 | `t3_channels` | `suggestions=d046b1ba-…` | `channel=projectId`, comma-separated; the channel by id (safest) or by name (needs a server id); `@remote/branch` after a project for its own base branch |

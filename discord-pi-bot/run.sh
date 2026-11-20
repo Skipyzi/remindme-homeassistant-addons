@@ -62,6 +62,9 @@ export TRACKINGMORE_API_KEY="$(get_option trackingmore_api_key)"
 # The /t3 bridge to T3 Code on the PC; off unless the URL and the token are set.
 export T3_MCP_URL="$(get_option t3_mcp_url)"
 export T3_TOKEN="$(get_option t3_token)"
+# Connect to this IP instead of asking DNS (TLS still checks the URL's name).
+export T3_MCP_ADDRESS="$(get_option t3_mcp_address)"
+export T3_MENTION_MODE="$(get_option t3_mention_mode)"
 export T3_GUILD_ID="$(get_option t3_guild_id)"
 export T3_ALLOWED_USERS="$(get_option t3_allowed_users)"
 export T3_CHANNELS="$(get_option t3_channels)"

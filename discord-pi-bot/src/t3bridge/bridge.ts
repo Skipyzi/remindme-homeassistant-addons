@@ -3,7 +3,7 @@ import { ActionRowBuilder, ButtonBuilder, ButtonStyle } from "discord.js";
 import { splitMessage } from "../discord/chats";
 import type { BridgeConfig, ChannelRoute } from "./config";
 import { FINISHED, T3AuthError, T3ToolError, T3Unreachable, type T3Api, type ThreadItem, type ThreadView } from "./mcp";
-import { buildPrompt, followUpPrompt, suggestionContext, suggestionPrompt, summaryPrompt, type Suggestion } from "./prompt";
+import { buildPrompt, buildSuggestionPrompt, followUpPrompt, suggestionContext, suggestionPrompt, summaryPrompt, type Suggestion } from "./prompt";
 import type { BridgeRecord, BridgeStore, PendingOp, Proposal, T3Ref } from "./store";
 
 export interface OutMessage {
@@ -33,6 +33,8 @@ export interface StartRequest {
 	route: ChannelRoute;
 	suggestion: Suggestion;
 	by: string;
+	/** "build": implement it straight away (default mode); "plan" (default): plan first, with Build it after. */
+	mode?: "plan" | "build";
 }
 
 /** Proposals a person not on the allow list may make a day. */
@@ -141,12 +143,21 @@ export class T3Bridge {
 			createdBy: request.by,
 			suggestion: suggestionContext(request.suggestion),
 			t3: [],
-			ops: [this.op("launch", suggestionPrompt(request.suggestion), request.by)],
+			ops: [{ ...this.op("launch", request.mode === "build" ? buildSuggestionPrompt(request.suggestion) : suggestionPrompt(request.suggestion), request.by), mode: request.mode === "build" ? "build" : "plan" }],
 			posted: [],
 		};
 		store.records.set(record.discordThreadId, record);
 		console.log(`[t3] ${request.by} asked for a T3 thread for Discord thread ${record.discordThreadId}`);
 		return (await this.runOps(record)).join("\n") || "Queued for T3.";
+	}
+
+	/** Relaying back on in a thread that was stopped; true when it was. */
+	async resume(discordThreadId: string): Promise<boolean> {
+		const record = this.record(discordThreadId);
+		if (!record?.stopped) return false;
+		record.stopped = false;
+		await this.deps.store.save();
+		return true;
 	}
 
 	/** A follow-up into the linked T3 thread (the build thread once there is one). */
@@ -353,7 +364,7 @@ export class T3Bridge {
 			const ref = record.t3.find((item) => item.threadId === threadId);
 			return `📨 Sent to ${t3Link(ref)}${sent.delivery === "queued" ? " (after the turn that's running)" : ""}. I'll post the answer here.`;
 		}
-		const building = op.kind === "build";
+		const building = op.kind === "build" || op.mode === "build";
 		const launched = await api.launch({
 			projectId: record.projectId,
 			title: `${building ? "Build" : "Discord"}: ${record.title}`.slice(0, 100),
@@ -363,13 +374,15 @@ export class T3Bridge {
 			workspaceStrategy: { type: "worktree", baseRef: record.baseRef, startFromOrigin: true },
 			modelSelection: this.config.model,
 			// Retries after a lost reply land on the same thread.
-			clientRequestId: building ? `discord:${record.discordThreadId}:build` : `discord:${record.discordThreadId}`,
+			clientRequestId: op.kind === "build" ? `discord:${record.discordThreadId}:build` : `discord:${record.discordThreadId}`,
 		});
 		const ref: T3Ref = { threadId: launched.threadId, link: launched.link, kind: building ? "build" : "plan" };
 		if (!record.t3.some((item) => item.threadId === ref.threadId)) record.t3.push(ref);
 		record.current = ref.threadId;
 		this.watch(record, ref.threadId, launched.runId || undefined);
 		console.log(`[t3] ${ref.kind} thread ${ref.threadId} for Discord thread ${record.discordThreadId}`);
+		if (op.kind === "launch" && building)
+			return `🔨 Building it in ${t3Link(ref, "a new T3 thread")}, in its own worktree from \`${record.baseRef}\`. Every tool call waits for approval in the T3 app; I'll post the result here.`;
 		return building
 			? `🔨 Building it in ${t3Link(ref, "a new T3 thread")}: T3 can't switch the plan thread out of plan mode from here, so a second thread builds the approved plan, in its own worktree and with every tool call waiting for approval in the T3 app.`
 			: `🧭 Sent to T3 in plan mode, in a new worktree from \`${record.baseRef}\`: ${t3Link(ref)}. I'll post the plan here.`;

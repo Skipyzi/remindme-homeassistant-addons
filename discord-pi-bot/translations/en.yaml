@@ -94,10 +94,16 @@ configuration:
     description: Optional. Parcel tracking for carriers other than DHL (DHL is a connector in the console).
   t3_mcp_url:
     name: T3 Code MCP URL
-    description: Optional. Turns on the /t3 bridge to T3 Code, for example http://100.72.110.77:3773/mcp (the PC over Tailscale). Blank (or no token) keeps the bridge off.
+    description: Optional. Turns on the bridge to T3 Code (mentions and /t3 in mapped forums), for example https://bazzite.tailce5634.ts.net:8450/mcp (T3 behind Tailscale Serve). Blank (or no token) keeps the bridge off.
   t3_token:
     name: T3 Code token
     description: A T3 MCP client token at the approval-required ceiling (t3 auth session issue --subject mcp-client). Never shown or logged.
+  t3_mcp_address:
+    name: T3 Code address
+    description: Optional. An IP address to connect to instead of looking up the URL's name (TLS is still checked against the name), for example the PC's tailnet IP 100.72.110.77 when the Pi's DNS doesn't know the tailnet's names.
+  t3_mention_mode:
+    name: What a mention starts
+    description: auto builds unless you ask for a plan or an opinion ("plan", "how would you", "what do you think"); build always builds; plan always plans first, with a Build it button.
   t3_guild_id:
     name: T3 server ID
     description: Optional. The only Discord server /t3 works in, and where it's registered. Blank uses the Discord server ID above. Needed when a channel below is named rather than given by ID.

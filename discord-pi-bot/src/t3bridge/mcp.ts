@@ -9,6 +9,10 @@
  * token.
  */
 
+import { request as httpRequest } from "node:http";
+import { request as httpsRequest } from "node:https";
+import { isIP } from "node:net";
+
 export class T3Unreachable extends Error {
 	constructor(message: string, readonly status?: number) {
 		super(message);
@@ -92,6 +96,48 @@ export interface T3Api {
 }
 
 type FetchLike = (url: string, init: { method: string; headers: Record<string, string>; body: string; signal: AbortSignal }) => Promise<Response>;
+
+/**
+ * A fetch that connects to a fixed address instead of asking DNS, while TLS
+ * is still checked against the URL's host name. The Pi's DNS answers
+ * bazzite.<tailnet>.ts.net with Tailscale's public Funnel servers (Funnel is
+ * on for another port), so the tailnet-only Serve URL is reached at the PC's
+ * tailnet IP instead.
+ */
+export function pinnedFetch(address: string): FetchLike {
+	const family = isIP(address);
+	if (!family) throw new Error("t3_mcp_address must be an IP address");
+	return (url, init) =>
+		new Promise<Response>((resolve, reject) => {
+			const target = new URL(url);
+			const request = (target.protocol === "https:" ? httpsRequest : httpRequest)(
+				target,
+				{
+					method: init.method,
+					headers: { ...init.headers, "Content-Length": String(Buffer.byteLength(init.body)) },
+					signal: init.signal,
+					servername: target.hostname,
+					lookup: ((_host: string, options: { all?: boolean }, callback: (...args: unknown[]) => void) => {
+						if (options?.all) callback(null, [{ address, family }]);
+						else callback(null, address, family);
+					}) as never,
+				},
+				(response) => {
+					const chunks: Buffer[] = [];
+					response.on("data", (chunk: Buffer) => chunks.push(chunk));
+					response.on("error", reject);
+					response.on("end", () => {
+						const headers = new Headers();
+						for (const [name, value] of Object.entries(response.headers)) if (value !== undefined) headers.set(name, Array.isArray(value) ? value.join(", ") : value);
+						const status = response.statusCode || 500;
+						resolve(new Response(status === 204 || status === 304 || chunks.length === 0 ? null : Buffer.concat(chunks), { status, headers }));
+					});
+				},
+			);
+			request.on("error", reject);
+			request.end(init.body);
+		});
+}
 
 const PROTOCOL = "2025-06-18";
 
@@ -194,7 +240,8 @@ export class T3McpClient implements T3Api {
 			// Connection refused, DNS, timeout: the PC is off or asleep, or T3 isn't running.
 			const name = error instanceof Error ? error.name : "";
 			const inner = (error as { cause?: unknown } | null)?.cause;
-			const cause = inner instanceof Error ? ` (${(inner as NodeJS.ErrnoException).code || inner.name})` : "";
+			const code = (error as NodeJS.ErrnoException | null)?.code;
+			const cause = inner instanceof Error ? ` (${(inner as NodeJS.ErrnoException).code || inner.name})` : code ? ` (${code})` : "";
 			throw new T3Unreachable(name === "TimeoutError" || name === "AbortError" ? "T3 did not answer in time" : `T3 is unreachable${cause}`);
 		}
 		return response;

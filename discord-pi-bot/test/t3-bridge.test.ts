@@ -5,8 +5,10 @@ import { join } from "node:path";
 import test from "node:test";
 import { T3Bridge, answerOf, type OutMessage } from "../src/t3bridge/bridge.ts";
 import { type BridgeConfig, bridgeSetup, parseChannels, parseModel, VOXEL_BREACH_PROJECT } from "../src/t3bridge/config.ts";
-import { handleT3Button, handleT3Command, t3CommandJson } from "../src/t3bridge/discord.ts";
-import { type LaunchArgs, T3AuthError, T3McpClient, T3ToolError, T3Unreachable, type T3Api, type ThreadView } from "../src/t3bridge/mcp.ts";
+import { createServer } from "node:http";
+import { setupAssistantChat } from "../src/discord/assistantChat.ts";
+import { handleT3Button, handleT3Command, handleT3Mention, mentionStart, mentionState, t3CommandJson } from "../src/t3bridge/discord.ts";
+import { type LaunchArgs, pinnedFetch, T3AuthError, T3McpClient, T3ToolError, T3Unreachable, type T3Api, type ThreadView } from "../src/t3bridge/mcp.ts";
 import { cleanUntrusted, suggestionPrompt } from "../src/t3bridge/prompt.ts";
 import { BridgeStore } from "../src/t3bridge/store.ts";
 
@@ -23,6 +25,7 @@ function testConfig(overrides: Partial<BridgeConfig> = {}): BridgeConfig {
 	return {
 		url: "http://t3.test/mcp",
 		token: "secret-token-value",
+		mentionMode: "auto",
 		guildId: GUILD,
 		ownerId: OWNER,
 		allowedUsers: [OWNER, FRIEND],
@@ -142,6 +145,11 @@ test("defaults: only the owner, #suggestions to Voxel Breach once a server is kn
 	assert.deepEqual(named.config.model, { instanceId: "claudeAgent", model: "claude-opus-5-5" });
 	assert.equal(named.config.pollMs, 20_000);
 	assert.equal(named.config.queueTimeoutMs, 12 * 3_600_000);
+	assert.equal(named.config.mentionMode, "auto");
+	assert.equal(named.config.address, undefined);
+	assert.equal(bridgeSetup({ OWNER_ID: OWNER, T3_MCP_URL: "https://x/mcp", T3_TOKEN: "t", DISCORD_GUILD_ID: GUILD, T3_MCP_ADDRESS: "bazzite" }).on, false);
+	const pinned = bridgeSetup({ OWNER_ID: OWNER, T3_MCP_URL: "https://x/mcp", T3_TOKEN: "t", DISCORD_GUILD_ID: GUILD, T3_MCP_ADDRESS: "100.72.110.77", T3_MENTION_MODE: "plan" });
+	assert.ok(pinned.on && pinned.config.address === "100.72.110.77" && pinned.config.mentionMode === "plan");
 	// A channel name means nothing without a server to look it up in.
 	const noGuild = bridgeSetup({ OWNER_ID: OWNER, T3_MCP_URL: "http://x/mcp", T3_TOKEN: "t" });
 	assert.equal(noGuild.on, false);
@@ -585,4 +593,192 @@ test("two follow-ups at once are each sent once, in order", async () => {
 	await t.bridge.tick();
 	const sent = t.api.calls.filter(([kind]) => kind === "send").map(([, args]) => String(args.message).split("\n")[0]);
 	assert.deepEqual(sent, ["one", "two"]);
+});
+
+// ---------- mentions ----------
+
+test("auto: a mention builds unless it asks for a plan or an opinion; a bare one plans", () => {
+	assert.equal(mentionStart("This feature looks pretty good, can you implement it", "auto"), "build");
+	assert.equal(mentionStart("add this please", "auto"), "build");
+	assert.equal(mentionStart("what do you think?", "auto"), "plan");
+	assert.equal(mentionStart("How would you do this?", "auto"), "plan");
+	assert.equal(mentionStart("make a plan for it", "auto"), "plan");
+	assert.equal(mentionStart("   ", "auto"), "plan");
+	assert.equal(mentionStart("what do you think", "build"), "build");
+	assert.equal(mentionStart("implement it", "plan"), "plan");
+});
+
+function mention(input: { userId: string; content: string; channel?: unknown; id?: string }) {
+	const log: Array<[string, unknown]> = [];
+	return {
+		log,
+		id: input.id ?? "500000000000000001",
+		content: input.content,
+		guildId: GUILD,
+		author: { id: input.userId, username: input.userId === OWNER ? "gabor" : "player", globalName: null },
+		member: { displayName: input.userId === OWNER ? "Gabor" : "Player" },
+		channel: input.channel ?? forumThread(),
+		inGuild: () => true,
+		async react(emoji: string) {
+			log.push(["react", emoji]);
+		},
+		async reply(payload: unknown) {
+			log.push(["reply", payload]);
+		},
+	};
+}
+
+function forumThread(overrides: Record<string, unknown> = {}) {
+	return thread({
+		sendTyping: async () => undefined,
+		messages: {
+			fetch: async () =>
+				new Map([
+					[POST, { id: POST, content: "the post itself", createdTimestamp: 1, author: { id: PLAYER, bot: false, username: "player" } }],
+					["600000000000000002", { id: "600000000000000002", content: "Yes, and make it swing <@100000000000000001>", createdTimestamp: 3, author: { id: "700000000000000001", bot: false, username: "fan" }, member: { displayName: "Fan" } }],
+					["600000000000000001", { id: "600000000000000001", content: "+1 from me", createdTimestamp: 2, author: { id: "700000000000000002", bot: false, username: "other" } }],
+					["600000000000000003", { id: "600000000000000003", content: "bot noise", createdTimestamp: 4, author: { id: "800000000000000001", bot: true, username: "mochi" } }],
+					["500000000000000001", { id: "500000000000000001", content: "the asking message", createdTimestamp: 5, author: { id: OWNER, bot: false, username: "gabor" } }],
+				]),
+		},
+		...overrides,
+	});
+}
+
+const replyText = (entry: [string, unknown] | undefined) => String((entry?.[1] as { content?: string })?.content ?? "");
+
+test("the owner's mention in a mapped post starts a build thread with his words as the request", async () => {
+	const { bridge, api } = setup();
+	const message = mention({ userId: OWNER, content: "This feature looks pretty good, can you implement it" });
+	assert.equal(await handleT3Mention(bridge, mentionState(), message, "This feature looks pretty good, can you implement it"), true);
+	assert.deepEqual(message.log[0], ["react", "🛠️"]);
+	const [, args] = api.calls[0];
+	assert.equal(args.interactionMode, "default");
+	assert.equal(args.runtimeMode, "approval-required");
+	assert.equal(args.clientRequestId, `discord:${POST}`);
+	assert.deepEqual(args.workspaceStrategy, { type: "worktree", baseRef: "origin/main", startFromOrigin: true });
+	const prompt = String(args.message);
+	assert.match(prompt, /Gabor's request \(trusted\):\nThis feature looks pretty good, can you implement it/);
+	assert.ok(prompt.indexOf("Gabor's request") > prompt.lastIndexOf("SUGGESTION>>>"), "his words sit outside the quote");
+	// Other people's replies are quoted, oldest first, without the post, the bots or the asking message.
+	const quote = prompt.slice(prompt.indexOf("<<<SUGGESTION\n"), prompt.lastIndexOf("SUGGESTION>>>"));
+	assert.match(quote, /Replies in the thread:\n- other: \+1 from me\n- Fan: Yes, and make it swing @user/);
+	assert.ok(!quote.includes("bot noise") && !quote.includes("the asking message") && !quote.includes("the post itself"));
+	const reply = message.log.find(([kind]) => kind === "reply")?.[1] as { content: string; allowedMentions: unknown };
+	assert.match(reply.content, /Building it in \[a new T3 thread\]/);
+	assert.deepEqual(reply.allowedMentions, { parse: [], repliedUser: false });
+	assert.equal(bridge.record(POST)?.t3[0].kind, "build");
+});
+
+test("asking what it thinks starts a plan; a later mention is a follow-up to the same T3 thread", async () => {
+	const { bridge, api } = setup();
+	const state = mentionState();
+	await handleT3Mention(bridge, state, mention({ userId: OWNER, content: "what do you think?" }), "what do you think?");
+	assert.equal(api.calls[0][1].interactionMode, "plan");
+	const later = mention({ userId: OWNER, content: "Go with option B", id: "500000000000000002" });
+	await handleT3Mention(bridge, state, later, "Go with option B");
+	assert.equal(api.launches, 1);
+	const [kind, args] = api.calls[1];
+	assert.equal(kind, "send");
+	assert.equal(args.threadId, "thread-1");
+	assert.match(String(args.message), /^Go with option B/);
+	assert.match(replyText(later.log.find(([k]) => k === "reply")), /Sent to/);
+});
+
+test("mentions outside a mapped forum stay with the assistant", async () => {
+	const { bridge, api } = setup();
+	const general = mention({ userId: OWNER, content: "hi", channel: forumThread({ parentId: "999", parent: { name: "general" } }) });
+	assert.equal(await handleT3Mention(bridge, mentionState(), general, "hi"), false);
+	const channel = mention({ userId: OWNER, content: "hi", channel: { isThread: () => false } });
+	assert.equal(await handleT3Mention(bridge, mentionState(), channel, "hi"), false);
+	assert.equal(api.calls.length, 0);
+	assert.equal(general.log.length + channel.log.length, 0);
+});
+
+test("someone else's mention is answered once, with a Propose it button only they can press", async () => {
+	const { bridge, api } = setup();
+	const state = mentionState();
+	const first = mention({ userId: PLAYER, content: "please build this" });
+	assert.equal(await handleT3Mention(bridge, state, first, "please build this"), true);
+	const payload = first.log[0][1] as { content: string; components: Array<{ toJSON(): { components: Array<{ custom_id: string; label: string }> } }> };
+	assert.match(payload.content, new RegExp(`Only <@${OWNER}> can start T3 work here`));
+	const button = payload.components[0].toJSON().components[0];
+	assert.equal(button.label, "Propose it");
+	const again = mention({ userId: PLAYER, content: "pretty please" });
+	assert.equal(await handleT3Mention(bridge, state, again, "pretty please"), true);
+	assert.equal(again.log.length, 0, "told once");
+	assert.equal(api.calls.length, 0);
+
+	const other = interaction({ userId: FRIEND, customId: button.custom_id });
+	await handleT3Button(bridge, other as never, state);
+	assert.match(content(other.log[0]), /for the person who asked/);
+	const press = interaction({ userId: PLAYER, customId: button.custom_id });
+	await handleT3Button(bridge, press as never, state);
+	assert.equal(press.log[0][0], "update");
+	const card = press.log[0][1] as { embeds: Array<{ toJSON(): { title: string; description: string } }>; components: Array<{ toJSON(): { components: Array<{ custom_id: string }> } }> };
+	assert.equal(card.embeds[0].toJSON().title, "Proposal for T3");
+	assert.match(card.embeds[0].toJSON().description, /please build this/);
+	const approve = card.components[0].toJSON().components[0].custom_id;
+	const ok = interaction({ userId: OWNER, customId: approve });
+	await handleT3Button(bridge, ok as never, state);
+	assert.equal(api.launches, 1);
+	assert.match(String(api.calls[0][1].message), /Proposed for T3 by Player, who added:\nplease build this/);
+});
+
+test("the assistant skips a mention the bridge took, and answers the rest", async () => {
+	const handlers: Record<string, (value: unknown) => void> = {};
+	const client = { user: { id: "900000000000000001" }, on: (event: string, handler: (value: unknown) => void) => void (handlers[event] = handler) };
+	const asked: string[] = [];
+	const taken: string[] = [];
+	setupAssistantChat(client as never, {
+		assistant: { ask: async (input: { prompt: string }) => (asked.push(input.prompt), { text: "ok", embeds: [], confirms: [], did: [], sources: [] }) } as never,
+		chats: { history: () => [], conversationId: () => "c", append: () => undefined, reset: () => undefined } as never,
+		confirmations: {} as never,
+		ownerId: OWNER,
+		t3Mention: async (_message, prompt) => {
+			taken.push(prompt);
+			return prompt.includes("implement");
+		},
+	});
+	const message = (text: string) => ({
+		author: { id: OWNER, bot: false },
+		content: `<@900000000000000001> ${text}`,
+		channelId: POST,
+		createdTimestamp: Date.now(),
+		inGuild: () => true,
+		mentions: { users: new Map([["900000000000000001", {}]]), roles: new Map() },
+		attachments: new Map(),
+		reference: null,
+		channel: { isSendable: () => true, sendTyping: async () => undefined, messages: { fetch: async () => new Map() } },
+		reply: async () => undefined,
+		member: null,
+	});
+	handlers.messageCreate(message("please implement it"));
+	await new Promise((resolve) => setTimeout(resolve, 20));
+	assert.deepEqual(taken, ["please implement it"]);
+	assert.deepEqual(asked, []);
+});
+
+test("pinnedFetch connects to the given address and keeps the URL's host name", async () => {
+	const server = createServer((request, response) => {
+		let body = "";
+		request.on("data", (chunk) => (body += chunk));
+		request.on("end", () => {
+			response.writeHead(200, { "Content-Type": "application/json", "Mcp-Session-Id": "s9" });
+			response.end(JSON.stringify({ host: request.headers.host, auth: request.headers.authorization, body }));
+		});
+	});
+	await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+	const port = (server.address() as { port: number }).port;
+	try {
+		const fetchVia = pinnedFetch("127.0.0.1");
+		const response = await fetchVia(`http://t3.example.invalid:${port}/mcp`, { method: "POST", headers: { Authorization: "Bearer x" }, body: "{\"a\":1}", signal: AbortSignal.timeout(5000) });
+		assert.equal(response.status, 200);
+		assert.equal(response.headers.get("mcp-session-id"), "s9");
+		assert.deepEqual(await response.json(), { host: `t3.example.invalid:${port}`, auth: "Bearer x", body: '{"a":1}' });
+		await assert.rejects(pinnedFetch("127.0.0.1")(`http://t3.example.invalid:1/mcp`, { method: "POST", headers: {}, body: "", signal: AbortSignal.timeout(5000) }));
+		assert.throws(() => pinnedFetch("bazzite"));
+	} finally {
+		server.close();
+	}
 });

@@ -1,3 +1,5 @@
+import { isIP } from "node:net";
+
 /**
  * The T3 Code bridge's settings, from the app options (run.sh exports them).
  * The bridge is off unless both the MCP URL and the token are set, so the
@@ -16,9 +18,15 @@ export interface ChannelRoute {
 	baseRef: string;
 }
 
+export type MentionMode = "auto" | "build" | "plan";
+
 export interface BridgeConfig {
 	url: string;
 	token: string;
+	/** Connect here instead of asking DNS (TLS still checks the URL's host). */
+	address?: string;
+	/** What a mention starts: a build thread, a plan thread, or "auto" (plan only when asked for one). */
+	mentionMode: MentionMode;
 	/** The one server the bridge answers in. */
 	guildId: string;
 	ownerId: string;
@@ -98,6 +106,10 @@ export function bridgeSetup(env: NodeJS.ProcessEnv = process.env): BridgeSetup {
 	} catch {
 		return { on: false, reason: "t3_mcp_url is not an http(s) URL" };
 	}
+	const address = (env.T3_MCP_ADDRESS || "").trim();
+	if (address && !isIP(address)) return { on: false, reason: "t3_mcp_address is not an IP address" };
+	const mode = (env.T3_MENTION_MODE || "").trim().toLowerCase();
+	const mentionMode: MentionMode = mode === "build" || mode === "plan" ? mode : "auto";
 	const ownerId = (env.OWNER_ID || "").trim();
 	if (!ownerId) return { on: false, reason: "no owner_id" };
 	const warnings: string[] = [];
@@ -112,6 +124,8 @@ export function bridgeSetup(env: NodeJS.ProcessEnv = process.env): BridgeSetup {
 		config: {
 			url,
 			token,
+			...(address ? { address } : {}),
+			mentionMode,
 			guildId,
 			ownerId,
 			allowedUsers: [...allowed],

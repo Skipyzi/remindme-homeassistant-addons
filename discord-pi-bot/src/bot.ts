@@ -36,7 +36,7 @@ export function startBot(deps: ChatDeps & { identity?: Identity }): OwnerMesseng
 	// Long answers are shortened by the assistant without tools, on its cheapest model.
 	const t3 = startT3Bridge(client, (prompt) => deps.assistant.quick(prompt, undefined, { cheap: true }));
 	setupCommands(client, t3);
-	setupAssistantChat(client, deps);
+	setupAssistantChat(client, t3 ? { ...deps, t3Mention: (message, prompt) => t3.onMention(message, prompt) } : deps);
 	// The bot goes by the assistant's name and wears its cat.
 	if (deps.identity) new IdentitySync(client, deps.identity).start();
 	const messenger = new OwnerMessenger(client, config.ownerId, deps.chats);

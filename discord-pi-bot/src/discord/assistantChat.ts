@@ -26,6 +26,11 @@ export interface ChatDeps {
 	activity?: ActivityLog;
 	/** Server roles whose members may mention the bot too, for questions and fact checks. */
 	guestRoles?: () => string[];
+	/**
+	 * The T3 Code bridge takes mentions in posts of its forums (src/t3bridge);
+	 * true when it did, false to answer as usual.
+	 */
+	t3Mention?: (message: Message, prompt: string) => Promise<boolean>;
 }
 
 /** Questions a guest may ask a day, so the owner's AI budget stays theirs. */
@@ -156,6 +161,8 @@ async function handleMessage(client: Client, deps: ChatDeps, message: Message): 
 	const roles = botRoles(message, botId);
 	const mentioned = Boolean(botId && message.mentions.users.has(botId)) || roles.length > 0;
 	if (!inDm && !mentioned) return;
+	// In a post of a forum mapped to T3, a mention is work for T3, not a question for the assistant.
+	if (!inDm && deps.t3Mention && (await deps.t3Mention(message, promptFrom(message.content, botId, roles)))) return;
 	const owner = message.author.id === deps.ownerId;
 	// Someone else in a server with an allowed role may ask questions and check facts; nobody else gets an answer.
 	const guest =

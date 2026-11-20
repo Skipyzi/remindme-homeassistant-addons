@@ -48,6 +48,8 @@ options:
   trackingmore_api_key: ""
   t3_mcp_url: ""
   t3_token: ""
+  t3_mcp_address: ""
+  t3_mention_mode: auto
   t3_guild_id: ""
   t3_allowed_users: ""
   t3_channels: "suggestions=d046b1ba-bd82-49d1-9662-446a790a285b"
@@ -91,6 +93,8 @@ schema:
   trackingmore_api_key: password?
   t3_mcp_url: str?
   t3_token: password?
+  t3_mcp_address: str?
+  t3_mention_mode: list(auto|build|plan)
   t3_guild_id: str?
   t3_allowed_users: str?
   t3_channels: str?

@@ -13,6 +13,8 @@ export interface T3Ref {
 export interface PendingOp {
 	id: string;
 	kind: "launch" | "build" | "send";
+	/** A launch that builds straight away instead of planning first. */
+	mode?: "plan" | "build";
 	message: string;
 	by: string;
 	createdAt: number;

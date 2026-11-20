@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import {
 	ActionRowBuilder,
 	ButtonBuilder,
@@ -14,7 +15,7 @@ import {
 import { config as botConfig } from "../config";
 import { T3Bridge } from "./bridge";
 import { type BridgeConfig, type ChannelRoute, bridgeSetup } from "./config";
-import { T3McpClient, type T3Api } from "./mcp";
+import { pinnedFetch, T3McpClient, type T3Api } from "./mcp";
 import { BridgeStore } from "./store";
 
 /*
@@ -64,6 +65,15 @@ interface ThreadLike {
 	parentId: string | null;
 	parent?: { name?: string | null } | null;
 	fetchStarterMessage(): Promise<{ content: string; author?: { username: string } | null; member?: { displayName: string } | null; attachments?: { size: number; map<T>(fn: (attachment: { name: string }) => T): T[] } } | null>;
+	messages?: { fetch(options: { limit: number }): Promise<{ values(): Iterable<ReplyLike> }> };
+}
+
+interface ReplyLike {
+	id: string;
+	content: string;
+	createdTimestamp: number;
+	author: { id: string; bot: boolean; username: string; globalName?: string | null };
+	member?: { displayName: string } | null;
 }
 
 interface Located {
@@ -95,9 +105,10 @@ async function readPost(thread: ThreadLike): Promise<{ title: string; body: stri
 	return { title: thread.name, body, author: starter?.member?.displayName || starter?.author?.username || "unknown" };
 }
 
-async function startFrom(bridge: T3Bridge, located: Located, by: string, extra: { note?: string; proposal?: { by: string; text: string } }): Promise<string> {
+async function startFrom(bridge: T3Bridge, located: Located, by: string, extra: { note?: string; proposal?: { by: string; text: string }; mode?: "plan" | "build"; replies?: Array<{ author: string; text: string }> }): Promise<string> {
 	const post = await readPost(located.thread);
 	return bridge.launch({
+		...(extra.mode ? { mode: extra.mode } : {}),
 		discordThreadId: located.thread.id,
 		guildId: located.thread.guildId,
 		channelId: located.thread.parentId || "",
@@ -112,8 +123,136 @@ async function startFrom(bridge: T3Bridge, located: Located, by: string, extra: 
 			startedBy: by,
 			...(extra.note ? { note: extra.note } : {}),
 			...(extra.proposal ? { proposal: extra.proposal } : {}),
+			...(extra.replies?.length ? { replies: extra.replies } : {}),
 		},
 	});
+}
+
+/** A mention from someone not on the allow list waits here until they press "Propose it". */
+interface Offer {
+	discordThreadId: string;
+	userId: string;
+	userName: string;
+	text: string;
+	at: number;
+}
+
+export interface MentionState {
+	/** Who was already told, per thread: they're told once. */
+	told: Set<string>;
+	offers: Map<string, Offer>;
+}
+
+export function mentionState(): MentionState {
+	return { told: new Set(), offers: new Map() };
+}
+
+export interface MentionLike {
+	id: string;
+	content: string;
+	guildId: string | null;
+	author: { id: string; username: string; globalName?: string | null };
+	member?: { displayName: string } | null;
+	channel: unknown;
+	inGuild(): boolean;
+	react(emoji: string): Promise<unknown>;
+	reply(payload: never): Promise<unknown>;
+}
+
+const OFFER_TTL_MS = 86_400_000;
+
+/** The thread's other replies, oldest first, for context: not the post itself, the bots, or the message that asked. */
+async function readReplies(thread: ThreadLike, skip: string): Promise<Array<{ author: string; text: string }>> {
+	if (!thread.messages) return [];
+	const fetched = await thread.messages.fetch({ limit: 30 }).catch(() => undefined);
+	if (!fetched) return [];
+	return [...fetched.values()]
+		.filter((reply) => reply.id !== thread.id && reply.id !== skip && !reply.author.bot && reply.content.trim())
+		.sort((a, b) => a.createdTimestamp - b.createdTimestamp)
+		.slice(-15)
+		.map((reply) => ({ author: reply.member?.displayName || reply.author.globalName || reply.author.username, text: reply.content }));
+}
+
+/** Words that ask only for a plan or an opinion; anything else in "auto" builds. */
+const PLAN_ONLY = /\b(plan|planning|how would you|what do you think|what'?s your take|your take|opinion|thoughts on|evaluate|feasib(le|ility))\b/i;
+
+/** What a mention starts: from the setting, or in "auto" from what was asked (a bare mention plans). */
+export function mentionStart(text: string, mode: "auto" | "build" | "plan"): "plan" | "build" {
+	if (mode === "build" || mode === "plan") return mode;
+	if (!text.trim()) return "plan";
+	return PLAN_ONLY.test(text) ? "plan" : "build";
+}
+
+/**
+ * A mention of the bot in a post of a mapped forum goes to T3 instead of the
+ * assistant. From someone allowed: their words are the (trusted) request, the
+ * post and its replies the quoted suggestion; a post already linked to T3 gets
+ * a follow-up. Anyone else is told once that only the owner starts work, with
+ * a button to propose it. False when the message isn't in a mapped forum,
+ * so the assistant answers it as before.
+ */
+export async function handleT3Mention(bridge: T3Bridge, state: MentionState, message: MentionLike, prompt: string): Promise<boolean> {
+	if (!message.inGuild()) return false;
+	const channel = message.channel as { isThread?: () => boolean; parentId?: string | null; parent?: { name?: string | null } | null; sendTyping?: () => Promise<unknown> } | null;
+	if (!channel?.isThread?.()) return false;
+	const route = bridge.route({ id: channel.parentId ?? null, name: channel.parent?.name }, message.guildId);
+	if (!route) return false;
+	const thread = channel as unknown as ThreadLike;
+	const by = message.member?.displayName || message.author.globalName || message.author.username;
+	const answer = (content: string, extra: Record<string, unknown> = {}) => message.reply({ content, allowedMentions: { parse: [], repliedUser: false }, ...extra } as never).catch(() => undefined);
+
+	if (!bridge.isAllowed(message.author.id)) {
+		const key = `${thread.id}:${message.author.id}`;
+		if (state.told.has(key)) return true;
+		state.told.add(key);
+		const now = Date.now();
+		for (const [id, offer] of state.offers) if (now - offer.at > OFFER_TTL_MS) state.offers.delete(id);
+		const id = randomUUID().slice(0, 8);
+		state.offers.set(id, { discordThreadId: thread.id, userId: message.author.id, userName: by, text: prompt, at: now });
+		const row = new ActionRowBuilder<ButtonBuilder>().addComponents(new ButtonBuilder().setCustomId(`t3:offer:${id}`).setLabel("Propose it").setStyle(ButtonStyle.Primary));
+		await answer(`Only <@${bridge.config.ownerId}> can start T3 work here. Want to propose it? He gets a card to approve.`, { components: [row] });
+		return true;
+	}
+
+	// Picked up.
+	await message.react("🛠️").catch(() => undefined);
+	void channel.sendTyping?.().catch(() => undefined);
+	let reply: string;
+	if (bridge.record(thread.id)) {
+		await bridge.resume(thread.id);
+		reply = prompt.trim() ? await bridge.send(thread.id, prompt, by) : await bridge.status(thread.id);
+	} else {
+		const mode = mentionStart(prompt, bridge.config.mentionMode);
+		const replies = await readReplies(thread, message.id);
+		reply = await startFrom(bridge, { thread, route }, by, { note: prompt.trim() || undefined, mode, replies });
+	}
+	await answer(reply);
+	return true;
+}
+
+/** "Propose it" under the reply to someone not allowed: their mention becomes a proposal card. */
+async function pressOffer(bridge: T3Bridge, interaction: ButtonInteraction, id: string, state?: MentionState): Promise<void> {
+	const offer = state?.offers.get(id);
+	if (!offer) {
+		await interaction.reply({ content: "That button has expired. `/t3 propose` does the same.", ...ephemeral });
+		return;
+	}
+	if (offer.userId !== interaction.user.id) {
+		await interaction.reply({ content: "This button is for the person who asked.", ...ephemeral });
+		return;
+	}
+	const kind = bridge.record(offer.discordThreadId) ? "send" : "start";
+	if (kind === "send" && !offer.text.trim()) {
+		await interaction.reply({ content: "This post is already with T3. `/t3 propose` with your follow-up as `text` asks the owner to send it.", ...ephemeral });
+		return;
+	}
+	const proposal = bridge.propose({ kind, discordThreadId: offer.discordThreadId, userId: offer.userId, userName: offer.userName, text: offer.text });
+	if (!proposal) {
+		await interaction.reply({ content: "That's all the proposals you can make today. Try again tomorrow.", ...ephemeral });
+		return;
+	}
+	state?.offers.delete(id);
+	await interaction.update({ content: "", ...proposalCard({ id: proposal.id, kind, userName: offer.userName, text: offer.text, color: botConfig.reminderColor }) });
 }
 
 export function proposalCard(input: { id: string; kind: "start" | "send"; userName: string; text: string; color: number }) {
@@ -182,8 +321,12 @@ export async function handleT3Command(bridge: T3Bridge, interaction: ChatInputCo
 	await interaction.editReply({ content: reply, ...quiet });
 }
 
-export async function handleT3Button(bridge: T3Bridge, interaction: ButtonInteraction): Promise<void> {
+export async function handleT3Button(bridge: T3Bridge, interaction: ButtonInteraction, state?: MentionState): Promise<void> {
 	const [, verb, arg] = interaction.customId.split(":");
+	if (verb === "offer") {
+		await pressOffer(bridge, interaction, arg, state);
+		return;
+	}
 	if (!bridge.isOwner(interaction.user.id)) {
 		await interaction.reply({ content: "Only the owner can press this.", ...ephemeral });
 		return;
@@ -226,6 +369,8 @@ export interface T3Discord {
 	command: RESTPostAPIChatInputApplicationCommandsJSONBody;
 	onCommand(interaction: ChatInputCommandInteraction): Promise<void>;
 	onButton(interaction: ButtonInteraction): Promise<void>;
+	/** A mention of the bot; false when it isn't in a mapped forum (the assistant answers it then). */
+	onMention(message: MentionLike, prompt: string): Promise<boolean>;
 }
 
 /** Ready-made bridge pieces from a config, for tests and for the bot. */
@@ -244,6 +389,7 @@ export function createT3Discord(input: { config: BridgeConfig; api: T3Api; store
 		},
 	});
 	const ready = input.ready || Promise.resolve();
+	const state = mentionState();
 	const guard = async (work: () => Promise<void>, interaction: ChatInputCommandInteraction | ButtonInteraction) => {
 		try {
 			await ready;
@@ -260,7 +406,17 @@ export function createT3Discord(input: { config: BridgeConfig; api: T3Api; store
 		guildId: input.config.guildId,
 		command: t3CommandJson(),
 		onCommand: (interaction) => guard(() => handleT3Command(bridge, interaction), interaction),
-		onButton: (interaction) => guard(() => handleT3Button(bridge, interaction), interaction),
+		onButton: (interaction) => guard(() => handleT3Button(bridge, interaction, state), interaction),
+		onMention: async (message, prompt) => {
+			try {
+				await ready;
+				return await handleT3Mention(bridge, state, message, prompt);
+			} catch (error) {
+				console.error("[t3] mention failed:", error instanceof Error ? error.message : error);
+				await message.reply({ content: "Something went wrong talking to T3.", allowedMentions: { parse: [], repliedUser: false } } as never).catch(() => undefined);
+				return true;
+			}
+		},
 	};
 }
 
@@ -280,8 +436,40 @@ export function startT3Bridge(client: Client, summarize?: (prompt: string) => Pr
 	const { config } = setup;
 	const store = new BridgeStore(config.dataPath);
 	const ready = store.load();
-	const t3 = createT3Discord({ config, api: new T3McpClient(config.url, config.token), store, client, summarize, ready });
+	const api = new T3McpClient(config.url, config.token, config.address ? pinnedFetch(config.address) : undefined);
+	const t3 = createT3Discord({ config, api, store, client, summarize, ready });
 	void ready.then(() => t3.bridge.start());
+	// On start: where each route points, and whether T3 answers (the bridge's own client, no Discord post).
+	client.once("clientReady", () => void describeRoutes(client, config).catch(() => undefined));
+	void ready.then(async () => {
+		const host = new URL(config.url).host;
+		try {
+			await api.ping();
+			console.log(`[t3] T3 is reachable at ${host}${config.address ? ` (via ${config.address})` : ""}.`);
+		} catch (error) {
+			console.warn(`[t3] T3 isn't reachable at ${host} right now: ${error instanceof Error ? error.message : error}. Requests will queue.`);
+		}
+	});
 	console.log(`T3 bridge is on: ${config.channels.size} channel route(s), ${config.allowedUsers.length} allowed user(s), polling every ${config.pollMs / 1000} s.`);
 	return t3;
+}
+
+/** Logs each route's channel and server by name and id, so the ids for the options can be read from the log. */
+async function describeRoutes(client: Client, config: BridgeConfig): Promise<void> {
+	for (const [key, route] of config.channels) {
+		if (/^\d+$/.test(key)) {
+			const channel = await client.channels.fetch(key).catch(() => null);
+			const where = channel && "guild" in channel ? ` in "${channel.guild.name}" (${channel.guild.id})` : "";
+			console.log(`[t3] route ${key}: ${channel && "name" in channel ? `#${channel.name}` : "channel not found"}${where} → project ${route.projectId}`);
+			continue;
+		}
+		const guild = config.guildId ? await client.guilds.fetch(config.guildId).catch(() => null) : null;
+		if (!guild) {
+			console.warn(`[t3] route "${key}": server ${config.guildId || "(none)"} not found`);
+			continue;
+		}
+		const channels = await guild.channels.fetch().catch(() => null);
+		const found = channels ? [...channels.values()].filter((channel) => channel?.name.toLowerCase() === key) : [];
+		console.log(`[t3] route "${key}" in "${guild.name}" (${guild.id}): ${found.length ? found.map((channel) => `#${channel?.name} (${channel?.id})`).join(", ") : "no such channel"} → project ${route.projectId}`);
+	}
 }
