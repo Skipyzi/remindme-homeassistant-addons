@@ -92,3 +92,36 @@ configuration:
   trackingmore_api_key:
     name: TrackingMore API key
     description: Optional. Parcel tracking for carriers other than DHL (DHL is a connector in the console).
+  t3_mcp_url:
+    name: T3 Code MCP URL
+    description: Optional. Turns on the /t3 bridge to T3 Code, for example http://100.72.110.77:3773/mcp (the PC over Tailscale). Blank (or no token) keeps the bridge off.
+  t3_token:
+    name: T3 Code token
+    description: A T3 MCP client token at the approval-required ceiling (t3 auth session issue --subject mcp-client). Never shown or logged.
+  t3_guild_id:
+    name: T3 server ID
+    description: Optional. The only Discord server /t3 works in, and where it's registered. Blank uses the Discord server ID above. Needed when a channel below is named rather than given by ID.
+  t3_allowed_users:
+    name: T3 allowed users
+    description: Optional. Discord user IDs (comma-separated) who may start and drive T3 threads. You are always one; everyone else can only use /t3 propose, which waits for your Approve button.
+  t3_channels:
+    name: T3 channels
+    description: Which forum goes to which T3 project, as channel=projectId, comma-separated. The channel is its ID (safest) or its name; add @remote/branch for a project whose worktrees start elsewhere than t3_base_ref.
+  t3_model:
+    name: T3 model
+    description: The T3 provider instance and model new threads use, as instance/model (for example claudeAgent/claude-opus-5-5).
+  t3_base_ref:
+    name: T3 base branch
+    description: The branch new worktrees start from, as remote/branch.
+  t3_poll_seconds:
+    name: T3 check interval (seconds)
+    description: How often a running T3 thread is checked. It backs off on its own while T3 is out of reach.
+  t3_queue_hours:
+    name: T3 queue time (hours)
+    description: How long a request waits for T3 while the PC is off before the bridge gives up.
+  t3_daily_limit:
+    name: T3 requests a day
+    description: T3 threads and follow-ups the bridge sends a day, across everyone.
+  t3_max_post_chars:
+    name: T3 answer length
+    description: Longer answers are summarised (or cut) in Discord, with a link to the full one in T3.

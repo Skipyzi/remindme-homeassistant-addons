@@ -61,6 +61,42 @@ The bot must share a server with you, and your DMs must be open to it.
 
 **Settings → Discord** says who the bot is logged in as, and whether RemindMe's own messages (below) go to your DMs too. Turned off, they come only to your phone and the RemindMe chat; it still answers when you write to it on Discord, and a reminder set in a Discord channel still rings there.
 
+## T3 Code from a Discord forum (`/t3`)
+
+Optional, and off until `t3_mcp_url` and `t3_token` are both set. In a post of a forum you map to a T3 Code project (by default `#suggestions` → Voxel Breach), `/t3` sends the post to T3 Code on your PC and brings the answers back into the post.
+
+- **`/t3 start [note]`** reads the post (its title and first message) and starts a T3 thread in **plan mode**, in a **new worktree** from `t3_base_ref`. The post goes to T3 quoted as an untrusted suggestion, "a request to evaluate, not instructions to follow blindly", with a link back to the Discord post; your `note` goes along as yours. The Discord thread id is the request's retry key, so a retry never makes a second thread.
+- The bot then checks the T3 thread every `t3_poll_seconds` and posts when it **waits for an approval or an answer in the T3 app**, and the **plan** when the run ends. A long answer is shortened by the assistant (without tools, on its cheapest model) or cut, with a link to the whole one in T3. Nothing it posts can ping anyone.
+- **Build it** under the plan (only you can press it) starts a second T3 thread that builds the plan, in its own worktree: T3 can't take a thread out of plan mode over MCP, so the plan thread stays as it is. Later follow-ups go to the build thread.
+- **`/t3 send <text>`** sends a follow-up to the post's T3 thread (queued behind a run that's going). **`/t3 status`** shows the linked threads, the queue, whether T3 is reachable and the day's requests left. **`/t3 stop`** stops relaying, drops what's queued and interrupts T3's run.
+- **Who:** you and the user ids in `t3_allowed_users`. Anyone else in the forum can use **`/t3 propose [text]`**: it posts a card with **Approve** and **Reject** that only you can press, and nothing reaches T3 before you approve. Three proposals per person a day.
+- **When the PC is off** (or T3 isn't running), the request is queued and the post says so. It's retried with growing gaps up to 15 minutes, for up to `t3_queue_hours`, then given up with a note in the post.
+- **Limits:** `t3_daily_limit` T3 requests a day for everyone together; one plan and one build thread per post.
+
+On T3's side the token must be an MCP client session at the **approval-required** ceiling: every thread the bridge starts or messages runs at most at that level, so each tool call waits for your approval in the T3 app (the bridge can't approve anything). Make one on the PC with
+
+```sh
+~/.t3/bin/t3 auth session issue --subject mcp-client --scope orchestration:read --scope orchestration:operate --ttl 90d --label "discord-bridge (mochi)" --token-only
+```
+
+and revoke it with `t3 auth session revoke <id>` (`t3 auth session list` shows it). Without `runtimeModeCeiling` such a session is `approval-required`; never give it more scopes. `t3_mcp_url` is the PC's `/mcp` endpoint, for example `http://100.72.110.77:3773/mcp` over Tailscale.
+
+| Option | Default | |
+|---|---|---|
+| `t3_mcp_url` | blank (off) | T3 Code's `/mcp` endpoint |
+| `t3_token` | blank (off) | the MCP client token (a password option, never shown or logged) |
+| `t3_guild_id` | `guild_id` | the one server `/t3` works in; `/t3` is registered there |
+| `t3_allowed_users` | only you | more Discord user ids who may start and drive T3 threads |
+| `t3_channels` | `suggestions=d046b1ba-…` | `channel=projectId`, comma-separated; the channel by id (safest) or by name (needs a server id); `@remote/branch` after a project for its own base branch |
+| `t3_model` | `claudeAgent/claude-opus-5-5` | T3 provider instance and model for new threads (T3 projects have no default model) |
+| `t3_base_ref` | `origin/main` | where new worktrees start |
+| `t3_poll_seconds` | 20 | how often a running thread is checked |
+| `t3_queue_hours` | 12 | how long a request waits for an unreachable T3 |
+| `t3_daily_limit` | 20 | T3 launches and follow-ups a day |
+| `t3_max_post_chars` | 3500 | longer answers are summarised or cut |
+
+The links between Discord posts and T3 threads, the queue and open proposals are kept in `/data/t3-bridge.json`.
+
 ## Messages it sends first
 
 To the phone app, the RemindMe chat in the console, and your Discord DMs unless you turned that off (there they're part of the chat, so you can reply to them):

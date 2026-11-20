@@ -2,6 +2,7 @@ import {
 	type ChatInputCommandInteraction,
 	type Client,
 	MessageFlags,
+	type RESTPostAPIChatInputApplicationCommandsJSONBody,
 	SlashCommandBuilder,
 	version as discordJsVersion,
 } from "discord.js";
@@ -80,18 +81,25 @@ const slashCommands = [
  * register globally, which works everywhere but can take up to an hour to
  * show the first time.
  */
-export async function registerSlashCommands(client: Client): Promise<void> {
+export async function registerSlashCommands(client: Client, extra?: { guildId: string; commands: RESTPostAPIChatInputApplicationCommandsJSONBody[] }): Promise<void> {
 	if (!client.application) return;
+	// Commands for one server only (the T3 bridge's /t3) join the others there, or are registered to it on their own.
+	const together = extra && (!extra.guildId || extra.guildId === config.guildId);
+	const commands = together ? [...slashCommands, ...extra.commands] : slashCommands;
 	try {
+		if (extra && !together) {
+			await client.application.commands.set(extra.commands, extra.guildId);
+			console.log(`Registered ${extra.commands.length} more slash command(s) to guild ${extra.guildId}.`);
+		}
 		if (config.guildId) {
-			await client.application.commands.set(slashCommands, config.guildId);
+			await client.application.commands.set(commands, config.guildId);
 			console.log(
-				`Registered ${slashCommands.length} slash commands to guild ${config.guildId}.`,
+				`Registered ${commands.length} slash commands to guild ${config.guildId}.`,
 			);
 		} else {
-			await client.application.commands.set(slashCommands);
+			await client.application.commands.set(commands);
 			console.log(
-				`Registered ${slashCommands.length} slash commands globally (up to ~1h to appear).`,
+				`Registered ${commands.length} slash commands globally (up to ~1h to appear).`,
 			);
 		}
 	} catch (error) {

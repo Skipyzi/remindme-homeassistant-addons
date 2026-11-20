@@ -5,6 +5,7 @@ import { startPresenceMonitor } from "./presence";
 import { setupAssistantChat, type ChatDeps } from "./discord/assistantChat";
 import { OwnerMessenger } from "./discord/messenger";
 import { IdentitySync, type Identity } from "./discord/identity";
+import { startT3Bridge } from "./t3bridge/discord";
 
 /**
  * The Discord side: slash commands and the assistant in DMs. Returns the
@@ -31,7 +32,10 @@ export function startBot(deps: ChatDeps & { identity?: Identity }): OwnerMesseng
 		partials: [Partials.Channel, Partials.Message],
 	});
 
-	setupCommands(client);
+	// Discord → T3 Code (src/t3bridge): off unless t3_mcp_url and t3_token are set.
+	// Long answers are shortened by the assistant without tools, on its cheapest model.
+	const t3 = startT3Bridge(client, (prompt) => deps.assistant.quick(prompt, undefined, { cheap: true }));
+	setupCommands(client, t3);
 	setupAssistantChat(client, deps);
 	// The bot goes by the assistant's name and wears its cat.
 	if (deps.identity) new IdentitySync(client, deps.identity).start();

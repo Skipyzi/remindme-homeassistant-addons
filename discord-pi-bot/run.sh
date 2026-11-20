@@ -59,6 +59,19 @@ export HA_NOTIFY_TARGET="$(get_option ha_notify_target)"
 export VAULT_UI_URL="$(get_option vault_url)"
 # TrackingMore API key for parcel tracking. Blank disables tracking.
 export TRACKINGMORE_API_KEY="$(get_option trackingmore_api_key)"
+# The /t3 bridge to T3 Code on the PC; off unless the URL and the token are set.
+export T3_MCP_URL="$(get_option t3_mcp_url)"
+export T3_TOKEN="$(get_option t3_token)"
+export T3_GUILD_ID="$(get_option t3_guild_id)"
+export T3_ALLOWED_USERS="$(get_option t3_allowed_users)"
+export T3_CHANNELS="$(get_option t3_channels)"
+export T3_MODEL="$(get_option t3_model)"
+export T3_BASE_REF="$(get_option t3_base_ref)"
+export T3_POLL_SECONDS="$(get_option t3_poll_seconds)"
+export T3_QUEUE_HOURS="$(get_option t3_queue_hours)"
+export T3_DAILY_LIMIT="$(get_option t3_daily_limit)"
+export T3_MAX_POST_CHARS="$(get_option t3_max_post_chars)"
+export T3_BRIDGE_PATH=/data/t3-bridge.json
 # Only /data is a persisted volume. Anything defaulting to ./data lands in
 # /app inside the image and is lost on every restart and update.
 export REMINDER_DATA_PATH=/data/reminders.json

@@ -1,5 +1,5 @@
 name: RemindMe
-version: "4.38.0"
+version: "4.39.0"
 slug: remindme_discord_bot
 description: Your personal assistant in Home Assistant and Discord, on Claude, OpenAI or your ChatGPT and Claude subscriptions
 arch:
@@ -46,6 +46,17 @@ options:
   ha_notify_target: ""
   vault_url: ""
   trackingmore_api_key: ""
+  t3_mcp_url: ""
+  t3_token: ""
+  t3_guild_id: ""
+  t3_allowed_users: ""
+  t3_channels: "suggestions=d046b1ba-bd82-49d1-9662-446a790a285b"
+  t3_model: claudeAgent/claude-opus-5-5
+  t3_base_ref: origin/main
+  t3_poll_seconds: 20
+  t3_queue_hours: 12
+  t3_daily_limit: 20
+  t3_max_post_chars: 3500
 schema:
   discord_token: password
   owner_id: str
@@ -78,6 +89,17 @@ schema:
   ha_notify_target: str?
   vault_url: str?
   trackingmore_api_key: password?
+  t3_mcp_url: str?
+  t3_token: password?
+  t3_guild_id: str?
+  t3_allowed_users: str?
+  t3_channels: str?
+  t3_model: str?
+  t3_base_ref: str?
+  t3_poll_seconds: int(5,600)
+  t3_queue_hours: float(0.1,168)
+  t3_daily_limit: int(1,500)
+  t3_max_post_chars: int(500,20000)
 map:
   - type: data
     read_only: false
